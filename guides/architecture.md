@@ -1,6 +1,6 @@
 # Architecture
 
-Origin-only engineering map for this repository. Adopter installs omit `guides/`. Overview: [README.md](../README.md). Project install and removal: [INSTALL.md](../INSTALL.md). The operating-loop diagram is on the front page.
+Origin-only engineering map for this repository. Adopter installs omit `guides/`. Overview: [overview.md](overview.md). Project install and removal: [INSTALL.md](../INSTALL.md). The operating-loop diagram is in that overview.
 
 ## Install
 
@@ -68,7 +68,7 @@ them are, Enter completes no client and keeps the unattended PATH shims.
 host value skips the question.
 
 Portable host files are still written for every client. Claude and Codex
-register a marketplace when that CLI is on `PATH`. Cursor writes
+register a marketplace when that CLI is on `PATH`, unless a named host selection excludes that client. Cursor writes
 `.cursor/hooks.json` and OpenCode writes
 `.opencode/plugins/chaos-engine-receipt.js` when that host is detected (its
 CLI on `PATH` or its project markers present) or selected; a named selection

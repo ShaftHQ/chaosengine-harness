@@ -43,9 +43,9 @@ Personal names and client data stay out of repo text ("the subject" / "the prese
 ### H-VERSION — VERSION-bump gate
 - **Sources:** chaos.md L2; issue 7651 merged without VERSION bump
 - **Problem:** Consumer-facing harness changes can merge with unchanged VERSION → no broadcast.
-- **Rule:** Any diff under the repository root that is not exclusively docs-only waiver paths requires `VERSION` to change **or** an explicit `ce-no-version-bump` label / PR body marker `<!-- chaos-engine:no-version-bump -->` with justification.
-- **Enforcement:** `scripts/ci/overlay_pre_push.py` → `ce_version_bump_failures(root, changed)`; unit test.
-- **Acceptance:** Changing `references/bot-entry.md` without VERSION → fail; with VERSION bump → pass; with no-version-bump marker → pass.
+- **Rule:** In the original ShaftHQ/SHAFT_ENGINE checkout, any diff under `chaos-engine/` that is not exclusively docs-only waiver paths requires `VERSION` to change **or** an explicit `ce-no-version-bump` label / PR body marker `<!-- chaos-engine:no-version-bump -->` with justification.
+- **Enforcement (ShaftHQ/SHAFT_ENGINE only; not present in this standalone tree):** `scripts/ci/overlay_pre_push.py` → `ce_version_bump_failures(root, changed)`; unit test.
+- **Acceptance:** In that checkout, changing `chaos-engine/references/bot-entry.md` without `chaos-engine/VERSION` → fail; with VERSION bump → pass; with no-version-bump marker → pass.
 
 ### H-FAIL-MISSING — Fail-on-missing-input template
 - **Sources:** chaos.md L4; Designer issue 7651 M1–M3 (gates passed on empty input)

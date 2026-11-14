@@ -63,13 +63,13 @@ are in the [host parity matrix](../references/host-parity-matrix.md).
 
 | Id | Host | What this tree implements |
 | --- | --- | --- |
-| `claude` | Claude Code | Lifecycle hooks. Marketplace registration when the `claude` CLI is on `PATH`. |
-| `codex` | Codex | Lifecycle hooks. Marketplace registration when the `codex` CLI is on `PATH`. |
+| `claude` | Claude Code | Lifecycle hooks. Marketplace registration when `claude` is on `PATH`, unless a named host selection excludes it. |
+| `codex` | Codex | Lifecycle hooks. Marketplace registration when `codex` is on `PATH`, unless a named host selection excludes it. |
 | `gemini` | Gemini CLI | Lifecycle hooks. The hook launcher is Node.js ([hooks/launch.js](../hooks/launch.js)). |
 | `grok` | Grok | Lifecycle hooks. This host can ignore an exit-2 deny (GAP-EXIT2). |
 | `copilot` | GitHub Copilot | Lifecycle hooks for the CLI. Cloud and IDE surfaces are checked statically. This host can ignore an exit-2 deny (GAP-EXIT2). |
-| `opencode` | OpenCode | Instruction-only (`AGENTS.md`). Writes `.opencode/plugins/chaos-engine-receipt.js` when OpenCode is detected or selected. |
-| `cursor` | Cursor | Instruction-only (`AGENTS.md`). Writes `.cursor/hooks.json` when Cursor is detected or selected. No portable pre-tool hook (GAP-CURSOR-HOOKS). |
+| `opencode` | OpenCode | Instruction-only (`AGENTS.md`). Writes `.opencode/plugins/chaos-engine-receipt.js` on unattended detection or when selected; omitted named hosts are unwired. |
+| `cursor` | Cursor | Instruction-only (`AGENTS.md`). Writes `.cursor/hooks.json` on unattended detection or when selected; omitted named hosts are unwired. No portable pre-tool hook (GAP-CURSOR-HOOKS). |
 | `grok-bot` | Grok Bot | Instruction-only. Reads the [bot entry](../references/bot-entry.md) at task start. The installer writes no receipt shim. |
 
 [hosts.py](../hosts.py) also maps `antigravity` to `AGENTS.md`. That id is
