@@ -150,3 +150,10 @@ tests/scripts/test_chaos_engine_ui_delivery.py::AgnixBarePlaceholderTest::test_a
 tests/scripts/test_chaos_engine_ui_delivery.py::UiDeliveryRoutingTests::test_plugin_mirror_ships_the_reference
 tests/scripts/test_chaos_engine_uninstall_clarity.py::UninstallClarityTests::test_fixture_uninstall_removes_core_keeps_knowledge_data
 tests/scripts/test_chaos_engine_portable_core.py::ChaosEnginePortableCoreTest::test_generic_core_has_no_shaft_or_machine_specific_paths  # repo is now ShaftHQ/chaosengine-harness; scan must allow its own URL and skip .git
+# Moved-code guard suites ported for #8057 (secret guard, client-name scrub, documented installer,
+# PR-body preflight, guard reachability). These ids assert SHAFT_ENGINE-side wiring (its template copy,
+# .agents README, overlay_pre_push, parity json) and belong in SHAFT (#8057 e2).
+tests/scripts/test_secret_guard_7177.py::TemplateParityTest::test_shaft_template_ships_the_same_guard_and_hooks
+tests/scripts/test_client_name_scrub.py::LessonAndWiringTest::test_lesson_and_map_exist
+tests/scripts/test_client_name_scrub.py::LessonAndWiringTest::test_overlay_calls_client_name_scrub_failures
+tests/scripts/test_ce_guard_reachability.py::GuardReachabilityTest::test_emitted_paths_exist_and_are_allowed_on_every_host
