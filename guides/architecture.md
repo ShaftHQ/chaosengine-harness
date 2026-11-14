@@ -81,8 +81,8 @@ execution. The public default is the neutral `portable` distribution.
 A successful command reports the resolved 40-character commit and a healthy
 active doctor result for core, adapters, local tools, hooks, and every detected
 client plugin. Restart an already-running client so it loads the new plugin.
-Runtime dependencies remain project-local; detected clients receive a
-path-unique local marketplace registration and cached plugin.
+Runtime dependencies remain project-local; detected Claude and Codex clients
+receive a path-unique local marketplace registration and cached plugin.
 
 ### Upgrade, recover, or remove
 
