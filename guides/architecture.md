@@ -534,38 +534,21 @@ space, asset selection, and geometry constraints are documented in the
 Changes to the portable harness must preserve one canonical policy body and
 its thin adapters.
 
-These checks are the harness gates from when `tests/scripts` and `scripts/ci`
-lived beside the source tree. Those directories are absent from this
-repository, so the commands below fail in this checkout. Publishing releases
-and switching the installer are still open on
-[ShaftHQ/SHAFT_ENGINE#8057](https://github.com/ShaftHQ/SHAFT_ENGINE/issues/8057).
-This checkout runs [.github/workflows/ci.yml](../.github/workflows/ci.yml).
+In this repository, every pull request runs the offline checks in
+[.github/workflows/ci.yml](../.github/workflows/ci.yml): root layout, Python
+and JSON syntax, `install.sh` syntax, relative Markdown links, the in-tree unit
+tests, and a `tool.py --help` smoke run. Run the same steps locally before you
+push. Run the smallest affected check first. Never commit generated reports,
+caches, runtime indexes, or `graphify-out/`.
 
-The focused checks are:
-
-```text
-py -3 -m unittest tests.scripts.test_chaos_engine_portable_core
-py -3 -m unittest tests.scripts.test_chaos_engine_installer
-py -3 -m unittest tests.scripts.test_chaos_engine_bootstrap
-py -3 -m unittest tests.scripts.test_chaos_engine_hosts
-py -3 scripts/ci/validate_agent_setup.py --skip-external
-```
-
-Before pushing harness changes, run the single changed-closure preflight against
-the full lowercase `HEAD` and its resolvable merge base. The explicit
-`--write-generated` flag refreshes owned README inventory and ChaosGauge
-identity artifacts, then validates the selected closure:
-
-```bash
-python3 scripts/ci/harness_pr_gate.py \
-  --base "$(git merge-base HEAD origin/main)" \
-  --head "$(git rev-parse HEAD)" \
-  --write-generated
-```
-
-Use the equivalent Python 3 command on non-Windows hosts. Run the smallest
-affected check first, then the nearest broader gate. Never commit generated
-reports, caches, runtime indexes, or `graphify-out/`.
+The full offline harness suite (`tests/scripts/test_chaos_engine_*.py`) and
+the `scripts/ci` gates (for example `harness_pr_gate.py` and
+`validate_agent_setup.py`) still live in
+[ShaftHQ/SHAFT_ENGINE](https://github.com/ShaftHQ/SHAFT_ENGINE). They run only
+from a checkout of that repository, against its nested `chaos-engine/` copy.
+They move here under
+[ShaftHQ/SHAFT_ENGINE#8057](https://github.com/ShaftHQ/SHAFT_ENGINE/issues/8057)
+(R2). Until then, do not expect those commands to work in this checkout.
 
 ## Read next
 
@@ -598,4 +581,4 @@ reports, caches, runtime indexes, or `graphify-out/`.
 
 ## Entry coverage
 
-Rules, hooks, skills, and tools must stay linked from [bot entry](../references/bot-entry.md) and from the generated host skills index `.agents/skills/README.md`. Unit gate: `tests/scripts/test_ce_entry_coverage.py`.
+Rules, hooks, skills, and tools must stay linked from [bot entry](../references/bot-entry.md) and from the generated host skills index `.agents/skills/README.md`. Its unit gate (`tests/scripts/test_ce_entry_coverage.py`) still lives in ShaftHQ/SHAFT_ENGINE until the test move in #8057 R2.

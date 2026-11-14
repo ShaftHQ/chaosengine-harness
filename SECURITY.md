@@ -6,7 +6,7 @@ Report a vulnerability in private. Use GitHub **Report a vulnerability** (privat
 
 https://github.com/ShaftHQ/chaosengine-harness/security/advisories/new
 
-Do not open a public issue, pull request, or discussion for a vulnerability. Conduct reports go to [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md), not to this channel.
+Do not open a public issue, pull request, or discussion for a vulnerability. Code of conduct reports use the same private form with a title that starts "Conduct report:". See [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
 ## Supported versions
 
