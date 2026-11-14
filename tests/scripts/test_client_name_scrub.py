@@ -13,7 +13,6 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT))
 
 import client_name_scrub  # noqa: E402
-from scripts.ci import overlay_pre_push  # noqa: E402
 
 # Synthetic tokens for tests only. Never use a real client engagement name here.
 PLACEHOLDER = "AcmeClientX"
@@ -170,6 +169,7 @@ class LessonAndWiringTest(unittest.TestCase):
         )
 
     def test_overlay_helper_skips_when_unconfigured(self) -> None:
+        from scripts.ci import overlay_pre_push  # SHAFT_ENGINE module; this test is quarantined here
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             # Sparse fixture: no denylist file, empty environ via explicit denylist
