@@ -83,6 +83,7 @@ def source_payload(marker: str) -> dict[str, bytes]:
         path.relative_to(ROOT).as_posix(): path.read_bytes()
         for path in (ROOT).rglob("*")
         if path.is_file() and "__pycache__" not in path.parts and path.suffix != ".pyc"
+        and path.relative_to(ROOT).parts[0] not in {".git", "tests", ".chaos-engine-state"}
     }
     if marker:
         payload["bootstrap-marker.txt"] = marker.encode()

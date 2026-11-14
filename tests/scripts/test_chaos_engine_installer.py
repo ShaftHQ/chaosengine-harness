@@ -152,7 +152,14 @@ def sha256(path: Path) -> str:
 
 
 def copy_source(destination: Path) -> Path:
-    ignored = shutil.ignore_patterns("__pycache__", "*.pyc")
+    patterns = shutil.ignore_patterns("__pycache__", "*.pyc")
+
+    def ignored(directory, names):
+        skipped = set(patterns(directory, names))
+        if Path(directory).resolve() == SOURCE.resolve():
+            skipped |= {".git", "tests", ".chaos-engine-state"} & set(names)
+        return skipped
+
     copied = Path(shutil.copytree(SOURCE, destination, ignore=ignored))
     # CE-10: the project pack ships beside the core tree.
     shutil.copytree(
