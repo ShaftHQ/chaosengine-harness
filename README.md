@@ -8,230 +8,39 @@
 
 # ChaosEngine
 
-ChaosEngine is a portable, provider-neutral working contract for software
-agents. Testers, frontend and backend developers, product owners, and scrum
-masters use the same contract, independent of team, language, framework, or
-product. One entrypoint covers research, planning, implementation,
-verification, review, delivery, and learning. The contract discovers a
-project's own engineering rules, routes each task to one surface, and requires
-evidence before a claim that the work is done.
+ChaosEngine is a portable, provider-neutral working contract for software agents. Testers, developers, product owners and scrum masters install it into a project so their coding agents (Claude Code, Codex, Gemini CLI, Grok, GitHub Copilot, OpenCode, Cursor, Grok Bot) follow one loop: research first, plan, implement, verify with evidence, get an adversarial review, and record what was learned. Agents load [skills/chaos-engine/SKILL.md](skills/chaos-engine/SKILL.md); people start with the [overview](guides/overview.md).
 
-**Humans:** this page is the overview. Install steps and options stay in
-[INSTALL.md](INSTALL.md).
+## Quick start
 
-**Agents:** load [skills/chaos-engine/SKILL.md](skills/chaos-engine/SKILL.md)
-and follow it. This README is a map. Working policy stays in that skill.
+Run this in your project directory. Until the installer switch in [ShaftHQ/SHAFT_ENGINE#8057](https://github.com/ShaftHQ/SHAFT_ENGINE/issues/8057) lands, it fetches from `ShaftHQ/SHAFT_ENGINE`. No Python is needed beforehand.
 
-## Who it is for
-
-These roles share one contract. Every role loads the same entrypoint.
-
-| Role | What they use the contract for |
-| --- | --- |
-| Tester | Reproduction, regression, and acceptance evidence before a claim of done. |
-| Frontend developer | Interface changes through the same plan, implementation, and review loop. |
-| Backend developer | Service, API, and contract changes through that same loop, including callers. |
-| Product owner | Scope, priority, and an inspectable delivery state. In orchestrated mode this is the [process-owner](references/process-owner-scrum-master.md) duty. |
-| Scrum master | Flow, WIP, and honest status when the session asks for the scrum-master alias of process-owner. |
-
-Inside a session, agent accountability is a separate choice. The agent roles
-are orchestrator, implementer, reviewer, tester, and mechanical-helper. See
-[roles](references/roles.md).
-
-## What it does
-
-- **Evidence over inference.** Read and run the real system before making a
-  claim.
-- **Research before mutation.** Retrieve prior decisions, inspect current
-  callers, and compare viable approaches first.
-- **Plan, Do, Check, Act.** After approval, finish the accepted scope as one
-  coherent batch. The [delivery cycle](references/delivery-cycle.md) allows at
-  most three PDCA iterations.
-- **Adversarial review.** After the accepted Check and green required checks,
-  two independent reviews run on that head. The author is neither reviewer.
-- **Durable learning.** Reusable facts and decisions go to structured stores.
-  Transcripts and private material stay out of policy.
-
-```mermaid
-flowchart LR
-    accTitle: ChaosEngine delivery loop
-    accDescr: A task moves through Plan, Do, Check, Act, delivery, and one durable learning decision without microstep loops.
-    T[Task and triage] --> R[Live research]
-    R --> P[Plan complete scope]
-    P --> D[Do complete implementation]
-    D --> F[Final scope commit]
-    F --> A[Automated CI and comment fixes]
-    A --> X[Two adversarial reviews<br/>after the green head]
-    X --> V[Extra local tests]
-    V --> G[Merge]
-    G --> M[Confirmed merge]
-    M --> L[Learning Session]
-```
-
-The canonical rules live in
-[skills/chaos-engine/SKILL.md](skills/chaos-engine/SKILL.md). That entrypoint
-sizes the task, loads the one relevant routed surface, and keeps detailed
-guidance out of the always-loaded context until it is needed.
-
-## Supported hosts
-
-The installer accepts eight host ids (`INSTALL_HOST_IDS` in
-[bootstrap.py](bootstrap.py)). Five have lifecycle hook adapters in
-[hooks/kernel.py](hooks/kernel.py) and [hosts.py](hosts.py). OpenCode, Cursor,
-and Grok Bot are instruction-only. Measured gaps, including exit-2 fidelity,
-are in the [host parity matrix](references/host-parity-matrix.md).
-
-| Id | Host | What this tree implements |
-| --- | --- | --- |
-| `claude` | Claude Code | Lifecycle hooks. Marketplace registration when the `claude` CLI is on `PATH`. |
-| `codex` | Codex | Lifecycle hooks. Marketplace registration when the `codex` CLI is on `PATH`. |
-| `gemini` | Gemini CLI | Lifecycle hooks. The hook launcher is Node.js ([hooks/launch.js](hooks/launch.js)). |
-| `grok` | Grok | Lifecycle hooks. This host can ignore an exit-2 deny (GAP-EXIT2). |
-| `copilot` | GitHub Copilot | Lifecycle hooks for the CLI. Cloud and IDE surfaces are checked statically. This host can ignore an exit-2 deny (GAP-EXIT2). |
-| `opencode` | OpenCode | Instruction-only (`AGENTS.md`). Selecting the host writes `.opencode/plugins/chaos-engine-receipt.js`. |
-| `cursor` | Cursor | Instruction-only (`AGENTS.md`). Selecting the host writes `.cursor/hooks.json`. No portable pre-tool hook (GAP-CURSOR-HOOKS). |
-| `grok-bot` | Grok Bot | Instruction-only. Reads the [bot entry](references/bot-entry.md) at task start. The installer writes no receipt shim. |
-
-[hosts.py](hosts.py) also maps `antigravity` to `AGENTS.md`. That id is
-outside the installer host list. Independent agents that load nothing from the
-checkout use the same bot-entry path as Grok Bot.
-
-When the environment shows exactly one of Claude, Codex, Grok, or Cursor, the
-one-liner completes that host. With no inferred host and no `--hosts` or
-`CHAOS_ENGINE_HOST` value, it still writes the portable files and keeps the
-unattended PATH shims. Naming rules, the silent one-liner, and the wizard are
-in [INSTALL.md](INSTALL.md#clients-this-command-can-complete).
-
-## Install
-
-Until the installer switch in
-[ShaftHQ/SHAFT_ENGINE#8057](https://github.com/ShaftHQ/SHAFT_ENGINE/issues/8057)
-lands, the working one-liner fetches from `ShaftHQ/SHAFT_ENGINE`. Change into
-the project directory first. The command does not need Python on the machine
-beforehand.
-
-The PyPI and npm projects named `chaosengine-harness` are reserved `0.0.1`
-placeholders. Installation is the one-liner below.
-
-Windows PowerShell ([install.ps1](install.ps1), from
-[INSTALL.md](INSTALL.md#golden-path-first-run)):
-
-```powershell
-irm "https://raw.githubusercontent.com/ShaftHQ/SHAFT_ENGINE/main/chaos-engine/install.ps1" | iex
-```
-
-macOS or Linux ([install.sh](install.sh)):
+macOS or Linux:
 
 ```bash
 curl -fsSL "https://raw.githubusercontent.com/ShaftHQ/SHAFT_ENGINE/main/chaos-engine/install.sh" | bash -s -- "https://raw.githubusercontent.com/ShaftHQ/SHAFT_ENGINE/main/chaos-engine/install.sh"
 ```
 
-Host flags, add-ons, offline bundles, and every other option are in
-[INSTALL.md](INSTALL.md). Read [install.ps1](install.ps1),
-[install.sh](install.sh), and [bootstrap.py](bootstrap.py) first when your
-trust policy requires review before execution. The public default is the
-neutral `portable` profile ([profiles](profiles/README.md),
-[distributions.json](distributions.json)).
+Windows PowerShell:
 
-### Doctor, upgrade, uninstall
-
-After the command finishes, run doctor in that same project. On Windows use
-`py -3` instead of `python3`. Restart an already-running host so it loads the
-new plugin.
-
-```text
-python3 .chaos-engine/install.py doctor --project .
+```powershell
+irm "https://raw.githubusercontent.com/ShaftHQ/SHAFT_ENGINE/main/chaos-engine/install.ps1" | iex
 ```
 
-- **Upgrade:** run the same one-liner again. A failed or invalid download
-  leaves the last verified installation unchanged.
-- **Rollback:** `python3 .chaos-engine/install.py rollback --project .`
-- **Uninstall:** `python3 .chaos-engine/install.py uninstall --project .`
+Then check the install with `python3 .chaos-engine/install.py doctor --project .` (`py -3` on Windows). The `chaosengine-harness` packages on PyPI and npm are reserved `0.0.1` placeholders and do not install anything yet.
 
-Rollback and uninstall change only receipt-owned ChaosEngine files. Mixed or
-unknown ownership stops and leaves unrelated project content in place. The
-removed-versus-retained table and clean-reinstall steps are in
-[INSTALL.md](INSTALL.md#uninstall--rollback-first-time-recovery).
+## Docs
 
-Lifecycle, ownership, dependencies, trust boundaries, and the companion list
-are in [guides/architecture.md](guides/architecture.md). That guide is
-origin-only and stays in this repository.
+- [Overview](guides/overview.md): roles, the delivery loop, supported hosts, concepts, status
+- [INSTALL.md](INSTALL.md): host flags, add-ons, offline bundles, upgrade, rollback, uninstall
+- [Architecture](guides/architecture.md): lifecycle, ownership, trust boundaries, companions
+- [CHANGELOG.md](CHANGELOG.md): version `0.4.20261114.5` ([VERSION](VERSION))
 
-## Use
+## Contributing and license
 
-Ask the agent to use the installed `chaos-engine` skill. The entrypoint will:
+See [CONTRIBUTING.md](CONTRIBUTING.md), [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) and [SECURITY.md](SECURITY.md). MIT licensed, copyright ChaosEngine contributors: [LICENSE](LICENSE), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-1. Identify the requested outcome and the proof of done.
-2. Classify blast radius and reversibility.
-3. Retrieve Memory, MemPalace, and Graphify evidence when those stores are
-   configured.
-4. Inspect current project files and authoritative sources.
-5. Choose the narrowest routed surface that applies.
-6. Implement the approved scope as one coherent batch.
-7. Follow the delivery cycle: architect, at most three PDCA iterations, then
-   two independent adversarial reviews.
-8. Report the exact checks, the delivery state, and the Learning Session
-   result.
-
-## Core concepts
-
-| Topic | Document |
-| --- | --- |
-| Canonical router and completion contract | [skills/chaos-engine/SKILL.md](skills/chaos-engine/SKILL.md) |
-| Delivery cycle | [references/delivery-cycle.md](references/delivery-cycle.md) |
-| Phase gates | [references/delivery-phase-gates.md](references/delivery-phase-gates.md) |
-| Agent roles | [references/roles.md](references/roles.md) |
-| Process owner | [references/process-owner-scrum-master.md](references/process-owner-scrum-master.md) |
-| Delegation | [references/delegation.md](references/delegation.md) |
-| Host parity and measured gaps | [references/host-parity-matrix.md](references/host-parity-matrix.md) |
-| Lifecycle hooks | [references/lifecycle-hooks.md](references/lifecycle-hooks.md) |
-| Skill and route catalog | [references/catalog.md](references/catalog.md) |
-| Harness map | [references/harness-map.md](references/harness-map.md) |
-| Profiles and packs | [profiles/README.md](profiles/README.md) |
-| Bot entry for hookless agents | [references/bot-entry.md](references/bot-entry.md) |
-| Durable jobs | [references/durable-jobs.md](references/durable-jobs.md) |
-| Zero-LLM doctor and repair | [references/zero-llm-catalog.md](references/zero-llm-catalog.md) |
-| Context firewall | [references/context-firewall.md](references/context-firewall.md) |
-| Token budget modes | [references/token-budget-modes.md](references/token-budget-modes.md) |
-| Learning Session | [skills/self-improve/SKILL.md](skills/self-improve/SKILL.md) |
-| Research and adoption record | [RESEARCH.md](RESEARCH.md) |
-| Architecture notes (origin-only) | [guides/architecture.md](guides/architecture.md) |
-| Optional local companions (origin-only) | [OmniRoute](guides/omniroute.md), [FreeToken](guides/freetoken.md), [Colibri](guides/colibri.md), [local agency](guides/local-agency.md), [OpenAI-compat runtimes](guides/local-openai-compat.md) |
-
-ChaosEngine probes those local companions when the operator has already
-installed them. Install, configuration, authentication, and process start stay
-with the operator. Caveman, Ponytail, and ICM Architect are pinned skills the
-installer provisions. Memory, MemPalace, and Graphify are provisioned with the
-harness. Detail is in the architecture guide.
-
-## Status and roadmap
-
-Tree version: `0.4.20261114.5` ([VERSION](VERSION)). Notes for that version
-are in [CHANGELOG.md](CHANGELOG.md).
-
-This repository is ShaftHQ/chaosengine-harness. The tree sits at the
-repository root. It was extracted from `ShaftHQ/SHAFT_ENGINE` `chaos-engine/`,
-and the history was preserved.
-
-- Epic: [ShaftHQ/SHAFT_ENGINE#8056](https://github.com/ShaftHQ/SHAFT_ENGINE/issues/8056)
-- Standalone repository spec: [ShaftHQ/SHAFT_ENGINE#8057](https://github.com/ShaftHQ/SHAFT_ENGINE/issues/8057)
-
-Still open on that spec: a bootstrap that accepts this root layout or the old
-nested `chaos-engine/` prefix, release publishing, the installer pin and the
-redirect from the `ShaftHQ/SHAFT_ENGINE` one-liner, issue transfer, and
-role-based docs. This checkout already contains the changelog above and
-[.github/workflows/ci.yml](.github/workflows/ci.yml). Origin-only migration
-notes are in [STANDALONE.md](STANDALONE.md).
-
-## Contributing
-
-Read [CONTRIBUTING.md](CONTRIBUTING.md),
-[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md), and [SECURITY.md](SECURITY.md).
-
-## License
-
-MIT. Copyright ChaosEngine contributors. See [LICENSE](LICENSE) and
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+<details>
+<summary>Generated inventory and evidence (maintained by repository tooling)</summary>
 
 ## Reference: source-derived inventory
 
@@ -469,3 +278,5 @@ usable without Mermaid; unknown source entries fail the inventory validator.
 | Memory, MemPalace, and Graphify state | Persist canonical Memory/relations (tracked) plus derived indexes (`graphify-out/`, MemPalace palace data, `.memory` runtime). | .gitignore; hosts.py | durable Memory tracked; derived indexes untracked | project local | owned tools | project or derived single writer | doctor reports recovery-required |
 | reports, caches, and evaluation receipts | Carry bounded diagnostics without transcripts or secrets. | .gitignore; chaos_engine_promotion.py | generated and never tracked | local and CI | requesting command | ephemeral evidence owner | missing evidence blocks promotion |
 <!-- inventory:generated-assets:end -->
+
+</details>

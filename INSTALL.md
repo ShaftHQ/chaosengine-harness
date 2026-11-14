@@ -9,7 +9,7 @@
 # Install or upgrade ChaosEngine
 
 ChaosEngine is a portable, provider-neutral working contract for software
-agents. This page is the installation reference. See [`README.md`](README.md) for purpose and operating loop, and [`skills/chaos-engine/SKILL.md`](skills/chaos-engine/SKILL.md) for the always-loaded contract.
+agents. This page is the installation reference. See [the overview](guides/overview.md) for purpose and operating loop, and [`skills/chaos-engine/SKILL.md`](skills/chaos-engine/SKILL.md) for the always-loaded contract.
 
 The install commands on this page still download from ShaftHQ/SHAFT_ENGINE. The default source moves to this repository when the installer switch in ShaftHQ/SHAFT_ENGINE#8057 lands.
 
