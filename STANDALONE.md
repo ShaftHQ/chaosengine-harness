@@ -3,7 +3,7 @@
 2026-11-14: repository created at ShaftHQ/chaosengine-harness with filtered history; remaining cutover steps tracked in ShaftHQ/SHAFT_ENGINE#8057.
 The target name below (`ShaftHQ/chaos-engine`) was superseded by `ShaftHQ/chaosengine-harness` (ShaftHQ/SHAFT_ENGINE#8057). The one-liners in this spec are planned, not working yet; use [INSTALL.md](INSTALL.md).
 
-Status: in progress (the repository exists; the remaining steps are listed above). This file is origin-only and is not
+Status: in progress (the repository exists; the remaining steps are in the sections below and in ShaftHQ/SHAFT_ENGINE#8057). This file is origin-only and is not
 copied into adopter payloads. Tracker: ShaftHQ/SHAFT_ENGINE#5225 (parent #5223).
 
 ## Goal

@@ -70,7 +70,9 @@ host value skips the question.
 Portable host files are still written for every client. Claude and Codex
 register a marketplace when that CLI is on `PATH`. Cursor writes
 `.cursor/hooks.json` and OpenCode writes
-`.opencode/plugins/chaos-engine-receipt.js` only when selected. Grok Bot
+`.opencode/plugins/chaos-engine-receipt.js` when that host is detected (its
+CLI on `PATH` or its project markers present) or selected; a named selection
+that leaves the host out removes those receipt shims. Grok Bot
 writes no receipt shim. Naming `grok` does not enable `--lean-grok-skills`.
 A client id is not an add-on.
 
@@ -94,16 +96,16 @@ receive a path-unique local marketplace registration and cached plugin.
   run the portable bootstrap. This deliberate reinstall prevents old
   repository-specific payloads from surviving in the rollback backup.
 - **Inspect:** run
-  `python .chaos-engine/install.py doctor --project .` for a short human health
+  `python3 .chaos-engine/install.py doctor --project .` for a short human health
   summary (with `fix-next` on failures), or add `--json` / use `status` for the
   deterministic schema v2 contract (omits paths and credential-shaped fields).
 - **Explain:** run
-  `python .chaos-engine/install.py explain Stop --project . --host codex --json`
+  `python3 .chaos-engine/install.py explain Stop --project . --host codex --json`
   to evaluate one event without reading ambient session state.
 - **Roll back:** run
-  `python .chaos-engine/install.py rollback --project .`.
+  `python3 .chaos-engine/install.py rollback --project .`.
 - **Uninstall:** run
-  `python .chaos-engine/install.py uninstall --project .`.
+  `python3 .chaos-engine/install.py uninstall --project .`.
 
 Rollback and uninstall act only on receipt-owned ChaosEngine files. Mixed or
 unknown ownership fails closed instead of deleting unrelated project content.
@@ -248,7 +250,7 @@ like OmniRoute or FreeToken:
 | [`prerequisites.py`](../prerequisites.py) | after install: report or provision git, mvn, gh, Node.js, winget, PowerShell 7; add-on `post-install.json` framework steps |
 | [`learning.py`](../learning.py) | Privacy-gated queue for reusable improvement candidates |
 | [`RESEARCH.md`](../RESEARCH.md) | Dated adoption decisions and their local proof owners |
-| [`STANDALONE.md`](../STANDALONE.md) | Origin-only spec for a later standalone source repository |
+| [`STANDALONE.md`](../STANDALONE.md) | Origin-only spec for the move to the standalone ShaftHQ/chaosengine-harness repository |
 | [`assets/brand/`](../assets/brand/) | Origin identity masters; not copied into adopter installs. External logo skills are [declined](../RESEARCH.md#logo-design-skill) |
 
 The installer records provenance and per-file ownership in the consumer

@@ -1,7 +1,7 @@
 # ChaosEngine decision-quality operational rubric
 
 Accessed: 2026-09-01. Imports the metrics dictionary, sampling protocol, and
-taxonomy classes from [`decision-quality-baseline.md`](decision-quality-baseline.md) (#5520) by
+taxonomy classes from [`decision-quality-baseline.md`](decision-quality-baseline.md) (ShaftHQ/SHAFT_ENGINE#5520) by
 reference. Does not redefine those contracts. Parent tracking epic: #5514.
 Deliverable for #5521.
 

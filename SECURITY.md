@@ -18,11 +18,12 @@ Scope wording is owned by ShaftHQ/SHAFT_ENGINE#8032 (R4). This section is that w
 
 In scope:
 
-- Prompt injection that crosses a security boundary
-- Credential disclosure through logs or traces
-- Sandbox or guard bypass
-- Installer, hooks, or stores integrity
+- Bypassing a ChaosEngine guard (PreToolUse deny, delete-guard, secret or content scan, outbound-send approval)
+- Credential disclosure through harness state, logs, spans, or stores
+- Installer or update paths that run unpinned code
+- Prompt injection that crosses one of those boundaries
 
 Out of scope:
 
-- Merely poor model answers
+- Model output quality on its own
+- Attacks that assume a compromised host, or an attacker who already holds the credential

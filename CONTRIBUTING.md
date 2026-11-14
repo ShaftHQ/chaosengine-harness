@@ -26,6 +26,8 @@ Request two independent adversarial reviews when the change is any of these:
 
 Say in the pull request whether you requested one review or two.
 
+This floor is for pull requests to this repository. The two-review step in the README's product loop describes how ChaosEngine itself runs work in an adopting project; it is not this repository's merge rule.
+
 ## Local checks
 
 `install.py` requires Python 3.11 or newer. Java and Maven are not required.
