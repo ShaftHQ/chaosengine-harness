@@ -27,6 +27,41 @@ each re-execute the history. The parent does not run that suite again on a
 SHA a reviewer just ran.
 A watcher that exits because the branch moved is not a new review.
 
+## Review budget
+
+Set the budget at plan time, before the first review, and record it.
+
+- **Inputs.** Diff size (files and lines), public contract (yes or no),
+  irreversible or outbound action (yes or no), and blast radius (who or what
+  breaks if the change is wrong).
+- **MIN rounds.** At least 1. There is no zero-review path. Who reviews in a
+  round, and how many reviewers it needs, stays as step 3 says. The
+  one-versus-two reviewer floor (two for a public contract, irreversible work,
+  or an outbound action) is owned by ShaftHQ/SHAFT_ENGINE#8048 R2 and ShaftHQ/SHAFT_ENGINE#8055.
+  This budget does not lower it.
+- **MAX rounds.** For small, reversible work (docs only, or one file),
+  MAX = MIN. For medium work, MIN + 1. For large or cross-cutting work, or a
+  high blast radius, MIN + 2. MAX never exceeds the PDCA cap above.
+- **At MAX.** A finding blocks only if it is wrong, unsafe, or untruthful.
+  Every other finding (polish, should-fix wording, nit, style) is logged as a
+  follow-up, either an issue or a "Follow-ups" list in the pull request body.
+  It does not start another round.
+- **Same-SHA rule unchanged.** Logged follow-ups are not committed in this
+  delivery, so the reviewed head stays the head that ships. A blocker fix is a
+  new head. Step 3 applies to it: both reviews repeat on the new SHA, and that
+  counts as a round. If no round is left within MAX, stop and report as the
+  PDCA cap says.
+- **Handoff.** Record `review_budget` (min, max, inputs),
+  `review_rounds_used`, and the logged follow-ups in the handoff receipt
+  (ShaftHQ/SHAFT_ENGINE#8054).
+- **Owner override.** An explicit owner instruction may set the budget for a
+  session or a work item, but never below MIN. When that instruction also says
+  to fix blockers and then merge without another round, it lifts the
+  new-commit sentence for that item only, as Session lift describes. Record
+  that in the handoff.
+
+Spec: ShaftHQ/SHAFT_ENGINE#8063.
+
 ## Not a quota
 
 "At most 3" does not mean three iterations are required. Zero extra
