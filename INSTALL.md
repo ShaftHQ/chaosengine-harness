@@ -11,7 +11,7 @@
 ChaosEngine is a portable, provider-neutral working contract for software
 agents. This page is the installation reference. See [the overview](guides/overview.md) for purpose and operating loop, and [`skills/chaos-engine/SKILL.md`](skills/chaos-engine/SKILL.md) for the always-loaded contract.
 
-The install commands on this page still download from ShaftHQ/SHAFT_ENGINE. The default source moves to this repository when the installer switch in ShaftHQ/SHAFT_ENGINE#8057 lands.
+The install commands on this page download from this repository's `main`. The install receipt pins the resolved 40-hex commit. The older ShaftHQ/SHAFT_ENGINE `chaos-engine/install.*` one-liners forward here.
 
 ## Source vs generated paths
 
@@ -32,8 +32,8 @@ The install commands on this page still download from ShaftHQ/SHAFT_ENGINE. The 
 
 Generated host markers, skill adapters, MCP args, and doctor heal prompts always
 name `.chaos-engine/`. They never point at the source tree. In this checkout
-that tree is the repository root. ShaftHQ/SHAFT_ENGINE still copies from its
-`chaos-engine/` directory until the installer switch above.
+that tree is the repository root. The bootstrap also accepts a legacy nested
+`chaos-engine/` source tree, so receipts that pin an older commit keep working.
 
 Adopters track generated harness files. ShaftHQ/SHAFT_ENGINE ignores them after
 the `# CHAOSENGINE-RUNTIME` block so last-match gitignore wins.
@@ -47,13 +47,13 @@ the `# CHAOSENGINE-RUNTIME` block so last-match gitignore wins.
 Windows PowerShell, using [install.ps1](install.ps1):
 
 ```powershell
-irm "https://raw.githubusercontent.com/ShaftHQ/SHAFT_ENGINE/main/chaos-engine/install.ps1" | iex
+irm "https://raw.githubusercontent.com/ShaftHQ/chaosengine-harness/main/install.ps1" | iex
 ```
 
 macOS or Linux, using [install.sh](install.sh):
 
 ```bash
-curl -fsSL "https://raw.githubusercontent.com/ShaftHQ/SHAFT_ENGINE/main/chaos-engine/install.sh" | bash -s -- "https://raw.githubusercontent.com/ShaftHQ/SHAFT_ENGINE/main/chaos-engine/install.sh"
+curl -fsSL "https://raw.githubusercontent.com/ShaftHQ/chaosengine-harness/main/install.sh" | bash -s -- "https://raw.githubusercontent.com/ShaftHQ/chaosengine-harness/main/install.sh"
 ```
 
 ## Clients this command can complete
@@ -94,26 +94,26 @@ Valid ids: `claude`, `codex`, `grok`, `gemini`, `copilot`, `opencode`,
 macOS or Linux, naming Grok:
 
 ```bash
-url="https://raw.githubusercontent.com/ShaftHQ/SHAFT_ENGINE/main/chaos-engine/install.sh"
+url="https://raw.githubusercontent.com/ShaftHQ/chaosengine-harness/main/install.sh"
 curl -fsSL "$url" | bash -s -- "$url" --hosts grok
 ```
 
 The same command with the environment variable:
 
 ```bash
-url="https://raw.githubusercontent.com/ShaftHQ/SHAFT_ENGINE/main/chaos-engine/install.sh"
+url="https://raw.githubusercontent.com/ShaftHQ/chaosengine-harness/main/install.sh"
 CHAOS_ENGINE_HOST=claude curl -fsSL "$url" | bash -s -- "$url"
 ```
 
 Windows PowerShell:
 
 ```powershell
-& ([scriptblock]::Create((irm "https://raw.githubusercontent.com/ShaftHQ/SHAFT_ENGINE/main/chaos-engine/install.ps1"))) -Hosts grok
+& ([scriptblock]::Create((irm "https://raw.githubusercontent.com/ShaftHQ/chaosengine-harness/main/install.ps1"))) -Hosts grok
 ```
 
 ```powershell
 $env:CHAOS_ENGINE_HOST = "claude"
-& ([scriptblock]::Create((irm "https://raw.githubusercontent.com/ShaftHQ/SHAFT_ENGINE/main/chaos-engine/install.ps1")))
+& ([scriptblock]::Create((irm "https://raw.githubusercontent.com/ShaftHQ/chaosengine-harness/main/install.ps1")))
 ```
 
 `--hosts=codex` is the same as `--hosts codex`. Several ids look like
@@ -182,19 +182,19 @@ Remove with `--without-<name>` or `-Without<Name>`. Combine any of them.
 PowerShell needs the script-block form to pass switches:
 
 ```powershell
-& ([scriptblock]::Create((irm "https://raw.githubusercontent.com/ShaftHQ/SHAFT_ENGINE/main/chaos-engine/install.ps1"))) -WithDesignSkills -WithShaftEngineUsers
+& ([scriptblock]::Create((irm "https://raw.githubusercontent.com/ShaftHQ/chaosengine-harness/main/install.ps1"))) -WithDesignSkills -WithShaftEngineUsers
 ```
 
 or an environment variable with the plain one-liner (any installer):
 
 ```powershell
-$env:CHAOS_ENGINE_ADDONS = "design-skills,shaft-engine-users"; irm https://raw.githubusercontent.com/ShaftHQ/SHAFT_ENGINE/main/chaos-engine/install.ps1 | iex
+$env:CHAOS_ENGINE_ADDONS = "design-skills,shaft-engine-users"; irm https://raw.githubusercontent.com/ShaftHQ/chaosengine-harness/main/install.ps1 | iex
 ```
 
 macOS or Linux:
 
 ```bash
-url="https://raw.githubusercontent.com/ShaftHQ/SHAFT_ENGINE/main/chaos-engine/install.sh"
+url="https://raw.githubusercontent.com/ShaftHQ/chaosengine-harness/main/install.sh"
 curl -fsSL "$url" | bash -s -- "$url" --with-design-skills --with-shaft-engine-users
 ```
 
@@ -265,7 +265,7 @@ sessions, pass the flag (or set `CHAOS_ENGINE_LEAN_GROK_SKILLS=1`):
 
 ```bash
 # one-liner / bootstrap
-python3 bootstrap.py --repository ShaftHQ/SHAFT_ENGINE --lean-grok-skills
+python3 bootstrap.py --repository ShaftHQ/chaosengine-harness --lean-grok-skills
 
 # or after overlay exists
 python3 .chaos-engine/install.py install --project . --source … --commit … --lean-grok-skills
@@ -386,11 +386,12 @@ into the adopter payload. The installer also merges receipt-bound LF attributes 
 so Windows Git checkouts retain the exact owned bytes while unrelated
 `.gitattributes` rules remain untouched.
 
-The canonical one-liners above use the official `ShaftHQ/SHAFT_ENGINE` upstream
-URLs. The scripts parse their invocation URL and do not copy that identity into
-the adopter payload. `CHAOS_ENGINE_REPOSITORY` remains a local-file override when
+The canonical one-liners above use the official `ShaftHQ/chaosengine-harness`
+URLs. The scripts parse their invocation URL and do not write it into the
+adopter payload. `CHAOS_ENGINE_REPOSITORY` remains a local-file override when
 the invocation URL cannot be parsed (for example when you run `install.sh` from a
-checked-out tree). Change into the target project or folder first; both scripts
+checked-out tree). With neither a parsable URL nor that variable, the scripts
+default to `ShaftHQ/chaosengine-harness` `main`. Change into the target project or folder first; both scripts
 install into the current working directory.
 
 Python is not required before either command. The wrapper bootstraps Python as
@@ -424,13 +425,13 @@ cache purge removes only exact receipt-verified cache content.
 POSIX:
 
 ```bash
-url="https://raw.githubusercontent.com/ShaftHQ/SHAFT_ENGINE/main/chaos-engine/install.sh"; curl -fsSL "$url" | bash -s -- "$url" --with-maven-tools
+url="https://raw.githubusercontent.com/ShaftHQ/chaosengine-harness/main/install.sh"; curl -fsSL "$url" | bash -s -- "$url" --with-maven-tools
 ```
 
 PowerShell:
 
 ```powershell
-$installer = irm "https://raw.githubusercontent.com/ShaftHQ/SHAFT_ENGINE/main/chaos-engine/install.ps1"; & ([scriptblock]::Create($installer)) -WithMavenTools
+$installer = irm "https://raw.githubusercontent.com/ShaftHQ/chaosengine-harness/main/install.ps1"; & ([scriptblock]::Create($installer)) -WithMavenTools
 ```
 
 Inspect the linked installer and [bootstrap.py](bootstrap.py) first when policy

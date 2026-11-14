@@ -1,8 +1,14 @@
 #!/usr/bin/env sh
 # Install or upgrade ChaosEngine into the current directory.
 # Run this from the target project folder:
-#   curl -fsSL "https://raw.githubusercontent.com/<owner>/<repository>/main/chaos-engine/install.sh" | bash -s -- "https://raw.githubusercontent.com/<owner>/<repository>/main/chaos-engine/install.sh"
+#   curl -fsSL "https://raw.githubusercontent.com/ShaftHQ/chaosengine-harness/main/install.sh" | bash
+# A fork passes its own raw install.sh URL as the first argument:
+#   curl -fsSL "$url" | bash -s -- "$url"
 set -eu
+
+# Latest-from-main channel. The receipt still pins the resolved 40-hex commit.
+DEFAULT_REPOSITORY=ShaftHQ/chaosengine-harness
+DEFAULT_REF=main
 
 # Brand and live progress belong to bootstrap.py so curl|bash cannot double-paint.
 
@@ -80,12 +86,19 @@ resolve_source() {
 $(collect_source_text "${1:-}")
 EOF
   env_repository=${CHAOS_ENGINE_REPOSITORY:-}
-  if valid_repository "$env_repository"; then
+  if [ -n "$env_repository" ]; then
+    valid_repository "$env_repository" || fail "CHAOS_ENGINE_REPOSITORY must be <owner>/<repository>."
     ref=${CHAOS_ENGINE_BRANCH:-main}
-    printf '%s|%s|%s|%s\n' "$env_repository" "$ref" "chaos-engine" "https://raw.githubusercontent.com/${env_repository}/${ref}/chaos-engine/bootstrap.py"
+    # The standalone repository keeps the source at its root; other repositories
+    # keep the legacy nested chaos-engine/ folder. bootstrap.py re-checks the layout.
+    if [ "$(printf '%s' "$env_repository" | tr '[:upper:]' '[:lower:]')" = "$(printf '%s' "$DEFAULT_REPOSITORY" | tr '[:upper:]' '[:lower:]')" ]; then
+      printf '%s|%s|%s|%s\n' "$env_repository" "$ref" "" "https://raw.githubusercontent.com/${env_repository}/${ref}/bootstrap.py"
+    else
+      printf '%s|%s|%s|%s\n' "$env_repository" "$ref" "chaos-engine" "https://raw.githubusercontent.com/${env_repository}/${ref}/chaos-engine/bootstrap.py"
+    fi
     return 0
   fi
-  fail "Could not derive owner/repository from the install URL. Pass the raw.githubusercontent.com/<owner>/<repository>/.../install.sh URL as $1 (see chaos-engine/INSTALL.md), or set CHAOS_ENGINE_REPOSITORY=<owner>/<repository> for a local file run."
+  printf '%s|%s|%s|%s\n' "$DEFAULT_REPOSITORY" "$DEFAULT_REF" "" "https://raw.githubusercontent.com/${DEFAULT_REPOSITORY}/${DEFAULT_REF}/bootstrap.py"
 }
 
 with_maven_tools=

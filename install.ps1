@@ -1,6 +1,6 @@
 # Install or upgrade ChaosEngine into the current directory.
 # Run this from the target project folder:
-#   irm "https://raw.githubusercontent.com/<owner>/<repository>/main/chaos-engine/install.ps1" | iex
+#   irm "https://raw.githubusercontent.com/ShaftHQ/chaosengine-harness/main/install.ps1" | iex
 [CmdletBinding()]
 param(
     [switch]$ParseOnly,
@@ -329,6 +329,8 @@ function Test-ChaosEngineRepository([string]$Repository) {
     return $Repository -match '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'
 }
 
+$script:ChaosEngineDefaultRepository = "ShaftHQ/chaosengine-harness"
+
 function Resolve-ChaosEngineSource {
     param([string[]]$Texts)
     if ($null -eq $Texts -or $Texts.Count -eq 0) {
@@ -341,10 +343,23 @@ function Resolve-ChaosEngineSource {
         }
     }
     $envRepository = [string]$env:CHAOS_ENGINE_REPOSITORY
-    if (Test-ChaosEngineRepository $envRepository) {
+    if (-not [string]::IsNullOrWhiteSpace($envRepository)) {
+        if (-not (Test-ChaosEngineRepository $envRepository)) {
+            throw "CHAOS_ENGINE_REPOSITORY must be <owner>/<repository>."
+        }
         $ref = [string]$env:CHAOS_ENGINE_BRANCH
         if ([string]::IsNullOrWhiteSpace($ref)) {
             $ref = "main"
+        }
+        # The standalone repository keeps the source at its root; other repositories
+        # keep the legacy nested chaos-engine/ folder. bootstrap.py re-checks the layout.
+        if ($envRepository -ieq $script:ChaosEngineDefaultRepository) {
+            return @{
+                Repository   = $envRepository
+                Ref          = $ref
+                Prefix       = ""
+                BootstrapUrl = "https://raw.githubusercontent.com/$envRepository/$ref/bootstrap.py"
+            }
         }
         return @{
             Repository   = $envRepository
@@ -353,7 +368,13 @@ function Resolve-ChaosEngineSource {
             BootstrapUrl = "https://raw.githubusercontent.com/$envRepository/$ref/chaos-engine/bootstrap.py"
         }
     }
-    throw "Could not derive owner/repository from the install URL. Pipe the raw.githubusercontent.com/<owner>/<repository>/.../install.ps1 URL through irm|iex (see chaos-engine/INSTALL.md), or set CHAOS_ENGINE_REPOSITORY=<owner>/<repository> for a local file run."
+    # Latest-from-main channel. The receipt still pins the resolved 40-hex commit.
+    return @{
+        Repository   = $script:ChaosEngineDefaultRepository
+        Ref          = "main"
+        Prefix       = ""
+        BootstrapUrl = "https://raw.githubusercontent.com/$($script:ChaosEngineDefaultRepository)/main/bootstrap.py"
+    }
 }
 
 function Read-ChaosEngineUrl([string]$Url) {

@@ -1009,11 +1009,17 @@ def is_origin_only(relative: Path) -> bool:
         or relative.as_posix() == "references/details/likeness_record_train.py"
         # The English showcase slate names the product. Git only (#7906).
         or relative.as_posix() == "references/details/showcase-film-slate.md"
+        # Repository CI and community files belong to the source repo, not adopters.
+        or relative.parts[:1] == (".github",)
         or relative.as_posix() in {
             "README.md",
             "INSTALL.md",
             "RESEARCH.md",
             "STANDALONE.md",
+            "CONTRIBUTING.md",
+            "CODE_OF_CONDUCT.md",
+            "SECURITY.md",
+            "CHANGELOG.md",
             "decision-quality-baseline.md",
             "decision-quality-rubric.md",
             "decision-quality-calibration.md",
