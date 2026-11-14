@@ -77,4 +77,4 @@ The commands that work today are the ones in [INSTALL.md](INSTALL.md). They stil
 
 Do not publish a different installer URL until INSTALL.md does.
 
-The PyPI and npm packages named `chaosengine-harness` are reserved `0.0.1` placeholders. They do not install this harness.
+The PyPI and npm packages named `chaosengine-harness` are reserved for the planned weekly-release channel. Today they are `0.0.1` placeholders and do not install this harness. The one-liner in the README is the latest-from-`main` channel.

@@ -12,7 +12,10 @@ ChaosEngine is a portable, provider-neutral working contract for software agents
 
 ## Quick start
 
-Run this in your project directory. Until the installer switch in [ShaftHQ/SHAFT_ENGINE#8057](https://github.com/ShaftHQ/SHAFT_ENGINE/issues/8057) lands, it fetches from `ShaftHQ/SHAFT_ENGINE`. No Python is needed beforehand.
+There are two install channels:
+
+- **Latest from `main` (available now):** the one-liner below. Run it in your project directory; no Python is needed beforehand. Until the installer switch in [ShaftHQ/SHAFT_ENGINE#8057](https://github.com/ShaftHQ/SHAFT_ENGINE/issues/8057) lands, it fetches from `ShaftHQ/SHAFT_ENGINE`.
+- **Weekly releases (not live yet):** the `chaosengine-harness` packages on PyPI and npm. Today they are reserved `0.0.1` placeholders that install nothing.
 
 macOS or Linux:
 
@@ -26,7 +29,7 @@ Windows PowerShell:
 irm "https://raw.githubusercontent.com/ShaftHQ/SHAFT_ENGINE/main/chaos-engine/install.ps1" | iex
 ```
 
-Then check the install with `python3 .chaos-engine/install.py doctor --project .` (`py -3` on Windows). The `chaosengine-harness` packages on PyPI and npm are reserved `0.0.1` placeholders and do not install anything yet.
+Then check the install with `python3 .chaos-engine/install.py doctor --project .` (`py -3` on Windows).
 
 ## Docs
 
