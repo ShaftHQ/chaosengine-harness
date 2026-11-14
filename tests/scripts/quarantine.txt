@@ -156,4 +156,5 @@ tests/scripts/test_chaos_engine_portable_core.py::ChaosEnginePortableCoreTest::t
 tests/scripts/test_secret_guard_7177.py::TemplateParityTest::test_shaft_template_ships_the_same_guard_and_hooks
 tests/scripts/test_client_name_scrub.py::LessonAndWiringTest::test_lesson_and_map_exist
 tests/scripts/test_client_name_scrub.py::LessonAndWiringTest::test_overlay_calls_client_name_scrub_failures
+tests/scripts/test_client_name_scrub.py::LessonAndWiringTest::test_overlay_helper_skips_when_unconfigured
 tests/scripts/test_ce_guard_reachability.py::GuardReachabilityTest::test_emitted_paths_exist_and_are_allowed_on_every_host
