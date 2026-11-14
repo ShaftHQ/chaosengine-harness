@@ -6,10 +6,20 @@ without clobbering foreign keys. Uninstall removes only the CE marker span.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import re
 import shutil
+import tempfile
 from pathlib import Path
+
+try:  # Python 3.11+
+    import tomllib as _toml
+except ImportError:  # pragma: no cover - older interpreters
+    try:
+        import tomli as _toml  # type: ignore[no-redef]
+    except ImportError:
+        _toml = None  # type: ignore[assignment]
 
 LEAN_START = "# CHAOSENGINE-GROK-LEAN:START"
 LEAN_END = "# CHAOSENGINE-GROK-LEAN:END"
@@ -92,18 +102,100 @@ def lean_skills_block(disabled: tuple[str, ...] = LEAN_GROK_SKILL_DISABLE) -> st
     )
 
 
+_ARRAY_HEADER = re.compile(r"^\[\[([^\]]+)\]\]\s*$")
+
+# What each marker span owns. Anything else found between the markers (for
+# example tables the Grok CLI appended before our END line) belongs to the user
+# and survives every strip (#8070).
+_SPAN_OWNERSHIP: dict[str, tuple[frozenset[str], frozenset[str]]] = {}
+
+
+def _register_ownership() -> None:
+    _SPAN_OWNERSHIP[LEAN_START] = (
+        frozenset({"compat.claude", "compat.cursor"}), frozenset(COMPAT_FALSE_KEYS)
+    )
+    _SPAN_OWNERSHIP[SKILLS_START] = (frozenset({"skills"}), frozenset({"disabled"}))
+    _SPAN_OWNERSHIP[UI_START] = (
+        frozenset({"ui"}), frozenset(key for key, _value in UI_ASSIGNMENTS)
+    )
+
+
+def _foreign_lines(interior: list[str], start: str) -> list[str]:
+    """Return the lines inside a span that ChaosEngine does not own, in order."""
+    tables, keys = _SPAN_OWNERSHIP.get(start, (frozenset(), frozenset()))
+    kept: list[str] = []
+    current_owned = True  # assignments before any header belong to the host table
+    pending_header: str | None = None
+    for line in interior:
+        stripped = line.strip()
+        array = _ARRAY_HEADER.match(stripped)
+        table = None if array else _TABLE_HEADER.match(stripped)
+        if array is not None:
+            current_owned = False
+            pending_header = None
+            kept.append(line)
+            continue
+        if table is not None:
+            name = table.group(1).strip().strip('"')
+            current_owned = name in tables
+            pending_header = line if current_owned else None
+            if not current_owned:
+                kept.append(line)
+            continue
+        if not stripped or stripped.startswith("#"):
+            if not current_owned:
+                kept.append(line)
+            continue
+        key = _assignment_key(line)
+        if current_owned and key in keys:
+            continue
+        if current_owned and pending_header is not None:
+            kept.append(pending_header)
+            pending_header = None
+        kept.append(line)
+    while kept and not kept[-1].strip():
+        kept.pop()
+    return kept
+
+
 def _strip_marker_span(text: str, start: str, end: str) -> str:
-    if start not in text or end not in text:
-        return text
-    out = text
-    while start in out and end in out:
-        begin = out.index(start)
-        finish = out.index(end, begin) + len(end)
-        # Drop following newline if present.
-        if finish < len(out) and out[finish] == "\n":
-            finish += 1
-        out = out[:begin] + out[finish:]
-    return out
+    """Remove ChaosEngine-owned lines between paired markers; keep everything else.
+
+    Only complete START/END pairs are touched. Foreign lines inside a span are
+    kept in place, and a blank separator line the merge added before the span
+    is dropped so repeated installs do not pile up blank lines.
+    """
+    if not _SPAN_OWNERSHIP:
+        _register_ownership()
+    lines = text.splitlines(keepends=True)
+    out: list[str] = []
+    index = 0
+    while index < len(lines):
+        if lines[index].strip() != start:
+            out.append(lines[index])
+            index += 1
+            continue
+        close = next(
+            (j for j in range(index + 1, len(lines)) if lines[j].strip() == end), None
+        )
+        if close is None:
+            out.extend(lines[index:])
+            break
+        at_eof = close + 1 >= len(lines)
+        blank_after = not at_eof and not lines[close + 1].strip()
+        if out and not out[-1].strip() and (blank_after or at_eof):
+            out.pop()
+        foreign = _foreign_lines(lines[index + 1 : close], start)
+        if foreign and not foreign[-1].endswith("\n"):
+            foreign[-1] += "\n"
+        out.extend(foreign)
+        index = close + 1
+        if not out and blank_after:
+            index += 1  # span opened the file: drop the separator after it
+    result = "".join(out)
+    if not result.strip():
+        return ""
+    return result
 
 
 def _strip_toml_tables(text: str, tables: set[str]) -> str:
@@ -252,16 +344,137 @@ def grok_ui_applied(text: str) -> bool:
     return True
 
 
+class GrokConfigWriteRefused(RuntimeError):
+    """Raised when a write would corrupt ``config.toml`` or touch a protected home."""
+
+
+def _toml_problem(text: str) -> str | None:
+    if _toml is None or not text.strip():
+        return None
+    try:
+        _toml.loads(text)
+    except Exception as error:  # noqa: BLE001 - any parser error refuses the write
+        return str(error)
+    return None
+
+
+def _guard_protected_home(path: Path) -> None:
+    """Test isolation tripwire: refuse writes under ``CHAOS_ENGINE_PROTECTED_GROK_HOME``."""
+    protected = os.environ.get("CHAOS_ENGINE_PROTECTED_GROK_HOME", "").strip()
+    if not protected:
+        return
+    target = Path(os.path.abspath(path))
+    root = Path(os.path.abspath(Path(protected).expanduser()))
+    if target == root or root in target.parents:
+        log = os.environ.get("CHAOS_ENGINE_PROTECTED_GROK_HOME_LOG", "").strip()
+        if log:
+            with contextlib.suppress(OSError), open(log, "a", encoding="utf-8") as handle:
+                handle.write(f"{target}\n")
+        raise GrokConfigWriteRefused(
+            f"refusing to write {target}: it is under the protected Grok home {root} "
+            "(tests must sandbox GROK_HOME/HOME, #8070)"
+        )
+
+
+@contextlib.contextmanager
+def _config_lock(path: Path):
+    """Exclusive advisory lock beside ``path`` so ChaosEngine writers serialize."""
+    lock_path = path.with_name(f".{path.name}.chaosengine.lock")
+    handle = open(lock_path, "a+b")
+    try:
+        try:
+            import fcntl
+
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        except ImportError:  # pragma: no cover - Windows
+            import msvcrt
+
+            handle.seek(0)
+            while True:
+                try:
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+                    break
+                except OSError:
+                    continue
+        yield
+    finally:
+        handle.close()
+
+
+def _read_snapshot(path: Path) -> bytes | None:
+    try:
+        return path.read_bytes()
+    except FileNotFoundError:
+        return None
+
+
+def _atomic_replace(path: Path, data: bytes) -> None:
+    mode = None
+    with contextlib.suppress(FileNotFoundError):
+        mode = path.stat().st_mode & 0o7777
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        if mode is not None:
+            os.chmod(tmp_name, mode)
+        os.replace(tmp_name, path)
+    except BaseException:
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(tmp_name)
+        raise
+    with contextlib.suppress(OSError, AttributeError):
+        dir_fd = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
+
+
+def update_config_file(path: Path, transform, *, dry_run: bool = False, attempts: int = 5) -> tuple[str, str]:
+    """Read-transform-write ``path`` safely (#8070); return ``(before, after)``.
+
+    Under an exclusive lock: read, transform, refuse if the result does not parse
+    as TOML (unless the input already did not parse and the edit leaves it no
+    worse), write to a temp file in the same directory, fsync, then re-read and
+    replace only if no other writer (for example the Grok CLI, which does not
+    take our lock) changed the file meanwhile; otherwise retry.
+    """
+    _guard_protected_home(path)
+    if dry_run:
+        raw = _read_snapshot(path)
+        before = "" if raw is None else raw.decode("utf-8")
+        return before, transform(before)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with _config_lock(path):
+        for _attempt in range(attempts):
+            raw = _read_snapshot(path)
+            before = "" if raw is None else raw.decode("utf-8")
+            after = transform(before)
+            if after == before:
+                return before, after
+            problem = _toml_problem(after)
+            if problem is not None:
+                raise GrokConfigWriteRefused(
+                    f"refusing to write {path}: result is not valid TOML ({problem}); file left unchanged"
+                )
+            if _read_snapshot(path) != raw:
+                continue
+            _atomic_replace(path, after.encode("utf-8"))
+            return before, after
+    raise GrokConfigWriteRefused(
+        f"refusing to write {path}: another writer kept changing it; file left unchanged"
+    )
+
+
 def apply_grok_ui_file(path: Path, *, dry_run: bool = False) -> dict[str, object]:
     result: dict[str, object] = {"path": str(path), "changed": False, "status": "healthy"}
-    before = path.read_text(encoding="utf-8") if path.is_file() else ""
-    after = merge_grok_ui(before)
+    before, after = update_config_file(path, lambda text: merge_grok_ui(text), dry_run=dry_run)
     if after == before:
         result["detail"] = "grok-ui-already-applied"
         return result
-    if not dry_run:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(after, encoding="utf-8")
     result["changed"] = True
     result["detail"] = "grok-ui-applied"
     return result
@@ -272,13 +485,10 @@ def remove_grok_ui_file(path: Path, *, dry_run: bool = False) -> dict[str, objec
     if not path.is_file():
         result["detail"] = "missing"
         return result
-    before = path.read_text(encoding="utf-8")
-    after = remove_grok_ui(before)
+    before, after = update_config_file(path, lambda text: remove_grok_ui(text), dry_run=dry_run)
     if after == before:
         result["detail"] = "grok-ui-absent"
         return result
-    if not dry_run:
-        path.write_text(after, encoding="utf-8")
     result["changed"] = True
     result["detail"] = "grok-ui-removed"
     return result
@@ -341,17 +551,10 @@ def apply_lean_compat_file(
         "changed": False,
         "status": "healthy",
     }
-    before = ""
-    if path.is_file():
-        before = path.read_text(encoding="utf-8")
-    after = merge_lean_compat(before)
+    before, after = update_config_file(path, lambda text: merge_lean_compat(text), dry_run=dry_run)
     if after == before:
-        result["status"] = "healthy"
         result["detail"] = "lean-compat-already-applied"
         return result
-    if not dry_run:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(after, encoding="utf-8")
     result["changed"] = True
     result["detail"] = "lean-compat-applied"
     return result
@@ -366,16 +569,10 @@ def remove_lean_compat_file(path: Path, *, dry_run: bool = False) -> dict[str, o
     if not path.is_file():
         result["detail"] = "missing"
         return result
-    before = path.read_text(encoding="utf-8")
-    after = remove_lean_compat(before)
+    before, after = update_config_file(path, lambda text: remove_lean_compat(text), dry_run=dry_run)
     if after == before:
         result["detail"] = "lean-compat-absent"
         return result
-    if not dry_run:
-        if after.strip():
-            path.write_text(after, encoding="utf-8")
-        else:
-            path.write_text("", encoding="utf-8")
     result["changed"] = True
     result["detail"] = "lean-compat-removed"
     return result
@@ -392,16 +589,10 @@ def apply_lean_skills_file(
         "changed": False,
         "status": "healthy",
     }
-    before = ""
-    if path.is_file():
-        before = path.read_text(encoding="utf-8")
-    after = merge_lean_skills(before, disabled)
+    before, after = update_config_file(path, lambda text: merge_lean_skills(text, disabled), dry_run=dry_run)
     if after == before:
         result["detail"] = "lean-skills-already-applied"
         return result
-    if not dry_run:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(after, encoding="utf-8")
     result["changed"] = True
     result["detail"] = "lean-skills-applied"
     return result
@@ -416,13 +607,10 @@ def remove_lean_skills_file(path: Path, *, dry_run: bool = False) -> dict[str, o
     if not path.is_file():
         result["detail"] = "missing"
         return result
-    before = path.read_text(encoding="utf-8")
-    after = remove_lean_skills(before)
+    before, after = update_config_file(path, lambda text: remove_lean_skills(text), dry_run=dry_run)
     if after == before:
         result["detail"] = "lean-skills-absent"
         return result
-    if not dry_run:
-        path.write_text(after, encoding="utf-8")
     result["changed"] = True
     result["detail"] = "lean-skills-removed"
     return result

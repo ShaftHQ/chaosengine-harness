@@ -36,7 +36,7 @@ The installer runs doctor before it finishes. For later health checks, see [INST
 - [Overview](guides/overview.md): roles, the delivery loop, supported hosts, concepts, status
 - [INSTALL.md](INSTALL.md): host flags, add-ons, offline bundles, upgrade, rollback, uninstall
 - [Architecture](guides/architecture.md): lifecycle, ownership, trust boundaries, companions
-- [CHANGELOG.md](CHANGELOG.md): version `0.4.20261114.7` ([VERSION](VERSION))
+- [CHANGELOG.md](CHANGELOG.md): version `0.4.20261115.1` ([VERSION](VERSION))
 
 ## Contributing and license
 

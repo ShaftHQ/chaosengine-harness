@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.4.20261115.1] - 2026-11-15
+
+### Fixed
+
+- Grok user config (`~/.grok/config.toml`) edits are now safe (ShaftHQ/SHAFT_ENGINE#8070). Every write takes a lock, writes a temp file in the same folder, fsyncs and renames it into place. It is refused if the result is not valid TOML or another writer keeps changing the file. An interrupted or concurrent write can no longer leave a torn file.
+- Removing a ChaosEngine marker span now drops only the lines ChaosEngine owns. Tables another tool wrote between the markers (for example the Grok CLI's `[marketplace]` and `[[marketplace.sources]]`) are kept. Install then uninstall returns the user's file byte for byte, and repeated installs no longer add blank lines.
+
+### Added
+
+- `tests/conftest.py` points `GROK_HOME` at a throwaway folder for the whole run. A tripwire refuses and logs any write under the real Grok home, and the session fails if it fired.
+- `tests/scripts/test_grok_config_safety_8070.py`: torn writes, parallel writers, a foreign writer mid-edit, invalid TOML, and preserving unrelated sections.
+
 ## [0.4.20261114.7] - 2026-11-14
 
 ### Changed
