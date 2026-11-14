@@ -29,7 +29,7 @@ GitHub tree entries whose first path part is `chaos-engine/`.
 
 | Location | Role |
 | --- | --- |
-| `ShaftHQ/SHAFT_ENGINE/chaos-engine/` | Canonical source tree today |
+| `ShaftHQ/SHAFT_ENGINE/chaos-engine/` | Canonical source tree until the installer cutover in ShaftHQ/SHAFT_ENGINE#8057; ShaftHQ/chaosengine-harness is the extracted copy |
 | GitHub tree prefix `chaos-engine/` | `bootstrap.py` download filter and raw path |
 | `profiles/portable/` | Public default distribution |
 | `profiles/shaft/` | SHAFT-only profile, selected via `installWhen.mavenArtifactIds` |

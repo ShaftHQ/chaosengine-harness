@@ -206,7 +206,7 @@ Observation/receipt gates + provenance JSON are honest. **Named test:** AI-ref-o
 
 - ONE CE PR on `ShaftHQ/SHAFT_ENGINE` from latest main
 - Identity: ChaosEngine `<chaosengine@mail.grokbot.com>`
-- Bump `VERSION` → `2026.10.31.6`
+- Bump `chaos-engine/VERSION` → `2026.10.31.6`
 - Tests for every gate; SkillSpector pass; lint; `overlay_pre_push && git push`
 - PR body: agentic + release-note label, ## Plan, riskiest assumption naming a test, link SPEC summary
 - Independent adversarial review → `/workspace/reviews/pr-ce-retro2-review.md`; fix findings

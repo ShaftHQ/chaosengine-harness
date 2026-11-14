@@ -68,11 +68,15 @@ them are, Enter completes no client and keeps the unattended PATH shims.
 host value skips the question.
 
 Portable host files are still written for every client. Claude and Codex
-register a marketplace when that CLI is on `PATH`, unless a named host selection excludes that client. Cursor writes
+register a marketplace when that CLI is on `PATH` and the client is in the
+resolved host set. Cursor writes
 `.cursor/hooks.json` and OpenCode writes
-`.opencode/plugins/chaos-engine-receipt.js` when that host is detected (its
-CLI on `PATH` or its project markers present) or selected; a named selection
-that leaves the host out removes those receipt shims. Grok Bot
+`.opencode/plugins/chaos-engine-receipt.js` only when that host is in the
+resolved host set; shims for hosts outside the set are removed. The resolved
+set comes from `--hosts`, `CHAOS_ENGINE_HOST`, the wizard, or a single
+inferred host. When no host is resolved, the unattended path registers
+marketplaces and writes shims for every client it detects (CLI on `PATH` or
+project markers present). Grok Bot
 writes no receipt shim. Naming `grok` does not enable `--lean-grok-skills`.
 A client id is not an add-on.
 
@@ -83,8 +87,9 @@ execution. The public default is the neutral `portable` distribution.
 A successful command reports the resolved 40-character commit and a healthy
 active doctor result for core, adapters, local tools, hooks, and every detected
 client plugin. Restart an already-running client so it loads the new plugin.
-Runtime dependencies remain project-local; detected Claude and Codex clients
-receive a path-unique local marketplace registration and cached plugin.
+Runtime dependencies remain project-local; Claude and Codex clients that get a
+marketplace (per the host rules above) receive a path-unique local registration
+and cached plugin.
 
 ### Upgrade, recover, or remove
 
