@@ -1,0 +1,81 @@
+name: Bug report
+description: Something in ChaosEngine did the wrong thing.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the bug. Remove secrets, tokens, credentials, and private paths before you paste anything.
+        Security vulnerabilities use https://github.com/ShaftHQ/chaosengine-harness/security/advisories/new — not this form.
+  - type: textarea
+    id: what_happened
+    attributes:
+      label: What happened
+      description: What you did, and what ChaosEngine did.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected
+      description: What you expected instead.
+    validations:
+      required: true
+  - type: dropdown
+    id: host
+    attributes:
+      label: Host
+      description: The host this tree implements. Pick Other if yours is not listed.
+      options:
+        - Claude Code
+        - Codex
+        - Grok
+        - Gemini
+        - GitHub Copilot
+        - OpenCode
+        - Cursor
+        - Grok Bot
+        - Antigravity
+        - Independent bot
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: host_other
+    attributes:
+      label: Other host
+      description: Fill this in only when Host is Other. Name the agent if it differs from the host.
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Linux
+        - macOS
+        - Windows
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: VERSION
+      description: Contents of the VERSION file, or the version doctor printed.
+      placeholder: "0.4.20261114.5"
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Doctor output
+      description: |
+        Paste output from `python3 .chaos-engine/install.py doctor --project .` (installed project) or `python3 install.py doctor --project .` (this source tree). On Windows use `py -3`. Remove secrets, tokens, home directories, and hostnames. If doctor did not run, say why.
+    validations:
+      required: true
+  - type: checkboxes
+    id: redacted
+    attributes:
+      label: Redaction
+      options:
+        - label: I removed secrets, tokens, credentials, and private paths from this report.
+          required: true

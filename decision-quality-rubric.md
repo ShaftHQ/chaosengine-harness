@@ -1,7 +1,7 @@
 # ChaosEngine decision-quality operational rubric
 
 Accessed: 2026-09-01. Imports the metrics dictionary, sampling protocol, and
-taxonomy classes from `chaos-engine/decision-quality-baseline.md` (#5520) by
+taxonomy classes from [`decision-quality-baseline.md`](decision-quality-baseline.md) (ShaftHQ/SHAFT_ENGINE#5520) by
 reference. Does not redefine those contracts. Parent tracking epic: #5514.
 Deliverable for #5521.
 
@@ -99,7 +99,7 @@ schedule when residual risk requires broader proof.
 ## Corpus evaluation (same reviewed #5520 set)
 
 Metrics and class definitions are those in
-`chaos-engine/decision-quality-baseline.md`. Missing telemetry remains
+[`decision-quality-baseline.md`](decision-quality-baseline.md). Missing telemetry remains
 `UNAVAILABLE`. This comparison is qualitative on the reviewed public corpus; it
 is not a statistical trial (#5522 owns controlled calibration).
 

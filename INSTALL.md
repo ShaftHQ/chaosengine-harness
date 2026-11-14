@@ -9,13 +9,15 @@
 # Install or upgrade ChaosEngine
 
 ChaosEngine is a portable, provider-neutral working contract for software
-agents. This page is the installation reference. See [`README.md`](README.md) for purpose and operating loop, and [`skills/chaos-engine/SKILL.md`](skills/chaos-engine/SKILL.md) for the always-loaded contract.
+agents. This page is the installation reference. See [the overview](guides/overview.md) for purpose and operating loop, and [`skills/chaos-engine/SKILL.md`](skills/chaos-engine/SKILL.md) for the always-loaded contract.
+
+The install commands on this page still download from ShaftHQ/SHAFT_ENGINE. The default source moves to this repository when the installer switch in ShaftHQ/SHAFT_ENGINE#8057 lands.
 
 ## Source vs generated paths
 
 | Path | Kind | Who reads it |
 | --- | --- | --- |
-| <code>chaos-engine/</code> | Source (origin tracks) | Installer, pack, humans |
+| repository root | Source in this checkout | Installer, pack, humans |
 | <code>.chaos-engine/</code> | Generated overlay | Hosts, doctor, tool.py |
 | <code>.agents/</code> | Generated host adapters | Codex |
 | <code>.claude/</code> | Generated host adapters | Claude |
@@ -29,10 +31,11 @@ agents. This page is the installation reference. See [`README.md`](README.md) fo
 | Marker blocks in `AGENTS.md` `CLAUDE.md` `GEMINI.md` `.github/copilot-instructions.md` | Generated pointers to `.chaos-engine` only | Every host |
 
 Generated host markers, skill adapters, MCP args, and doctor heal prompts always
-name `.chaos-engine/`. They never point at source `chaos-engine/`. Origin still
-tracks the source tree as the copy-from payload.
+name `.chaos-engine/`. They never point at the source tree. In this checkout
+that tree is the repository root. ShaftHQ/SHAFT_ENGINE still copies from its
+`chaos-engine/` directory until the installer switch above.
 
-Adopters track generated harness files. Origin SHAFT_ENGINE ignores them after
+Adopters track generated harness files. ShaftHQ/SHAFT_ENGINE ignores them after
 the `# CHAOSENGINE-RUNTIME` block so last-match gitignore wins.
 
 ## Golden path (first run)
@@ -171,7 +174,7 @@ not select these packs, and a client id is not an add-on id. See
 | Add-on | For | sh / bootstrap.py / install.py | PowerShell |
 | --- | --- | --- | --- |
 | `design-skills` | Anyone designing web pages, images, motion graphics, or videos: 23 verified design cards and the zero-LLM `design_qc.py` | `--with-design-skills` | `-WithDesignSkills` |
-| `shaft-engine-users` | Projects that use SHAFT: the `shaft-developer` router and its specialist skills | `--with-shaft-engine-users` | `-WithShaftEngineUsers` |
+| `shaft-engine-users` | Projects that use ShaftHQ/SHAFT_ENGINE: the `shaft-developer` router and its specialist skills | `--with-shaft-engine-users` | `-WithShaftEngineUsers` |
 | `shaft-core-developers` | Contributors to `ShaftHQ/SHAFT_ENGINE`: repository profile, playbooks, mastery chapters (adds `shaft-engine-users`) | `--with-shaft-core-developers` | `-WithShaftCoreDevelopers` |
 
 Remove with `--without-<name>` or `-Without<Name>`. Combine any of them.
@@ -209,7 +212,7 @@ curl -fsSL "$url" | bash -s -- "$url" --with-design-skills --with-shaft-engine-u
 - Re-running the one-liner reidentifies the project and replaces a wrong
   earlier choice. No uninstall is required.
   - A checkout with exactly one `*/ce-pack` entrypoint (the same signal host
-    skills use) is the pack home. This repository gets
+    skills use) is the pack home. ShaftHQ/SHAFT_ENGINE gets
     `shaft-core-developers` and `shaft-engine-users`, and the repository
     distribution.
   - A project that is not that home, but whose Maven ids match the pack
@@ -220,9 +223,11 @@ curl -fsSL "$url" | bash -s -- "$url" --with-design-skills --with-shaft-engine-u
   flag reidentifies again.
 - Sources: the catalog and resolver [addon_catalog.py](addon_catalog.py); the
   [design-skills router](addons/design-skills/SKILL.md) and its
-  [manifest](addons/design-skills/addon.json); the SHAFT manifests
-  `shaft-skills/ce-addons/shaft-engine-users/addon.json` and
-  `shaft-skills/ce-pack/addon.json`; the agent route
+  [manifest](addons/design-skills/addon.json); the ShaftHQ/SHAFT_ENGINE manifests
+  [shaft-skills/ce-addons/shaft-engine-users/addon.json](https://github.com/ShaftHQ/SHAFT_ENGINE/blob/main/shaft-skills/ce-addons/shaft-engine-users/addon.json)
+  and
+  [shaft-skills/ce-pack/addon.json](https://github.com/ShaftHQ/SHAFT_ENGINE/blob/main/shaft-skills/ce-pack/addon.json);
+  the agent route
   [addons.md](references/addons.md).
 
 ## Grok lean defaults (#5802 / #5803 / #5805)
@@ -260,15 +265,15 @@ sessions, pass the flag (or set `CHAOS_ENGINE_LEAN_GROK_SKILLS=1`):
 
 ```bash
 # one-liner / bootstrap
-python3 chaos-engine/bootstrap.py --repository ShaftHQ/SHAFT_ENGINE --lean-grok-skills
+python3 bootstrap.py --repository ShaftHQ/SHAFT_ENGINE --lean-grok-skills
 
 # or after overlay exists
 python3 .chaos-engine/install.py install --project . --source … --commit … --lean-grok-skills
 ```
 
-Self-install from the SHAFT_ENGINE checkout itself: `--source` must not sit
+Self-install from a ShaftHQ/SHAFT_ENGINE checkout: `--source` must not sit
 inside the project, so point it at a detached worktree of the same commit.
-From the source tree use `chaos-engine/install.py`; after install, doctor and
+From that source tree use `chaos-engine/install.py`; after install, doctor and
 `tool.py` use `.chaos-engine/install.py`.
 
 ```bash
@@ -279,8 +284,8 @@ python3 chaos-engine/install.py install --project . --consumer \
 ```
 
 `--source` and `--commit` still win when set. When omitted, install auto-detects
-`<repo>/chaos-engine` as `--source` and `git rev-parse HEAD` (40-hex) as
-`--commit`. A bare ref such as `--commit HEAD` is refused. When an add-on lives
+`<repo>/chaos-engine` in a ShaftHQ/SHAFT_ENGINE checkout as `--source` and
+`git rev-parse HEAD` (40-hex) as `--commit`. A bare ref such as `--commit HEAD` is refused. When an add-on lives
 beside the core, set `CHAOS_ENGINE_ADDON_PATHS` to the intended pack so the
 correct root is chosen (sibling trees with the same add-on name and divergent
 content fail closed):
@@ -552,7 +557,7 @@ bare "rerun doctor".
 
 | Item | Official install / publish | Heal path |
 | --- | --- | --- |
-| Caveman / Ponytail / ICM Architect | CE vendor rematerialize (`chaos-engine/vendor/{caveman,ponytail,icm-architect}` → `plugins/`) | `hosts.rematerialize_companions` on doctor when enabled-but-missing |
+| Caveman / Ponytail / ICM Architect | CE vendor rematerialize (`vendor/{caveman,ponytail,icm-architect}` → `plugins/`) | `hosts.rematerialize_companions` on doctor when enabled-but-missing |
 | MemPalace | `uv tool install` of `tools.mempalace` `package` and `with` from [`dependencies.json`](dependencies.json) | `repair --component mempalace` / account provisioner |
 | Graphify | `uv tool install` of `tools.graphify` `package` and `with` from [`dependencies.json`](dependencies.json) | `repair --component graphify` |
 | Memory | `npm install -g @aictx/memory@0.2.1` | `repair --component memory` |
@@ -593,7 +598,7 @@ this health truth).
 
 ### Offline install and shared download cache
 
-- Build a bundle where you have network access: `python3 chaos-engine/install.py bundle --source chaos-engine --commit <sha> --output ce.zip`.
+- Build a bundle from this repository: `python3 install.py bundle --source . --commit <sha> --output ce.zip`.
 - Install offline with `python3 install.py install --project . --from-bundle ce.zip`. Every file is checked against the bundle's sha256 manifest first, and any mismatch aborts the install.
 - Runtime downloads are cached per user and keyed by sha256 (`~/.cache/chaos-engine/downloads`, `%LOCALAPPDATA%\chaos-engine\downloads`, or `CHAOS_ENGINE_CACHE_DIR`), so a second project reuses them. Inspect or empty the cache with `install.py cache status|purge --component downloads`.
 
@@ -659,9 +664,9 @@ and no prior ChaosEngine install.
    `python3 .chaos-engine/install.py doctor --project .`
 
 Expect install + healthy human doctor within **300 seconds**. CI attaches the
-fresh-account phase stopwatch from
-`scripts/ci/chaos_engine_live_installer_acceptance.py` as evidence on that
-reference profile. Local/CI fixture helper:
+fresh-account phase stopwatch from ShaftHQ/SHAFT_ENGINE
+[scripts/ci/chaos_engine_live_installer_acceptance.py](https://github.com/ShaftHQ/SHAFT_ENGINE/blob/main/scripts/ci/chaos_engine_live_installer_acceptance.py)
+as evidence on that reference profile. Fixture helper in that repository (run from a ShaftHQ/SHAFT_ENGINE checkout; it is not in this tree):
 
 `python3 scripts/ci/chaos_engine_empty_project_smoke.py --output /tmp/ce-smoke.json`
 
@@ -702,8 +707,8 @@ python3 .chaos-engine/install.py repair --project . --component plugins
 
 ### `tool.py` says primary checkout HEAD != origin/main
 
-On the SHAFT_ENGINE monorepo (or any checkout that ships
-`tools/repository-map/resolve_mempalace.py`), ChaosEngine pins the shared
+On ShaftHQ/SHAFT_ENGINE (or any checkout that ships
+[tools/repository-map/resolve_mempalace.py](https://github.com/ShaftHQ/SHAFT_ENGINE/blob/main/tools/repository-map/resolve_mempalace.py)), ChaosEngine pins the shared
 **Memory** store to the primary checkout's `origin/main` revision.
 
 - `memory` / `memory-mcp` **hard-fail** when primary `HEAD` is not exactly
@@ -769,7 +774,7 @@ Doctor/heal attempts a bounded FTS rebuild and quarantines clearly-operator
 If `.chaos-engine/` was deleted or replaced, and/or
 `.chaos-engine-dependencies.json` is missing, tools fail closed:
 
-- `python3 chaos-engine/tool.py …` / `python3 .chaos-engine/tool.py …` prints
+- `python3 tool.py …` / `python3 .chaos-engine/tool.py …` prints
   `dependency pointer is missing or invalid` (or a wiped-runtime controller
   error) with a **fix-next** that names install/doctor, and exits **non-zero**.
 - `doctor` / `status` report `CE_CORE_MISSING` or `CE_WIPED_RUNTIME` when a
@@ -779,7 +784,7 @@ If `.chaos-engine/` was deleted or replaced, and/or
 **Heal (preferred):** rerun the official install one-liner from the Install
 section above. Install quarantines orphaned host receipt/anchors under
 `.chaos-engine-state/`, rematerializes `.chaos-engine/` from upstream or the
-local `chaos-engine/` source tree, recreates the dependency receipt, and
+local source tree, recreates the dependency receipt, and
 rebinds hosts from the current core. No manual receipt surgery.
 
 Then confirm:
@@ -999,7 +1004,7 @@ so every supported host shares the same outcomes.
 
 ## Latency budgets
 
-CI (`tests/scripts/test_ce_h2_gates.py`) fails when a per-turn command exceeds its budget:
+CI ([tests/scripts/test_ce_h2_gates.py](https://github.com/ShaftHQ/SHAFT_ENGINE/blob/main/tests/scripts/test_ce_h2_gates.py)) fails when a per-turn command exceeds its budget:
 `tool.py entry` under 1 s, `retrieve --store graphify` under 5 s, `install.py doctor --json`
 under 10 s on a fixture project.
 

@@ -1,0 +1,31 @@
+name: Feature or spec
+description: Propose a behavior change or a written spec.
+title: "[Spec]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        State the problem, the goal, and how we will know the work is done.
+        Specs do not require code. Security vulnerabilities use https://github.com/ShaftHQ/chaosengine-harness/security/advisories/new — not this form.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What is hard or wrong today, and who hits it (tester, frontend, backend, product owner, scrum master).
+    validations:
+      required: true
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What should be true when this is done. Name non-goals if a reader might assume them.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance
+      description: Checks a reviewer can apply. Include commands and expected results when the change is code.
+    validations:
+      required: true

@@ -18,9 +18,9 @@ server. ChaosEngine never installs it.
 Skill: [Colibri](../skills/local-runtimes/references/colibri.md).
 
 ```bash
-python3 chaos-engine/skills/colibri/scripts/probe.py
-python3 chaos-engine/skills/colibri/scripts/probe.py attest
-python3 chaos-engine/skills/colibri/scripts/probe.py models --json
+python3 skills/colibri/scripts/probe.py
+python3 skills/colibri/scripts/probe.py attest
+python3 skills/colibri/scripts/probe.py models --json
 ```
 
 ## Capability comparison (research summary)

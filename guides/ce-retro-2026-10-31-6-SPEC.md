@@ -42,16 +42,16 @@ Personal names and client data stay out of repo text ("the subject" / "the prese
 
 ### H-VERSION — VERSION-bump gate
 - **Sources:** chaos.md L2; issue 7651 merged without VERSION bump
-- **Problem:** Consumer-facing `chaos-engine/` changes can merge with unchanged VERSION → no broadcast.
-- **Rule:** Any diff under `chaos-engine/` that is not exclusively docs-only waiver paths requires `chaos-engine/VERSION` to change **or** an explicit `ce-no-version-bump` label / PR body marker `<!-- chaos-engine:no-version-bump -->` with justification.
-- **Enforcement:** `scripts/ci/overlay_pre_push.py` → `ce_version_bump_failures(root, changed)`; unit test.
-- **Acceptance:** Changing `chaos-engine/references/bot-entry.md` without VERSION → fail; with VERSION bump → pass; with no-version-bump marker → pass.
+- **Problem:** Consumer-facing harness changes can merge with unchanged VERSION → no broadcast.
+- **Rule:** In the original ShaftHQ/SHAFT_ENGINE checkout, any diff under `chaos-engine/` that is not exclusively docs-only waiver paths requires `VERSION` to change **or** an explicit `ce-no-version-bump` label / PR body marker `<!-- chaos-engine:no-version-bump -->` with justification.
+- **Enforcement (ShaftHQ/SHAFT_ENGINE only; not present in this standalone tree):** `scripts/ci/overlay_pre_push.py` → `ce_version_bump_failures(root, changed)`; unit test.
+- **Acceptance:** In that checkout, changing `chaos-engine/references/bot-entry.md` without `chaos-engine/VERSION` → fail; with VERSION bump → pass; with no-version-bump marker → pass.
 
 ### H-FAIL-MISSING — Fail-on-missing-input template
 - **Sources:** chaos.md L4; Designer issue 7651 M1–M3 (gates passed on empty input)
 - **Problem:** New gates defaulted open when inputs absent.
 - **Rule:** Every new observation/receipt gate FAIL when required input missing/empty. Shared helper + test scaffold.
-- **Enforcement:** `chaos-engine/gate_fail_closed.py` (`require_file`, `require_observations`, `fail_hits`); docs in `references/gate-fail-closed.md`; scaffold test module.
+- **Enforcement:** `gate_fail_closed.py` (`require_file`, `require_observations`, `fail_hits`); docs in `references/gate-fail-closed.md`; scaffold test module.
 - **Acceptance:** Helper returns FAIL hits for missing path / empty observations; template test fails open-gate stub.
 
 ### H-DOC-CLAIM — Doc-claim vs code in review checklist
@@ -79,7 +79,7 @@ Personal names and client data stay out of repo text ("the subject" / "the prese
 - **Sources:** chaos.md L3; Orchestrator L13; Client H1; Coordinator
 - **Problem:** Bots SendToUser under FULL radio silence.
 - **Rule:** When `CHAOS_RADIO_SILENCE=1` (or project flag file `.chaos-engine-state/radio-silence`), bot-entry forbids user-facing status sends; status → orchestrator only.
-- **Enforcement:** `references/radio-silence.md` + bot-entry section; `chaos-engine/radio_silence.py` (`user_send_blocked()`); entry prints guard; tests.
+- **Enforcement:** `references/radio-silence.md` + bot-entry section; `radio_silence.py` (`user_send_blocked()`); entry prints guard; tests.
 - **Acceptance:** Env set → blocked True; unset → False; bot-entry links the card.
 
 ### H-INFRA — Infra preflight → BLOCKED-INFRA
@@ -93,7 +93,7 @@ Personal names and client data stay out of repo text ("the subject" / "the prese
 - **Sources:** chaos.md L5; Designer §7
 - **Problem:** Session interrupts lost "what's next."
 - **Rule:** After every stage boundary, append to the task progress log (`checkpoints/<task>-progress.md` or `CHAOS_PROGRESS_LOG`) **and** `tool.py checkpoint`.
-- **Enforcement:** `references/progress-log.md` + bot-entry session-cap cross-link; tiny `chaos-engine/progress_log.py` append helper; tests.
+- **Enforcement:** `references/progress-log.md` + bot-entry session-cap cross-link; tiny `progress_log.py` append helper; tests.
 - **Acceptance:** append creates file with step line; second append grows file.
 
 ### H-PIN — Moving-channel version pin policy
@@ -145,7 +145,7 @@ Personal names and client data stay out of repo text ("the subject" / "the prese
 - **Sources:** Designer designer-workspace `lib/uncaptioned_speech.py`
 - **Problem:** ASR heard speech ≥300ms with <50% human-cue cover shipped past phrase karaoke checks.
 - **Rule:** Each ASR speech span ≥300ms needs ≥50% coverage by cues with JSON `human: true` (non-hall text without the flag does not count); missing cues/asr → FAIL. Shared `human_cue` helper documents L63 ASS vs L64 JSON predicates.
-- **Enforcement:** Portable `chaos-engine/addons/design-skills/scripts/uncaptioned_speech.py` + `craft_qc.py uncaptionedspeech`; lesson `uncaptioned-speech.md`; L39 checklist bullet; tests.
+- **Enforcement:** Portable `addons/design-skills/scripts/uncaptioned_speech.py` + `craft_qc.py uncaptionedspeech`; lesson `uncaptioned-speech.md`; L39 checklist bullet; tests.
 - **Acceptance:** Uncovered 500ms span → FAIL; ≥50% cover → PASS; missing input → FAIL.
 
 ### H-PR-SCOPE — Pre-merge PR diff vs stated scope

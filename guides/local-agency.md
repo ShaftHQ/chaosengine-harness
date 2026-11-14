@@ -19,9 +19,9 @@ the allowlist (not `--pure`) is what keeps other providers out of that process.
 ## Skill helpers
 
 ```text
-python3 chaos-engine/skills/local-agency/scripts/dispatch.py resolve
-python3 chaos-engine/skills/local-agency/scripts/dispatch.py --prefer freetoken config
-python3 chaos-engine/skills/local-agency/scripts/dispatch.py argv --prompt 'smoke' --workdir .
+python3 skills/local-agency/scripts/dispatch.py resolve
+python3 skills/local-agency/scripts/dispatch.py --prefer freetoken config
+python3 skills/local-agency/scripts/dispatch.py argv --prompt 'smoke' --workdir .
 ```
 
 `config` prints JSON with `env.OPENCODE_CONFIG` pointing at a temp
@@ -117,8 +117,8 @@ Until Grok Bot exposes `machineId` on Task → executor Shell/Read/AwaitShell:
    Task may still do box-safe work (docs on `/workspace`, GitHub API) but must
    **not** claim ROG/FreeToken delivery.
 3. Gates (fail closed on box):
-   - `python3 chaos-engine/skills/local-agency/scripts/require_rog_freetoken.py check`
-   - `python3 chaos-engine/skills/local-agency/scripts/assert_parent_rog_shell.py`
+   - `python3 skills/local-agency/scripts/require_rog_freetoken.py check`
+   - `python3 skills/local-agency/scripts/assert_parent_rog_shell.py`
    - `dispatch.py resolve --prefer freetoken`
    Override only with `CE_ALLOW_BOX_LOCAL_AGENCY=1` (or `CE_ROG_CHECKOUT`).
 4. When a Task hits the gap, it must report verbatim:
@@ -144,7 +144,7 @@ runtime returns `usage`; never pass model/provider ids into the ledger) (#6069):
 Record local usage during the session:
 
 ```bash
-python3 chaos-engine/session_token_usage.py record \
+python3 session_token_usage.py record \
   --session-id "$SESSION_ID" --channel local --runtime-class openai-compat \
   --prompt-tokens N --completion-tokens M
 ```

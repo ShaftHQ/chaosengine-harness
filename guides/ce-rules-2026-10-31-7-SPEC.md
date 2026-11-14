@@ -2,7 +2,7 @@
 
 ## Scope
 
-- `chaos-engine/` (gates, references, lessons, VERSION)
+- gates, references, lessons, VERSION
 - `scripts/ci/` (`file_claim_lock.py`, overlay_pre_push wiring)
 - `tests/scripts/` (contracts + proven-red)
 

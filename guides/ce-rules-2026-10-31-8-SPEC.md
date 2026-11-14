@@ -2,12 +2,12 @@
 
 ## Scope
 
-- `chaos-engine/` (gates, references, lessons, VERSION, worktree_overlay fast-path,
+- gates, references, lessons, VERSION, worktree_overlay fast-path,
   memory_full_dump shard/CLI, bootstrap SSL retry + local-clone fallback,
-  tool.py git-fetch retry)
+  tool.py git-fetch retry
 - `scripts/ci/` (`review_scratch.py`)
 - `tests/scripts/` (contracts + L74 proven-red)
-- `chaos-engine/task_ledger.py` (L80 per-task budget override)
+- `task_ledger.py` (L80 per-task budget override)
 
 ## Cards
 

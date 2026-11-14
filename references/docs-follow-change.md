@@ -16,8 +16,8 @@ documentation edit.
 
 1. Same repository: the markdown that already shows the contract. For the
    ChaosEngine installer, that is the section directly under the one-liner in
-   [README.md](../README.md#clients-this-command-can-complete) and
-   [INSTALL.md](../INSTALL.md#clients-this-command-can-complete). Those pages
+   [INSTALL.md](../INSTALL.md#clients-this-command-can-complete). The short
+   README quick start links there instead of repeating it. Those pages
    ship in the same pull request as the code.
 2. Companion documentation repository: the external-services inventory row in
    the origin [README.md](../README.md). Discover that checkout. Do not assume
@@ -33,5 +33,7 @@ documentation edit.
 
 The installer pages name every client id, every inference variable, and the
 explicit `--hosts` / `-Hosts` / `CHAOS_ENGINE_HOST` forms under the one-liner.
-`tests/scripts/test_chaos_engine_host_completion_7813.py` fails when that
-section is missing or sits above the command.
+`tests/scripts/test_chaos_engine_host_completion_7813.py` (in
+ShaftHQ/SHAFT_ENGINE, against its `chaos-engine/README.md`) fails when that
+section is missing or sits above the command. This repository's CI does not
+run it.
