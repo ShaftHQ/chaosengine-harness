@@ -131,7 +131,7 @@ harness. Detail is in the architecture guide.
 
 ## Status and roadmap
 
-Tree version: `0.4.20261114.5` ([VERSION](../VERSION)). Notes for that version
+Tree version: `0.4.20261114.6` ([VERSION](../VERSION)). Notes for that version
 are in [CHANGELOG.md](../CHANGELOG.md).
 
 This repository is ShaftHQ/chaosengine-harness. The tree sits at the
