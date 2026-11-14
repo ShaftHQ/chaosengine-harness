@@ -666,7 +666,7 @@ and no prior ChaosEngine install.
 Expect install + healthy human doctor within **300 seconds**. CI attaches the
 fresh-account phase stopwatch from ShaftHQ/SHAFT_ENGINE
 [scripts/ci/chaos_engine_live_installer_acceptance.py](https://github.com/ShaftHQ/SHAFT_ENGINE/blob/main/scripts/ci/chaos_engine_live_installer_acceptance.py)
-as evidence on that reference profile. Fixture helper in that repository:
+as evidence on that reference profile. Fixture helper in that repository (run from a ShaftHQ/SHAFT_ENGINE checkout; it is not in this tree):
 
 `python3 scripts/ci/chaos_engine_empty_project_smoke.py --output /tmp/ce-smoke.json`
 

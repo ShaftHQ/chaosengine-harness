@@ -581,4 +581,4 @@ They move here under
 
 ## Entry coverage
 
-Rules, hooks, skills, and tools must stay linked from [bot entry](../references/bot-entry.md) and from the generated host skills index `.agents/skills/README.md`. Its unit gate (`tests/scripts/test_ce_entry_coverage.py`) still lives in ShaftHQ/SHAFT_ENGINE until the test move in #8057 R2.
+Rules, hooks, skills, and tools must stay linked from [bot entry](../references/bot-entry.md) and from the generated host skills index `.agents/skills/README.md`. Its unit gate (`tests/scripts/test_ce_entry_coverage.py`) still lives in ShaftHQ/SHAFT_ENGINE until the test move in ShaftHQ/SHAFT_ENGINE#8057 R2.

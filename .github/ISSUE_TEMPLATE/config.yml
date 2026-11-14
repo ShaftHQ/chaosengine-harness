@@ -2,4 +2,4 @@ blank_issues_enabled: false
 contact_links:
   - name: Report a vulnerability
     url: https://github.com/ShaftHQ/chaosengine-harness/security/advisories/new
-    about: Private security reports only. Do not open a public issue for a vulnerability.
+    about: Private reports only (vulnerabilities, or conduct reports titled "Conduct report:"). Do not open a public issue for either.
