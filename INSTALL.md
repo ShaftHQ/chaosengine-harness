@@ -11,7 +11,7 @@
 ChaosEngine is a portable, provider-neutral working contract for software
 agents. This page is the installation reference. See [the overview](guides/overview.md) for purpose and operating loop, and [`skills/chaos-engine/SKILL.md`](skills/chaos-engine/SKILL.md) for the always-loaded contract.
 
-The install commands on this page download from this repository's `main`. The install receipt pins the resolved 40-hex commit. The older ShaftHQ/SHAFT_ENGINE `chaos-engine/install.*` one-liners will forward here once that repository's forwarding shim lands (ShaftHQ/SHAFT_ENGINE#8057 R4).
+The install commands on this page download from this repository's `main`. The install receipt pins the resolved 40-hex commit. The older ShaftHQ/SHAFT_ENGINE `chaos-engine/install.sh` and `chaos-engine/install.ps1` one-liners still work unchanged: since ShaftHQ/SHAFT_ENGINE#8066 they are forwarding shims that run this repository's installer from `main`.
 
 ## Source vs generated paths
 
