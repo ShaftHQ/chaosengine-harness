@@ -2602,10 +2602,10 @@ ORIGIN_ONLY_ROOT_FILES = frozenset(
 
 
 def omitted_source_relative(relative: PurePosixPath) -> bool:
-    """Brand masters, research notes, repo community files and CI are not part of the portable core."""
+    """Brand masters, research notes, repo community files, CI and repo tests are not part of the portable core."""
     return (
         relative.parts[:2] == ("assets", "brand")
-        or relative.parts[:1] == (".github",)
+        or relative.parts[:1] in {(".github",), ("tests",)}
         or relative.as_posix() in ORIGIN_ONLY_ROOT_FILES
     )
 
@@ -2674,12 +2674,13 @@ def resolve_local_clone(explicit: str | Path | None = None) -> Path | None:
     if env:
         candidates.append(Path(env))
     # The checkout that shipped this bootstrap.py (same repo the bot is in).
-    candidates.append(Path(__file__).resolve().parents[1])
     # A repository-root source checkout ships bootstrap.py at its root (#8057 R1).
     # Only a git checkout qualifies, so an installed overlay is never a source.
+    # It is tried before the parent directory so a sibling tree never wins.
     here = Path(__file__).resolve().parent
-    if (here / ".git").exists():
+    if (here / ".git").exists() and (here / ROOT_SKILL_PATH).is_file():
         candidates.append(here)
+    candidates.append(Path(__file__).resolve().parents[1])
     seen: set[Path] = set()
     for candidate in candidates:
         try:
@@ -2689,6 +2690,9 @@ def resolve_local_clone(explicit: str | Path | None = None) -> Path | None:
         if root in seen:
             continue
         seen.add(root)
+        # Root layout first, then the legacy nested folder (#8057 R1).
+        if (root / ROOT_SKILL_PATH).is_file() and (root / "install.py").is_file() and (root / "VERSION").is_file():
+            return root
         ce = root / "chaos-engine"
         if not ce.is_dir():
             # Allow pointing straight at chaos-engine/
@@ -2708,24 +2712,28 @@ def copy_source_from_local_clone(
 ) -> Path:
     """Copy the bounded ChaosEngine subtree from a local clone (network fallback)."""
     local_root = Path(local_root).resolve()
-    source_src = local_root / "chaos-engine"
-    if not source_src.is_dir() and (local_root / ROOT_SKILL_PATH).is_file():
-        # Repository-root layout: the clone root is the source (#8057 R1).
+    if (local_root / ROOT_SKILL_PATH).is_file():
+        # Repository-root layout wins over a nested folder (#8057 R1).
         source_src = local_root
+    else:
+        source_src = local_root / "chaos-engine"
     if not source_src.is_dir():
         raise ValueError(f"local clone missing chaos-engine/: {local_root}")
     source = destination / "chaos-engine"
     if source.exists():
         shutil.rmtree(source)
-    ignore = shutil.ignore_patterns(
-        "__pycache__",
-        ".pytest_cache",
-        "*.pyc",
-        ".git",
-        ".github",
-        "assets",
-        *sorted(ORIGIN_ONLY_ROOT_FILES),
-    )
+    caches = shutil.ignore_patterns("__pycache__", ".pytest_cache", "*.pyc", ".git")
+
+    def ignore(directory: str, names: list[str]) -> set[str]:
+        # Same omit rule as the remote download, applied to source-relative paths.
+        skipped = set(caches(directory, names))
+        base = Path(directory).resolve().relative_to(source_src.resolve())
+        for name in names:
+            relative = PurePosixPath(*base.parts, name)
+            if omitted_source_relative(relative):
+                skipped.add(name)
+        return skipped
+
     shutil.copytree(source_src, source, ignore=ignore)
     if not (source / "skills/chaos-engine/SKILL.md").is_file():
         raise ValueError("local ChaosEngine clone is incomplete")

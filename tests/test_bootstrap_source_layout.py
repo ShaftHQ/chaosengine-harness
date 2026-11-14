@@ -45,8 +45,15 @@ SOURCE = {
     "CHANGELOG.md": b"log\n",
     ".github/workflows/ci.yml": b"name: CI\n",
     "RESEARCH.md": b"notes\n",
+    "SECURITY.md": b"security\n",
+    "CODE_OF_CONDUCT.md": b"coc\n",
+    "tests/test_x.py": b"# repo test\n",
+    "references/CHANGELOG.md": b"kept: not at the root\n",
 }
-ORIGIN_ONLY = {"CONTRIBUTING.md", "CHANGELOG.md", ".github/workflows/ci.yml", "RESEARCH.md"}
+ORIGIN_ONLY = {
+    "CONTRIBUTING.md", "CHANGELOG.md", ".github/workflows/ci.yml", "RESEARCH.md",
+    "SECURITY.md", "CODE_OF_CONDUCT.md", "tests/test_x.py",
+}
 
 
 class Response(io.BytesIO):
@@ -247,10 +254,48 @@ class LocalCloneTest(unittest.TestCase):
             self.assertEqual(clone.resolve(), BOOT.resolve_local_clone(clone))
 
 
+    def test_root_skill_wins_over_a_nested_folder_in_the_same_clone(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            clone = Path(temporary) / "clone"
+            for path, content in SOURCE.items():
+                target = clone / path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(content)
+            stale = clone / "chaos-engine"
+            (stale / "skills/chaos-engine").mkdir(parents=True)
+            (stale / "skills/chaos-engine/SKILL.md").write_bytes(b"stale\n")
+            (stale / "install.py").write_bytes(b"# stale\n")
+            (stale / "VERSION").write_bytes(b"0\n")
+            out = Path(temporary) / "out"
+            out.mkdir()
+            source = BOOT.copy_source_from_local_clone(clone, out)
+            self.assertEqual(b"skill\n", (source / "skills/chaos-engine/SKILL.md").read_bytes())
+
+    def test_running_checkout_is_tried_before_its_parent(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            parent = Path(temporary)
+            sibling = parent / "chaos-engine"
+            (sibling / "skills/chaos-engine").mkdir(parents=True)
+            (sibling / "install.py").write_bytes(b"# sibling\n")
+            (sibling / "VERSION").write_bytes(b"0\n")
+            clone = parent / "clone"
+            for path, content in SOURCE.items():
+                target = clone / path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(content)
+            (clone / ".git").mkdir()
+            shutil.copy2(ROOT / "bootstrap.py", clone / "bootstrap.py")
+            module_spec = importlib.util.spec_from_file_location("ce_layout_clone_boot", clone / "bootstrap.py")
+            module = importlib.util.module_from_spec(module_spec)
+            module_spec.loader.exec_module(module)
+            with mock.patch.dict(os.environ, {module.LOCAL_CLONE_ENV: ""}):
+                self.assertEqual(clone.resolve(), module.resolve_local_clone())
+
+
 class InstallerOmitTest(unittest.TestCase):
     def test_origin_only_repo_files_stay_out_of_adopter_payload(self):
         install = load("install")
-        for name in ("CONTRIBUTING.md", "CODE_OF_CONDUCT.md", "SECURITY.md", "CHANGELOG.md", ".github/workflows/ci.yml"):
+        for name in ("CONTRIBUTING.md", "CODE_OF_CONDUCT.md", "SECURITY.md", "CHANGELOG.md", ".github/workflows/ci.yml", "tests/test_x.py"):
             self.assertTrue(install.is_origin_only(Path(name)), name)
         self.assertFalse(install.is_origin_only(Path("skills/chaos-engine/SKILL.md")))
 
