@@ -74,9 +74,10 @@ resolved host set. Cursor writes
 `.opencode/plugins/chaos-engine-receipt.js` only when that host is in the
 resolved host set; shims for hosts outside the set are removed. The resolved
 set comes from `--hosts`, `CHAOS_ENGINE_HOST`, the wizard, or a single
-inferred host. When no host is resolved, the unattended path registers
-marketplaces and writes shims for every client it detects (CLI on `PATH` or
-project markers present). Grok Bot
+inferred host. When no host is resolved, the unattended path registers a
+Claude or Codex marketplace only when that CLI is on `PATH`, and writes the
+Cursor or OpenCode receipt shim only when that CLI is on `PATH` or its project
+markers exist. Gemini, Grok, Copilot, and Grok Bot get neither. Grok Bot
 writes no receipt shim. Naming `grok` does not enable `--lean-grok-skills`.
 A client id is not an add-on.
 
