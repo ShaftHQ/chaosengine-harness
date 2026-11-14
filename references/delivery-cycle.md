@@ -46,15 +46,19 @@ Set the budget at plan time, before the first review, and record it.
   Every other finding (polish, should-fix wording, nit, style) is logged as a
   follow-up, either an issue or a "Follow-ups" list in the pull request body.
   It does not start another round.
-- **Follow-up commits.** A commit that only addresses follow-ups does not
-  reopen review. A blocker fix gets a focused check of that delta. It gets a
-  full new round only when the delta touches a public contract.
+- **Same-SHA rule unchanged.** Logged follow-ups are not committed in this
+  delivery, so the reviewed head stays the head that ships. A blocker fix is a
+  new head. Step 3 applies to it: both reviews repeat on the new SHA, and that
+  counts as a round. If no round is left within MAX, stop and report as the
+  PDCA cap says.
 - **Handoff.** Record `review_budget` (min, max, inputs),
-  `review_rounds_used`, and the logged follow-ups in the status report and the
-  handoff receipt.
+  `review_rounds_used`, and the logged follow-ups in the handoff receipt
+  (ShaftHQ/SHAFT_ENGINE#8054).
 - **Owner override.** An explicit owner instruction may set the budget for a
-  session or a work item. It wins over the table above, but never goes below
-  MIN.
+  session or a work item, but never below MIN. When that instruction also says
+  to fix blockers and then merge without another round, it lifts the
+  new-commit sentence for that item only, as Session lift describes. Record
+  that in the handoff.
 
 Spec: ShaftHQ/SHAFT_ENGINE#8063.
 
