@@ -20,13 +20,13 @@ install into the current working directory.
 Windows PowerShell:
 
 ```powershell
-irm "https://raw.githubusercontent.com/ShaftHQ/SHAFT_ENGINE/main/chaos-engine/install.ps1" | iex
+irm "https://raw.githubusercontent.com/ShaftHQ/chaosengine-harness/main/install.ps1" | iex
 ```
 
 macOS or Linux:
 
 ```bash
-curl -fsSL "https://raw.githubusercontent.com/ShaftHQ/SHAFT_ENGINE/main/chaos-engine/install.sh" | bash -s -- "https://raw.githubusercontent.com/ShaftHQ/SHAFT_ENGINE/main/chaos-engine/install.sh"
+curl -fsSL "https://raw.githubusercontent.com/ShaftHQ/chaosengine-harness/main/install.sh" | bash -s -- "https://raw.githubusercontent.com/ShaftHQ/chaosengine-harness/main/install.sh"
 ```
 
 ## Clients this command can complete
@@ -52,12 +52,12 @@ Valid ids: `claude`, `codex`, `grok`, `gemini`, `copilot`, `opencode`,
 `cursor`, `grok-bot`. Unknown ids stop the install.
 
 ```bash
-url="https://raw.githubusercontent.com/ShaftHQ/SHAFT_ENGINE/main/chaos-engine/install.sh"
+url="https://raw.githubusercontent.com/ShaftHQ/chaosengine-harness/main/install.sh"
 curl -fsSL "$url" | bash -s -- "$url" --hosts grok
 ```
 
 ```powershell
-& ([scriptblock]::Create((irm "https://raw.githubusercontent.com/ShaftHQ/SHAFT_ENGINE/main/chaos-engine/install.ps1"))) -Hosts grok
+& ([scriptblock]::Create((irm "https://raw.githubusercontent.com/ShaftHQ/chaosengine-harness/main/install.ps1"))) -Hosts grok
 ```
 
 `--interactive` (PowerShell `-Interactive`) asks

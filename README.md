@@ -14,19 +14,19 @@ ChaosEngine is a portable, provider-neutral working contract for software agents
 
 There are two install channels:
 
-- **Latest from `main` (available now):** the one-liner below. Run it in your project directory; no Python is needed beforehand. Until the installer switch in [ShaftHQ/SHAFT_ENGINE#8057](https://github.com/ShaftHQ/SHAFT_ENGINE/issues/8057) lands, it fetches from `ShaftHQ/SHAFT_ENGINE`.
+- **Latest from `main` (available now):** the one-liner below. Run it in your project directory; no Python is needed beforehand. It installs from this repository's `main` and pins the exact commit in the install receipt.
 - **Weekly releases (not live yet):** the `chaosengine-harness` packages on PyPI and npm. Today they are reserved `0.0.1` placeholders that do not install this harness.
 
 macOS or Linux:
 
 ```bash
-curl -fsSL "https://raw.githubusercontent.com/ShaftHQ/SHAFT_ENGINE/main/chaos-engine/install.sh" | bash -s -- "https://raw.githubusercontent.com/ShaftHQ/SHAFT_ENGINE/main/chaos-engine/install.sh"
+curl -fsSL "https://raw.githubusercontent.com/ShaftHQ/chaosengine-harness/main/install.sh" | bash -s -- "https://raw.githubusercontent.com/ShaftHQ/chaosengine-harness/main/install.sh"
 ```
 
 Windows PowerShell:
 
 ```powershell
-irm "https://raw.githubusercontent.com/ShaftHQ/SHAFT_ENGINE/main/chaos-engine/install.ps1" | iex
+irm "https://raw.githubusercontent.com/ShaftHQ/chaosengine-harness/main/install.ps1" | iex
 ```
 
 The installer runs doctor before it finishes. For later health checks, see [INSTALL.md](INSTALL.md).
@@ -36,7 +36,7 @@ The installer runs doctor before it finishes. For later health checks, see [INST
 - [Overview](guides/overview.md): roles, the delivery loop, supported hosts, concepts, status
 - [INSTALL.md](INSTALL.md): host flags, add-ons, offline bundles, upgrade, rollback, uninstall
 - [Architecture](guides/architecture.md): lifecycle, ownership, trust boundaries, companions
-- [CHANGELOG.md](CHANGELOG.md): version `0.4.20261114.6` ([VERSION](VERSION))
+- [CHANGELOG.md](CHANGELOG.md): version `0.4.20261114.7` ([VERSION](VERSION))
 
 ## Contributing and license
 

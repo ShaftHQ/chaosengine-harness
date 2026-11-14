@@ -72,8 +72,8 @@ Outside skills are not accepted yet. The supply-chain policy is tracked in Shaft
 
 The commands that work today are the ones in [INSTALL.md](INSTALL.md). They still download:
 
-- `https://raw.githubusercontent.com/ShaftHQ/SHAFT_ENGINE/main/chaos-engine/install.sh`
-- `https://raw.githubusercontent.com/ShaftHQ/SHAFT_ENGINE/main/chaos-engine/install.ps1`
+- `https://raw.githubusercontent.com/ShaftHQ/chaosengine-harness/main/install.sh`
+- `https://raw.githubusercontent.com/ShaftHQ/chaosengine-harness/main/install.ps1`
 
 Do not publish a different installer URL until INSTALL.md does.
 

@@ -2589,12 +2589,25 @@ def _hash_source_tree(node: dict) -> str:
 
 
 
-def omitted_source_relative(relative: PurePosixPath) -> bool:
-    """Brand masters and research notes are not part of the portable core."""
-    return relative.parts[:2] == ("assets", "brand") or relative.as_posix() in {
+ORIGIN_ONLY_ROOT_FILES = frozenset(
+    {
         "RESEARCH.md",
         "STANDALONE.md",
+        "CONTRIBUTING.md",
+        "CODE_OF_CONDUCT.md",
+        "SECURITY.md",
+        "CHANGELOG.md",
     }
+)
+
+
+def omitted_source_relative(relative: PurePosixPath) -> bool:
+    """Brand masters, research notes, repo community files and CI are not part of the portable core."""
+    return (
+        relative.parts[:2] == ("assets", "brand")
+        or relative.parts[:1] == (".github",)
+        or relative.as_posix() in ORIGIN_ONLY_ROOT_FILES
+    )
 
 
 def _select_source_blobs(
@@ -2662,6 +2675,11 @@ def resolve_local_clone(explicit: str | Path | None = None) -> Path | None:
         candidates.append(Path(env))
     # The checkout that shipped this bootstrap.py (same repo the bot is in).
     candidates.append(Path(__file__).resolve().parents[1])
+    # A repository-root source checkout ships bootstrap.py at its root (#8057 R1).
+    # Only a git checkout qualifies, so an installed overlay is never a source.
+    here = Path(__file__).resolve().parent
+    if (here / ".git").exists():
+        candidates.append(here)
     seen: set[Path] = set()
     for candidate in candidates:
         try:
@@ -2691,6 +2709,9 @@ def copy_source_from_local_clone(
     """Copy the bounded ChaosEngine subtree from a local clone (network fallback)."""
     local_root = Path(local_root).resolve()
     source_src = local_root / "chaos-engine"
+    if not source_src.is_dir() and (local_root / ROOT_SKILL_PATH).is_file():
+        # Repository-root layout: the clone root is the source (#8057 R1).
+        source_src = local_root
     if not source_src.is_dir():
         raise ValueError(f"local clone missing chaos-engine/: {local_root}")
     source = destination / "chaos-engine"
@@ -2701,9 +2722,9 @@ def copy_source_from_local_clone(
         ".pytest_cache",
         "*.pyc",
         ".git",
+        ".github",
         "assets",
-        "RESEARCH.md",
-        "STANDALONE.md",
+        *sorted(ORIGIN_ONLY_ROOT_FILES),
     )
     shutil.copytree(source_src, source, ignore=ignore)
     if not (source / "skills/chaos-engine/SKILL.md").is_file():
@@ -2813,9 +2834,10 @@ def _prefix_tree(tree: list, prefix: str) -> list:
 class ResolvedTreeUnavailable(Exception):
     """A recursive fetch failed after pack discovery had already finished."""
 
-    def __init__(self, tree_shas: dict[str, str]):
+    def __init__(self, tree_shas: dict[str, str], *, root_layout: bool = False):
         super().__init__("ChaosEngine source tree listing failed")
         self.tree_shas = dict(tree_shas)
+        self.root_layout = root_layout
 
 
 def _discover_pack_trees(root: list, opener, encoded_repository: str, tree_shas: dict[str, str]) -> None:
@@ -2846,8 +2868,93 @@ def _discover_pack_trees(root: list, opener, encoded_repository: str, tree_shas:
             tree_shas[f"{name}/{child_name}"] = child_sha
 
 
+ROOT_SKILL_PATH = "skills/chaos-engine/SKILL.md"
+NESTED_PREFIX = "chaos-engine"
+
+
+def _root_tree_has_layout_hint(root: list) -> bool:
+    """A one-level listing that could be a repository-root ChaosEngine tree."""
+    names = {
+        (item.get("path"), item.get("type"))
+        for item in root
+        if isinstance(item, dict)
+    }
+    return ("skills", "tree") in names and ("install.py", "blob") in names
+
+
+def _has_root_skill(entries: list) -> bool:
+    return any(
+        isinstance(entry, dict)
+        and entry.get("path") == ROOT_SKILL_PATH
+        and entry.get("type") == "blob"
+        for entry in entries
+    )
+
+
+def remote_source_path(repository_path: PurePosixPath, *, root_layout: bool) -> PurePosixPath:
+    """Path in the upstream repository for an internal ``chaos-engine/...`` path.
+
+    Internally every core path is ``chaos-engine/<relative>``. A repository-root
+    layout (the standalone repo, #8057 R1) stores the same file at ``<relative>``.
+    """
+    if root_layout and repository_path.parts[:1] == (NESTED_PREFIX,):
+        relative = PurePosixPath(*repository_path.parts[1:])
+        if not relative.parts:
+            raise ValueError("ChaosEngine source tree has an unexpected layout")
+        return relative
+    return repository_path
+
+
+def fetch_chaos_engine_source(
+    encoded_repository: str, commit: str, opener
+) -> tuple[list, dict[str, str], bool]:
+    """Core entries, tree identities, and whether the source sits at the repository root.
+
+    Prefix order (#8057 R1): a root-level ``skills/chaos-engine/SKILL.md`` makes
+    the repository root the source; else a nested ``chaos-engine/`` tree keeps the
+    legacy filter; else fail closed. Root-layout entries are re-keyed under
+    ``chaos-engine/`` so the selectors and verifiers stay layout-agnostic.
+    """
+    root_url = f"https://api.github.com/repos/{encoded_repository}/git/trees/{commit}"
+    document = read_response(opener, root_url, purpose="download")
+    root = _parse_git_tree(document)
+    if _tree_lists_chaos_engine_paths(root):
+        return root, {}, False
+    if _root_tree_has_layout_hint(root):
+        try:
+            root_sha = json.loads(document).get("sha")
+        except (UnicodeDecodeError, json.JSONDecodeError, AttributeError):
+            root_sha = None
+        if not isinstance(root_sha, str) or COMMIT.fullmatch(root_sha) is None:
+            raise ValueError("GitHub returned an invalid ChaosEngine source tree")
+        tree_shas = {NESTED_PREFIX: root_sha}
+        try:
+            expanded = _read_git_tree(opener, encoded_repository, root_sha, recursive=True)
+        except (UpstreamReadError, OSError, TimeoutError, urllib.error.URLError) as error:
+            raise ResolvedTreeUnavailable(tree_shas, root_layout=True) from error
+        if _has_root_skill(expanded):
+            prefixed = []
+            for entry in expanded:
+                if not isinstance(entry, dict) or not isinstance(entry.get("path"), str):
+                    raise ValueError("GitHub returned an invalid ChaosEngine source tree")
+                copied = dict(entry)
+                copied["path"] = f"{NESTED_PREFIX}/{entry['path']}"
+                prefixed.append(copied)
+            return prefixed, tree_shas, True
+    entries, tree_shas = _fetch_nested_tree(root, encoded_repository, opener)
+    return entries, tree_shas, False
+
+
 def fetch_chaos_engine_tree(
     encoded_repository: str, commit: str, opener
+) -> tuple[list, dict[str, str]]:
+    """Compatibility wrapper: entries and tree identities, without the layout flag."""
+    entries, tree_shas, _root_layout = fetch_chaos_engine_source(encoded_repository, commit, opener)
+    return entries, tree_shas
+
+
+def _fetch_nested_tree(
+    root: list, encoded_repository: str, opener
 ) -> tuple[list, dict[str, str]]:
     """Core blobs plus sibling ce-pack/ce-addons. Never ``git/trees/<commit>?recursive=1``.
 
@@ -2858,10 +2965,6 @@ def fetch_chaos_engine_tree(
     checked against every identity. A parent or pack listing that fails before
     the scan finishes is the original download error, not a partial map.
     """
-    root_url = f"https://api.github.com/repos/{encoded_repository}/git/trees/{commit}"
-    root = _parse_git_tree(read_response(opener, root_url, purpose="download"))
-    if _tree_lists_chaos_engine_paths(root):
-        return root, {}
     core_sha = _tree_sha(
         next(
             (
@@ -2905,13 +3008,20 @@ def _tarball_fallback_allowed(error: BaseException) -> bool:
     return isinstance(error, (UpstreamReadError, OSError, TimeoutError, urllib.error.URLError))
 
 
-def source_tar_repo_path(name: str) -> PurePosixPath | None:
-    """Repo-relative path to keep, or None. Keeps ``chaos-engine/**`` and ``*/ce-pack|ce-addons/**``."""
+def source_tar_repo_path(name: str, *, root_layout: bool = False) -> PurePosixPath | None:
+    """Repo-relative path to keep, or None. Keeps ``chaos-engine/**`` and ``*/ce-pack|ce-addons/**``.
+
+    In a root layout every member is core and is re-keyed under ``chaos-engine/``.
+    """
     if not isinstance(name, str) or not name or name.startswith(("/", "\\")) or "\\" in name:
         raise ValueError("ChaosEngine source tarball contains an unsafe path")
     parts = PurePosixPath(name).parts
     if not parts or any(part in {"", ".", ".."} for part in parts):
         raise ValueError("ChaosEngine source tarball contains an unsafe path")
+    if root_layout:
+        if len(parts) < 2:
+            return None
+        return PurePosixPath(NESTED_PREFIX, *parts[1:])
     if len(parts) < 3:
         return None
     repo = PurePosixPath(*parts[1:])
@@ -2995,6 +3105,7 @@ def _collect_tarball_files(
     expected: list[tuple[PurePosixPath, int, str]] | None,
     expected_by_repo: dict[PurePosixPath, tuple[int, str]] | None,
     identities: dict[str, str],
+    root_layout: bool = False,
 ) -> tuple[dict[str, tuple[bytes, bool]], dict[str, dict[str, tuple[bytes, bool]]]]:
     core_files: dict[str, tuple[bytes, bool]] = {}
     pack_files: dict[str, dict[str, tuple[bytes, bool]]] = {}
@@ -3006,7 +3117,7 @@ def _collect_tarball_files(
         inspected += 1
         if inspected > MAX_TARBALL_MEMBERS:
             raise ValueError("ChaosEngine source tarball contains too many files")
-        repo_path = source_tar_repo_path(member.name)
+        repo_path = source_tar_repo_path(member.name, root_layout=root_layout)
         if repo_path is None:
             continue
         prefix = _accept_tarball_prefix(member.name, prefix)
@@ -3031,6 +3142,7 @@ def extract_chaos_engine_tarball(
     expected: list[tuple[PurePosixPath, int, str]] | None,
     executable: set[PurePosixPath] | None,
     tree_shas: dict[str, str] | None = None,
+    root_layout: bool = False,
 ) -> Path:
     """Write the core and shipped packs from a commit tarball.
 
@@ -3053,6 +3165,7 @@ def extract_chaos_engine_tarball(
             expected=expected,
             expected_by_repo=expected_by_repo,
             identities=identities,
+            root_layout=root_layout,
         )
     finally:
         archive.close()
@@ -3186,6 +3299,7 @@ def download_source_tarball(
     expected: list[tuple[PurePosixPath, int, str]] | None,
     executable: set[PurePosixPath] | None,
     tree_shas: dict[str, str] | None = None,
+    root_layout: bool = False,
 ) -> Path:
     """Verified fallback: codeload tarball, then the GitHub tarball API."""
     if COMMIT.fullmatch(commit) is None:
@@ -3210,6 +3324,7 @@ def download_source_tarball(
             expected=expected,
             executable=executable,
             tree_shas=tree_shas,
+            root_layout=root_layout,
         )
     if last is not None:
         raise last
@@ -3242,6 +3357,7 @@ def _write_selected_blobs(
     destination: Path,
     opener,
     reporter: InstallReporter | None,
+    root_layout: bool = False,
 ) -> Path:
     if reporter is not None:
         reporter.begin_download(total, detail=f"{len(selected)} source files")
@@ -3252,7 +3368,8 @@ def _write_selected_blobs(
 
     def fetch_blob(item: tuple[PurePosixPath, int, str]) -> None:
         repository_path, expected_size, expected_sha = item
-        encoded_path = "/".join(urllib.parse.quote(part, safe="") for part in repository_path.parts)
+        remote_path = remote_source_path(repository_path, root_layout=root_layout)
+        encoded_path = "/".join(urllib.parse.quote(part, safe="") for part in remote_path.parts)
         content = read_response(
             opener,
             f"https://raw.githubusercontent.com/{encoded_repository}/{commit}/{encoded_path}",
@@ -3297,11 +3414,13 @@ def download_source_remote(
     tree_shas: dict[str, str] = {}
     expected: list[tuple[PurePosixPath, int, str]] | None = None
     executable: set[PurePosixPath] | None = None
+    root_layout = False
     try:
         try:
-            tree, tree_shas = fetch_chaos_engine_tree(encoded_repository, commit, opener)
+            tree, tree_shas, root_layout = fetch_chaos_engine_source(encoded_repository, commit, opener)
         except ResolvedTreeUnavailable as incomplete:
             tree_shas = incomplete.tree_shas
+            root_layout = incomplete.root_layout
             cause = incomplete.__cause__
             if cause is None:
                 raise
@@ -3323,6 +3442,7 @@ def download_source_remote(
             destination=destination,
             opener=opener,
             reporter=reporter,
+            root_layout=root_layout,
         )
     except (RuntimeError, OSError, urllib.error.URLError, ValueError) as error:
         if not _tarball_fallback_allowed(error):
@@ -3343,6 +3463,7 @@ def download_source_remote(
                 expected=expected,
                 executable=executable,
                 tree_shas=tree_shas if expected is None else None,
+                root_layout=root_layout,
             )
         except (RuntimeError, OSError, urllib.error.URLError, ValueError):
             _clear_partial_source(destination)
