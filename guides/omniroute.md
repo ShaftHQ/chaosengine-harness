@@ -42,11 +42,11 @@ CredentialHealth probes and catalog refresh create call_logs (often
 Those rows are **not** coding progress.
 
 ```bash
-python3 chaos-engine/skills/omniroute/scripts/runner.py proof --required \
+python3 skills/omniroute/scripts/runner.py proof --required \
   --receipt "$HOME/.local/state/chaos-engine/omniroute/receipts/<run>.json"
 # or:
 omniroute --output json usage logs --limit 50 > /tmp/or-call-logs.json
-python3 chaos-engine/skills/omniroute/scripts/runner.py proof --required \
+python3 skills/omniroute/scripts/runner.py proof --required \
   --call-logs /tmp/or-call-logs.json
 ```
 
@@ -166,7 +166,7 @@ processes that use this gateway:
 export OMNIROUTE_API_KEY='read-this-from-your-secret-manager'
 curl --fail --silent http://127.0.0.1:20128/v1/models \
   -H "Authorization: Bearer $OMNIROUTE_API_KEY"
-python3 chaos-engine/skills/omniroute/scripts/runner.py probe
+python3 skills/omniroute/scripts/runner.py probe
 ```
 
 `probe` is `READY` when the API answers and at least one catalog model has
@@ -344,7 +344,7 @@ catalog with no cache files:
 omniroute --output json models
 omniroute --output json usage quota
 omniroute --output json models glm
-python3 chaos-engine/skills/omniroute/scripts/runner.py candidates --capability default
+python3 skills/omniroute/scripts/runner.py candidates --capability default
 ```
 
 Rank remaining `default` models first for implementation, then most-intelligent,
@@ -495,8 +495,8 @@ omniroute health --json
 curl --fail --silent http://127.0.0.1:20128/api/health
 curl --fail --silent http://127.0.0.1:20128/v1/models \
   -H "Authorization: Bearer $OMNIROUTE_API_KEY"
-python3 chaos-engine/skills/omniroute/scripts/runner.py probe
-python3 chaos-engine/skills/omniroute/scripts/runner.py candidates --capability default
+python3 skills/omniroute/scripts/runner.py probe
+python3 skills/omniroute/scripts/runner.py candidates --capability default
 ```
 
 `probe` must print `READY`. Missing operator config is normal. Then prove a
@@ -524,7 +524,7 @@ created” is a valid status; do not fabricate account completion.
 
 ### Secret-free OmniRoute qualification reasons
 
-`python3 chaos-engine/skills/omniroute/scripts/runner.py probe` reports a
+`python3 skills/omniroute/scripts/runner.py probe` reports a
 bounded secret-free state. Missing operator config is normal. Use the table
 only when probe is not `READY`.
 

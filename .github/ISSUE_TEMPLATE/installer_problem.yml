@@ -1,0 +1,42 @@
+name: Installer problem
+description: The install command failed or doctor is unhealthy after install.
+title: "[Installer]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Paste the command you actually ran. Working commands are the ones in INSTALL.md. They still download install.sh and install.ps1 from ShaftHQ/SHAFT_ENGINE (`main`, path `chaos-engine/`).
+        Remove secrets, tokens, credentials, and private paths. Security vulnerabilities use https://github.com/ShaftHQ/chaosengine-harness/security/advisories/new — not this form.
+  - type: textarea
+    id: command
+    attributes:
+      label: Command used
+      description: The exact command you ran, including flags. Do not invent a URL that is not in INSTALL.md.
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Linux
+        - macOS
+        - Windows
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Receipt or doctor output
+      description: |
+        Paste the install receipt and `python3 .chaos-engine/install.py doctor --project .` (Windows `py -3`). `--agent-summary` is enough when the full log is long. Remove secrets, tokens, home directories, and hostnames. If doctor did not run, say why.
+    validations:
+      required: true
+  - type: checkboxes
+    id: redacted
+    attributes:
+      label: Redaction
+      options:
+        - label: I removed secrets, tokens, credentials, and private paths from this report.
+          required: true

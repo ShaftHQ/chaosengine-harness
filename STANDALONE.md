@@ -1,5 +1,8 @@
 # Spec: migrate ChaosEngine to ShaftHQ/chaos-engine
 
+2026-11-14: repository created at ShaftHQ/chaosengine-harness with filtered history; remaining cutover steps tracked in ShaftHQ/SHAFT_ENGINE#8057.
+The target name below (`ShaftHQ/chaos-engine`) was superseded by `ShaftHQ/chaosengine-harness` (#8057). The one-liners in this spec are planned, not working yet; use [INSTALL.md](INSTALL.md).
+
 Status: approved for later implementation. This file is origin-only and is not
 copied into adopter payloads. Tracker: ShaftHQ/SHAFT_ENGINE#5225 (parent #5223).
 Do not create the GitHub repository, rewrite history, or change bootstrap prefix

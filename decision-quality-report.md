@@ -8,7 +8,8 @@ campaign. Numeric scorecard values are not hand-copied here; they live in
 [`decision-quality-calibration.md`](decision-quality-calibration.md) and
 [`decision-quality-calibration.aggregate.json`](decision-quality-calibration.aggregate.json),
 and the primary README evidence block is generated from that aggregate by
-`scripts/ci/validate_chaos_engine_readme.py`.
+[`scripts/ci/validate_chaos_engine_readme.py`](https://github.com/ShaftHQ/SHAFT_ENGINE/blob/main/scripts/ci/validate_chaos_engine_readme.py)
+in ShaftHQ/SHAFT_ENGINE.
 
 Transport: local OmniRoute loopback, free/remaining catalog only. No paid
 Harbor trials were required for this program slice.
@@ -93,7 +94,7 @@ needs a new evidence gate before those ideas are reconsidered.
 4. Keep ChaosGauge Harbor methodology available as a later powered campaign;
    do not block README transparency on it (#5450 respec under #5549).
 5. Refresh ChaosGauge harness digests whenever origin-only decision-quality
-   artifacts change the `chaos-engine/` tree hash.
+   artifacts change the harness tree hash.
 
 ## Scorecard linkage (#5522)
 
@@ -102,10 +103,10 @@ needs a new evidence gate before those ideas are reconsidered.
 | [`decision-quality-calibration.aggregate.json`](decision-quality-calibration.aggregate.json) | Machine-readable redacted aggregate (source of truth) |
 | [`decision-quality-calibration.md`](decision-quality-calibration.md) | Human scorecard rendered from the aggregate |
 | [`README.md`](README.md) OmniRoute evidence section | Adopter-facing transparency block generated from the aggregate |
-| `scripts/ci/chaos_gauge/omniroute_calibration.py` (repo-only) | Runner / validator / scorecard renderer |
+| [`scripts/ci/chaos_gauge/omniroute_calibration.py`](https://github.com/ShaftHQ/SHAFT_ENGINE/blob/main/scripts/ci/chaos_gauge/omniroute_calibration.py) in ShaftHQ/SHAFT_ENGINE | Runner / validator / scorecard renderer |
 | PR #5552 | Landed calibration evidence (`Closes #5522`) |
 
-Recompute / verify:
+Recompute / verify from a ShaftHQ/SHAFT_ENGINE checkout. The evidence file in that checkout is still under `chaos-engine/`; the same bytes are [`decision-quality-calibration.aggregate.json`](decision-quality-calibration.aggregate.json) in this repository.
 
 ```bash
 python3 scripts/ci/chaos_gauge/omniroute_calibration.py validate \
@@ -122,9 +123,10 @@ python3 -m unittest tests.scripts.test_omniroute_calibration \
 1. Remove this report and the README evidence markers/section.
 2. Leave #5522 aggregate/scorecard in place unless rolling back that PR as
    well; if removing calibration artifacts, also delete
-   `scripts/ci/chaos_gauge/omniroute_calibration.py` and
-   `tests/scripts/test_omniroute_calibration.py`.
-3. Refresh ChaosGauge digests with
+   [`scripts/ci/chaos_gauge/omniroute_calibration.py`](https://github.com/ShaftHQ/SHAFT_ENGINE/blob/main/scripts/ci/chaos_gauge/omniroute_calibration.py) and
+   [`tests/scripts/test_omniroute_calibration.py`](https://github.com/ShaftHQ/SHAFT_ENGINE/blob/main/tests/scripts/test_omniroute_calibration.py)
+   in ShaftHQ/SHAFT_ENGINE.
+3. Refresh ChaosGauge digests from that checkout with
    `python3 scripts/ci/chaos_gauge/validate_experiment.py --write scripts/ci/chaos_gauge/experiment.json`.
 4. Revert documentation allowlist / origin-only entries added for these files.
 
@@ -138,7 +140,7 @@ metrics.
 No companion PR on `ShaftHQ/shafthq.github.io` for this slice.
 
 Evidence: #5465 acceptance (2026-09-02 respec) publishes transparency in the
-ChaosEngine primary README inside `ShaftHQ/SHAFT_ENGINE`. This delivery does
-not change user-facing SHAFT product/adopter functional docs; methodology
+ChaosEngine README. This delivery does
+not change user-facing product or adopter functional docs; methodology
 publication formerly tracked as #5463 is superseded here as harness-origin
 evidence, not site docs.

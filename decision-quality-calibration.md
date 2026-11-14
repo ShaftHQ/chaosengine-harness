@@ -50,7 +50,7 @@ secrets, private paths, or provider routes are persisted.
   observed latencies still exceeded 15s. Applyable patches were not emitted,
   so correctness stayed 0.0 on both arms.
 - Companion machine-readable aggregate:
-  `chaos-engine/decision-quality-calibration.aggregate.json`.
+  [`decision-quality-calibration.aggregate.json`](decision-quality-calibration.aggregate.json).
 
 ## Failover events
 
@@ -58,13 +58,15 @@ secrets, private paths, or provider routes are persisted.
 
 ## Rollback
 
-Delete this artifact, `scripts/ci/chaos_gauge/omniroute_calibration.py`,
-`tests/scripts/test_omniroute_calibration.py`, and the companion aggregate
-JSON; refresh ChaosGauge digests if the `chaos-engine/` tree hash changes.
+Delete this artifact, the companion aggregate JSON, and the ShaftHQ/SHAFT_ENGINE checkers
+[`scripts/ci/chaos_gauge/omniroute_calibration.py`](https://github.com/ShaftHQ/SHAFT_ENGINE/blob/main/scripts/ci/chaos_gauge/omniroute_calibration.py)
+and
+[`tests/scripts/test_omniroute_calibration.py`](https://github.com/ShaftHQ/SHAFT_ENGINE/blob/main/tests/scripts/test_omniroute_calibration.py).
+Refresh ChaosGauge digests if the harness tree hash changes.
 
 ## Regression gate
 
-`scripts/ci/decision_quality_gate.py` scores protective parity fixtures plus calibration
+[`scripts/ci/decision_quality_gate.py`](https://github.com/ShaftHQ/SHAFT_ENGINE/blob/main/scripts/ci/decision_quality_gate.py) in ShaftHQ/SHAFT_ENGINE scores protective parity fixtures plus calibration
 correctness against [`decision-quality-score.baseline.json`](decision-quality-score.baseline.json) and fails the harness PR gate on a
 drop. For an intended change, add the PR label `decision-quality-override` and lower the baseline
 in the same PR.

@@ -14,10 +14,10 @@ already-running loopback server. ChaosEngine never installs them.
 Skill: [local-openai-compat](../skills/local-runtimes/references/local-openai-compat.md).
 
 ```bash
-python3 chaos-engine/skills/local-openai-compat/scripts/probe.py
-python3 chaos-engine/skills/local-openai-compat/scripts/probe.py --backend ollama
-python3 chaos-engine/skills/local-openai-compat/scripts/probe.py --backend lmstudio attest
-python3 chaos-engine/skills/local-openai-compat/scripts/probe.py --backend llamacpp models --json
+python3 skills/local-openai-compat/scripts/probe.py
+python3 skills/local-openai-compat/scripts/probe.py --backend ollama
+python3 skills/local-openai-compat/scripts/probe.py --backend lmstudio attest
+python3 skills/local-openai-compat/scripts/probe.py --backend llamacpp models --json
 ```
 
 ## Discovery defaults

@@ -1,0 +1,35 @@
+name: Non-code work
+description: Offer a user story, a test plan, or a documentation change.
+title: "[Non-code]: "
+labels: ["documentation"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Stories, test plans, and docs are in scope. You do not need to attach code, Java, or Maven.
+        Behavior changes and specs use the Feature or spec form. Security vulnerabilities use https://github.com/ShaftHQ/chaosengine-harness/security/advisories/new — not this form.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind of work
+      options:
+        - User story
+        - Test plan
+        - Documentation
+        - Other non-code
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: The story, the test plan, or the doc change. Say who it is for.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance
+      description: How a reviewer can tell this is done.
+    validations:
+      required: true

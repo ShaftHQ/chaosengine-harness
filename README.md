@@ -6,51 +6,51 @@
   </picture>
 </p>
 
-<p align="center">
-  A portable working contract that turns software agents into disciplined engineering partners.
-</p>
-
 # ChaosEngine
 
-[![SkillSpector](https://img.shields.io/badge/SkillSpector-static_gate_pass-brightgreen)](https://github.com/ShaftHQ/SHAFT_ENGINE/blob/main/.github/workflows/skillspector.yml)
+ChaosEngine is a portable, provider-neutral working contract for software
+agents. Testers, frontend and backend developers, product owners, and scrum
+masters use the same contract, independent of team, language, framework, or
+product. One entrypoint covers research, planning, implementation,
+verification, review, delivery, and learning. The contract discovers a
+project's own engineering rules, routes each task to one surface, and requires
+evidence before a claim that the work is done.
 
-ChaosEngine is a provider-neutral operating system for agentic software work.
-It gives an agent one canonical entrypoint for research, planning,
-implementation, verification, review, delivery, and learning—without tying the
-project to one model, client, marketplace, maintainer, or source repository.
+**Humans:** this page is the overview. Install steps and options stay in
+[INSTALL.md](INSTALL.md).
 
-It is not a code generator or a replacement for a project's own engineering
-rules. It is the control layer that discovers those rules, routes each task to
-the right surface, and demands evidence before claiming the work is done.
+**Agents:** load [skills/chaos-engine/SKILL.md](skills/chaos-engine/SKILL.md)
+and follow it. This README is a map. Working policy stays in that skill.
 
-**Humans:** this page is the overview. Install steps stay in [INSTALL.md](INSTALL.md).
+## Who it is for
 
-**Agents:** load [skills/chaos-engine/SKILL.md](skills/chaos-engine/SKILL.md) and follow it. This README is a map. Do not treat it as a second copy of the working policy.
+These roles share one contract. Every role loads the same entrypoint.
 
-## Why it exists
+| Role | What they use the contract for |
+| --- | --- |
+| Tester | Reproduction, regression, and acceptance evidence before a claim of done. |
+| Frontend developer | Interface changes through the same plan, implementation, and review loop. |
+| Backend developer | Service, API, and contract changes through that same loop, including callers. |
+| Product owner | Scope, priority, and an inspectable delivery state. In orchestrated mode this is the [process-owner](references/process-owner-scrum-master.md) duty. |
+| Scrum master | Flow, WIP, and honest status when the session asks for the scrum-master alias of process-owner. |
 
-Capable agents still fail in predictable ways: they start editing before they
-understand the system, trust stale summaries, stop at a green-looking banner,
-or leave a pull request open and call the task complete. ChaosEngine makes the
-safer sequence explicit and portable.
+Inside a session, agent accountability is a separate choice. The agent roles
+are orchestrator, implementer, reviewer, tester, and mechanical-helper. See
+[roles](references/roles.md).
 
-Its core promises are straightforward:
+## What it does
 
 - **Evidence over inference.** Read and run the real system before making a
   claim.
 - **Research before mutation.** Retrieve prior decisions, inspect current
   callers, and compare viable approaches first.
-- **Coherent implementation.** Finish approved scope without microstep review,
-  validation, commit, or delivery interruptions.
-- **Terminal challenge.** After the accepted PDCA Check and green required
-  checks, two independent adversarial reviews run
-  ([delivery cycle](references/delivery-cycle.md)), then extra local tests.
-- **Owned delivery.** Work continues through review, checks, and confirmed
-  merge when that authority is granted.
-- **Durable learning.** Reusable facts and decisions go to structured stores;
-  transcripts and private material do not become policy.
-
-## The operating loop
+- **Plan, Do, Check, Act.** After approval, finish the accepted scope as one
+  coherent batch. The [delivery cycle](references/delivery-cycle.md) allows at
+  most three PDCA iterations.
+- **Adversarial review.** After the accepted Check and green required checks,
+  two independent reviews run on that head. The author is neither reviewer.
+- **Durable learning.** Reusable facts and decisions go to structured stores.
+  Transcripts and private material stay out of policy.
 
 ```mermaid
 flowchart LR
@@ -69,223 +69,174 @@ flowchart LR
 ```
 
 The canonical rules live in
-[`skills/chaos-engine/SKILL.md`](skills/chaos-engine/SKILL.md). That entrypoint
+[skills/chaos-engine/SKILL.md](skills/chaos-engine/SKILL.md). That entrypoint
 sizes the task, loads the one relevant routed surface, and keeps detailed
 guidance out of the always-loaded context until it is needed.
 
+## Supported hosts
+
+The installer accepts eight host ids (`INSTALL_HOST_IDS` in
+[bootstrap.py](bootstrap.py)). Five have lifecycle hook adapters in
+[hooks/kernel.py](hooks/kernel.py) and [hosts.py](hosts.py). OpenCode, Cursor,
+and Grok Bot are instruction-only. Measured gaps, including exit-2 fidelity,
+are in the [host parity matrix](references/host-parity-matrix.md).
+
+| Id | Host | What this tree implements |
+| --- | --- | --- |
+| `claude` | Claude Code | Lifecycle hooks. Marketplace registration when the `claude` CLI is on `PATH`. |
+| `codex` | Codex | Lifecycle hooks. Marketplace registration when the `codex` CLI is on `PATH`. |
+| `gemini` | Gemini CLI | Lifecycle hooks. The hook launcher is Node.js ([hooks/launch.js](hooks/launch.js)). |
+| `grok` | Grok | Lifecycle hooks. This host can ignore an exit-2 deny (GAP-EXIT2). |
+| `copilot` | GitHub Copilot | Lifecycle hooks for the CLI. Cloud and IDE surfaces are checked statically. This host can ignore an exit-2 deny (GAP-EXIT2). |
+| `opencode` | OpenCode | Instruction-only (`AGENTS.md`). Selecting the host writes `.opencode/plugins/chaos-engine-receipt.js`. |
+| `cursor` | Cursor | Instruction-only (`AGENTS.md`). Selecting the host writes `.cursor/hooks.json`. No portable pre-tool hook (GAP-CURSOR-HOOKS). |
+| `grok-bot` | Grok Bot | Instruction-only. Reads the [bot entry](references/bot-entry.md) at task start. The installer writes no receipt shim. |
+
+[hosts.py](hosts.py) also maps `antigravity` to `AGENTS.md`. That id is
+outside the installer host list. Independent agents that load nothing from the
+checkout use the same bot-entry path as Grok Bot.
+
+When the environment shows exactly one of Claude, Codex, Grok, or Cursor, the
+one-liner completes that host. With no inferred host and no `--hosts` or
+`CHAOS_ENGINE_HOST` value, it still writes the portable files and keeps the
+unattended PATH shims. Naming rules, the silent one-liner, and the wizard are
+in [INSTALL.md](INSTALL.md#clients-this-command-can-complete).
+
 ## Install
 
-**First run:** change into your project, run the one-liner below, then `python3 .chaos-engine/install.py doctor --project .` (Windows: `py -3`). Stop there unless you need advanced flags — details live in [INSTALL.md § Golden path](INSTALL.md#golden-path-first-run).
+Until the installer switch in
+[ShaftHQ/SHAFT_ENGINE#8057](https://github.com/ShaftHQ/SHAFT_ENGINE/issues/8057)
+lands, the working one-liner fetches from `ShaftHQ/SHAFT_ENGINE`. Change into
+the project directory first. The command does not need Python on the machine
+beforehand.
 
-Start with the full [installation and upgrade guide](INSTALL.md). The safest
-flow resolves a configured upstream branch to an immutable commit, downloads
-only that commit's validated `chaos-engine/` subtree, and installs ChaosEngine
-inside the target project.
+The PyPI and npm projects named `chaosengine-harness` are reserved `0.0.1`
+placeholders. Installation is the one-liner below.
 
-The canonical one-liners below use the official `ShaftHQ/SHAFT_ENGINE` upstream.
-Source identity is not copied into the adopter payload.
-`CHAOS_ENGINE_REPOSITORY` remains a local-file override when the invocation URL
-cannot be parsed. Change into the target project or folder first; both scripts
-install into the current working directory.
-
-Windows PowerShell:
+Windows PowerShell ([install.ps1](install.ps1), from
+[INSTALL.md](INSTALL.md#golden-path-first-run)):
 
 ```powershell
 irm "https://raw.githubusercontent.com/ShaftHQ/SHAFT_ENGINE/main/chaos-engine/install.ps1" | iex
 ```
 
-macOS or Linux:
+macOS or Linux ([install.sh](install.sh)):
 
 ```bash
 curl -fsSL "https://raw.githubusercontent.com/ShaftHQ/SHAFT_ENGINE/main/chaos-engine/install.sh" | bash -s -- "https://raw.githubusercontent.com/ShaftHQ/SHAFT_ENGINE/main/chaos-engine/install.sh"
 ```
 
-## Clients this command can complete
+Host flags, add-ons, offline bundles, and every other option are in
+[INSTALL.md](INSTALL.md). Read [install.ps1](install.ps1),
+[install.sh](install.sh), and [bootstrap.py](bootstrap.py) first when your
+trust policy requires review before execution. The public default is the
+neutral `portable` profile ([profiles](profiles/README.md),
+[distributions.json](distributions.json)).
 
-The command above completes a client when the environment shows exactly one
-client, or when you name the client. The full contract is
-[INSTALL.md](INSTALL.md#clients-this-command-can-complete).
+### Doctor, upgrade, uninstall
 
-| Variable already set | Client id |
+After the command finishes, run doctor in that same project. On Windows use
+`py -3` instead of `python3`. Restart an already-running host so it loads the
+new plugin.
+
+```text
+python3 .chaos-engine/install.py doctor --project .
+```
+
+- **Upgrade:** run the same one-liner again. A failed or invalid download
+  leaves the last verified installation unchanged.
+- **Rollback:** `python3 .chaos-engine/install.py rollback --project .`
+- **Uninstall:** `python3 .chaos-engine/install.py uninstall --project .`
+
+Rollback and uninstall change only receipt-owned ChaosEngine files. Mixed or
+unknown ownership stops and leaves unrelated project content in place. The
+removed-versus-retained table and clean-reinstall steps are in
+[INSTALL.md](INSTALL.md#uninstall--rollback-first-time-recovery).
+
+Lifecycle, ownership, dependencies, trust boundaries, and the companion list
+are in [guides/architecture.md](guides/architecture.md). That guide is
+origin-only and stays in this repository.
+
+## Use
+
+Ask the agent to use the installed `chaos-engine` skill. The entrypoint will:
+
+1. Identify the requested outcome and the proof of done.
+2. Classify blast radius and reversibility.
+3. Retrieve Memory, MemPalace, and Graphify evidence when those stores are
+   configured.
+4. Inspect current project files and authoritative sources.
+5. Choose the narrowest routed surface that applies.
+6. Implement the approved scope as one coherent batch.
+7. Follow the delivery cycle: architect, at most three PDCA iterations, then
+   two independent adversarial reviews.
+8. Report the exact checks, the delivery state, and the Learning Session
+   result.
+
+## Core concepts
+
+| Topic | Document |
 | --- | --- |
-| `CLAUDE_CODE_ENTRYPOINT` or `CLAUDE_PLUGIN_ROOT` | `claude` |
-| `CODEX_HOME` | `codex` |
-| `GROK_HOOK_EVENT` | `grok` |
-| `CURSOR_AGENT` or `CURSOR_CONVERSATION_ID` | `cursor` |
+| Canonical router and completion contract | [skills/chaos-engine/SKILL.md](skills/chaos-engine/SKILL.md) |
+| Delivery cycle | [references/delivery-cycle.md](references/delivery-cycle.md) |
+| Phase gates | [references/delivery-phase-gates.md](references/delivery-phase-gates.md) |
+| Agent roles | [references/roles.md](references/roles.md) |
+| Process owner | [references/process-owner-scrum-master.md](references/process-owner-scrum-master.md) |
+| Delegation | [references/delegation.md](references/delegation.md) |
+| Host parity and measured gaps | [references/host-parity-matrix.md](references/host-parity-matrix.md) |
+| Lifecycle hooks | [references/lifecycle-hooks.md](references/lifecycle-hooks.md) |
+| Skill and route catalog | [references/catalog.md](references/catalog.md) |
+| Harness map | [references/harness-map.md](references/harness-map.md) |
+| Profiles and packs | [profiles/README.md](profiles/README.md) |
+| Bot entry for hookless agents | [references/bot-entry.md](references/bot-entry.md) |
+| Durable jobs | [references/durable-jobs.md](references/durable-jobs.md) |
+| Zero-LLM doctor and repair | [references/zero-llm-catalog.md](references/zero-llm-catalog.md) |
+| Context firewall | [references/context-firewall.md](references/context-firewall.md) |
+| Token budget modes | [references/token-budget-modes.md](references/token-budget-modes.md) |
+| Learning Session | [skills/self-improve/SKILL.md](skills/self-improve/SKILL.md) |
+| Research and adoption record | [RESEARCH.md](RESEARCH.md) |
+| Architecture notes (origin-only) | [guides/architecture.md](guides/architecture.md) |
+| Optional local companions (origin-only) | [OmniRoute](guides/omniroute.md), [FreeToken](guides/freetoken.md), [Colibri](guides/colibri.md), [local agency](guides/local-agency.md), [OpenAI-compat runtimes](guides/local-openai-compat.md) |
 
-An empty value is ignored. Two different clients stop the install.
-`gemini`, `copilot`, `opencode`, and `grok-bot` are never inferred. Ignored
-for selection: `PATH`, a `cursor` program, `GROK_SESSION_ID`, `GEMINI_HOME`,
-`GEMINI_PROJECT_DIR`, and `COPILOT_HOME`. The published one-liner stays silent.
+ChaosEngine probes those local companions when the operator has already
+installed them. Install, configuration, authentication, and process start stay
+with the operator. Caveman, Ponytail, and ICM Architect are pinned skills the
+installer provisions. Memory, MemPalace, and Graphify are provisioned with the
+harness. Detail is in the architecture guide.
 
-Name the client with `CHAOS_ENGINE_HOST` or `--hosts` (PowerShell `-Hosts`).
-Valid ids: `claude`, `codex`, `grok`, `gemini`, `copilot`, `opencode`,
-`cursor`, `grok-bot`. Unknown ids stop the install.
+## Status and roadmap
 
-```bash
-url="https://raw.githubusercontent.com/ShaftHQ/SHAFT_ENGINE/main/chaos-engine/install.sh"
-curl -fsSL "$url" | bash -s -- "$url" --hosts grok
-```
+Tree version: `0.4.20261114.5` ([VERSION](VERSION)). Notes for that version
+are in [CHANGELOG.md](CHANGELOG.md).
 
-```powershell
-& ([scriptblock]::Create((irm "https://raw.githubusercontent.com/ShaftHQ/SHAFT_ENGINE/main/chaos-engine/install.ps1"))) -Hosts grok
-```
+This repository is ShaftHQ/chaosengine-harness. The tree sits at the
+repository root. It was extracted from `ShaftHQ/SHAFT_ENGINE` `chaos-engine/`,
+and the history was preserved.
 
-`--interactive` (PowerShell `-Interactive`) asks
-`Which clients should this install complete?` once. Enter accepts `claude`,
-`codex`, `grok`, and `gemini` when those commands are on `PATH`. When none of
-them are, Enter completes no client and keeps the unattended PATH shims.
-`copilot`, `opencode`, `cursor`, and `grok-bot` must be typed. An explicit
-host value skips the question.
+- Epic: [ShaftHQ/SHAFT_ENGINE#8056](https://github.com/ShaftHQ/SHAFT_ENGINE/issues/8056)
+- Standalone repository spec: [ShaftHQ/SHAFT_ENGINE#8057](https://github.com/ShaftHQ/SHAFT_ENGINE/issues/8057)
 
-Portable host files are still written for every client. Claude and Codex
-register a marketplace when that CLI is on `PATH`. Cursor writes
-`.cursor/hooks.json` and OpenCode writes
-`.opencode/plugins/chaos-engine-receipt.js` only when selected. Grok Bot
-writes no receipt shim. Naming `grok` does not enable `--lean-grok-skills`.
-A client id is not an add-on.
+Still open on that spec: a bootstrap that accepts this root layout or the old
+nested `chaos-engine/` prefix, release publishing, the installer pin and the
+redirect from the `ShaftHQ/SHAFT_ENGINE` one-liner, issue transfer, and
+role-based docs. This checkout already contains the changelog above and
+[.github/workflows/ci.yml](.github/workflows/ci.yml). Origin-only migration
+notes are in [STANDALONE.md](STANDALONE.md).
 
-Inspect [install.ps1](install.ps1), [install.sh](install.sh), and
-[bootstrap.py](bootstrap.py) first when your trust policy requires review before
-execution. The public default is the neutral `portable` distribution.
+## Contributing
 
-A successful command reports the resolved 40-character commit and a healthy
-active doctor result for core, adapters, local tools, hooks, and every detected
-client plugin. Restart an already-running client so it loads the new plugin.
-Runtime dependencies remain project-local; detected clients receive a
-path-unique local marketplace registration and cached plugin.
+Read [CONTRIBUTING.md](CONTRIBUTING.md),
+[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md), and [SECURITY.md](SECURITY.md).
 
-### Upgrade, recover, or remove
+## License
 
-- **Upgrade:** run the same one-liner again. A failed or invalid
-  download leaves the last verified installation unchanged. Transient timeout,
-  connection, rate-limit, and server responses receive bounded retries before
-  that fail-closed result; permanent client errors do not.
-- **Legacy migration:** if status reports `legacy`, uninstall first and then
-  run the portable bootstrap. This deliberate reinstall prevents old
-  repository-specific payloads from surviving in the rollback backup.
-- **Inspect:** run
-  `python .chaos-engine/install.py doctor --project .` for a short human health
-  summary (with `fix-next` on failures), or add `--json` / use `status` for the
-  deterministic schema v2 contract (omits paths and credential-shaped fields).
-- **Explain:** run
-  `python .chaos-engine/install.py explain Stop --project . --host codex --json`
-  to evaluate one event without reading ambient session state.
-- **Roll back:** run
-  `python .chaos-engine/install.py rollback --project .`.
-- **Uninstall:** run
-  `python .chaos-engine/install.py uninstall --project .`.
+MIT. Copyright ChaosEngine contributors. See [LICENSE](LICENSE) and
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-Rollback and uninstall act only on receipt-owned ChaosEngine files. Mixed or
-unknown ownership fails closed instead of deleting unrelated project content.
-See [INSTALL.md — Uninstall / rollback](INSTALL.md#uninstall--rollback-first-time-recovery)
-for the removed-vs-retained table and clean-reinstall steps.
+## Reference: source-derived inventory
 
-## Use it
-
-Ask the agent to use the installed `chaos-engine` skill for the task. The
-entrypoint will:
-
-1. identify the requested outcome and proof of done;
-2. classify blast radius and reversibility;
-3. retrieve relevant Memory, MemPalace, and Graphify evidence when configured;
-4. inspect current project files and authoritative sources;
-5. choose the narrowest applicable routed surface;
-6. implement approved scope as one coherent batch;
-7. follow the delivery cycle: architect, at most 3 PDCA iterations, then two
-   independent adversarial reviews; and
-8. report exact checks, delivery state, and the Learning Session result.
-
-Projects select one profile after loading the portable core. A profile supplies
-repository-specific facts such as the upstream, default branch, task-branch
-prefix, companion repositories, and routing table. The
-<a href="profiles/README.md">profiles catalog</a> and included neutral profile
-show the complete shape. The public install path selects the neutral profile by
-default; repository-specific distributions in the
-[distribution catalog](distributions.json) require an explicit selection.
-
-## Third-party companions (probe / use — do not install)
-
-ChaosEngine ships skills and guides for some third-party tools it can **use**
-when the operator already installed them. For each of those, this README links
-both **our** implementation and the **official vendor install** documentation.
-ChaosEngine never installs, configures, authenticates, or starts these
-companions.
-
-| Companion | Our skill / guide | Official install (vendor) | ChaosEngine role |
-| --- | --- | --- | --- |
-| OmniRoute | [skill](skills/local-runtimes/references/omniroute.md) · [guide](guides/omniroute.md) | [OmniRoute docs / guides](https://github.com/diegosouzapw/OmniRoute/tree/release/v3.8.51/docs/guides) (npm: see guide § Install) | Optional cloud-quota gateway on `127.0.0.1:20128` |
-| FreeToken | [skill](skills/local-runtimes/references/freetoken.md) · [guide](guides/freetoken.md) | [FreeToken install.md](https://github.com/FlashML-org/FreeToken/blob/main/docs/install.md) | Optional local MoE / weights on `127.0.0.1:1919` |
-| Colibri | [skill](skills/local-runtimes/references/colibri.md) · [guide](guides/colibri.md) | [Colibri README](https://github.com/JustVugg/colibri) | Optional frontier MoE on `127.0.0.1:8000` |
-| Ollama | [skill](skills/local-runtimes/references/local-openai-compat.md) · [guide](guides/local-openai-compat.md) | [Ollama](https://ollama.com/) · [OpenAI compatibility](https://ollama.com/blog/openai-compatibility) | Optional local OpenAI-compat on `127.0.0.1:11434` |
-| LM Studio | [skill](skills/local-runtimes/references/local-openai-compat.md) · [guide](guides/local-openai-compat.md) | [LM Studio OpenAI compat](https://lmstudio.ai/docs/developer/openai-compat) | Optional local OpenAI-compat on `127.0.0.1:1234` |
-| llama.cpp | [skill](skills/local-runtimes/references/local-openai-compat.md) · [guide](guides/local-openai-compat.md) | [llama.cpp](https://github.com/ggml-org/llama.cpp) | Optional local OpenAI-compat on `127.0.0.1:8080` |
-| OpenCode | [skill](skills/local-agency/SKILL.md) · [guide](guides/local-agency.md) | [OpenCode docs](https://opencode.ai/docs) | Optional local coding agency CLI; CE never installs it |
-
-Shared probe skill covers FreeToken and OpenAI-compat backends (and similar
-servers via loopback `--url`). Local OpenCode dispatch uses ephemeral
-`OPENCODE_CONFIG` with `enabled_providers` limited to the READY local runtime —
-never `ft launch`, never silent OmniRoute. OpenCode still merges global config;
-the allowlist is what keeps other providers out of that process. See epic
-[#5867](https://github.com/ShaftHQ/SHAFT_ENGINE/issues/5867) and
-[#5872](https://github.com/ShaftHQ/SHAFT_ENGINE/issues/5872).
-
-### Recommended add-on: OmniRoute
-
-[OmniRoute skill](skills/local-runtimes/references/omniroute.md) provides an optional,
-provider-neutral transport for a locally installed OmniRoute gateway. Operator
-setup: follow the [official OmniRoute guides](https://github.com/diegosouzapw/OmniRoute/tree/release/v3.8.51/docs/guides)
-and our [OmniRoute guide](guides/omniroute.md) (account-local `npm install`
-of a reviewed release). ChaosEngine selects the workflow first (`ORCHESTRATED`,
-`SOLO`, or `IMPLEMENTERS`); OmniRoute only carries qualified delegated work.
-An absent or unhealthy gateway leaves native implementers and `SOLO` valid.
-
-### Optional local inference: FreeToken
-
-[FreeToken skill](skills/local-runtimes/references/freetoken.md) is an optional standalone local
-MoE / local-weights companion on `127.0.0.1:1919` (not an OmniRoute dependency).
-Operator setup: follow the
-[official FreeToken install guide](https://github.com/FlashML-org/FreeToken/blob/main/docs/install.md)
-and our [FreeToken guide](guides/freetoken.md). ChaosEngine never runs
-`ft launch` or `ft serve`. Missing FreeToken is normal and leaves the selected
-workflow valid through OmniRoute (if READY), native implementers, `SOLO`, or
-other local runtimes when those skills exist.
-
-### Optional local OpenAI-compat runtimes
-
-[Local OpenAI-compat skill](skills/local-runtimes/references/local-openai-compat.md) covers Ollama
-(`:11434`), LM Studio (`:1234`), and llama.cpp server (`:8080`) as standalone
-peers (not OmniRoute/FreeToken plugins). Operator setup: follow vendor docs
-linked in the third-party table and our
-[local OpenAI-compat guide](guides/local-openai-compat.md). ChaosEngine never
-installs or starts these servers. Missing them is normal.
-
-### Optional local agency: OpenCode
-
-[Local-agency skill](skills/local-agency/SKILL.md) routes adopter requests for
-OpenCode to a READY local runtime with ephemeral `OPENCODE_CONFIG` and
-`enabled_providers` limited to that runtime. CE refuses writes into durable
-`~/.config/opencode` paths and never runs `ft launch`. `--pure` only disables
-OpenCode external plugins; it is not the cloud isolation mechanism. Operator
-installs OpenCode from [upstream docs](https://opencode.ai/docs); ChaosEngine
-never installs it. Missing OpenCode or a local runtime is normal and leaves
-session agents / `SOLO` / explicit OmniRoute valid when asked. See
-[local-agency guide](guides/local-agency.md).
-
-## Installer-owned companions (automatic)
-
-These **are** provisioned by the ChaosEngine installer from their official
-distributions / pins (not optional “bring your own” peers). Do not treat them
-like OmniRoute or FreeToken:
-
-- **Caveman** and **Ponytail** — pinned skills installed with the harness
-- **ICM Architect** — pinned advisory skill installed with the harness
-  (design / restructure workspaces as folder-as-architecture; disable with
-  `--without-icm-architect`)
-- **Memory** and **MemPalace** — installed/configured with the harness
-  (alongside Graphify and other managed tools listed under
-  [What gets installed](#what-gets-installed))
-
+Repository validators parse the delimited blocks in this section. Keep each
+block, and the heading directly above it, unchanged.
 
 ## OmniRoute decision-quality evidence
 
@@ -329,127 +280,6 @@ Methodology and final report:
 [decision-quality-report.md](decision-quality-report.md).
 Missing telemetry remains the literal `UNAVAILABLE` (never `0`).
 <!-- evidence:omniroute-calibration:end -->
-
-## What gets installed
-
-| Path | Responsibility |
-| --- | --- |
-| [`skills/chaos-engine/SKILL.md`](skills/chaos-engine/SKILL.md) | Canonical router, lifecycle, safety rules, and completion contract |
-| [`skills/omniroute/SKILL.md`](skills/local-runtimes/references/omniroute.md) | Optional fail-closed transport; CE does not install OmniRoute — see [Third-party companions](#third-party-companions-probe--use--do-not-install) |
-| [`skills/freetoken/SKILL.md`](skills/local-runtimes/references/freetoken.md) | Optional FreeToken companion skill; not installed, not a workflow owner — see [Third-party companions](#third-party-companions-probe--use--do-not-install) |
-| [`skills/local-openai-compat/SKILL.md`](skills/local-runtimes/references/local-openai-compat.md) | Optional Ollama/LM Studio/llama.cpp OpenAI-compat peers; not installed — see [Third-party companions](#third-party-companions-probe--use--do-not-install) |
-| [`skills/local-agency/SKILL.md`](skills/local-agency/SKILL.md) | Optional OpenCode local-agency routing; not installed — see [Third-party companions](#third-party-companions-probe--use--do-not-install) |
-| [`LICENSE`](LICENSE) | MIT license for this portable tree |
-| [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) | Companion pins and reimplemented-pattern attribution |
-| [`references/`](references/) | Focused methods loaded only when their trigger fires |
-| [`profiles/`](profiles/) | Project-specific facts, routes, and permissions |
-| [`install.py`](install.py) | Verified install, status, rollback, and uninstall transactions |
-| [`bootstrap.py`](bootstrap.py) | Mutable-branch resolution to an immutable upstream commit |
-| [`install.ps1`](install.ps1) | Windows one-liner installer for the current working directory |
-| [`install.sh`](install.sh) | macOS and Linux one-liner installer for the current working directory |
-| [`hosts.py`](hosts.py) | Thin native host adapters and ownership receipts |
-| [`grok_lean_config.py`](grok_lean_config.py) | Optional Grok lean compat/skills spans for user config.toml |
-| [`identity_md.py`](identity_md.py) | Seed/heal `.chaos-engine/identity.md` with Truth markers |
-| [`identity.md`](identity.md) | Origin seed for project identity.md |
-| [`hooks/guard.py`](hooks/guard.py) | Portable lifecycle activation and catastrophic-scope guard |
-| [`hooks/kernel.py`](hooks/kernel.py) | Provider-neutral event normalization, lifecycle graph, rules, and host capability matrix |
-| [`hooks/lifecycle.py`](hooks/lifecycle.py) | Strict JSON protocol and compact startup context |
-| [`hooks/launch.js`](hooks/launch.js) | Cross-platform Gemini launcher using required Node.js runtime |
-| [`hooks/reflection.py`](hooks/reflection.py) | Bounded task-ledger reflection reducer and receipt validator |
-| [`dependencies.py`](dependencies.py) | Project-local dependency doctor, repair, and upgrade flow |
-| [`tool.py`](tool.py) | Relocatable launcher for ChaosEngine-owned local tools |
-| [`consumer_mode.py`](consumer_mode.py) | `--consumer` install: no tracked-file edits; overlay hidden via `.git/info/exclude` |
-| [`session_logs.py`](session_logs.py) | Session-scoped install/doctor logs under `.chaos-engine-state/logs/` (self-delete) |
-| [`prerequisites.py`](prerequisites.py) | after install: report or provision git, mvn, gh, Node.js, winget, PowerShell 7; add-on `post-install.json` framework steps |
-| [`learning.py`](learning.py) | Privacy-gated queue for reusable improvement candidates |
-| [`RESEARCH.md`](RESEARCH.md) | Dated adoption decisions and their local proof owners |
-| [`STANDALONE.md`](STANDALONE.md) | Origin-only spec for a later standalone source repository |
-| [`assets/brand/`](assets/brand/) | Origin identity masters; not copied into adopter installs. External logo skills are [declined](RESEARCH.md#logo-design-skill) |
-
-The installer records provenance and per-file ownership in the consumer
-project. Host adapters redirect to the canonical skill; they do not fork its
-policy into competing copies.
-It also creates trackable Memory and MemPalace configuration, provider-native
-role/plugin/hook adapters, and ignore rules that separate canonical harness
-files from generated runtimes, indexes, receipts, and Graphify output. A
-receipt-bound `.gitattributes` block pins only canonical harness paths to LF so
-Windows clones preserve the installer's byte-level ownership hashes without
-changing unrelated project attributes. For a repository you do not own,
-`--consumer` keeps all of this out of `git status`: tracked files stay
-untouched and ignore rules go to `.git/info/exclude` (see INSTALL.md).
-Committing the `.chaos-engine/` core is adopter (maintainer) mode: an upgrade
-must rewrite it, so a `--consumer` install over a committed core reports
-`consumerMode.trackedCore` and asks you to commit the upgrade or untrack the
-core with `git rm --cached -r .chaos-engine` then add `/.chaos-engine/` to `.gitignore`.
-Memory's canonical store is bootstrapped from the pinned v5
-[schema bundle](assets/memory-v5/SCHEMAS.md):
-[config](assets/memory-v5/config.schema.json),
-[object](assets/memory-v5/object.schema.json),
-[relation](assets/memory-v5/relation.schema.json),
-[event](assets/memory-v5/event.schema.json), and
-[patch](assets/memory-v5/patch.schema.json) schemas. The active doctor runs
-Memory status and validation inside the adopter project instead of treating a
-launchable CLI as proof of a usable store.
-
-## Transparent dependency and host map
-
-Installer control plane uses Python standard library only: `argparse`,
-`base64`, `contextlib`, `ctypes`, `datetime`, `hashlib`, `hmac`, `json`, `os`,
-`pathlib`, `re`, `runpy`, `secrets`, `shutil`, `sqlite3`, `stat`, `subprocess`,
-`sys`, `threading`, and `time`. No hidden Python package is required to run
-bootstrap, install, status, doctor, rollback, or uninstall.
-
-```mermaid
-flowchart TD
-    accTitle: Runtime dependency graph
-    accDescr: Platform prerequisites feed user-account tools selected from official stable channels.
-    Shell["PowerShell or POSIX shell + downloader"] --> Installer["ChaosEngine bootstrap + transactional installer"]
-    Installer --> UV["latest compatible stable uv + uvx<br/>user account"]
-    UV --> MP["latest stable MemPalace<br/>mempalace + mempalace-mcp"]
-    UV --> GF["latest stable graphifyy<br/>graphify"]
-    Installer --> Node["active LTS Node.js 22+ + npm + npx<br/>user account"]
-    Node --> MEM["latest stable @aictx/memory<br/>memory + memory-mcp"]
-    Node --> C7["latest stable ctx7 CLI<br/>remote Context7 MCP"]
-    Installer --> Java["system Temurin 25"]
-    Java --> Maven["latest stable Maven Tools MCP<br/>optional receipt-owned shared cache"]
-```
-
-Missing, outdated, or damaged tools use their standard upstream or platform
-provider. Healthy compatible tools are reused. Project uninstall removes only
-ChaosEngine-owned configuration; it does not uninstall account packages or
-delete Memory, MemPalace, or Graphify data.
-
-```mermaid
-flowchart LR
-    accTitle: Canonical host adapter topology
-    accDescr: One canonical skill and kernel project thin guidance and lifecycle adapters into five supported hosts.
-    K["Canonical chaos-engine skill"] --> C["Caveman skill<br/>pinned 0.1.0"]
-    K --> I["ICM Architect skill<br/>pinned advisory"]
-    K --> P["Ponytail skill<br/>pinned 0.1.0"]
-    K --> SI["self-improve skill"]
-    K --> Profile["portable or selected project profile"]
-    K --> Refs["on-demand references<br/>research, retrieval, isolation, roles,<br/>cleanup, reflection, GitHub delivery"]
-    K --> Kernel["provider-neutral lifecycle kernel"]
-    Kernel --> Codex["Codex<br/>AGENTS.md + Codex hooks"]
-    Kernel --> Claude["Claude<br/>CLAUDE.md + settings hooks"]
-    Kernel --> Gemini["Gemini CLI<br/>GEMINI.md + settings hooks"]
-    Kernel --> Grok["Grok<br/>AGENTS.md + project hooks"]
-    Kernel --> Copilot["GitHub Copilot CLI/cloud agent<br/>instructions + .github/hooks"]
-```
-
-Tracked prerequisites and optional boundaries:
-
-- Required: writable target directory, network for fresh install/upgrade, and
-  PowerShell or POSIX shell with `curl` or `wget`.
-- Installed automatically when required: uv/uvx; active LTS Node 22+ with
-  npm/npx; Temurin 25; latest stable Graphify, MemPalace, Memory, and ctx7.
-- Optional: `--with-maven-tools` builds latest stable upstream source with Git,
-  Temurin JDK 25+ (ambient or managed), and the Maven wrapper (plus managed
-  Apache Maven when ambient `mvn` is missing or below minimum).
-- Generated and never tracked: dependency generations, receipts, caches,
-  Graphify output, MemPalace indexes, Memory runtime indexes, reports, secrets.
-- Canonical skills: `chaos-engine`, `caveman`, `ponytail`; project profiles and
-  reference playbooks are loaded on demand, never duplicated into host policy.
 
 ## Source-derived inventory
 
@@ -639,260 +469,3 @@ usable without Mermaid; unknown source entries fail the inventory validator.
 | Memory, MemPalace, and Graphify state | Persist canonical Memory/relations (tracked) plus derived indexes (`graphify-out/`, MemPalace palace data, `.memory` runtime). | .gitignore; hosts.py | durable Memory tracked; derived indexes untracked | project local | owned tools | project or derived single writer | doctor reports recovery-required |
 | reports, caches, and evaluation receipts | Carry bounded diagnostics without transcripts or secrets. | .gitignore; chaos_engine_promotion.py | generated and never tracked | local and CI | requesting command | ephemeral evidence owner | missing evidence blocks promotion |
 <!-- inventory:generated-assets:end -->
-
-### Promotion driver contract
-
-The scheduled/manual evaluator accepts one protected JSON driver specification per
-host and variant. Each specification declares schema version 1, the exact client,
-list-form `argv` and `versionArgv`, an exact client-version string, and the SHA-256
-of the resolved native driver. The runner verifies that identity once, binds every
-receipt to the driver and the baseline or exact candidate revision, streams output
-through a 64 KiB combined bound, and gives the child only its own host credential.
-A missing credential, revision, driver, version, or binding produces a terminal
-Blocked report; raw output and transcripts are never published.
-
-## Installation, lifecycle, and ownership flows
-
-```mermaid
-flowchart TD
-    accTitle: Prerequisite and dependency topology
-    accDescr: Required platform tools feed the standard-library installer and one immutable dependency generation.
-    Shell[PowerShell or POSIX shell] --> Python[latest stable Python]
-    Network[Network] --> Bootstrap[Immutable source]
-    Python --> Installer[Transactional installer]
-    Node[Node.js and npm] --> Installer
-    Installer --> UV[uv]
-    UV --> MemPalace[MemPalace]
-    UV --> Graphify[Graphify]
-    Node --> Memory[Memory]
-```
-
-```mermaid
-flowchart LR
-    accTitle: Skill topology
-    accDescr: The canonical skill routes optional work skills and two pinned companions without duplicating policy.
-    CE[chaos-engine] --> Caveman[caveman]
-    CE --> Ponytail[ponytail]
-    CE --> SelfImprove[self-improve]
-    CE --> Delegate[local-coding-delegate optional]
-    CE --> LocalAgency[local-agency optional]
-    CE --> FreeToken[freetoken optional]
-    CE --> LocalOpenAI[local-openai-compat optional]
-    CE --> WorkItem[work-item optional]
-    CE --> Refs[On-demand references]
-```
-
-```mermaid
-flowchart LR
-    accTitle: Five-host lifecycle topology
-    accDescr: Five thin adapters normalize events into one kernel; Copilot CLI is live-gated and cloud and IDE are statically validated.
-    Codex --> Kernel[Provider-neutral kernel]
-    Claude --> Kernel
-    Gemini --> Kernel
-    Grok --> Kernel
-    CopilotCLI[Copilot CLI live] --> Kernel
-    CopilotStatic[Copilot cloud and IDE static] -.-> Kernel
-```
-
-```mermaid
-flowchart TD
-    accTitle: Fresh installation flow
-    accDescr: Fresh install verifies core and hosts, builds dependencies at their final path, probes them, and publishes the pointer last.
-    Resolve[Resolve immutable commit] --> Stage[Verify staged core]
-    Stage --> Hosts[Prepare host adapters]
-    Hosts --> Candidate[Build generation at final path]
-    Candidate --> Probe[Probe exact dispatches]
-    Probe --> Seal[Seal ownership]
-    Seal --> Publish[Publish active pointer]
-```
-
-```mermaid
-flowchart TD
-    accTitle: Managed upgrade and repair flow
-    accDescr: Upgrade reuses a healthy generation or replaces the complete generation when one tool is missing, damaged, or stale.
-    Inspect[Authenticate active] --> Healthy{Healthy and current?}
-    Healthy -->|yes| Reuse[Reuse without network]
-    Healthy -->|no| Build[Build complete candidate]
-    Build --> Verify[Verify every tool]
-    Verify --> Switch[Retain prior and switch]
-    Switch --> Retire[Remove obsolete verified generation]
-```
-
-```mermaid
-flowchart LR
-    accTitle: Dependency provisioning flow
-    accDescr: Tracked pins drive isolated uv and npm provisioning and one bounded receipt.
-    Spec[dependencies.json] --> UV[uv bootstrap]
-    UV --> Py[uv-managed Python]
-    Py --> MP[MemPalace]
-    Py --> GF[Graphify plus tree-sitter-sql]
-    Spec --> NPM[npm prefix]
-    NPM --> MEM[Memory]
-    MP --> Receipt[Bounded receipt]
-    GF --> Receipt
-    MEM --> Receipt
-```
-
-```mermaid
-flowchart TD
-    accTitle: POSIX symlink and Windows junction flow
-    accDescr: Platform-native uv aliases are accepted only when targets and identities remain inside the sealed generation.
-    Alias[uv interpreter alias] --> Platform{Platform}
-    Platform -->|POSIX| Symlink[Trusted relative symlink]
-    Platform -->|Windows| Junction[Owned junction or verified copy]
-    Symlink --> Bound[Resolve inside generation]
-    Junction --> Bound
-    Bound --> Seal[Record target and identity]
-    Bound -->|escape or drift| Reject[Fail closed]
-```
-
-```mermaid
-flowchart TD
-    accTitle: Rollback flow
-    accDescr: Rollback authenticates the prior core, host bytes, and dependency generation before selection changes.
-    Intent[Write rollback intent] --> Previous[Authenticate prior core and hosts]
-    Previous --> Probe[Probe prior dispatches]
-    Probe --> Swap[Swap verified core trees]
-    Swap --> Restore[Restore host bytes]
-    Restore --> Pointer[Publish prior generation]
-    Pointer --> Clear[Clear journal]
-```
-
-```mermaid
-flowchart TD
-    accTitle: Ownership and foreign-file preservation flow
-    accDescr: Receipts identify installer-owned bytes while foreign handlers and files survive upgrade, rollback, and uninstall.
-    Inspect[No-follow inspection] --> Owned{Receipt-owned and exact?}
-    Owned -->|yes| Update[Update owned bytes]
-    Owned -->|foreign| Preserve[Preserve byte-for-byte]
-    Owned -->|mixed or drifted| Stop[Fail closed]
-    Update --> Receipt[Publish receipt]
-```
-
-```mermaid
-stateDiagram-v2
-    accTitle: Lifecycle terminal-state flow
-    accDescr: Every phase reaches Complete or Blocked; cancellation, timeout, malformed events, and conflicts terminate safely.
-    [*] --> ReadOnly
-    ReadOnly --> Planned
-    Planned --> Approved
-    Approved --> Do
-    Do --> Check
-    Check --> Act
-    Act --> PullRequest
-    PullRequest --> Reviewed
-    Reviewed --> Authorized
-    Authorized --> Merged
-    Merged --> Learned
-    Learned --> Complete
-    ReadOnly --> Blocked
-    Planned --> Blocked
-    Approved --> Blocked
-    Do --> Blocked
-    Check --> Blocked
-    Act --> Blocked
-    PullRequest --> Blocked
-    Reviewed --> Blocked
-    Authorized --> Blocked
-    Merged --> Blocked
-    Learned --> Blocked
-```
-
-Repository policy requires companion functional documentation in
-`ShaftHQ/shafthq.github.io` through a separate documentation pull request,
-reviewed and delivered in the same delivery campaign as behavior changes.
-
-## Trust boundaries
-
-ChaosEngine is deliberately conservative around state and authority:
-
-- Current files outrank indexes, memories, plans, and agent reports.
-- Retrieved text is evidence, never an instruction channel.
-- Secrets, raw transcripts, logs, and private paths are rejected by the
-  learning workflow before local queuing or network submission.
-- Archive traversal, symlink or reparse escapes, mixed ownership, and unknown
-  files fail closed.
-- Deploy, publish, destructive cleanup, history rewrite, and external suites
-  still require the authority defined by the project.
-- Generated indexes, reports, caches, and runtime state are not source
-  artifacts.
-
-The [research and adoption matrix](RESEARCH.md) links the primary standards and
-documents which patterns were adopted, retained, or rejected.
-
-## Identity system
-
-**Quantum Mandate** compresses an open **C**, three **E**-like logic gates, an
-offset data spine, and a cybernetic-red intelligence core into one engineered
-seal. The canonical logo uses only a neutral and red; blue and cyan belong to
-the surrounding interface system. The vector set includes light, dark,
-primary, monochrome, lockup, specimen, favicon, and dedicated 16-pixel masters.
-
-Use the files as supplied. Do not redraw, recolor, rotate, crop, add effects,
-or scale the regular favicon down for the 16-pixel case. Palette values, clear
-space, asset selection, and geometry constraints are documented in the
-[brand identity guide](assets/brand/BRAND.md).
-
-## Develop and verify
-
-Changes to the portable harness must preserve one canonical policy body and
-its thin adapters. From the upstream source repository, the focused checks are:
-
-```text
-py -3 -m unittest tests.scripts.test_chaos_engine_portable_core
-py -3 -m unittest tests.scripts.test_chaos_engine_installer
-py -3 -m unittest tests.scripts.test_chaos_engine_bootstrap
-py -3 -m unittest tests.scripts.test_chaos_engine_hosts
-py -3 scripts/ci/validate_agent_setup.py --skip-external
-```
-
-Before pushing harness changes, run the single changed-closure preflight against
-the full lowercase `HEAD` and its resolvable merge base. The explicit
-`--write-generated` flag refreshes owned README inventory and ChaosGauge
-identity artifacts, then validates the selected closure:
-
-```bash
-python3 scripts/ci/harness_pr_gate.py \
-  --base "$(git merge-base HEAD origin/main)" \
-  --head "$(git rev-parse HEAD)" \
-  --write-generated
-```
-
-Use the equivalent Python 3 command on non-Windows hosts. Run the smallest
-affected check first, then the nearest broader gate. Never commit generated
-reports, caches, runtime indexes, or `graphify-out/`.
-
-## Read next
-
-- [Delivery phase gates](references/delivery-phase-gates.md) — hooks vs skills map + research-before-mutation.
-- [Codacy Complexity gate](references/complexity-gate.md) — classifier helpers; Complexity ACTION_REQUIRED == unit red.
-- [Durable jobs](references/durable-jobs.md) — `tool.py job start|status|resume|stop|checkpoint`; long work outlives the session, one worker per job.
-
-- [Zero-LLM catalog](references/zero-llm-catalog.md) — deterministic doctor/install/repair paths.
-- [Context firewall](references/context-firewall.md) — research/explore subagent isolation; distillate only.
-- [Product-track self-improve](skills/self-improve/references/product-track.md) — product issues/evals + ChaosGauge Learning Session playbook.
-
-
-- [Token budget modes](references/token-budget-modes.md) — ultra-lean | balanced | deep.
-
-
-- [Host Parity Matrix v0](references/host-parity-matrix.md) — five-host outcome matrix and measured gaps.
-- [Eval / parity fixtures](references/eval-parity-fixtures.md) — cross-host CE policy fixture suite + failure ratchet.
-- [Harness eval suite](references/harness-eval-suite.md) — capability + regression pass@k gate for harness PRs.
-
-- [CE lessons 2026-11-02 SPEC](references/ce-lessons-2026-11-02-SPEC.md) — orchestrator/media/harness gates issue 7692–issue 7721.
-
-
-- [Install or upgrade ChaosEngine](INSTALL.md)
-- [Canonical ChaosEngine entrypoint](skills/chaos-engine/SKILL.md)
-- [Lifecycle hooks](references/lifecycle-hooks.md)
-- <a href="profiles/README.md">Project profiles</a>
-- [Research and adoption matrix](RESEARCH.md)
-- [Standalone source-repository spec](STANDALONE.md)
-- [Identity and brand rules](assets/brand/BRAND.md)
-
-ChaosEngine supports rigorous, evidence-led software delivery. Gambaru.
-
-## Entry coverage
-
-Rules, hooks, skills, and tools must stay linked from [`references/bot-entry.md`](references/bot-entry.md) and `../.agents/skills/README.md`. Unit gate: `../tests/scripts/test_ce_entry_coverage.py`.

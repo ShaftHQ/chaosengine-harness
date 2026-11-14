@@ -15,9 +15,9 @@ against an already-running loopback server. ChaosEngine never installs it.
 Skill: [FreeToken](../skills/local-runtimes/references/freetoken.md).
 
 ```bash
-python3 chaos-engine/skills/freetoken/scripts/probe.py
-python3 chaos-engine/skills/freetoken/scripts/probe.py attest
-python3 chaos-engine/skills/freetoken/scripts/probe.py models --json
+python3 skills/freetoken/scripts/probe.py
+python3 skills/freetoken/scripts/probe.py attest
+python3 skills/freetoken/scripts/probe.py models --json
 ```
 
 ## Operator install (vendor docs only)
