@@ -60,9 +60,17 @@ python3 .chaos-engine/install.py doctor --project .
 
 ## Tests
 
-The offline test suite still lives in ShaftHQ/SHAFT_ENGINE under `tests/scripts`. It moves into this repository as part of ShaftHQ/SHAFT_ENGINE#8057 (R2). This tree does not contain that suite yet.
+The offline suite is in `tests/`. It needs `pytest`, `pyyaml` and, for parallel runs, `pytest-xdist`:
 
-Until then, CI (`.github/workflows/ci.yml`) runs offline structure checks on every pull request: root layout, Python and JSON syntax, `install.sh` syntax, relative Markdown links, the in-tree unit tests, and a `tool.py --help` smoke run.
+```bash
+python3 -m pytest -q -n auto tests
+```
+
+The suite points `HOME`-level host config (for example `GROK_HOME`) at throwaway folders, so it does not touch your real settings. CI (`.github/workflows/ci.yml`) runs it on every pull request, with the structure, syntax and Markdown link checks.
+
+## Roadmap
+
+[ROADMAP.md](ROADMAP.md) is generated from epic ShaftHQ/SHAFT_ENGINE#8056. Do not edit it by hand. Change the epic, then run `python3 .github/scripts/roadmap.py`. A weekly job fails when the file no longer matches the epic.
 
 ## Outside skills
 

@@ -1020,6 +1020,7 @@ def is_origin_only(relative: Path) -> bool:
             "CODE_OF_CONDUCT.md",
             "SECURITY.md",
             "CHANGELOG.md",
+            "ROADMAP.md",
             "decision-quality-baseline.md",
             "decision-quality-rubric.md",
             "decision-quality-calibration.md",

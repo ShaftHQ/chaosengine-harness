@@ -1,0 +1,32 @@
+name: Roadmap
+
+# ROADMAP.md is a generated view of epic ShaftHQ/SHAFT_ENGINE#8056.
+# This job fails when the file no longer matches the epic; regenerate with
+# `python3 .github/scripts/roadmap.py` and commit the result.
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ROADMAP.md
+      - .github/scripts/roadmap.py
+      - .github/workflows/roadmap.yml
+
+permissions:
+  contents: read
+
+jobs:
+  roadmap-current:
+    name: ROADMAP.md matches the epic
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Check ROADMAP.md
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python .github/scripts/roadmap.py --check
