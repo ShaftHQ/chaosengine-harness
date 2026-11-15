@@ -224,3 +224,125 @@ def test_tripwire_refuses_and_logs_writes_to_the_protected_home(tmp_path, monkey
         glc.apply_lean_compat_file(real / "config.toml")
     assert not (real / "config.toml").exists()
     assert str(real / "config.toml") in log.read_text(encoding="utf-8")
+
+
+def test_refusal_is_an_oserror_so_doctor_heal_paths_report_it(tmp_path):
+    assert issubclass(glc.GrokConfigWriteRefused, OSError)
+    path = tmp_path / "config.toml"
+    path.write_text(USER_PREFIX, encoding="utf-8")
+    with pytest.raises(OSError):
+        glc.update_config_file(path, lambda text: text + "[broken\n")
+
+
+@pytest.mark.skipif(os.name == "nt", reason="symlinks need privileges on Windows")
+def test_a_symlinked_config_is_edited_at_its_target(tmp_path):
+    dotfiles = tmp_path / "dotfiles"
+    dotfiles.mkdir()
+    target = dotfiles / "grok-config.toml"
+    target.write_text(USER_PREFIX, encoding="utf-8")
+    home = tmp_path / ".grok"
+    home.mkdir()
+    link = home / "config.toml"
+    link.symlink_to(target)
+    _install(link)
+    assert link.is_symlink()
+    assert os.path.realpath(link) == str(target)
+    data = tomllib.loads(target.read_text(encoding="utf-8"))
+    assert data["ui"]["show_thinking_blocks"] is True
+    assert data["profile"]["work"]["temperature"] == 0.2
+    assert not list(home.glob(".config.toml.*.tmp"))
+    _uninstall(link)
+    assert link.is_symlink()
+    assert target.read_text(encoding="utf-8") == USER_PREFIX
+
+
+@pytest.mark.skipif(os.name == "nt", reason="symlinks need privileges on Windows")
+def test_tripwire_follows_a_symlink_into_the_protected_home(tmp_path, monkeypatch):
+    real = tmp_path / "real-home" / ".grok"
+    real.mkdir(parents=True)
+    (real / "config.toml").write_text(USER_PREFIX, encoding="utf-8")
+    elsewhere = tmp_path / "sandbox"
+    elsewhere.mkdir()
+    (elsewhere / "config.toml").symlink_to(real / "config.toml")
+    monkeypatch.setenv("CHAOS_ENGINE_PROTECTED_GROK_HOME", str(real))
+    monkeypatch.delenv("CHAOS_ENGINE_PROTECTED_GROK_HOME_LOG", raising=False)
+    with pytest.raises(glc.GrokConfigWriteRefused):
+        glc.apply_lean_compat_file(elsewhere / "config.toml")
+    assert (real / "config.toml").read_text(encoding="utf-8") == USER_PREFIX
+
+
+def test_ui_pins_are_not_added_to_a_following_array_table(tmp_path):
+    original = (
+        "[ui]\n"
+        'theme = "dark"\n'
+        "\n"
+        "[[marketplace.sources]]\n"
+        'name = "example"\n'
+        "\n"
+        "[skills]\n"
+        "disabled = []\n"
+    )
+    path = tmp_path / "config.toml"
+    path.write_text(original, encoding="utf-8")
+    glc.apply_grok_ui_file(path)
+    data = tomllib.loads(path.read_text(encoding="utf-8"))
+    assert data["ui"]["show_thinking_blocks"] is True
+    assert data["ui"]["theme"] == "dark"
+    assert data["marketplace"]["sources"] == [{"name": "example"}]
+    assert glc.grok_ui_applied(path.read_text(encoding="utf-8"))
+    glc.remove_grok_ui_file(path)
+    assert tomllib.loads(path.read_text(encoding="utf-8")) == tomllib.loads(original)
+
+
+def test_outside_compat_strip_keeps_a_following_array_table(tmp_path):
+    original = (
+        "[compat.claude]\n"
+        "skills = true\n"
+        "\n"
+        "[[marketplace.sources]]\n"
+        'name = "example"\n'
+        "\n"
+        "[[mcp.servers]]\n"
+        'name = "srv"\n'
+    )
+    path = tmp_path / "config.toml"
+    path.write_text(original, encoding="utf-8")
+    glc.apply_lean_compat_file(path)
+    data = tomllib.loads(path.read_text(encoding="utf-8"))
+    assert data["marketplace"]["sources"] == [{"name": "example"}]
+    assert data["mcp"]["servers"] == [{"name": "srv"}]
+    glc.remove_lean_compat_file(path)
+    data = tomllib.loads(path.read_text(encoding="utf-8"))
+    assert data["marketplace"]["sources"] == [{"name": "example"}]
+    assert data["mcp"]["servers"] == [{"name": "srv"}]
+
+
+def test_a_foreign_write_after_the_temp_fsync_is_not_lost(tmp_path, monkeypatch):
+    """The re-read must happen after the temp file is durable, right before the rename."""
+    path = tmp_path / "config.toml"
+    path.write_text(USER_PREFIX, encoding="utf-8")
+    real_write_temp = glc._write_temp
+    calls = {"n": 0}
+
+    def write_temp_then_grok_writes(target, data):
+        name = real_write_temp(target, data)
+        calls["n"] += 1
+        if calls["n"] == 1:
+            with open(path, "a", encoding="utf-8") as handle:
+                handle.write("\n[marketplace]\nadded_by_grok = true\n")
+        return name
+
+    monkeypatch.setattr(glc, "_write_temp", write_temp_then_grok_writes)
+    glc.apply_grok_ui_file(path)
+    data = tomllib.loads(path.read_text(encoding="utf-8"))
+    assert calls["n"] == 2
+    assert data["marketplace"] == {"added_by_grok": True}
+    assert data["ui"]["show_thinking_blocks"] is True
+    assert [p.name for p in tmp_path.iterdir() if p.suffix == ".tmp"] == []
+
+
+def test_a_new_config_gets_a_normal_mode(tmp_path):
+    path = tmp_path / ".grok" / "config.toml"
+    glc.apply_grok_ui_file(path)
+    if os.name != "nt":
+        assert path.stat().st_mode & 0o777 == 0o644

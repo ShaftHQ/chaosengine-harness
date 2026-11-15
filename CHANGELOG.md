@@ -10,13 +10,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- Grok user config (`~/.grok/config.toml`) edits are now safe (ShaftHQ/SHAFT_ENGINE#8070). Every write takes a lock, writes a temp file in the same folder, fsyncs and renames it into place. It is refused if the result is not valid TOML or another writer keeps changing the file. An interrupted or concurrent write can no longer leave a torn file.
-- Removing a ChaosEngine marker span now drops only the lines ChaosEngine owns. Tables another tool wrote between the markers (for example the Grok CLI's `[marketplace]` and `[[marketplace.sources]]`) are kept. Install then uninstall returns the user's file byte for byte, and repeated installs no longer add blank lines.
+- Grok user config (`~/.grok/config.toml`) edits are now safe (ShaftHQ/SHAFT_ENGINE#8070). Every write takes a lock, writes a temp file in the same folder, fsyncs and renames it into place. The file is re-read after the temp file is durable and replaced only if no other writer changed it; otherwise the edit is redone. It is refused if the result is not valid TOML or another writer keeps changing the file. A symlinked config is edited at its target. An interrupted or concurrent ChaosEngine write can no longer leave a torn file.
+- Removing a ChaosEngine marker span now drops only the lines ChaosEngine owns. Tables another tool wrote between the markers (for example the Grok CLI's `[marketplace]` and `[[marketplace.sources]]`) are kept. For ordinary LF files, install then uninstall returns the user's file byte for byte (extra trailing blank lines, CRLF and a missing final newline may be normalized), and repeated installs no longer add blank lines.
+- `[[array]]` tables now end the `[ui]` table and the outside `[compat.*]` tables the installer replaces, so UI pins are no longer added to a preceding array element and following array tables (for example `[[marketplace.sources]]`) are no longer deleted.
 
 ### Added
 
-- `tests/conftest.py` points `GROK_HOME` at a throwaway folder for the whole run. A tripwire refuses and logs any write under the real Grok home, and the session fails if it fired.
-- `tests/scripts/test_grok_config_safety_8070.py`: torn writes, parallel writers, a foreign writer mid-edit, invalid TOML, and preserving unrelated sections.
+- `tests/conftest.py` points `GROK_HOME` at a throwaway folder for the whole run. A tripwire refuses and logs any `grok_lean_config` write under the real Grok home, and the session fails if it fired.
+- `tests/scripts/test_grok_config_safety_8070.py`: torn writes, parallel writers, a foreign writer mid-edit and after the temp fsync, invalid TOML, symlinked configs, array tables next to `[ui]`/`[compat.*]`, and preserving unrelated sections.
 
 ## [0.4.20261114.7] - 2026-11-14
 

@@ -52,6 +52,7 @@ LEAN_GROK_SKILL_DISABLE = (
 )
 
 _TABLE_HEADER = re.compile(r"^\[([^\]]+)\]\s*$")
+_ANY_HEADER = re.compile(r"^\[\[[^\]]+\]\]\s*$|^\[[^\]]+\]\s*$")
 
 
 def grok_home(home: Path | None = None) -> Path:
@@ -206,6 +207,11 @@ def _strip_toml_tables(text: str, tables: set[str]) -> str:
     for line in lines:
         bare = line.splitlines()[0] if line else ""
         stripped = bare.strip()
+        if stripped.startswith("[[") and _ANY_HEADER.match(stripped):
+            # An array table ends the skipped table and is never ours (#8070).
+            skipping = False
+            kept.append(line)
+            continue
         match = _TABLE_HEADER.match(stripped)
         if match is not None:
             name = match.group(1).strip().strip('"')
@@ -278,10 +284,12 @@ def _ui_table_span(lines: list[str]) -> tuple[int, int] | None:
     """Return ``[start, end)`` covering a top-level ``[ui]`` table, header included."""
     start = None
     for index, line in enumerate(lines):
-        match = _TABLE_HEADER.match(line.strip())
-        if match is None:
+        stripped = line.strip()
+        if _ANY_HEADER.match(stripped) is None:
             continue
-        name = match.group(1).strip().strip('"')
+        match = _TABLE_HEADER.match(stripped)
+        # ``[[array]]`` headers end the [ui] table too (#8070 review).
+        name = match.group(1).strip().strip('"') if match and not stripped.startswith("[[") else None
         if start is None:
             if name == "ui":
                 start = index
@@ -344,8 +352,12 @@ def grok_ui_applied(text: str) -> bool:
     return True
 
 
-class GrokConfigWriteRefused(RuntimeError):
-    """Raised when a write would corrupt ``config.toml`` or touch a protected home."""
+class GrokConfigWriteRefused(OSError):
+    """Raised when a write would corrupt ``config.toml`` or touch a protected home.
+
+    An ``OSError`` subtype so callers that already handle I/O failures (doctor
+    heal paths catch ``OSError``) report a refused write instead of crashing.
+    """
 
 
 def _toml_problem(text: str) -> str | None:
@@ -363,9 +375,16 @@ def _guard_protected_home(path: Path) -> None:
     protected = os.environ.get("CHAOS_ENGINE_PROTECTED_GROK_HOME", "").strip()
     if not protected:
         return
+    root_raw = Path(protected).expanduser()
+    roots = {Path(os.path.abspath(root_raw)), Path(os.path.realpath(root_raw))}
+    targets = {Path(os.path.abspath(path)), Path(os.path.realpath(path))}
     target = Path(os.path.abspath(path))
-    root = Path(os.path.abspath(Path(protected).expanduser()))
-    if target == root or root in target.parents:
+    hit = next(
+        (root for root in roots for item in targets if item == root or root in item.parents),
+        None,
+    )
+    if hit is not None:
+        root = hit
         log = os.environ.get("CHAOS_ENGINE_PROTECTED_GROK_HOME_LOG", "").strip()
         if log:
             with contextlib.suppress(OSError), open(log, "a", encoding="utf-8") as handle:
@@ -408,7 +427,8 @@ def _read_snapshot(path: Path) -> bytes | None:
         return None
 
 
-def _atomic_replace(path: Path, data: bytes) -> None:
+def _write_temp(path: Path, data: bytes) -> str:
+    """Write ``data`` to a fsynced temp file beside ``path``; return its name."""
     mode = None
     with contextlib.suppress(FileNotFoundError):
         mode = path.stat().st_mode & 0o7777
@@ -418,8 +438,17 @@ def _atomic_replace(path: Path, data: bytes) -> None:
             handle.write(data)
             handle.flush()
             os.fsync(handle.fileno())
-        if mode is not None:
-            os.chmod(tmp_name, mode)
+        # New files get the usual 0o644 rather than mkstemp's 0o600.
+        os.chmod(tmp_name, mode if mode is not None else 0o644)
+    except BaseException:
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(tmp_name)
+        raise
+    return tmp_name
+
+
+def _commit_temp(tmp_name: str, path: Path) -> None:
+    try:
         os.replace(tmp_name, path)
     except BaseException:
         with contextlib.suppress(FileNotFoundError):
@@ -437,12 +466,16 @@ def update_config_file(path: Path, transform, *, dry_run: bool = False, attempts
     """Read-transform-write ``path`` safely (#8070); return ``(before, after)``.
 
     Under an exclusive lock: read, transform, refuse if the result does not parse
-    as TOML (unless the input already did not parse and the edit leaves it no
-    worse), write to a temp file in the same directory, fsync, then re-read and
-    replace only if no other writer (for example the Grok CLI, which does not
-    take our lock) changed the file meanwhile; otherwise retry.
+    as TOML, write to a temp file in the same directory and fsync it, then
+    re-read the destination and replace it only if no other writer (for example
+    the Grok CLI, which does not take our lock) changed it meanwhile; otherwise
+    discard the temp file and retry. Without the other writer's cooperation a
+    tiny window between that re-read and the rename remains.
     """
     _guard_protected_home(path)
+    # A symlinked config.toml (dotfile managers) is edited at its target so the
+    # link survives; os.replace on the link itself would swap it for a file.
+    path = Path(os.path.realpath(path))
     if dry_run:
         raw = _read_snapshot(path)
         before = "" if raw is None else raw.decode("utf-8")
@@ -460,9 +493,12 @@ def update_config_file(path: Path, transform, *, dry_run: bool = False, attempts
                 raise GrokConfigWriteRefused(
                     f"refusing to write {path}: result is not valid TOML ({problem}); file left unchanged"
                 )
+            tmp_name = _write_temp(path, after.encode("utf-8"))
             if _read_snapshot(path) != raw:
+                with contextlib.suppress(FileNotFoundError):
+                    os.unlink(tmp_name)
                 continue
-            _atomic_replace(path, after.encode("utf-8"))
+            _commit_temp(tmp_name, path)
             return before, after
     raise GrokConfigWriteRefused(
         f"refusing to write {path}: another writer kept changing it; file left unchanged"
