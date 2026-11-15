@@ -31,6 +31,7 @@ query($owner: String!, $repo: String!, $number: Int!) {
     issue(number: $number) {
       number title url state
       subIssues(first: 100) {
+        pageInfo { hasNextPage }
         nodes { number title url state repository { nameWithOwner } }
       }
     }
@@ -46,9 +47,14 @@ def fetch(owner: str = EPIC_OWNER, repo: str = EPIC_REPO, number: int = EPIC_NUM
          "-f", f"owner={owner}", "-f", f"repo={repo}", "-F", f"number={number}"],
         check=True, capture_output=True, text=True,
     ).stdout
-    issue = json.loads(out)["data"]["repository"]["issue"]
+    payload = json.loads(out)
+    if payload.get("errors"):
+        raise SystemExit(f"GitHub API error: {payload['errors']}")
+    issue = ((payload.get("data") or {}).get("repository") or {}).get("issue")
     if issue is None:
         raise SystemExit(f"epic {owner}/{repo}#{number} not found")
+    if ((issue.get("subIssues") or {}).get("pageInfo") or {}).get("hasNextPage"):
+        raise SystemExit("epic has more than 100 sub-issues; add pagination to roadmap.py")
     return issue
 
 
@@ -58,7 +64,7 @@ def _cell(text: str) -> str:
 
 def render(epic: dict, today: str) -> str:
     """Render the roadmap Markdown. `today` is an ISO date string."""
-    nodes = epic.get("subIssues", {}).get("nodes", [])
+    nodes = (epic.get("subIssues") or {}).get("nodes") or []
     open_items = [n for n in nodes if n["state"] == "OPEN"]
     closed_items = [n for n in nodes if n["state"] != "OPEN"]
     lines = [
