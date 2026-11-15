@@ -462,7 +462,14 @@ def _commit_temp(tmp_name: str, path: Path) -> None:
             os.close(dir_fd)
 
 
-def update_config_file(path: Path, transform, *, dry_run: bool = False, attempts: int = 5) -> tuple[str, str]:
+def update_config_file(
+    path: Path,
+    transform,
+    *,
+    dry_run: bool = False,
+    attempts: int = 5,
+    validate=None,
+) -> tuple[str, str]:
     """Read-transform-write ``path`` safely (#8070); return ``(before, after)``.
 
     Under an exclusive lock: read, transform, refuse if the result does not parse
@@ -471,7 +478,11 @@ def update_config_file(path: Path, transform, *, dry_run: bool = False, attempts
     the Grok CLI, which does not take our lock) changed it meanwhile; otherwise
     discard the temp file and retry. Without the other writer's cooperation a
     tiny window between that re-read and the rename remains.
+
+    ``validate(text) -> str | None`` returns a problem description to refuse the
+    write; it defaults to the TOML check. Other host configs (JSON) pass their own.
     """
+    check = _toml_problem if validate is None else validate
     _guard_protected_home(path)
     # A symlinked config.toml (dotfile managers) is edited at its target so the
     # link survives; os.replace on the link itself would swap it for a file.
@@ -488,10 +499,10 @@ def update_config_file(path: Path, transform, *, dry_run: bool = False, attempts
             after = transform(before)
             if after == before:
                 return before, after
-            problem = _toml_problem(after)
+            problem = check(after)
             if problem is not None:
                 raise GrokConfigWriteRefused(
-                    f"refusing to write {path}: result is not valid TOML ({problem}); file left unchanged"
+                    f"refusing to write {path}: result does not parse ({problem}); file left unchanged"
                 )
             tmp_name = _write_temp(path, after.encode("utf-8"))
             if _read_snapshot(path) != raw:

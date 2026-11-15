@@ -510,16 +510,82 @@ def repair_user_github_mcp(
     for host, path in user_mcp_paths(home):
         if not path.is_file():
             continue
-        original = path.read_text(encoding="utf-8")
-        updated, removed = strip_github_mcp_from_text(original)
+        removed = _rewrite_host_config(path, strip_github_mcp_from_text)
         if not removed:
             unchanged.append(str(path))
             continue
-        path.write_text(updated, encoding="utf-8")
         stripped_rows.append({"host": host, "path": str(path), "ids": removed})
     result["stripped"] = stripped_rows
     result["unchangedFiles"] = unchanged
     return result
+
+
+def _safe_writer():
+    """Load the locked atomic config writer that ships beside this file (#8070)."""
+    import importlib.util as _ilu
+    import sys as _sys
+
+    name = "ce_grok_lean_config"
+    module = _sys.modules.get(name)
+    if module is not None and hasattr(module, "update_config_file"):
+        return module.update_config_file
+    path = Path(__file__).resolve().with_name("grok_lean_config.py")
+    spec = _ilu.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"safe config writer missing: {path}")
+    module = _ilu.module_from_spec(spec)
+    _sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module.update_config_file
+
+
+def _json_problem(text: str) -> str | None:
+    try:
+        json.loads(text)
+    except ValueError as error:
+        return str(error)
+    return None
+
+
+def _rewrite_host_config(path: Path, edit: Callable[[str], tuple[str, list[str]]]) -> list[str]:
+    """Apply ``edit`` to a host config through the safe writer; return removed ids.
+
+    The edit runs under the writer's lock and may run again if another process
+    changed the file meanwhile, so the ids reported come from the attempt that
+    was written. The result must still parse (TOML, or JSON for JSON files).
+    """
+    try:
+        _unused, found = edit(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return []
+    if not found:
+        return []  # nothing to strip: no lock file, no write
+    removed: list[str] = []
+
+    def transform(text: str) -> str:
+        updated, ids = edit(text)
+        removed[:] = ids
+        return updated if ids else text
+
+    def validate(text: str) -> str | None:
+        if text.lstrip().startswith("{"):
+            return _json_problem(text)
+        return _toml_problem_for(text)
+
+    _safe_writer()(path, transform, validate=validate)
+    return list(removed)
+
+
+def _toml_problem_for(text: str) -> str | None:
+    try:
+        import tomllib
+    except ImportError:  # pragma: no cover - Python < 3.11
+        return None
+    try:
+        tomllib.loads(text)
+    except ValueError as error:
+        return str(error)
+    return None
 
 
 def _deja_command(value: object) -> bool:
@@ -744,20 +810,19 @@ def _looks_like_json(text: str) -> bool:
 def _strip_deja_file(path: Path) -> list[str]:
     if not path.is_file():
         return []
-    original = path.read_text(encoding="utf-8")
+    return _rewrite_host_config(path, _strip_deja_text)
+
+
+def _strip_deja_text(original: str) -> tuple[str, list[str]]:
     if _looks_like_json(original):
         payload = _load_json_document(original)
         if payload is None:
-            return []
+            return original, []
         cleaned, removed = _scrub_deja_json(payload)
         if not removed:
-            return []
-        path.write_text(json.dumps(cleaned, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        return removed
-    updated, removed = _strip_deja_toml(original)
-    if removed and updated != original:
-        path.write_text(updated, encoding="utf-8")
-    return removed
+            return original, []
+        return json.dumps(cleaned, indent=2, sort_keys=True) + "\n", removed
+    return _strip_deja_toml(original)
 
 
 def _remove_deja_skills(roots: tuple[Path, ...]) -> list[str]:

@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.4.20261115.2] - 2026-11-15
+
+### Fixed
+
+- `mcp_policy.py` host-config rewrites (GitHub MCP strip in `repair_user_github_mcp`, deja strip in `_strip_deja_file`) now go through the same locked, atomic, parse-checked writer as the Grok lean config (ShaftHQ/SHAFT_ENGINE#8070). This covers `~/.grok/config.toml`, `~/.codex/config.toml`, `~/.claude.json` and the other host MCP files. Files with nothing to strip are not locked or written. The test tripwire now also catches these writes.
+
+### Added
+
+- `update_config_file(..., validate=...)` takes a parse check, so JSON host configs are checked as JSON.
+- `tests/scripts/test_mcp_policy_safe_writer_8070.py`: crash before rename, symlinked config, tripwire, no lock file when nothing changes, JSON output.
+
 ## [0.4.20261115.1] - 2026-11-15
 
 ### Fixed

@@ -10,7 +10,7 @@ Do not open a public issue, pull request, or discussion for a vulnerability. Cod
 
 ## Supported versions
 
-The supported version is the latest `main`. The version string is the contents of `VERSION`. As of 2026-11-15 that string is `0.4.20261115.1`. Older builds are not supported.
+The supported version is the latest `main`. The version string is the contents of `VERSION`. As of 2026-11-15 that string is `0.4.20261115.2`. Older builds are not supported.
 
 ## Scope
 
