@@ -115,8 +115,25 @@ def entry_identity_line(installed_root: Path) -> str:
     return (warn + "\n") if warn else ""
 
 
+def entry_unfinished(installed_root: Path) -> str:
+    """#8065 R3: unfinished task checkpoints for this project, newest first ('' when none)."""
+    candidate = installed_root / "task_ledger.py"
+    if not candidate.is_file():
+        return ""
+    project = installed_root.parent if installed_root.name == ".chaos-engine" else Path.cwd()
+    try:
+        module = runpy.run_path(str(candidate))
+        return module["unfinished_listing"](project)
+    except Exception:  # nosec B110 - entry must not crash
+        return ""
+
+
 def entry_output(installed_root: Path, full: bool = False, opt_out: str = "") -> str:
     """Installed re-runs print one line while the bundle is unchanged (token economy)."""
+    return entry_unfinished(installed_root) + _entry_output(installed_root, full, opt_out)
+
+
+def _entry_output(installed_root: Path, full: bool = False, opt_out: str = "") -> str:
     bundle = entry_bundle(installed_root, opt_out)
     if installed_root.name != ".chaos-engine":
         return bundle
@@ -499,6 +516,8 @@ def tool_help_text() -> str:
         "\n"
         "checkpoint/resume (agent work across session caps; references/durable-jobs.md):\n"
         "  tool.py checkpoint TASK STEP [--branch B] [--pr N] [--next TEXT] [--start]  (exit 3 = past 35 min, stop)\n"
+        "  tool.py checkpoint TASK STEP --start --workdir PATH [--prereq swap|disk:GiB|mem:GiB]  (exit 5 = volatile root)\n"
+        "  tool.py checkpoint TASK --verify  (exit 7 = pushed HEAD has no checkpoint)\n"
         "  tool.py checkpoint TASK --budget [35]  (exit 3 = wrap up now)\n"
         "  tool.py resume [TASK]  (short brief; exit 6 = no ledger)\n"
         "\n"

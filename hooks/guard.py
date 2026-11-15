@@ -2355,6 +2355,17 @@ def _publish_grok_load(start: Path) -> None:
     module.publish_from(start)
 
 
+def _unfinished_tasks(cwd: Path) -> str:
+    """#8065 R3: unfinished task checkpoints for this work root on the SessionStart card."""
+    ledger = _task_ledger_module()
+    if ledger is None or not hasattr(ledger, "unfinished_listing"):
+        return ""
+    try:
+        return ledger.unfinished_listing(cwd).rstrip()
+    except (OSError, ValueError):
+        return ""
+
+
 def _session_start_output(event: dict, event_name: str, session_id: str, token) -> int | None:
     if event_name in {"SessionStart", "PreCompact"}:
         module = _unattended_delivery()
@@ -2378,6 +2389,9 @@ def _session_start_output(event: dict, event_name: str, session_id: str, token) 
     drift = reflection.reflection_controller_drift(Path(str(event.get("cwd") or Path.cwd())))
     if drift:
         context = f"{context}\n\n{drift}"
+    unfinished = _unfinished_tasks(Path(str(event.get("cwd") or Path.cwd())))
+    if unfinished:
+        context = f"{context}\n\n{unfinished}"
     print(json.dumps({"additionalContext": context}))
     _mark_entry_injected(session_id)
     return 0

@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.4.20261115.4] - 2026-11-15
+
+### Added
+
+- Crash-safe, resumable long tasks (ShaftHQ/SHAFT_ENGINE#8065), on top of `tool.py checkpoint` / `resume`:
+  - `checkpoint --start --workdir PATH` declares the work root. `/tmp` and `/dev/shm` are refused (exit 5, `--allow-volatile` to override); `$TMPDIR` and tmpfs roots warn. A ledger on volatile storage warns too.
+  - Each step records the work root's git HEAD (or `--head`) and `--prereq` checks (`swap`, `disk:GiB`, `mem:GiB`) that `resume` re-runs.
+  - `checkpoint TASK --verify` exits 7 when the pushed HEAD has no checkpoint.
+  - `tool.py entry` and the SessionStart card list unfinished tasks for the project, newest first, with `Resume at:`; ones older than `CHAOS_ENGINE_RESUME_STALE_DAYS` (default 7) are marked stale. Done tasks are not listed.
+  - A budget stop (exit 3) records a planned-stop row and prints "planned stop at step X; next Y".
+  - `resume` names why the last session ended: box restart (boot after the last checkpoint), planned stop, or likely host cap.
+- `tests/scripts/test_task_ledger_crash_safe_8065.py`: offline fixtures for each requirement.
+
 ## [0.4.20261115.2] - 2026-11-15
 
 ### Fixed

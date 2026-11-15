@@ -24,6 +24,15 @@ session or the parent sees what is left without the transcript.
 Resume at (#7293): the brief's first line is exactly one ``Resume at: <next>``;
 a step without ``--next`` warns and keeps the last one.
 
+Crash-safe (ShaftHQ/SHAFT_ENGINE#8065): ``--start --workdir PATH`` declares
+the work root. ``/tmp`` and ``/dev/shm`` are refused (exit 5) and other volatile
+roots ($TMPDIR, tmpfs) warn. Steps also record ``--head`` (or the work root's
+git HEAD) and ``--prereq`` checks (``swap``, ``disk:GiB``, ``mem:GiB``) that
+``resume`` re-runs. ``tool.py entry`` lists unfinished tasks, newest first,
+stale ones marked. A budget stop records a planned-stop row, and ``resume``
+names the cause (box restart, host cap, planned stop). ``checkpoint TASK
+--verify`` exits 7 when the work root's pushed HEAD has no checkpoint.
+
 State: ``$CHAOS_ENGINE_TASKS_DIR`` or ``~/.local/state/chaos-engine/tasks``,
 one ``TASK.jsonl`` per task, outside any worktree so it survives cleanup.
 Stdlib only.
@@ -35,6 +44,8 @@ import argparse
 import json
 import os
 import re
+import shutil
+import subprocess  # nosec B404 - fixed git argv only.
 import sys
 import time
 from pathlib import Path
@@ -80,6 +91,15 @@ OWNER_FINISH_CONTINUE = (
 OWNER_FINISH_ENV = "CHAOS_ENGINE_OWNER_FINISH_GOAL"
 OWNER_FINISH_STATE = "owner-finish-goal.json"
 DONE = "done"
+# #8065: work roots a reboot wipes. Refused outright; other volatile roots only warn.
+REFUSED_VOLATILE_ROOTS = ("/tmp", "/dev/shm")
+VOLATILE_FS_TYPES = frozenset({"tmpfs", "ramfs"})
+STALE_DAYS_ENV = "CHAOS_ENGINE_RESUME_STALE_DAYS"
+DEFAULT_STALE_DAYS = 7
+BOOT_TIME_ENV = "CHAOS_ENGINE_BOOT_TIME"
+PLANNED_STOP = "planned-stop"
+EXIT_VOLATILE = 5
+EXIT_UNCHECKPOINTED = 7
 
 
 def tasks_root() -> Path:
@@ -110,11 +130,15 @@ def entries(name: str) -> list[dict]:
 
 
 def record(name: str, step: str, *, branch: str = "", pr: str = "", next_action: str = "",
-           start: bool = False, now: float | None = None, spec: str = "", kind: str = "") -> dict:
+           start: bool = False, now: float | None = None, spec: str = "", kind: str = "",
+           workdir: str = "", head: str = "", prereqs: list[str] | None = None) -> dict:
     row = {"t": round(now if now is not None else time.time()), "step": step}
-    for key, value in (("branch", branch), ("pr", pr), ("next", next_action), ("spec", spec), ("kind", kind)):
+    for key, value in (("branch", branch), ("pr", pr), ("next", next_action), ("spec", spec), ("kind", kind),
+                       ("workdir", workdir), ("head", head)):
         if value:
             row[key] = value
+    if prereqs:
+        row["prereq"] = list(prereqs)
     if start:
         row["start"] = True
     path = ledger(name)
@@ -321,14 +345,223 @@ def brief(name: str) -> str | None:
     sessions = sum(1 for row in rows if row.get("start")) or 1
     when = time.strftime("%Y-%m-%d %H:%M", time.localtime(merged["t"]))
     parts = [f"{name}: last step {merged['step']!r} at {when}", f"session {sessions}"]
-    parts += [f"{key} {merged[key]}" for key in ("branch", "pr") if key in merged]
+    parts += [f"{key} {merged[key]}" for key in ("branch", "pr", "head", "workdir") if key in merged]
     text = "; ".join(parts)
     if merged["step"] == DONE:
         text += "\nstatus: done; nothing to resume"
         return text + ("\n" + table if table else "")
+    # #8065: why the last session ended, and the environment to re-check first.
+    cause = stop_cause(entries(name))
+    if cause:
+        text += "\n" + cause
+    for prereq in merged.get("prereq") or []:
+        ok, message = check_prereq(prereq)
+        text += f"\nprereq {'ok' if ok else 'FAIL'}: {message}"
     # #7293: exactly one exact next step, first, so a resumed session never rereads history.
     resume_at = merged.get("next") or MISSING_NEXT
     return f"Resume at: {resume_at}\n{text}" + ("\n" + table if table else "")
+
+
+# --- #8065 crash-safe helpers -------------------------------------------------
+
+def _under(path: str, root: str) -> bool:
+    path, root = os.path.normpath(path), os.path.normpath(root)
+    return path == root or path.startswith(root.rstrip(os.sep) + os.sep)
+
+
+def _mount_fs_type(path: str, mounts_file: str = "/proc/mounts") -> str:
+    """Filesystem type of the longest mount point containing *path* ('' when unknown)."""
+    try:
+        lines = Path(mounts_file).read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return ""
+    best, fs_type = "", ""
+    for line in lines:
+        parts = line.split()
+        if len(parts) < 3:
+            continue
+        point = parts[1].replace("\\040", " ")
+        if _under(path, point) and len(point) > len(best):
+            best, fs_type = point, parts[2]
+    return fs_type
+
+
+def volatile_reason(path: str | os.PathLike, *, mounts_file: str = "/proc/mounts") -> tuple[str, bool]:
+    """('', False) for a durable path; else (reason, refused). Refused = /tmp or /dev/shm."""
+    resolved = os.path.realpath(os.path.expanduser(str(path)))
+    for root in REFUSED_VOLATILE_ROOTS:
+        if _under(resolved, root) or _under(os.path.normpath(os.path.abspath(str(path))), root):
+            return f"{path} is under {root}, which a restart wipes", True
+    tmpdir = os.environ.get("TMPDIR")
+    if tmpdir and _under(resolved, os.path.realpath(tmpdir)):
+        return f"{path} is under $TMPDIR ({tmpdir}), which may be wiped", False
+    fs_type = _mount_fs_type(resolved, mounts_file)
+    if fs_type in VOLATILE_FS_TYPES:
+        return f"{path} is on {fs_type}, which a restart wipes", False
+    return "", False
+
+
+def git_head(workdir: str) -> str:
+    """HEAD of *workdir* when it is a git checkout, else ''."""
+    if not workdir or not Path(workdir).is_dir():
+        return ""
+    try:
+        out = subprocess.run(  # nosec B603 B607 - fixed argv.
+            ["git", "-C", workdir, "rev-parse", "HEAD"], capture_output=True, text=True, timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return out.stdout.strip() if out.returncode == 0 else ""
+
+
+def git_pushed_head(workdir: str) -> str:
+    """The upstream commit of *workdir*'s branch (what was pushed), else ''."""
+    try:
+        out = subprocess.run(  # nosec B603 B607 - fixed argv.
+            ["git", "-C", workdir, "rev-parse", "@{u}"], capture_output=True, text=True, timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return out.stdout.strip() if out.returncode == 0 else ""
+
+
+def check_prereq(spec: str) -> tuple[bool, str]:
+    """Re-check one environment prerequisite: swap, disk:GiB (free in work root), mem:GiB."""
+    name, _, value = spec.partition(":")
+    name = name.strip().casefold()
+    if name == "swap":
+        try:
+            lines = Path("/proc/swaps").read_text(encoding="utf-8").splitlines()[1:]
+        except OSError:
+            return True, "swap: cannot read /proc/swaps; check by hand"
+        return (bool(lines), "swap: on" if lines else "swap: missing; re-add it before resuming")
+    if name in {"disk", "mem"}:
+        try:
+            need = float(value)
+        except ValueError:
+            return False, f"{spec}: needs a GiB number, for example {name}:2"
+        if name == "disk":
+            free = shutil.disk_usage(os.environ.get("CHAOS_ENGINE_PREREQ_DISK_PATH") or ".").free / 2**30
+        else:
+            free = 0.0
+            try:
+                for line in Path("/proc/meminfo").read_text(encoding="utf-8").splitlines():
+                    if line.startswith("MemAvailable:"):
+                        free = int(line.split()[1]) / 2**20
+            except OSError:
+                return True, f"{spec}: cannot read /proc/meminfo; check by hand"
+        ok = free >= need
+        return ok, f"{name}: {free:.1f} GiB free (need {need:g})" + ("" if ok else "; free some before resuming")
+    return False, f"{spec}: unknown prerequisite (use swap, disk:GiB or mem:GiB)"
+
+
+def boot_time() -> float | None:
+    """Host boot time (epoch seconds); `CHAOS_ENGINE_BOOT_TIME` overrides for fixtures."""
+    override = os.environ.get(BOOT_TIME_ENV)
+    if override:
+        try:
+            return float(override)
+        except ValueError:
+            return None
+    try:
+        for line in Path("/proc/stat").read_text(encoding="utf-8").splitlines():
+            if line.startswith("btime "):
+                return float(line.split()[1])
+    except OSError:
+        return None
+    return None
+
+
+def stop_cause(rows: list[dict], now: float | None = None) -> str:
+    """One line on why the last session ended, for the resume brief and the owner report."""
+    timed = [row for row in rows if "t" in row]
+    if not timed:
+        return ""
+    last = timed[-1]
+    if last.get("step") == DONE:
+        return ""
+    stamp = time.strftime("%H:%M", time.localtime(last["t"]))
+    step = next((row["step"] for row in reversed(timed) if "step" in row), "?")
+    booted = boot_time()
+    if booted is not None and booted > last["t"]:
+        when = time.strftime("%Y-%m-%d %H:%M", time.localtime(booted))
+        return f"cause: box restarted {when}; last checkpoint {stamp}; resume after step {step!r}"
+    if last.get(PLANNED_STOP):
+        return f"cause: planned stop ({last[PLANNED_STOP]}) after step {step!r} at {stamp}"
+    current = now if now is not None else time.time()
+    if current - last["t"] > HOST_CAP_MINUTES * 60:
+        return f"cause: session ended without a planned stop (likely the host cap) after step {step!r} at {stamp}"
+    return ""
+
+
+def last_field(rows: list[dict], key: str):
+    for row in reversed(rows):
+        if row.get(key):
+            return row[key]
+    return None
+
+
+def stale_days() -> float:
+    try:
+        return float(os.environ.get(STALE_DAYS_ENV) or DEFAULT_STALE_DAYS)
+    except ValueError:
+        return float(DEFAULT_STALE_DAYS)
+
+
+def unfinished(project: str | os.PathLike | None = None, now: float | None = None) -> list[dict]:
+    """Unfinished tasks, newest first. With *project*, only tasks whose work root is inside or contains it."""
+    current = now if now is not None else time.time()
+    out = []
+    for name in open_tasks():
+        rows = entries(name)
+        timed = [row for row in rows if "t" in row]
+        if not timed:
+            continue
+        workdir = last_field(rows, "workdir") or ""
+        if project is not None:
+            proj = os.path.realpath(str(project))
+            wd = os.path.realpath(workdir) if workdir else ""
+            if not wd or not (_under(wd, proj) or _under(proj, wd)):
+                continue
+        last_t = timed[-1]["t"]
+        out.append({
+            "task": name,
+            "t": last_t,
+            "stale": current - last_t > stale_days() * 86400,
+            "next": last_field(rows, "next") or MISSING_NEXT,
+            "workdir": workdir,
+        })
+    out.sort(key=lambda row: row["t"], reverse=True)
+    return out
+
+
+def unfinished_listing(project: str | os.PathLike | None = None, now: float | None = None) -> str:
+    """The SessionStart / `tool.py entry` block: one line per unfinished task, newest first."""
+    rows = unfinished(project, now)
+    if not rows:
+        return ""
+    lines = ["Unfinished tasks (run `tool.py resume TASK` first; follow its `Resume at:`):"]
+    for row in rows:
+        when = time.strftime("%Y-%m-%d %H:%M", time.localtime(row["t"]))
+        tag = " [stale]" if row["stale"] else ""
+        lines.append(f"- {row['task']}{tag} ({when}): Resume at: {row['next']}")
+    return "\n".join(lines) + "\n"
+
+
+def unchecked_push(name: str, workdir: str = "") -> str:
+    """'' when the work root's pushed HEAD matches a checkpoint; else a one-line finding."""
+    rows = entries(name)
+    workdir = workdir or last_field(rows, "workdir") or ""
+    if not workdir:
+        return f"{name}: no work root recorded; pass --workdir"
+    pushed = git_pushed_head(workdir)
+    if not pushed:
+        return ""
+    heads = [row.get("head") for row in rows if row.get("head")]
+    if any(pushed.startswith(head) for head in heads if len(head) >= 7):
+        return ""
+    return (f"{name}: pushed {pushed[:12]} has no checkpoint; run "
+            f"`tool.py checkpoint {name} STEP --head {pushed[:12]} --next \"...\"`")
 
 
 SPEC_REFUSAL = (
@@ -371,6 +604,22 @@ def checkpoint_step(ns: argparse.Namespace) -> int:
         print(SPEC_REFUSAL.format(task=ns.task, default=spec_dir() / f"spec-{ns.task}.md"), file=sys.stderr)
         return 4
     kind = getattr(ns, "kind", "") or ""
+    workdir = getattr(ns, "workdir", "") or ""
+    if workdir:
+        reason, refused = volatile_reason(workdir)
+        if refused and not getattr(ns, "allow_volatile", False):
+            print(f"{ns.task}: refused: {reason}. Keep work under a durable root "
+                  "(for example /workspace/<task>/) or pass --allow-volatile.", file=sys.stderr)
+            return EXIT_VOLATILE
+        if reason:
+            print(f"{ns.task}: WARNING: {reason}. Move work to a durable root.", file=sys.stderr)
+        workdir = os.path.abspath(os.path.expanduser(workdir))
+    if ns.start:
+        reason, _ = volatile_reason(tasks_root())
+        if reason:
+            print(f"{ns.task}: WARNING: the task ledger {reason}; set CHAOS_ENGINE_TASKS_DIR "
+                  "or XDG_STATE_HOME to a durable path.", file=sys.stderr)
+    head = getattr(ns, "head", "") or git_head(workdir or last_field(entries(ns.task), "workdir") or "")
     record(
         ns.task,
         ns.step,
@@ -380,6 +629,9 @@ def checkpoint_step(ns: argparse.Namespace) -> int:
         start=ns.start,
         spec=str(spec) if ns.spec and spec else "",
         kind=kind,
+        workdir=workdir,
+        head=head if ns.step != DONE else "",
+        prereqs=getattr(ns, "prereq", None) or None,
     )
     if ns.step != DONE and not ns.next_action:
         print(
@@ -402,7 +654,24 @@ def checkpoint_step(ns: argparse.Namespace) -> int:
         minutes=minutes_arg,
         explicit=explicit,
     )
-    return session_gate(ns.task, minutes)
+    code = session_gate(ns.task, minutes)
+    if code == 3:
+        planned_stop(ns.task, "budget")
+    return code
+
+
+def planned_stop(name: str, reason: str, now: float | None = None) -> dict:
+    """#8065 R4: mark a planned stop at a step boundary; start no new step after this."""
+    rows = [row for row in entries(name) if "step" in row]
+    step = rows[-1]["step"] if rows else "?"
+    nxt = last_field(entries(name), "next") or MISSING_NEXT
+    row = {"t": round(now if now is not None else time.time()), PLANNED_STOP: reason}
+    path = ledger(name)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(row, separators=(",", ":")) + "\n")
+    print(f"{name}: planned stop ({reason}) at step {step!r}; next {nxt}. Start no new step.", file=sys.stderr)
+    return row
 
 
 def write_owner_finish_goal(
@@ -497,7 +766,21 @@ def main(argv: list[str] | None = None, command: str = "checkpoint") -> int:
         parser.add_argument("--group", default="", help="target PR group for --item")
         parser.add_argument("--status", default="todo", help="todo|in-progress|pr #N|merged|blocked: why")
         parser.add_argument("--note", default="")
+        parser.add_argument("--workdir", default="", help="durable work root (#8065; /tmp and /dev/shm refused)")
+        parser.add_argument("--allow-volatile", action="store_true", help="accept a volatile --workdir")
+        parser.add_argument("--head", default="", help="head SHA (default: the work root's git HEAD)")
+        parser.add_argument("--prereq", action="append", default=[],
+                            help="re-checked on resume: swap, disk:GiB, mem:GiB (repeatable)")
+        parser.add_argument("--verify", action="store_true",
+                            help="exit 7 when the work root's pushed HEAD has no checkpoint (#8065 R2)")
         ns = parser.parse_args(args)
+        if ns.verify:
+            finding = unchecked_push(ns.task, ns.workdir)
+            if finding:
+                print(finding, file=sys.stderr)
+                return EXIT_UNCHECKPOINTED
+            print(f"{ns.task}: pushed HEAD has a checkpoint")
+            return 0
         if ns.item:
             record_item(ns.task, ns.item, group=ns.group, status=ns.status, note=ns.note)
             print(items_table(ns.task))
@@ -520,6 +803,8 @@ def main(argv: list[str] | None = None, command: str = "checkpoint") -> int:
                 return 0
             verdict = STOP_NOW if spent else "ok"
             print(f"{ns.task}: {elapsed:.0f}/{ns.minutes:.0f} min; {verdict}")
+            if spent:
+                planned_stop(ns.task, "budget")
             return 3 if spent else 0
         if not ns.step:
             parser.error("STEP is required unless --budget is given")

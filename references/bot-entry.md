@@ -66,7 +66,8 @@ Grok Bot stops a background session at about 50 minutes of wall clock; pings
 do not extend it. The one session-length rule, enforced at 35 minutes:
 
 - Start with `python3 .chaos-engine/tool.py resume TASK` and
-  `tool.py checkpoint TASK STEP --start`; follow `Resume at:`, not the transcript.
+  `tool.py checkpoint TASK STEP --start --workdir PATH`; follow `Resume at:`,
+  not the transcript. Durable roots only ([checkpoint-resume](checkpoint-resume.md)).
 - After every build, test, commit, push, PR or merge step, run
   `tool.py checkpoint TASK STEP --branch B --pr N --next "..."`. It warns in
   the last 5 minutes and exits 3 past 35: push WIP, record `--next`, end the turn.

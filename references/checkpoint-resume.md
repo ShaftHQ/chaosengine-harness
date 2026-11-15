@@ -9,6 +9,23 @@
 3. When pausing a worker mid-item, write a checkpoint with finished plan, head
    SHA, paths, and exact next step before stopping.
 
+## Crash-safe long tasks (#8065)
+
+- Start with `tool.py checkpoint TASK STEP --start --workdir PATH --prereq swap --prereq disk:5`.
+  `/tmp` and `/dev/shm` are refused (exit 5); `$TMPDIR` and tmpfs warn. Keep
+  clones, drafts and logs under the work root.
+- Every step records the work root's git HEAD (or `--head SHA`).
+  `tool.py checkpoint TASK --verify` exits 7 when the pushed HEAD has no
+  checkpoint; run it before reporting done.
+- `tool.py entry` and the SessionStart card list unfinished tasks for this
+  project, newest first, with `Resume at:`. Older than
+  `CHAOS_ENGINE_RESUME_STALE_DAYS` (default 7) is marked `[stale]`.
+- `tool.py resume TASK` re-checks the prerequisites and names the cause in one
+  line: box restart (boot after the last checkpoint), planned stop, or likely
+  host cap. Put that line in the owner report.
+- Exit 3 records a planned stop. Finish or roll back the current step, report
+  "stopped at step X, next Y", and start no new step.
+
 ## Why
 
 Host session caps (~50 min wall; enforce 35) kill in-flight workers. Chat
