@@ -2597,6 +2597,7 @@ ORIGIN_ONLY_ROOT_FILES = frozenset(
         "CODE_OF_CONDUCT.md",
         "SECURITY.md",
         "CHANGELOG.md",
+        "ROADMAP.md",
     }
 )
 

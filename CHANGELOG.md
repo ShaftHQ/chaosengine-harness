@@ -19,6 +19,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - `resume` names why the last session ended: box restart (boot after the last checkpoint), planned stop, or likely host cap.
 - `tests/scripts/test_task_ledger_crash_safe_8065.py`: offline fixtures for each requirement.
 
+## [0.4.20261115.3] - 2026-11-15
+
+### Added
+
+- `ROADMAP.md`, generated from epic ShaftHQ/SHAFT_ENGINE#8056 and its sub-issues in the epic's order by `.github/scripts/roadmap.py` (ShaftHQ/SHAFT_ENGINE#8061 R6). `--check` fails when the file no longer matches the epic; a weekly workflow runs it. The roadmap is a view, not a second tracker. It stays out of the adopter payload.
+
+### Changed
+
+- CONTRIBUTING describes the in-repo test suite and the roadmap. SECURITY points at `VERSION` instead of a dated version string.
+
 ## [0.4.20261115.2] - 2026-11-15
 
 ### Fixed

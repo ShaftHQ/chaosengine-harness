@@ -47,12 +47,13 @@ SOURCE = {
     "RESEARCH.md": b"notes\n",
     "SECURITY.md": b"security\n",
     "CODE_OF_CONDUCT.md": b"coc\n",
+    "ROADMAP.md": b"roadmap\n",
     "tests/test_x.py": b"# repo test\n",
     "references/CHANGELOG.md": b"kept: not at the root\n",
 }
 ORIGIN_ONLY = {
     "CONTRIBUTING.md", "CHANGELOG.md", ".github/workflows/ci.yml", "RESEARCH.md",
-    "SECURITY.md", "CODE_OF_CONDUCT.md", "tests/test_x.py",
+    "SECURITY.md", "CODE_OF_CONDUCT.md", "ROADMAP.md", "tests/test_x.py",
 }
 
 
@@ -295,7 +296,7 @@ class LocalCloneTest(unittest.TestCase):
 class InstallerOmitTest(unittest.TestCase):
     def test_origin_only_repo_files_stay_out_of_adopter_payload(self):
         install = load("install")
-        for name in ("CONTRIBUTING.md", "CODE_OF_CONDUCT.md", "SECURITY.md", "CHANGELOG.md", ".github/workflows/ci.yml", "tests/test_x.py"):
+        for name in ("CONTRIBUTING.md", "CODE_OF_CONDUCT.md", "SECURITY.md", "CHANGELOG.md", "ROADMAP.md", ".github/scripts/roadmap.py", ".github/workflows/ci.yml", "tests/test_x.py"):
             self.assertTrue(install.is_origin_only(Path(name)), name)
         self.assertFalse(install.is_origin_only(Path("skills/chaos-engine/SKILL.md")))
 
