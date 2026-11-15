@@ -1684,23 +1684,16 @@ def client_command(
     runner=subprocess.run,
     timeout: int = 30,
 ) -> subprocess.CompletedProcess[str]:
-    try:
-        result = runner(  # nosec B603 - executable is resolved by shutil.which.
-            [executable, *arguments],
-            cwd=project,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            check=False,
-            timeout=timeout,
-        )
-    except subprocess.TimeoutExpired as error:
-        if plugin_list_still_running(error):
-            # Still listing plugins (#7826). An empty document is not stale,
-            # so the upgrade does not activate and does not fail the install.
-            return subprocess.CompletedProcess(error.cmd, 0, stdout="{}", stderr="")
-        raise
+    result = runner(  # nosec B603 - executable is resolved by shutil.which.
+        [executable, *arguments],
+        cwd=project,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+        timeout=timeout,
+    )
     # Windows can hand back stdout/stderr as None (#6975: json.loads(None)
     # failed "Activate clients"). Normalize so callers see text.
     result.stdout = result.stdout or ""
@@ -2052,7 +2045,10 @@ def detected_plugin_status(
                 else []
             )
             plugin_document = client_json(
-                executable, ["plugin", "list", "--available", "--json"], project, runner=runner
+                executable,
+                ["plugin", "list", "--marketplace", marketplace_name, "--available", "--json"],
+                project,
+                runner=runner,
             )
             records = plugin_document.get("installed", []) if isinstance(plugin_document, dict) else []
             marketplace_ok = any(
@@ -5208,14 +5204,6 @@ def _unix_powershell_polyglot(target: str, block: str, probe: str) -> str:
         "#> > $null\n"
         f"{probe}"
     )
-
-
-def plugin_list_still_running(error: BaseException) -> bool:
-    """True only for a ``plugin list --available --json`` that exceeded its wait."""
-    if not isinstance(error, subprocess.TimeoutExpired):
-        return False
-    command = error.cmd if isinstance(error.cmd, (list, tuple)) else str(error.cmd).split()
-    return {"plugin", "list", "--available", "--json"} <= {str(part) for part in command}
 
 
 def powershell_hook_parse_error(command: str) -> str | None:
