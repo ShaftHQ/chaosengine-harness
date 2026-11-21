@@ -86,7 +86,11 @@ would start without ChaosEngine.
    the author ([delivery cycle](delivery-cycle.md)).
    Run two independent adversarial reviews before orchestrator sign-off.
    Do not merge until those reviews are done, their comments are applied, and
-   every CI check on that head has finished successfully. A pending check is not success.
+   the required checks have passed. This repository merges with `gh pr merge --squash`.
+   A skipped or neutral check outside the required set does not block.
+   A failed, cancelled, or pending check blocks when it is required and when
+   no check is marked required. An unmarked skip blocks.
+   An empty check list is not success. A pending check is not success.
 6. Report outcome, exact checks, failures, and every finding as fixed or filed.
 
 Consult [field heuristics](heuristics.md) only for deeper

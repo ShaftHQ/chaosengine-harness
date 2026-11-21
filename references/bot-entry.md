@@ -135,7 +135,7 @@ Gate `tests/scripts/test_ce_entry_coverage.py` (in `harness_pr_gate`). Index: [C
 - Babysit with ONE background loop per PR, not repeated poll calls. It exits on
   merged, on the first `fail` (latest run per check name), or when green but
   not queued (then it prints the `enqueuePullRequest` error). Await it once.
-  Do not run `gh pr merge --auto --merge` until every CI check on that head has finished successfully and review comments are applied. A pending check is not success. On a repository with auto-merge disabled that flag merges immediately. Before merge,
+  Do not run `gh pr merge --auto --squash` until the required checks on that head have passed and review comments are applied. This repository allows only squash merges. A skipped or neutral check outside the required set does not block. A failed, cancelled, or pending check blocks when it is required and when no check is marked required. An unmarked skip blocks. An empty check list is not success. A pending check is not success. On a repository with auto-merge disabled that flag merges immediately. Before merge,
   read non-blocking analysis and coverage reporters and fix them.
 - Bound each tool call to 60 s; run longer ones in the background.
 - Trust a green gate: no local re-check after CI passes.

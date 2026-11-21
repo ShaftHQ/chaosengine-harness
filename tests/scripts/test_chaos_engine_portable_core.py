@@ -1068,7 +1068,7 @@ class OrchestratorModeContractTest(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn("Compaction is not stop", planning)
-        self.assertIn("gh pr merge --merge --auto", planning)
+        self.assertIn("gh pr merge --squash --auto", planning)
         self.assertIn("jobs=all", playbook)
         self.assertIn("A targeted workflow_dispatch must not close them", playbook)
         self.assertIn("Compaction is not stop", identity)

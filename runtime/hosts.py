@@ -4769,7 +4769,7 @@ LAUNCH_PYTHON_UNAVAILABLE = (
 # command stays within HOOK_COMMAND_MAX_CHARS.
 # Short enough that the unix polyglot, including the Stop receipt and the zsh
 # heredoc, stays within HOOK_COMMAND_MAX_CHARS. What is missing, and the fix.
-HOOK_LAUNCH_PYTHON_BLOCK = "no Python 3.11+; rerun installer"
+HOOK_LAUNCH_PYTHON_BLOCK = "no Python 3.11+; reinstall"
 _CWD_UNAVAILABLE_ERRNOS = {
     errno.ENOENT,
     getattr(errno, "ESTALE", 116),
@@ -5258,7 +5258,8 @@ def _unix_powershell_polyglot(target: str, block: str, probe: str, *, consumer_s
 
     ``<#`` is a bash syntax error, so the comment starts after ``echo``.
     The opener's newline goes to stderr (``>&2``), so a failed launch leaves
-    stdout empty. ``>&`` is not an Out-File target.
+    stdout empty. Consumer Stop sends that opener to ``/dev/null`` so the
+    receipt is the only stderr line. ``>&`` is not an Out-File target.
     ``exec`` replaces the process, so a real hook deny (exit 2) does not try
     the next interpreter. The command walks parents for ``launch.py``. On a
     miss it runs ``worktree_overlay.py adopt`` (git primary, real hook copy)
@@ -5277,6 +5278,7 @@ def _unix_powershell_polyglot(target: str, block: str, probe: str, *, consumer_s
     heredoc opener is inside the ``<#`` comment, and ``#>`` closes it.
     ``LASTEXITCODE=``, ``n=``, and ``r=`` satisfy Grok's ``$NAME`` scanner for the probe.
     """
+    opener = "echo `# <#`>/dev/null\n" if consumer_stop else "echo `# <#` >&2\n"
     if consumer_stop:
         # stderr is the receipt. A new file would mutate a consumer checkout.
         miss = (
@@ -5287,16 +5289,16 @@ def _unix_powershell_polyglot(target: str, block: str, probe: str, *, consumer_s
     else:
         miss = '[ -n "$d" ]&&[ -f "$d/$h" ]||{ echo "missing $h" >&2; exit 2; }\n'
     return (
-        "echo `# <#` >&2\n"
-        "LASTEXITCODE=\n"
+        opener
+        + "LASTEXITCODE=\n"
         "n=\n"
         "r=\n"
         'h=.chaos-engine/hooks/launch.py;d=$(pwd);while [ ! -f "$d/$h" ]&&[ -n "$d" ];do d=${d%/*};done;'
         '[ -f "$d/$h" ]||{ p=$(git rev-parse --path-format=absolute --git-common-dir);p=${p%/.git};'
-        'o=worktree_overlay.py;for n in .chaos-engine chaos-engine .;do for r in runtime/ "";do python3 "$p/$n/$r$o" adopt&&break 2;done;done;'
+        'o=worktree_overlay.py;for n in .chaos-engine chaos-engine .;do for r in runtime/ "";do python3 "$p/$n/$r$o" adopt 2>/dev/null&&break 2;done;done;'
         'd=$(git rev-parse --show-toplevel); };'
         + miss
-        + '[ -n "${BASH_VERSION-}" ] && shopt -s execfail\n'
+        + '[ -n "${BASH_VERSION-}" ]&&shopt -s execfail\n'
         'f="$d/$h";a="'
         f"{target.partition(' ')[2]}"
         '";exec python3 "$f" $a||exec py -3 "$f" $a'
