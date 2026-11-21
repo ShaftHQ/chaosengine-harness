@@ -289,44 +289,52 @@ def test_plain_tty_matches_pty_capture():
     assert normalize(capture_plain(drive), project) == plain
 
 
-@pytest.mark.xfail(
-    reason=(
-        "S3 (#131): NO_COLOR=1 on a TTY skips the cursor-up redraw and appends "
-        "the next frame. https://github.com/ShaftHQ/chaosengine-harness/issues/131"
-    ),
-    strict=True,
-    raises=AssertionError,
-)
 def test_no_color_tty_redraws_in_place():
     if os.name == "nt":
         pytest.skip("redraw capture uses the POSIX pty")
     text = render("tty", 80, True, False, "success")
     assert CURSOR_UP.search(text), "NO_COLOR=1 TTY appended frames instead of redrawing"
+    assert not re.search(r"\x1b\[[0-9;]*m", text), "NO_COLOR=1 TTY frame used SGR colour"
 
 
 def test_plan_prints_bare_tool_names_on_stderr():
+    """E2 repro: a .git checkout whose config names github.com must not write bare tool names.
+
+    Captured probe output stays on the trace the helper returns (#131).
+    """
     spec = importlib.util.spec_from_file_location(
         "ce_prerequisites_snapshots", ROOT / "runtime" / "prerequisites.py"
     )
     module = importlib.util.module_from_spec(spec)
     assert spec is not None and spec.loader is not None
     spec.loader.exec_module(module)
-    source = (ROOT / "runtime" / "prerequisites.py").read_text(encoding="utf-8")
-    plan_source = source.split("def plan(", 1)[1].split("\ndef provision(", 1)[0]
-    assert plan_source.index("print(tool, file=sys.stderr, flush=True)") < plan_source.index(
-        "version_of("
-    )
     with tempfile.TemporaryDirectory() as tmp:
         project = Path(tmp)
         git_dir = project / ".git"
         git_dir.mkdir()
-        (git_dir / "config").write_text('[remote "origin"]\n\turl = https://github.com/ShaftHQ/chaosengine-harness.git\n', encoding="utf-8")
+        (git_dir / "config").write_text(
+            '[remote "origin"]\n\turl = https://github.com/ShaftHQ/chaosengine-harness.git\n',
+            encoding="utf-8",
+        )
         stderr = io.StringIO()
         with unittest.mock.patch("sys.stderr", stderr):
-            module.plan(
+            rows = module.plan(
                 project,
                 windows=False,
                 current_mode="report",
                 cache_file=project / "cache.json",
             )
-    assert stderr.getvalue().splitlines() == ["git", "gh", "node"]
+    bare = [line.strip() for line in stderr.getvalue().splitlines()]
+    assert "git" not in bare and "gh" not in bare and "node" not in bare
+    assert {"git", "gh", "node"} <= {row["tool"] for row in rows}
+    for record in rows.trace:
+        assert set(record) >= {"argv", "returncode", "stdout", "stderr"}
+
+    class _Done:
+        returncode = 0
+        stdout = "git version captured\n"
+        stderr = ""
+
+    done = module.ce_ui.run_captured(["git", "--version"], runner=lambda argv, **_kwargs: _Done())
+    assert done.trace[0]["stdout"] == "git version captured\n"
+    assert done.trace[0]["argv"] == ["git", "--version"]

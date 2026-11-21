@@ -6,19 +6,13 @@
          ChaosEngine
   Project    <project>
   Source     ShaftHQ/chaosengine-harness@main
-[1/3] START Resolve source
 [1/3] DONE  Resolve source
-[+00:02] PASS Resolve source (00:01)
-[2/3] START Download source
 [2/2] DONE  Download source
-[+00:04] PASS Download source (00:01)
+  Commit     0123456789ab...
 
   + Installation Successful!  (00:05)
   ------------------------------------
 
-  Project    <project>
-  Source     ShaftHQ/chaosengine-harness@main
-  Commit     0123456789ab...
   Doctor     + healthy  1/1 components
   Hosts      grok
 

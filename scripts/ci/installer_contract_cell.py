@@ -10,6 +10,7 @@ deleting that store. Graphify query and MemPalace search are the smoke, not
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -150,22 +151,41 @@ def _prepare(context: str, framework: str, project: Path, workspace: Path, timeo
     raise SystemExit(f"unknown context: {context}")
 
 
-def _install(source: Path, commit: str, project: Path, timeout: int) -> None:
-    _run(
-        [
-            sys.executable,
-            str(source / "install.py"),
-            "install",
-            "--project",
-            str(project),
-            "--source",
-            str(source),
-            "--commit",
-            commit,
-        ],
-        cwd=project,
-        timeout=timeout,
-    )
+def _assert_output(output: str, completed: subprocess.CompletedProcess[str]) -> None:
+    if output == "log":
+        if "\x1b[" in _output_text(completed):
+            raise SystemExit("log output contained a CSI cursor sequence")
+        return
+    if output == "json":
+        text = (completed.stdout or "").strip()
+        try:
+            document = json.loads(text)
+        except json.JSONDecodeError as error:
+            raise SystemExit(f"json stdout is not one document: {error}") from error
+        if not isinstance(document, dict):
+            raise SystemExit("json stdout is not one object")
+        return
+    if output == "tty-pty":
+        return
+    raise SystemExit(f"unknown output: {output}")
+
+
+def _install(source: Path, commit: str, project: Path, timeout: int, output: str) -> None:
+    argv = [
+        sys.executable,
+        str(source / "install.py"),
+        "install",
+        "--project",
+        str(project),
+        "--source",
+        str(source),
+        "--commit",
+        commit,
+    ]
+    if output == "json":
+        argv.append("--json")
+    completed = _run(argv, cwd=project, timeout=timeout)
+    _assert_output(output, completed)
 
 
 def _upgrade(source: Path, commit: str, project: Path, timeout: int) -> None:
@@ -237,12 +257,53 @@ def _clone_tag(destination: Path, timeout: int) -> None:
     )
 
 
+def _prove_tty_pty(workspace: Path) -> None:
+    """Non-Windows proof is the existing NO_COLOR redraw snapshot. Windows has no pty here."""
+    if os.name == "nt":
+        return
+    probe = subprocess.run(
+        [sys.executable, "-c", "import pytest"],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    if probe.returncode != 0:
+        installed = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "pytest"],
+            stdin=subprocess.DEVNULL,
+            check=False,
+        )
+        if installed.returncode != 0:
+            raise SystemExit("tty-pty proof needs pytest")
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "-q",
+            "-p",
+            "no:cacheprovider",
+            "tests/scripts/test_chaos_engine_installer_output_snapshots.py::test_no_color_tty_redraws_in_place",
+        ],
+        cwd=workspace,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    _emit(completed)
+    if completed.returncode != 0:
+        raise SystemExit(completed.returncode or 1)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", required=True, choices=("fresh", "upgrade"))
     parser.add_argument("--context", required=True)
     parser.add_argument("--framework", default="none")
     parser.add_argument("--timeout-minutes", type=int, default=15)
+    parser.add_argument("--output", required=True, choices=("tty-pty", "log", "json"))
     parser.add_argument("--workspace", type=Path, default=ROOT)
     args = parser.parse_args(argv)
     budget = max(60, args.timeout_minutes * 60 - 90)
@@ -259,23 +320,23 @@ def main(argv: list[str] | None = None) -> int:
         if args.mode == "upgrade":
             if args.context == "harness-dev":
                 # The pinned tag refuses a project that is a clone of this repo.
-                _install(workspace, _commit(workspace, 60), project, budget)
+                _install(workspace, _commit(workspace, 60), project, budget, args.output)
             else:
                 pinned = root / "pinned-source"
                 _clone_tag(pinned, budget)
-                _install(pinned, _commit(pinned, 60), project, budget)
+                _install(pinned, _commit(pinned, 60), project, budget, args.output)
             _write_sentinel(project)
             _upgrade(workspace, _commit(workspace, 60), project, budget)
             _assert_sentinel(project)
         else:
-            _install(workspace, _commit(workspace, 60), project, budget)
+            _install(workspace, _commit(workspace, 60), project, budget, args.output)
         _doctor(project, budget)
         _smoke(project, min(budget, 180))
         if args.mode == "upgrade":
             _upgrade(workspace, _commit(workspace, 60), project, budget)
             _assert_sentinel(project)
         else:
-            _install(workspace, _commit(workspace, 60), project, budget)
+            _install(workspace, _commit(workspace, 60), project, budget, args.output)
         _doctor(project, budget)
         if args.context == "empty":
             _write_sentinel(project)
@@ -293,6 +354,8 @@ def main(argv: list[str] | None = None) -> int:
             _assert_sentinel(project)
             if (project / ".chaos-engine").exists():
                 raise SystemExit("uninstall left the overlay in place")
+    if args.output == "tty-pty":
+        _prove_tty_pty(workspace)
     return 0
 
 

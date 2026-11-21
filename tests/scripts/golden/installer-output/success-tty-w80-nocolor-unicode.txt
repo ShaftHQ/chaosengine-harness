@@ -4,69 +4,55 @@
   █          │          │
   █▄▄▄▄▄▀    │       ───┘
 ChaosEngine  chaosengine-harness 0.4.20261115.5
-
-  Project    <project>
+[K
+  Project    <project>[K
+  Source     ShaftHQ/chaosengine-harness@main[K
+[K
+[4F[K
+  Project    <project>[K
+  Source     ShaftHQ/chaosengine-harness@main[K
+[K
+  [⠋] Resolve source   running[K
+└─ 0/3 · Elapsed 00:03[K
+  [·] Download source[K
+  [·] Install core[K
+[8F[K
+  Project    <project>[K
+  Source     ShaftHQ/chaosengine-harness@main[K
+[K
+  [✓] Resolve source   00:02[K
+  [·] Download source[K
+  [·] Install core[K
+[7F[K
+  Project    <project>[K
+  Source     ShaftHQ/chaosengine-harness@main[K
+[K
+  [✓] Resolve source   00:02[K
+  [⠋] Download source  running[K
+└─ 1/3 · Elapsed 00:07[K
+  [·] Install core[K
+[8F[K
+  Project    <project>[K
+  Source     ShaftHQ/chaosengine-harness@main[K
+[K
+  [✓] Resolve source   00:02[K
+  [✓] Download source  00:02[K
+[6F[K
+[K
+[K
+[K
+[K
+[K
+[6F  Project    <project>
   Source     ShaftHQ/chaosengine-harness@main
-
-  Trace (last 0 of 0; full log:
-  <project>/.chaos-engine-state/install-trace.json)
-  Status
-  0/0 · Elapsed 00:01
-
-  Project    <project>
-  Source     ShaftHQ/chaosengine-harness@main
-
-  [*] Resolve source   running
-  [·] Download source
-  [·] Install core
-  Trace (last 0 of 0; full log:
-  <project>/.chaos-engine-state/install-trace.json)
-  Status
-  0/3 · Elapsed 00:03
-
-  Project    <project>
-  Source     ShaftHQ/chaosengine-harness@main
-
-  [✓] Resolve source   00:02
-  [·] Download source
-  [·] Install core
-  Trace (last 1 of 1; full log:
-  <project>/.chaos-engine-state/install-trace.json)
-  [+00:04] PASS Resolve source (00:02)
-  Status
-  1/3 · Elapsed 00:05
-
-  Project    <project>
-  Source     ShaftHQ/chaosengine-harness@main
-
-  [✓] Resolve source   00:02
-  [*] Download source  running
-  [·] Install core
-  Trace (last 1 of 1; full log:
-  <project>/.chaos-engine-state/install-trace.json)
-  [+00:04] PASS Resolve source (00:02)
-  Status
-  1/3 · Elapsed 00:07
-
-  Project    <project>
-  Source     ShaftHQ/chaosengine-harness@main
+  Commit     0123456789ab…
 
   [✓] Resolve source   00:02
   [✓] Download source  00:02
-  Trace (last 2 of 2; full log:
-  <project>/.chaos-engine-state/install-trace.json)
-  [+00:04] PASS Resolve source (00:02)
-  [+00:08] PASS Download source (00:02)
-  Status
-  2/2 · Elapsed 00:09
-
 
   ✓ Installation Successful!  (00:10)
   ────────────────────────────────────
 
-  Project    <project>
-  Source     ShaftHQ/chaosengine-harness@main
-  Commit     0123456789ab…
   Doctor     ✓ healthy  1/1 components
   Hosts      grok
 

@@ -68,7 +68,10 @@ The same flags work on `install.sh`, `bootstrap.py`, and `install.py`. PowerShel
 | `--quiet` | `-Quiet` | Errors only |
 | `--keep-edits` | `-KeepEdits` | Exit 3 when an owned file was edited |
 | `--offline` | `-Offline` | Use the cache or `--from-bundle` only |
-| `--no-color` | `-NoColor` | No ANSI color and no spinner frames |
+| `--no-color` | `-NoColor` | No ANSI colour. A TTY still redraws in place |
+| `--color=auto\|always\|never` | `-Color` | Colour mode. `NO_COLOR` and `--no-color` win over `always`. Also `CHAOS_ENGINE_COLOR` |
+| `--ascii` | `-Ascii` | ASCII glyphs. Same as `CHAOS_ENGINE_ASCII=1` |
+| `--no-hyperlinks` | `-NoHyperlinks` | No OSC 8 links. `CHAOS_ENGINE_HYPERLINKS=0\|1` overrides the allowlist |
 | `--no-modify-path` | `-NoModifyPath` | Leave the user Path unchanged |
 | `--hosts grok` | `-Hosts grok` | Complete that client |
 | `--without-caveman` | `-WithoutCaveman` | Skip that bundle |
@@ -77,6 +80,8 @@ The same flags work on `install.sh`, `bootstrap.py`, and `install.py`. PowerShel
 | `--no-auto-addons` | `-NoAutoAddons` | Do not detect SHAFT |
 | `--skip-pack-post-install` | `-SkipPackPostInstall` | Do not run the selected pack postInstall |
 | `verify` / `uninstall` | the same subcommands | Check the payload, or remove it and keep edited files |
+
+`install.sh` and `install.ps1` print `Installing ChaosEngine into …` and `Download:` only with `--verbose` / `-Verbose`, or when Stage-0 itself fails. `CHAOS_ENGINE_JSON=1` matches `--json`. After a successful install the Next list is: open a host and invoke `/chaos-engine`, then doctor anytime. Uninstall stays `python3 .chaos-engine/install.py uninstall --project .`.
 
 ## Local CLI
 
@@ -912,15 +917,17 @@ The installer, `doctor`, and `status --digest` share one grammar.
 
 | Surface | TTY | Pipe, CI, `TERM=dumb` |
 | --- | --- | --- |
-| Steps | Fixed-height checklist with a spinner on the running row and aligned durations | `[n/N] START <step>`, `[n/N] DONE  <step>`, and `[+mm:ss] PASS <step> (mm:ss)`. No ANSI escapes and no redraw frames |
-| Detail | The last 4 trace lines (all of them with `--verbose`) | Trace lines only with `--verbose` or `CHAOS_ENGINE_VERBOSE=1`. A stalled download prints one `... waiting for data` line per 15 s |
+| Steps | Checklist redraws in place. `NO_COLOR` keeps the redraw and drops SGR colour. The running row has at most two `└─` detail lines | One `[n/N] DONE  <step>` line per completed step. No cursor codes |
+| Detail | Rate, elapsed, or `waiting for data` on that rail, under the running step only | Trace lines only with `--verbose` or `CHAOS_ENGINE_VERBOSE=1`. A stalled download prints one `... waiting for data` line per 15 s |
 | Glyphs | `✓` done, `✗` failed, `!` warning, braille spinner | ASCII `+`, `x`, `!`, spinner `-\|/`. Every glyph sits next to a word or a duration, so meaning never depends on color |
-| Summary | Headline, aligned `Project/Source/Commit/Doctor/Hosts` rows, numbered next steps, a `Receipt` block with the stable `Resolved commit:`, `Doctor:`, `Clients:`, and `Full install trace:` lines | Same text, no color |
+| Summary | One header (`Project`, `Source`, `Commit` once; Commit updates after Resolve source), the checklist, then the headline. The summary does not repeat Project, Source, or Commit. Log mode still prints the `Receipt` lines (`Resolved commit:`, `Doctor:`, `Clients:`, `Full install trace:`) | Same receipt text, no color and no cursor codes |
 | Failure | `✗ Installation failed (<code>)`, `<code>: <one-line cause>`, then exactly one `Next fix:` | Same. A long prefilled issue URL becomes a terminal hyperlink on a TTY, and the full URL is saved in `.chaos-engine-state/heal-handoff.md` |
 | Doctor rows | `[error\|warning\|info] <name> — <status>` plus `  fix-next: <command>` | `status --digest` prints the same rows for failing checks only |
 
 Color follows [no-color.org](https://no-color.org/): a non-empty `NO_COLOR`
-turns it off, and so does `TERM=dumb` or a non-TTY stream. Set
+turns it off, and so does `TERM=dumb`. A non-TTY stays plain unless
+`--color=always`, `CHAOS_ENGINE_COLOR=always`, or `FORCE_COLOR` is set.
+`FORCE_COLOR` does not turn cursor redraw on for a pipe. Set
 `CHAOS_ENGINE_ASCII=1` to force ASCII glyphs on terminals whose font lacks
 them. Glyphs fall back to ASCII automatically when the stream encoding
 (for example a Windows `cp1252` console) cannot encode them. On such consoles

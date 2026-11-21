@@ -8,51 +8,43 @@ ChaosEngine  chaosengine-harness 0.4.20261115.5
   [38;2;47;125;255mProject   [0m <project>[K
   [38;2;47;125;255mSource    [0m ShaftHQ/chaosengine-harness@main[K
 [K
-[2m  Trace (last 0 of 0; full log: <project>/.chaos-engine-state/install-trace.json)[0m[K
-[38;2;47;125;255m  Status[0m[K
-[38;2;47;125;255m  0/0 | Elapsed 00:01[0m[K
-[7F[K
+[4F[K
   [38;2;47;125;255mProject   [0m <project>[K
   [38;2;47;125;255mSource    [0m ShaftHQ/chaosengine-harness@main[K
 [K
 [38;2;47;125;255m  [-] Resolve source   running[0m[K
++- 0/3 | Elapsed 00:03[K
 [2m  [ ] Download source[0m[K
 [2m  [ ] Install core[0m[K
-[2m  Trace (last 0 of 0; full log: <project>/.chaos-engine-state/install-trace.json)[0m[K
-[38;2;47;125;255m  Status[0m[K
-[38;2;47;125;255m  0/3 | Elapsed 00:03[0m[K
-[10F[K
+[8F[K
   [38;2;47;125;255mProject   [0m <project>[K
   [38;2;47;125;255mSource    [0m ShaftHQ/chaosengine-harness@main[K
 [K
 [32m  [+] Resolve source   00:02[0m[K
 [2m  [ ] Download source[0m[K
 [2m  [ ] Install core[0m[K
-[2m  Trace (last 1 of 1; full log: <project>/.chaos-engine-state/install-trace.json)[0m[K
-  [+00:04] PASS Resolve source (00:02)[K
-[38;2;47;125;255m  Status[0m[K
-[38;2;47;125;255m  1/3 | Elapsed 00:05[0m[K
-[11F[K
+[7F[K
   [38;2;47;125;255mProject   [0m <project>[K
   [38;2;47;125;255mSource    [0m ShaftHQ/chaosengine-harness@main[K
 [K
 [32m  [+] Resolve source   00:02[0m[K
 [38;2;47;125;255m  [-] Download source  running[0m[K
++- 1/3 | Elapsed 00:07[K
 [2m  [ ] Install core[0m[K
-[2m  Trace (last 1 of 1; full log: <project>/.chaos-engine-state/install-trace.json)[0m[K
-  [+00:04] PASS Resolve source (00:02)[K
-[38;2;47;125;255m  Status[0m[K
-[38;2;47;125;255m  1/3 | Elapsed 00:07[0m[K
-[11F[K
+[8F[K
   [38;2;47;125;255mProject   [0m <project>[K
   [38;2;47;125;255mSource    [0m ShaftHQ/chaosengine-harness@main[K
 [K
 [32m  [+] Resolve source   00:02[0m[K
 [31m  [x] Download source  failed[0m[K
++- 1/3 | Elapsed 00:11[K
 [2m  [ ] Install core[0m[K
-[2m  Trace (last 2 of 2; full log: <project>/.chaos-engine-state/install-trace.json)[0m[K
-  [+00:04] PASS Resolve source (00:02)[K
-  [+00:10] FAIL Download source[K
-[38;2;47;125;255m  Status[0m[K
-[38;2;47;125;255m  1/3 | Elapsed 00:11[0m[K
-
+[8F[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[8F

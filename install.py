@@ -28,6 +28,12 @@ import urllib.error
 import zipfile
 from pathlib import Path, PurePosixPath
 
+# runpy.run_path executes this file without putting its folder on sys.path.
+_INSTALL_ROOT = str(Path(__file__).resolve().parent)
+if _INSTALL_ROOT not in sys.path:
+    sys.path.insert(0, _INSTALL_ROOT)
+import runtime.ce_ui as ce_ui
+
 
 def runtime_module(root: Path, name: str) -> Path:
     """Prefer runtime/<name>; fall back to a flat file from an older tree."""
@@ -8037,6 +8043,17 @@ def parser() -> argparse.ArgumentParser:
         default=None,
         help="Client ids to complete (comma-separated). Also CHAOS_ENGINE_HOST.",
     )
+    install_command.add_argument("--json", action="store_true", help="One JSON document on stdout.")
+    install_command.add_argument("-q", "--quiet", action="store_true", help="Errors only.")
+    install_command.add_argument("--no-color", action="store_true", help="Disable ANSI color.")
+    install_command.add_argument(
+        "--color",
+        choices=("auto", "always", "never"),
+        default=None,
+        help="Colour mode. NO_COLOR and --no-color win over always.",
+    )
+    install_command.add_argument("--ascii", action="store_true", help="Force ASCII glyphs.")
+    install_command.add_argument("--no-hyperlinks", action="store_true", help="Do not emit OSC 8 hyperlinks.")
     repair_command = commands.add_parser(
         "repair",
         help="Targeted zero-LLM repair for one component (no full wipe).",
@@ -10341,10 +10358,39 @@ def _http_blocked_reason(error: urllib.error.HTTPError) -> str:
     return helpers.http_error_detail(error)
 
 
+def _visible_failure_text(message: str) -> str:
+    """Redact user-visible failure text. A redaction error withholds the original."""
+    try:
+        return ce_ui.redact(message)
+    except Exception:
+        return ce_ui._REDACTION_FAILED
+
+
+def _apply_ui_flags(args) -> None:
+    """Same colour, glyph, link, json, and quiet flags as bootstrap.py. No config keys."""
+    color = getattr(args, "color", None)
+    if getattr(args, "no_color", False) or color == "never":
+        os.environ["NO_COLOR"] = "1"
+        os.environ["CHAOS_ENGINE_COLOR"] = "never"
+    elif color == "always":
+        os.environ["CHAOS_ENGINE_COLOR"] = "always"
+    elif color == "auto":
+        os.environ["CHAOS_ENGINE_COLOR"] = "auto"
+    if getattr(args, "ascii", False):
+        os.environ["CHAOS_ENGINE_ASCII"] = "1"
+    if getattr(args, "no_hyperlinks", False):
+        os.environ["CHAOS_ENGINE_HYPERLINKS"] = "0"
+    if getattr(args, "json", False):
+        os.environ["CHAOS_ENGINE_JSON"] = "1"
+    if getattr(args, "quiet", False):
+        os.environ["CHAOS_ENGINE_QUIET"] = "1"
+
+
 def _report_blocked(args, error: BaseException) -> int:
     message, diagnostic_code = _blocked_diagnostic_code(args, error)
     if isinstance(error, urllib.error.HTTPError):
         message = _http_blocked_reason(error)
+    message = _visible_failure_text(message)
     if getattr(args, "json", False):
         print(
             json.dumps(
@@ -10516,6 +10562,7 @@ def main() -> int:
         sys.stderr.write(python_floor_message())
         return 2
     args, extra = parser().parse_known_args()
+    _apply_ui_flags(args)
     install_snapshot_trap()
     try:
         result = _command_result(args, extra)

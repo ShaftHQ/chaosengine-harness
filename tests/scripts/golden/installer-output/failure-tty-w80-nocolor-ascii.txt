@@ -4,60 +4,47 @@
   |          |          |
   `-----'    |       ---+
 ChaosEngine  chaosengine-harness 0.4.20261115.5
-
-  Project    <project>
-  Source     ShaftHQ/chaosengine-harness@main
-
-  Trace (last 0 of 0; full log:
-  <project>/.chaos-engine-state/install-trace.json)
-  Status
-  0/0 | Elapsed 00:01
-
-  Project    <project>
-  Source     ShaftHQ/chaosengine-harness@main
-
-  [*] Resolve source   running
-  [ ] Download source
-  [ ] Install core
-  Trace (last 0 of 0; full log:
-  <project>/.chaos-engine-state/install-trace.json)
-  Status
-  0/3 | Elapsed 00:03
-
-  Project    <project>
-  Source     ShaftHQ/chaosengine-harness@main
-
-  [+] Resolve source   00:02
-  [ ] Download source
-  [ ] Install core
-  Trace (last 1 of 1; full log:
-  <project>/.chaos-engine-state/install-trace.json)
-  [+00:04] PASS Resolve source (00:02)
-  Status
-  1/3 | Elapsed 00:05
-
-  Project    <project>
-  Source     ShaftHQ/chaosengine-harness@main
-
-  [+] Resolve source   00:02
-  [*] Download source  running
-  [ ] Install core
-  Trace (last 1 of 1; full log:
-  <project>/.chaos-engine-state/install-trace.json)
-  [+00:04] PASS Resolve source (00:02)
-  Status
-  1/3 | Elapsed 00:07
-
-  Project    <project>
-  Source     ShaftHQ/chaosengine-harness@main
-
-  [+] Resolve source   00:02
-  [x] Download source  failed
-  [ ] Install core
-  Trace (last 2 of 2; full log:
-  <project>/.chaos-engine-state/install-trace.json)
-  [+00:04] PASS Resolve source (00:02)
-  [+00:10] FAIL Download source
-  Status
-  1/3 | Elapsed 00:11
-
+[K
+  Project    <project>[K
+  Source     ShaftHQ/chaosengine-harness@main[K
+[K
+[4F[K
+  Project    <project>[K
+  Source     ShaftHQ/chaosengine-harness@main[K
+[K
+  [-] Resolve source   running[K
++- 0/3 | Elapsed 00:03[K
+  [ ] Download source[K
+  [ ] Install core[K
+[8F[K
+  Project    <project>[K
+  Source     ShaftHQ/chaosengine-harness@main[K
+[K
+  [+] Resolve source   00:02[K
+  [ ] Download source[K
+  [ ] Install core[K
+[7F[K
+  Project    <project>[K
+  Source     ShaftHQ/chaosengine-harness@main[K
+[K
+  [+] Resolve source   00:02[K
+  [-] Download source  running[K
++- 1/3 | Elapsed 00:07[K
+  [ ] Install core[K
+[8F[K
+  Project    <project>[K
+  Source     ShaftHQ/chaosengine-harness@main[K
+[K
+  [+] Resolve source   00:02[K
+  [x] Download source  failed[K
++- 1/3 | Elapsed 00:11[K
+  [ ] Install core[K
+[8F[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[8F

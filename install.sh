@@ -13,7 +13,20 @@ DEFAULT_REF=main
 
 # Brand and live progress belong to bootstrap.py so curl|bash cannot double-paint.
 
+stage0_noted=
+note_stage0() {
+  if [ -n "$stage0_noted" ]; then
+    return
+  fi
+  stage0_noted=1
+  echo "Installing ChaosEngine into ${project:-} from ${repository:-}@${branch:-}" >&2
+  if [ -n "${bootstrap_url:-}" ]; then
+    echo "Download: ${bootstrap_url}" >&2
+  fi
+}
+
 fail() {
+  note_stage0
   echo "$1" >&2
   exit 1
 }
@@ -147,13 +160,13 @@ for argument in "$@"; do
     --hosts)
       pending_hosts=1
       ;;
-    --version|--shaft-skills-version)
+    --version|--shaft-skills-version|--color)
       pending=$argument
       ;;
-    --hosts=*|--version=*|--shaft-skills-version=*)
+    --hosts=*|--version=*|--shaft-skills-version=*|--color=*)
       forwarded_flags="$forwarded_flags $argument"
       ;;
-    -n|--dry-run|--yes|--no-input|-q|--quiet|--json|--no-color|--no-modify-path|--keep-edits|--offline|--force|--no-auto-addons|--skip-pack-post-install|--verbose|--interactive)
+    -n|--dry-run|--yes|--no-input|-q|--quiet|--json|--no-color|--ascii|--no-hyperlinks|--no-modify-path|--keep-edits|--offline|--force|--no-auto-addons|--skip-pack-post-install|--verbose|--interactive)
       forwarded_flags="$forwarded_flags $argument"
       ;;
     --without-memory|--without-mempalace|--without-graphify|--without-ponytail|--without-caveman)
@@ -365,7 +378,9 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 bootstrap="$work/bootstrap.py"
-echo "Installing ChaosEngine into ${project} from ${repository}@${branch}" >&2
+if [ -n "$verbose" ]; then
+  note_stage0
+fi
 # #7766: provision Python 3.11+ before the download/lifecycle prompt.
 managed_uv=
 if [ -z "$python" ]; then
@@ -415,7 +430,6 @@ if [ -n "$interactive" ]; then
   IFS= read -r answer <"$controlling_tty" || fail "interactive mode requires a usable controlling terminal"
   case $(printf '%s' "$answer" | tr '[:upper:]' '[:lower:]') in y|yes) ;; *) fail "ChaosEngine installation cancelled before Download bootstrap" ;; esac
 fi
-echo "Download: ${bootstrap_url}" >&2
 # Git Bash receives a Windows path in $0. CreateProcess does not rewrite backslashes.
 script_path=$(printf '%s' "$0" | sed 's#\\#/#g')
 case "$script_path" in

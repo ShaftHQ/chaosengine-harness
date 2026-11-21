@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Paste the command you actually ran. Working commands are the ones in INSTALL.md. They still download install.sh and install.ps1 from ShaftHQ/SHAFT_ENGINE (`main`, path `chaos-engine/`).
+        Paste the command you actually ran. Working commands are the ones in INSTALL.md. They download install.sh and install.ps1 from this repository (`ShaftHQ/chaosengine-harness`, `main`).
         Remove secrets, tokens, credentials, and private paths. Security vulnerabilities use https://github.com/ShaftHQ/chaosengine-harness/security/advisories/new — not this form.
   - type: textarea
     id: command

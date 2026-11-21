@@ -29,6 +29,7 @@ Design decisions (settled in #7220's batch-3 PR):
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import re
@@ -38,6 +39,20 @@ import sys
 import time
 import urllib.request
 from pathlib import Path, PurePosixPath
+
+
+def _load_ce_ui():
+    """Load the sibling UI module by path. Bootstrap execs this file, not the package."""
+    path = Path(__file__).resolve().parent / "ce_ui.py"
+    spec = importlib.util.spec_from_file_location("ce_ui_sibling", path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"ce_ui missing beside prerequisites: {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+ce_ui = _load_ce_ui()
 
 CACHE_SECONDS = 24 * 3600
 PROMPT_SECONDS = 10
@@ -140,16 +155,32 @@ def parse_version(text: str) -> tuple[int, ...]:
     return tuple(int(part) for part in match.group(1).split(".")) if match else ()
 
 
-def installed_version(exe: str, runner=subprocess.run) -> tuple[int, ...]:
+def installed_version(exe: str, runner=subprocess.run, *, trace=None) -> tuple[int, ...]:
     path = shutil.which(exe)
     if not path:
         return ()
     flag = "-v" if exe == "choco" else "--version"
     try:
-        done = runner([path, flag], capture_output=True, text=True, timeout=20, check=False)  # nosec B603
+        done = ce_ui.run_captured(  # nosec B603 - fixed argv, stdout and stderr captured.
+            [path, flag], runner=runner, trace=trace, timeout=20, check=False
+        )
     except (OSError, subprocess.SubprocessError):
         return ()
-    return parse_version(done.stdout or done.stderr)
+    return parse_version(getattr(done, "stdout", None) or getattr(done, "stderr", None) or "")
+
+
+class _PlanRows(list):
+    """Plan rows plus the captured probe trace."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.trace: list = []
+
+
+def _probe_version(version_of, exe: str, trace: list):
+    if version_of is installed_version:
+        return version_of(exe, trace=trace)
+    return version_of(exe)
 
 
 def latest_version(tool: str, cache_file: Path, fetch=None, now=None) -> tuple[int, ...]:
@@ -209,11 +240,9 @@ def install_command(tool: str, *, windows: bool, have_winget: bool, have_brew: b
 
 def plan(project: Path, *, windows: bool, current_mode: str, cache_file: Path,
          version_of=installed_version, latest_of=latest_version) -> list[dict[str, object]]:
-    rows: list[dict[str, object]] = []
+    rows = _PlanRows()
     for tool in required(project, windows=windows):
-        # Name the tool before version_of / latest_of. Skip rows never reach provision's print.
-        print(tool, file=sys.stderr, flush=True)
-        have = version_of(TOOLS[tool]["exe"])
+        have = _probe_version(version_of, str(TOOLS[tool]["exe"]), rows.trace)
         present = bool(have) or bool(shutil.which(str(TOOLS[tool]["exe"])))
         latest = latest_of(tool, cache_file) if (present and current_mode == "install") else ()
         if present and (not latest or not have or have >= latest):
@@ -245,13 +274,14 @@ def provision(project: Path, *, env: dict[str, str] | None = None, runner=subpro
     for row in rows:
         if row["action"] == "skip":
             continue
-        print(str(row["tool"]), file=sys.stderr, flush=True)
         command = install_command(str(row["tool"]), windows=windows, have_winget=have_winget, have_brew=have_brew)
         if command is None or isinstance(command, str) or current != "install" or offline:
             row["status"] = "reported"
             row["command"] = command if isinstance(command, str) else (" ".join(command) if command else "")
             continue
-        done = runner(command, check=False, timeout=900)  # nosec B603 - fixed argv.
+        done = ce_ui.run_captured(  # nosec B603 - fixed argv, stdout and stderr captured.
+            command, runner=runner, trace=getattr(rows, "trace", None), check=False, timeout=900
+        )
         row["status"] = "installed" if getattr(done, "returncode", 1) == 0 else "failed"
         if row["tool"] == "winget" and row["status"] == "installed":
             have_winget = True
@@ -261,8 +291,13 @@ def provision(project: Path, *, env: dict[str, str] | None = None, runner=subpro
         if shutil.which("choco"):
             choco.update(action="skip", installed="present")
         elif current == "install" and is_admin() and not offline:
-            print("choco", file=sys.stderr, flush=True)
-            done = runner(list(CHOCO_BOOTSTRAP), check=False, timeout=900)  # nosec B603
+            done = ce_ui.run_captured(  # nosec B603 - fixed argv, stdout and stderr captured.
+                list(CHOCO_BOOTSTRAP),
+                runner=runner,
+                trace=getattr(rows, "trace", None),
+                check=False,
+                timeout=900,
+            )
             choco["status"] = "installed" if getattr(done, "returncode", 1) == 0 else "failed"
         else:
             choco.update(status="reported", command=" ".join(CHOCO_BOOTSTRAP) + "  # needs admin")

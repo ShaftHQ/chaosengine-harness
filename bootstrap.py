@@ -225,12 +225,6 @@ def status_glyph(kind: str, *, unicode: bool) -> str:
     return fancy if unicode else plain
 
 
-def terminal_color_enabled(*, tty: bool, environ=None) -> bool:
-    """Color only on a real terminal; honor NO_COLOR (no-color.org) and TERM=dumb."""
-    environ = os.environ if environ is None else environ
-    return bool(tty) and environ.get("TERM") != "dumb" and not environ.get("NO_COLOR")
-
-
 def ascii_forced(environ=None) -> bool:
     """`CHAOS_ENGINE_ASCII=1` forces ASCII glyphs even on a UTF-8 terminal."""
     environ = os.environ if environ is None else environ
@@ -584,6 +578,312 @@ def write_failure_artifacts(
     )
 
 
+# >>> generated: ce_ui
+"""Stdlib installer UI: capabilities, mode, redaction, URL layout, captured commands.
+
+Stage-1 inlines this file into bootstrap.py. Keep it import-safe mid-file.
+"""
+
+import importlib.util
+import os
+import platform
+import re
+import shutil
+import socket
+import subprocess
+import sys
+import textwrap
+import urllib.parse
+from pathlib import Path
+
+
+_UNICODE_PROBE = "✓✗◉·…█▀▄┬├┴╱◆⠋"
+_HYPERLINK_PROGRAMS = frozenset({"iTerm.app", "vscode", "WezTerm", "ghostty"})
+_URL_RE = re.compile(r"https?://\S+")
+
+
+class Capabilities:
+    """What this stream can show. Cursor is not colour."""
+
+    __slots__ = ("tty", "cursor", "color", "unicode", "hyperlinks", "width")
+
+    def __init__(
+        self,
+        *,
+        tty: bool,
+        cursor: bool,
+        color: str,
+        unicode: bool,
+        hyperlinks: bool,
+        width: int,
+    ) -> None:
+        self.tty = tty
+        self.cursor = cursor
+        self.color = color
+        self.unicode = unicode
+        self.hyperlinks = hyperlinks
+        self.width = width
+
+
+def _environ(environ):
+    return os.environ if environ is None else environ
+
+
+def _stream_is_tty(stream, environ=None) -> bool:
+    environ = _environ(environ)
+    if environ.get("TERM") == "dumb":
+        return False
+    isatty = getattr(stream, "isatty", None)
+    try:
+        return bool(isatty()) if callable(isatty) else False
+    except (OSError, ValueError):
+        return False
+
+
+def terminal_color_enabled(*, tty: bool, environ=None) -> bool:
+    """Colour follows no-color.org. ``NO_COLOR`` wins. ``FORCE_COLOR`` never implies a TTY."""
+    environ = _environ(environ)
+    if environ.get("TERM") == "dumb":
+        return False
+    if environ.get("NO_COLOR"):
+        return False
+    if environ.get("CHAOS_ENGINE_COLOR") == "never":
+        return False
+    if environ.get("CHAOS_ENGINE_COLOR") == "always":
+        return True
+    force = environ.get("FORCE_COLOR")
+    if force not in (None, "", "0"):
+        return True
+    return bool(tty)
+
+
+def color_level(environ=None, *, enabled: bool) -> str:
+    """``none``, ``16``, ``256``, or ``truecolor``."""
+    if not enabled:
+        return "none"
+    environ = _environ(environ)
+    if (environ.get("COLORTERM") or "").casefold() in {"truecolor", "24bit"}:
+        return "truecolor"
+    if "256color" in (environ.get("TERM") or ""):
+        return "256"
+    return "16"
+
+
+def cursor_enabled(*, tty: bool, environ=None, vt_ok: bool = True) -> bool:
+    """Cursor addressing follows the TTY, not ``NO_COLOR`` or ``FORCE_COLOR``."""
+    environ = _environ(environ)
+    if not tty or not vt_ok:
+        return False
+    if environ.get("TERM") == "dumb":
+        return False
+    return True
+
+
+def unicode_enabled(stream, environ=None) -> bool:
+    environ = _environ(environ)
+    if environ.get("CHAOS_ENGINE_ASCII") == "1":
+        return False
+    encoding = getattr(stream, "encoding", None) or "utf-8"
+    try:
+        _UNICODE_PROBE.encode(encoding)
+    except (LookupError, UnicodeEncodeError):
+        return False
+    return True
+
+
+def terminal_width() -> int:
+    return max(20, shutil.get_terminal_size(fallback=(80, 24)).columns)
+
+
+def select_mode(stream=None, *, tty: bool | None = None, environ=None) -> str:
+    """``--json`` / ``CHAOS_ENGINE_JSON=1`` beats quiet, tty, and log."""
+    environ = _environ(environ)
+    if environ.get("CHAOS_ENGINE_JSON") == "1":
+        return "json"
+    if environ.get("CHAOS_ENGINE_QUIET") == "1":
+        return "quiet"
+    if tty is None:
+        tty = _stream_is_tty(sys.stderr if stream is None else stream, environ)
+    ci = bool(environ.get("CI")) or environ.get("GITHUB_ACTIONS") == "true"
+    if tty and not ci and environ.get("TERM") != "dumb":
+        return "tty"
+    return "log"
+
+
+def enable_windows_vt() -> bool:
+    """Enable VT on a Windows console. Failure means plain text and no ESC bytes."""
+    if os.name != "nt":
+        return True
+    try:
+        import ctypes
+
+        kernel = ctypes.windll.kernel32
+        handle = kernel.GetStdHandle(-12)
+        mode = ctypes.c_uint()
+        if not kernel.GetConsoleMode(handle, ctypes.byref(mode)):
+            return False
+        if not kernel.SetConsoleMode(handle, mode.value | 0x0004):
+            return False
+        return True
+    except (AttributeError, OSError, ValueError):
+        return False
+
+
+def _tmux_supports_hyperlinks(environ) -> bool:
+    term = environ.get("TERM") or ""
+    if not environ.get("TMUX") and not term.startswith("tmux"):
+        return False
+    try:
+        done = subprocess.run(
+            ["tmux", "-V"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=2,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    match = re.search(r"(\d+)\.(\d+)", f"{done.stdout or ''}{done.stderr or ''}")
+    if match is None:
+        return False
+    return (int(match.group(1)), int(match.group(2))) >= (3, 4)
+
+
+def hyperlinks_allowed(environ=None) -> bool:
+    """Allowlist, unless ``CHAOS_ENGINE_HYPERLINKS`` is ``0`` or ``1``."""
+    environ = _environ(environ)
+    override = environ.get("CHAOS_ENGINE_HYPERLINKS")
+    if override == "0":
+        return False
+    if override == "1":
+        return True
+    if environ.get("WT_SESSION"):
+        return True
+    if environ.get("TERM_PROGRAM") in _HYPERLINK_PROGRAMS:
+        return True
+    if environ.get("KITTY_WINDOW_ID"):
+        return True
+    vte = environ.get("VTE_VERSION") or ""
+    if vte.isdigit() and int(vte) >= 5000:
+        return True
+    return _tmux_supports_hyperlinks(environ)
+
+
+def detect_capabilities(stream=None, environ=None, *, vt=None) -> Capabilities:
+    """Detect once. A failed Windows VT enable stays plain: no cursor, colour, or links."""
+    stream = sys.stderr if stream is None else stream
+    environ = _environ(environ)
+    tty = _stream_is_tty(stream, environ)
+    vt_ok = True
+    if tty and os.name == "nt":
+        checker = vt if vt is not None else enable_windows_vt
+        try:
+            vt_ok = bool(checker())
+        except (AttributeError, OSError, ValueError):
+            vt_ok = False
+    plain = bool(tty and os.name == "nt" and not vt_ok)
+    enabled = False if plain else terminal_color_enabled(tty=tty, environ=environ)
+    return Capabilities(
+        tty=tty,
+        cursor=False if plain else cursor_enabled(tty=tty, environ=environ, vt_ok=vt_ok),
+        color="none" if plain else color_level(environ, enabled=enabled),
+        unicode=unicode_enabled(stream, environ),
+        hyperlinks=False if plain else hyperlinks_allowed(environ),
+        width=terminal_width(),
+    )
+
+
+def link_label(url: str) -> str:
+    host = urllib.parse.urlparse(url).hostname
+    return host or "link"
+
+
+def osc8(url: str, label: str) -> str:
+    """OSC 8 hyperlink. Callers emit this only when hyperlinks are on and mode is tty."""
+    shown = label or "link"
+    return f"\x1b]8;;{url}\x1b\\{shown}\x1b]8;;\x1b\\"
+
+
+def layout_lines(text: str, width: int, *, hyperlinks: bool = False) -> list[str]:
+    """Wrap ``text``. A URL is never split at ``://``. It is its own line, or an OSC 8 label."""
+    width = max(1, int(width))
+    raw = strip_controls(text)
+    parts = re.split(r"(https?://\S+)", raw)
+    lines: list[str] = []
+    pending = ""
+
+    def flush() -> None:
+        nonlocal pending
+        if pending == "":
+            return
+        wrapped = textwrap.wrap(
+            pending,
+            width=width,
+            break_long_words=True,
+            break_on_hyphens=False,
+        )
+        if not wrapped:
+            lines.append(pending[:width])
+        else:
+            lines.extend(wrapped)
+        pending = ""
+
+    for part in parts:
+        if not part:
+            continue
+        if _URL_RE.fullmatch(part):
+            flush()
+            if hyperlinks:
+                lines.append(osc8(part, link_label(part)))
+            else:
+                lines.append(part)
+            continue
+        pending += part
+    flush()
+    return lines or [""]
+
+
+def line_may_exceed_width(line: str) -> bool:
+    """True when the line is only an unbreakable URL or an OSC 8 label that holds one."""
+    if "\x1b]8;;" in line:
+        return True
+    return _URL_RE.fullmatch(line.strip()) is not None
+
+
+def run_captured(argv, runner=None, *, trace=None, **kwargs):
+    """Run ``argv`` with stdout and stderr captured. The child does not inherit this process's stderr.
+
+    The completed process grows a ``trace`` list of ``{argv, returncode, stdout, stderr}``.
+    ``argv`` is passed through unchanged so callers can compare the original object.
+    """
+    run = subprocess.run if runner is None else runner
+    options = dict(kwargs)
+    options.pop("capture_output", None)
+    options["stdout"] = subprocess.PIPE
+    options["stderr"] = subprocess.PIPE
+    options.setdefault("text", True)
+    done = run(argv, **options)
+    stdout = getattr(done, "stdout", "") or ""
+    stderr = getattr(done, "stderr", "") or ""
+    if isinstance(stdout, bytes):
+        stdout = stdout.decode("utf-8", "replace")
+    if isinstance(stderr, bytes):
+        stderr = stderr.decode("utf-8", "replace")
+    record = {
+        "argv": argv,
+        "returncode": getattr(done, "returncode", None),
+        "stdout": stdout,
+        "stderr": stderr,
+    }
+    bucket = [] if trace is None else trace
+    bucket.append(record)
+    try:
+        done.trace = bucket
+    except (AttributeError, TypeError):
+        pass
+    return done
+
 _REDACTION_FAILED = "redaction failed; artifact withheld"
 _CLIENT_SCRUB_MODULE: object = None
 _TOKEN_PATTERNS = (
@@ -634,7 +934,9 @@ def _scrub_module():
     global _CLIENT_SCRUB_MODULE
     if _CLIENT_SCRUB_MODULE is not None:
         return _CLIENT_SCRUB_MODULE or None
-    path = runtime_module(Path(__file__).resolve().parent, "client_name_scrub.py")
+    here = Path(__file__).resolve().parent
+    nested = here / "runtime" / "client_name_scrub.py"
+    path = nested if nested.is_file() else here / "client_name_scrub.py"
     if not path.is_file():
         _CLIENT_SCRUB_MODULE = False
         return None
@@ -753,6 +1055,8 @@ def redact_report_text(text: str, root: Path | None = None) -> str:
     """Redact paths and secrets in installer reports. ``redact`` is the contract."""
     return redact(text, root=root)
 
+
+# <<< generated: ce_ui
 
 def github_auth_token() -> str | None:
     for key in ("GH_TOKEN", "GITHUB_TOKEN"):
@@ -1396,18 +1700,23 @@ class InstallReporter:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._lines = 0
-        self._tty = self._stderr_is_tty()
-        self._color = terminal_color_enabled(tty=self._tty)
-        self._unicode = self._encodable(UNICODE_PROBE) and not ascii_forced()
+        self._caps = detect_capabilities(self.stream, vt=self._enable_windows_vt)
+        self.mode = select_mode(tty=self._caps.tty)
+        self._tty = self.mode == "tty"
+        self._color = self._tty and self._caps.color != "none"
+        self.cursor = self._tty and self._caps.cursor
+        self._unicode = self._caps.unicode
+        self._hyperlinks = self._tty and self._caps.hyperlinks
         self._verbose = verbose_enabled()
         self._frame = 0
         self._last_heartbeat: float | None = None
         self.failed_operation: str | None = None
-        if self._tty and os.name == "nt" and not self._enable_windows_vt():
-            self._color = False
+        self.commit_label: str | None = None
+        self.commit_full: str | None = None
+        self._commit_logged = False
         if (
             os.environ.get("CHAOS_ENGINE_BRAND_SHOWN") != "1"
-            and os.environ.get("CHAOS_ENGINE_QUIET") != "1"
+            and self.mode != "quiet"
         ):
             lines = brand_lines(
                 width=self._width(),
@@ -1461,16 +1770,7 @@ class InstallReporter:
                 self.stream.flush()
 
     def _enable_windows_vt(self) -> bool:
-        try:
-            import ctypes
-            handle = ctypes.windll.kernel32.GetStdHandle(-12)
-            mode = ctypes.c_uint()
-            return bool(
-                ctypes.windll.kernel32.GetConsoleMode(handle, ctypes.byref(mode))
-                and ctypes.windll.kernel32.SetConsoleMode(handle, mode.value | 0x0004)
-            )
-        except (AttributeError, OSError, ValueError):
-            return False
+        return enable_windows_vt()
 
     def _encodable(self, value: str) -> bool:
         try:
@@ -1497,17 +1797,7 @@ class InstallReporter:
         return _align_report(label, plain[len(prefix) :], color=self._color)
 
     def _wrap(self, value: str) -> list[str]:
-        width = self._width()
-        if len(value) <= width:
-            return [value]
-        indent = value[: len(value) - len(value.lstrip())]
-        return textwrap.wrap(
-            value,
-            width=width,
-            subsequent_indent=indent,
-            break_long_words=True,
-            break_on_hyphens=False,
-        ) or [indent]
+        return layout_lines(value, self._width(), hyperlinks=self._hyperlinks)
 
     def _paint(self, value: str, color: str) -> str:
         if not self._color:
@@ -1570,16 +1860,6 @@ class InstallReporter:
                         target=self._ticker, name="chaos-engine-installer", daemon=True
                     )
                     self._thread.start()
-            else:
-                suffix = (
-                    f" — {detail}"
-                    if detail and self._unicode
-                    else (f" - {detail}" if detail else "")
-                )
-                self.stream.write(
-                    self._truncate(f"{self._step_label(operation)}START {operation}{suffix}") + "\n"
-                )
-                self.stream.flush()
 
     def complete(self, operation: str, *, remaining: tuple[str, ...] = ()) -> None:
         with self._lock:
@@ -1604,10 +1884,6 @@ class InstallReporter:
                 self._render_locked()
             else:
                 self.stream.write(f"{self._step_label(operation)}DONE  {operation}\n")
-                self.stream.write(
-                    f"[+{self._duration(now - self.started)}] PASS {operation} "
-                    f"({self._duration(duration)})\n"
-                )
                 self.stream.flush()
 
     @property
@@ -1752,79 +2028,97 @@ class InstallReporter:
             value /= 1024
         return f"{value:.1f} {units[-1]}"
 
-    def _render_locked(self) -> None:
-        if os.environ.get("CHAOS_ENGINE_QUIET") == "1":
+    def _remember_commit(self, commit: str) -> None:
+        self.commit_full = commit
+        mark = "…" if self._unicode else "..."
+        self.commit_label = commit[:12] + mark
+
+    def note_commit(self, commit: str | None) -> None:
+        """Update the header Commit cell in place. Log mode prints that line once."""
+        if not isinstance(commit, str) or len(commit) != 40:
             return
-        if os.environ.get("NO_COLOR"):
-            self._color = False
+        self._remember_commit(commit)
+        if os.environ.get("CHAOS_ENGINE_QUIET") == "1" or self.mode == "quiet":
+            return
+        if self._tty:
+            with self._lock:
+                self._render_locked()
+        elif not self._commit_logged:
+            self.stream.write(self._truncate(_align_report("Commit", self.commit_label or "")) + "\n")
+            self.stream.flush()
+            self._commit_logged = True
+
+    def _header_lines(self) -> list[str]:
+        lines: list[str] = []
+        if self.project_root:
+            lines.append(self._aligned_live_row("Project", strip_controls(self.project_root)))
+        if self.source_label:
+            lines.append(self._aligned_live_row("Source", strip_controls(self.source_label)))
+        if self.commit_label:
+            lines.append(self._aligned_live_row("Commit", strip_controls(self.commit_label)))
+        return lines
+
+    def _checklist_row(self, item: str, *, name_width: int, active: str, check: str, empty: str) -> str:
+        if item in self.completed_operations:
+            duration = self._duration(self._completed_elapsed.get(item, 0.0))
+            return self._paint(self._truncate(f"  [{check}] {item:<{name_width}}  {duration}"), "32")
+        if item == self.failed_operation:
+            failed = status_glyph("fail", unicode=self._unicode)
+            return self._paint(self._truncate(f"  [{failed}] {item:<{name_width}}  failed"), "31")
+        if item == self.current_operation or item in self._in_flight:
+            return self._paint(self._truncate(f"  [{active}] {item:<{name_width}}  running"), ION_BLUE)
+        return self._paint(self._truncate(f"  [{empty}] {item}"), "2")
+
+    def _rail_lines(self, now: float, elapsed: float) -> list[str]:
+        """At most two detail lines under the running step. No Trace or Status row."""
+        prefix = "└─ " if self._unicode else "+- "
+        operations = self._operations()
+        done = sum(1 for item in operations if item in self.completed_operations)
+        total = len(operations)
+        separator = " · " if self._unicode else " | "
+        metrics = [f"{done}/{total}", f"Elapsed {self._duration(elapsed)}"]
+        if self._transfer_stalled(now):
+            metrics.append("waiting for data")
+        else:
+            rate = self._download_rate()
+            if rate is not None:
+                metrics.append(self._size(rate))
+        rows: list[str] = []
+        if self.detail:
+            for line in layout_lines(strip_controls(self.detail), self._width(), hyperlinks=self._hyperlinks):
+                shown = prefix + line
+                rows.append(shown if line_may_exceed_width(line) else self._truncate(shown))
+                if len(rows) >= 2:
+                    return rows[:2]
+        if len(rows) < 2:
+            rows.append(self._truncate(prefix + separator.join(metrics)))
+        return rows[:2]
+
+    def _render_locked(self) -> None:
+        if os.environ.get("CHAOS_ENGINE_QUIET") == "1" or self.mode == "quiet":
+            return
         operations = self._operations()
         now = self.clock()
         elapsed = max(0.0, now - self.started)
         frames = SPINNER_UNICODE if self._unicode else SPINNER_ASCII
+        active = frames[self._frame % len(frames)]
         check = status_glyph("ok", unicode=self._unicode)
-        if self._color and not os.environ.get("NO_COLOR"):
-            active = frames[self._frame % len(frames)]
-        else:
-            active = "*"
         empty = status_glyph("pending", unicode=self._unicode)
         name_width = max((len(item) for item in operations), default=0)
         lines = [""]
-        if self.project_root:
-            lines.append(self._aligned_live_row("Project", self.project_root))
-        if self.source_label:
-            lines.append(self._aligned_live_row("Source", self.source_label))
-        if self.project_root or self.source_label:
+        header = self._header_lines()
+        if header:
+            lines.extend(header)
             lines.append("")
         for item in operations:
-            if item in self.completed_operations:
-                duration = self._duration(self._completed_elapsed.get(item, 0.0))
-                lines.append(
-                    self._paint(self._truncate(f"  [{check}] {item:<{name_width}}  {duration}"), "32")
-                )
-            elif item == self.failed_operation:
-                failed = status_glyph("fail", unicode=self._unicode)
-                lines.append(
-                    self._paint(self._truncate(f"  [{failed}] {item:<{name_width}}  failed"), "31")
-                )
-            elif item == self.current_operation or item in self._in_flight:
-                lines.append(
-                    self._paint(
-                        self._truncate(f"  [{active}] {item:<{name_width}}  running"),
-                        ION_BLUE,
-                    )
-                )
-            else:
-                lines.append(self._paint(self._truncate(f"  [{empty}] {item}"), "2"))
-        separator = " · " if self._unicode else " | "
-        done = sum(1 for item in operations if item in self.completed_operations)
-        total = len(operations)
-        metrics = [f"{done}/{total}", f"Elapsed {self._duration(elapsed)}"]
-        rate = self._download_rate()
-        if rate is not None:
-            metrics.append(self._size(rate))
-        if self._transfer_stalled(now):
-            metrics.append("waiting for data")
-        limit = TRACE_LIMIT if self._verbose else min(TRACE_LIMIT, LIVE_TRACE_CONCISE)
-        log = self.traces[-limit:] or [
-            (ended, f"{result} {operation} ({self._duration(duration)})")
-            for ended, result, operation, duration in self.history[-limit:]
-        ]
-        trace_path = self.trace_path or Path(".chaos-engine-state/install-trace.json")
-        lines.extend(
-            self._paint(line, "2")
-            for line in self._wrap(
-                f"  Trace (last {len(log)} of {self.trace_count}; full log: {trace_path.as_posix()})"
+            lines.append(
+                self._checklist_row(item, name_width=name_width, active=active, check=check, empty=empty)
             )
-        )
-        for ended, message in log:
-            lines.extend(self._wrap(f"  [+{self._duration(ended)}] {message}"))
-        lines.append(self._paint("  Status", ION_BLUE))
-        lines.append(self._paint(self._truncate("  " + separator.join(metrics)), ION_BLUE))
-        if self.detail:
-            lines.append(self._paint(self._truncate(f"  {self.detail}"), ION_BLUE))
-        if self._lines and self._color:
+            if item == self.current_operation:
+                lines.extend(self._rail_lines(now, elapsed))
+        if self.cursor and self._lines:
             self.stream.write(f"\x1b[{self._lines}F")
-        suffix = "\x1b[K" if self._color else ""
+        suffix = "\x1b[K" if self.cursor else ""
         rendered = "\n".join(line + suffix for line in lines) + "\n"
         self.stream.write(rendered)
         self.stream.flush()
@@ -1919,28 +2213,49 @@ class InstallReporter:
                     f"`{prompt}`",
                 ]
             )
+        if commit is not None and not self.commit_label:
+            self._remember_commit(commit)
         self.close()
-        if os.environ.get("CHAOS_ENGINE_QUIET") == "1":
+        if os.environ.get("CHAOS_ENGINE_QUIET") == "1" or self.mode == "quiet":
             return
-        self.stream.write(
-            format_install_report(
-                project=project,
-                doctor_status=doctor_status,
-                healthy=healthy,
-                total=total,
-                attention=attention,
-                commit=commit,
-                clients=clients if isinstance(clients, dict) else {},
-                repository=repository,
-                source_label=self.source_label,
-                elapsed=elapsed,
-                extra_blocks=extra,
-                color=self._color,
-                unicode=self._unicode,
-                width=self._width(),
-                probes=installed_host_probes(project),
-            )
+        report = format_install_report(
+            project=project,
+            doctor_status=doctor_status,
+            healthy=healthy,
+            total=total,
+            attention=attention,
+            commit=commit,
+            clients=clients if isinstance(clients, dict) else {},
+            repository=repository,
+            source_label=self.source_label,
+            elapsed=elapsed,
+            extra_blocks=extra,
+            color=self._color,
+            unicode=self._unicode,
+            width=self._width(),
+            probes=installed_host_probes(project),
+            hyperlinks=self._hyperlinks,
         )
+        if self._tty:
+            block = self._header_lines()
+            if block:
+                block.append("")
+            frames = SPINNER_UNICODE if self._unicode else SPINNER_ASCII
+            active = frames[self._frame % len(frames)]
+            check = status_glyph("ok", unicode=self._unicode)
+            empty = status_glyph("pending", unicode=self._unicode)
+            operations = self._operations()
+            name_width = max((len(item) for item in operations), default=0)
+            block.extend(
+                self._checklist_row(item, name_width=name_width, active=active, check=check, empty=empty)
+                for item in operations
+            )
+            if block:
+                self.stream.write("\n".join(block) + "\n")
+        elif self.commit_label and not self._commit_logged:
+            self.stream.write(self._truncate(_align_report("Commit", self.commit_label)) + "\n")
+            self._commit_logged = True
+        self.stream.write(report)
         self.stream.flush()
 
     def close(self) -> None:
@@ -1953,8 +2268,9 @@ class InstallReporter:
         ):
             thread.join(timeout=1.5)
         self._thread = None
-        if self._tty and self._lines:
-            self.stream.write("\n")
+        if self.cursor and self._lines:
+            count = self._lines
+            self.stream.write(f"\x1b[{count}F" + ("\x1b[K\n" * count) + f"\x1b[{count}F")
             self.stream.flush()
         self._lines = 0
 
@@ -2099,8 +2415,9 @@ def format_install_report(
     unicode: bool = False,
     width: int = 80,
     probes: dict[str, dict] | None = None,
+    hyperlinks: bool = False,
 ) -> str:
-    """Render the finish receipt: headline, aligned facts, numbered next steps (#6325)."""
+    """Render the finish receipt. Project, Source, and Commit stay in the header, not here."""
     unhealthy = doctor_status in UNHEALTHY_DOCTOR_STATUSES
     tone = "33" if unhealthy else "32"
     title = "Installed with warnings" if unhealthy else "Installation Successful!"
@@ -2114,12 +2431,6 @@ def format_install_report(
         rule = "──" if unicode else "--"
         lines.append("  " + _report_style(rule * 18, ION_BLUE, enabled=color))
     lines.append("")
-    lines.append(_align_report("Project", str(Path(project)), color=color))
-    if source_label:
-        lines.append(_align_report("Source", source_label, color=color))
-    if commit is not None:
-        short = commit[:12] + ("…" if unicode else "...") if len(commit) == 40 else commit
-        lines.append(_align_report("Commit", short, color=color))
     doctor_glyph = status_glyph(_doctor_glyph_kind(doctor_status), unicode=unicode)
     doctor_value = f"{doctor_glyph} {doctor_status}"
     if total:
@@ -2159,10 +2470,15 @@ def format_install_report(
     )
     lines.append("")
     guide = installer_user_guide_url(repository)
-    guide_shown = guide
-    if color and unicode:
-        guide_shown = f"\x1b]8;;{guide}\x1b\\{guide}\x1b]8;;\x1b\\"
-    lines.append(_align_report("Guide", guide_shown, color=color))
+    if hyperlinks:
+        lines.append(_align_report("Guide", osc8(guide, link_label(guide)), color=color))
+    else:
+        plain = _align_report("Guide", guide, color=False)
+        if len(plain) <= width:
+            lines.append(_align_report("Guide", guide, color=color))
+        else:
+            lines.append(_align_report("Guide", "", color=color).rstrip())
+            lines.extend(layout_lines(guide, width, hyperlinks=False))
     trace = install_trace_path(Path(project)).as_posix()
     # Stable machine-readable receipt lines (agents and tests parse these).
     receipt = []
@@ -5032,6 +5348,9 @@ def _run_core_install(
     confirm("Resolve source")
     reporter.start("Resolve source", remaining=remaining("Resolve source"))
     commit, resolved_branch = resolve_latest(repository, branch, opener=opener)
+    note_commit = getattr(reporter, "note_commit", None)
+    if callable(note_commit):
+        note_commit(commit)
     reporter.complete("Resolve source", remaining=remaining("Resolve source"))
     scratch["temporary"] = tempfile.TemporaryDirectory(
         prefix="chaos-engine-bootstrap-", dir=disjoint_download_parent(project)
@@ -5565,7 +5884,8 @@ def parser() -> argparse.ArgumentParser:
         "Optional add-ons stay opt-in (--with-<addon> / --without-<addon>, or "
         "CHAOS_ENGINE_ADDONS=a,b). The one-liner reidentifies a project pack: "
         "the pack home gets that distribution, a matching project gets its user "
-        "skills, and every other project stays portable."
+        "skills, and every other project stays portable. "
+        "Uninstall remains: python3 .chaos-engine/install.py uninstall --project ."
     )
     result.add_argument("--interactive", action="store_true")
     result.add_argument(
@@ -5589,7 +5909,15 @@ def parser() -> argparse.ArgumentParser:
     )
     result.add_argument("-q", "--quiet", action="store_true", help="Errors only.")
     result.add_argument("--json", action="store_true", help="One JSON document on stdout.")
-    result.add_argument("--no-color", action="store_true", help="Disable ANSI color.")
+    result.add_argument("--no-color", action="store_true", help="Disable ANSI color. In-place redraw stays on a TTY.")
+    result.add_argument(
+        "--color",
+        choices=("auto", "always", "never"),
+        default=None,
+        help="Colour mode. NO_COLOR and --no-color win over always. Also CHAOS_ENGINE_COLOR.",
+    )
+    result.add_argument("--ascii", action="store_true", help="Force ASCII glyphs (CHAOS_ENGINE_ASCII=1).")
+    result.add_argument("--no-hyperlinks", action="store_true", help="Do not emit OSC 8 hyperlinks.")
     result.add_argument(
         "--version",
         dest="version_pin",
@@ -6054,7 +6382,11 @@ def emit_install_failure(
         terminal_issue_link(
             issue_url,
             saved=project is not None and core_install_py(project),
-            live=stream_is_tty(sys.stderr) and color and unicode,
+            live=(
+                stream_is_tty(sys.stderr)
+                and hyperlinks_allowed()
+                and select_mode(tty=stream_is_tty(sys.stderr)) == "tty"
+            ),
         ),
         file=sys.stderr,
     )
@@ -6282,8 +6614,18 @@ def apply_install_flags(args) -> dict[str, str | None]:
 
     if getattr(args, "quiet", False):
         assign("CHAOS_ENGINE_QUIET", "1")
-    if getattr(args, "no_color", False):
+    color = getattr(args, "color", None)
+    if getattr(args, "no_color", False) or color == "never":
         assign("NO_COLOR", "1")
+        assign("CHAOS_ENGINE_COLOR", "never")
+    elif color == "always":
+        assign("CHAOS_ENGINE_COLOR", "always")
+    elif color == "auto":
+        assign("CHAOS_ENGINE_COLOR", "auto")
+    if getattr(args, "ascii", False):
+        assign("CHAOS_ENGINE_ASCII", "1")
+    if getattr(args, "no_hyperlinks", False):
+        assign("CHAOS_ENGINE_HYPERLINKS", "0")
     if getattr(args, "dry_run", False):
         assign("CHAOS_ENGINE_DRY_RUN", "1")
     if getattr(args, "keep_edits", False):
@@ -6443,15 +6785,15 @@ def main() -> int:
             result["sync"] = sync_counts(actions)
     isatty = getattr(sys.stdout, "isatty", None)
     stdout_tty = bool(isatty()) if callable(isatty) else True
-    want_json = bool(args.json) or not stdout_tty
+    json_mode = bool(args.json) or os.environ.get("CHAOS_ENGINE_JSON") == "1"
+    quiet_mode = bool(args.quiet) or os.environ.get("CHAOS_ENGINE_QUIET") == "1"
+    want_json = json_mode or not stdout_tty
     if want_json:
         print(json.dumps(result, sort_keys=True))
-    elif not args.quiet:
-        prefix = installer_cli_prefix(Path(args.project)) or "python3 .chaos-engine/install.py"
+    elif not quiet_mode:
         print("Next:", file=sys.stderr)
-        print(f"  1. {prefix} verify --project .", file=sys.stderr)
-        print(f"  2. {prefix} uninstall --project .", file=sys.stderr)
-        print("  3. Pin with --version <0.4.YYYYMMDD.N> or rerun the one-liner to upgrade.", file=sys.stderr)
+        print("  1. open a host and invoke `/chaos-engine`", file=sys.stderr)
+        print("  2. doctor anytime", file=sys.stderr)
     return 1 if post_install_code else 0
 
 

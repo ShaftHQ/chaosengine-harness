@@ -63,7 +63,13 @@ jobs:
           PY
 
       - name: Shell syntax
-        run: bash -n install.sh
+        run: |
+          bash -n install.sh
+          sh -n install.sh
+          if command -v shellcheck >/dev/null 2>&1; then
+            shellcheck -s sh install.sh
+          fi
+          python3 scripts/ci/sync_ce_ui.py --check
 
       - name: Markdown relative links
         run: |

@@ -633,7 +633,7 @@ def test_offline_reports_package_install_and_the_offer(tmp_path, monkeypatch):
 
 
 def test_provision_names_the_tool_on_stderr(tmp_path, monkeypatch, capsys):
-    """Install rows and which()-present skip rows are named on stderr (#67)."""
+    """Tool names stay off stderr. The captured trace keeps the argv (#131)."""
     module = _offer_module()
     project, _addon = _skill_project(tmp_path, "stderr-tool")
 
@@ -642,9 +642,11 @@ def test_provision_names_the_tool_on_stderr(tmp_path, monkeypatch, capsys):
         return r"C:\maven\bin\mvn.cmd" if exe == "mvn" else None
 
     monkeypatch.setattr(module.shutil, "which", which)
+    seen: list = []
 
     def runner(argv, **_kwargs):
-        return type("Done", (), {"returncode": 0})()
+        seen.append(argv)
+        return type("Done", (), {"returncode": 0, "stdout": "", "stderr": ""})()
 
     report = module.provision(
         project,
@@ -654,13 +656,19 @@ def test_provision_names_the_tool_on_stderr(tmp_path, monkeypatch, capsys):
         version_of=lambda _exe: (),
     )
     captured = capsys.readouterr()
-    assert "winget" in captured.err
+    bare = [line.strip() for line in captured.err.splitlines()]
+    assert "winget" not in bare
+    assert "mvn" not in bare
     assert "winget" not in captured.out
+    assert "mvn" not in captured.out
     assert any(row["tool"] == "winget" for row in report["tools"])
     skipped = next(row for row in report["tools"] if row["tool"] == "mvn")
     assert skipped["action"] == "skip"
-    assert "mvn" in captured.err
-    assert "mvn" not in captured.out
+    assert seen
+    assert any("winget" in str(part).lower() or "powershell" in str(part).lower() for argv in seen for part in argv)
+    trace = getattr(report["tools"], "trace", None)
+    assert trace
+    assert any("powershell" in record["argv"] for record in trace)
 
 
 def test_bootstrap_invokes_the_installed_offer(tmp_path):

@@ -52,8 +52,8 @@ class InstallerUxTests(unittest.TestCase):
         self.assertNotIn("AUTONOMOUS INSTALL", output)
         self.assertIn("ChaosEngine", output)
         self.assertNotIn("QUANTUM MANDATE", output)
-        self.assertGreaterEqual(output.split("START", 1)[0].count("\n"), 3)
-        self.assertIn("START Resolve source", output)
+        self.assertGreaterEqual(output.split("DONE", 1)[0].count("\n"), 3)
+        self.assertNotIn("START ", output)
         self.assertIn("DONE  Resolve source", output)
         self.assertNotIn("\r", output)
         self.assertNotIn("\x1b", output)
@@ -85,8 +85,9 @@ class InstallerUxTests(unittest.TestCase):
                 self.assertIn("running", output)
                 self.assertIn("Install core", output)
                 self.assertIn("Elapsed 00:00", output)
-                self.assertIn("Trace (last 0 of 0; full log:", output)
-                self.assertIn("Status", output)
+                self.assertNotIn("Trace (last", output)
+                self.assertNotIn("\n  Status\n", output)
+                self.assertIn("└─", output)
                 self.assertRegex(output, r"0/2")
                 self.assertNotIn("ETA calculating", output)
                 self.assertNotIn("Current action:", output)
@@ -122,7 +123,7 @@ class InstallerUxTests(unittest.TestCase):
             tty.close()
         live = stream.getvalue()
         self.assertIn("Project", live)
-        self.assertIn("Status", live)
+        self.assertNotIn("Trace (last", live)
         self.assertNotIn("Install root:", live)
 
     def test_narrow_tty_announce_keeps_ansi_reset_on_project_source(self):
@@ -196,7 +197,11 @@ class InstallerUxTests(unittest.TestCase):
         self.assertNotIn("transparent automation", output)
         self.assertNotIn("AUTONOMOUS INSTALL", output)
         self.assertIn("ChaosEngine", output)
-        self.assertTrue(all(len(line) <= 38 for line in output.splitlines()))
+        self.assertNotIn("https:\n//", output)
+        for line in output.splitlines():
+            if BOOTSTRAP.line_may_exceed_width(line):
+                continue
+            self.assertLessEqual(len(line), 38, line)
 
     def test_narrow_width_uses_brand_narrow(self):
         lines = BOOTSTRAP.brand_lines(width=27, color=False, unicode=False)
@@ -619,8 +624,11 @@ class InstallerUxTests(unittest.TestCase):
                     running_lines,
                 )
                 self.assertIn("Verify installation", reporter.remaining_operations)
-                self.assertIn("download https://example.test/tool.tgz", output)
-                self.assertIn("run uv python install 3.12 --no-progress", output)
+                traced = "\n".join(message for _ended, message in reporter.traces)
+                self.assertIn("download https://example.test/tool.tgz", traced)
+                self.assertIn("run uv python install 3.12 --no-progress", traced)
+                self.assertNotIn("download https://example.test/tool.tgz", output)
+                self.assertNotIn("run uv python install 3.12 --no-progress", output)
                 self.assertRegex(output, r"Resolve source +00:04")  # #6325: aligned duration column
                 self.assertNotRegex(output, r"remaining \d{2}:\d{2}")
             finally:
@@ -667,8 +675,10 @@ class InstallerUxTests(unittest.TestCase):
         reporter.complete("Resolve source", remaining=("Download source",))
         output = stream.getvalue()
         self.assertNotIn("Current action:", output)
-        self.assertIn("START Resolve source", output)
-        self.assertRegex(output, r"\[\+00:02\] PASS Resolve source \(00:02\)")
+        self.assertNotIn("START ", output)
+        self.assertIn("[1/2] DONE  Resolve source", output)
+        self.assertNotIn("PASS Resolve source", output)
+        self.assertEqual(("PASS", "Resolve source"), reporter.history[-1][1:3])
 
     def test_interactive_confirmation_accepts_only_y_or_yes(self):
         for answer in ("y\n", "YES\n"):
@@ -2078,9 +2088,9 @@ class InstallerVisualLanguage6325Tests(unittest.TestCase):
             reporter.complete("Resolve source", remaining=("Download source",))
             reporter.start("Download source", remaining=())
         output = stream.getvalue()
-        self.assertIn("[1/2] START Resolve source", output)
+        self.assertNotIn("START", output)
         self.assertIn("[1/2] DONE  Resolve source", output)
-        self.assertIn("[2/2] START Download source", output)
+        self.assertNotIn("[2/2]", output)
 
     def test_pipe_trace_detail_is_hidden_unless_verbose(self):
         quiet = io.StringIO()
@@ -2103,9 +2113,9 @@ class InstallerVisualLanguage6325Tests(unittest.TestCase):
         self.assertIn("--verbose", wrapper)
 
     def test_tty_spinner_advances_and_ascii_uses_plain_frames(self):
-        # NO_COLOR and a non-color TTY stay on one glyph. A color TTY advances frames.
+        # NO_COLOR still redraws. Colour stays off. ASCII frames advance without SGR.
         stream = _Tty()
-        with unittest.mock.patch.dict(os.environ, self._clean_env(NO_COLOR="1"), clear=True), \
+        with unittest.mock.patch.dict(os.environ, self._clean_env(NO_COLOR="1", CHAOS_ENGINE_ASCII="1"), clear=True), \
                 unittest.mock.patch.object(BOOTSTRAP.threading.Thread, "start", lambda self: None):
             reporter = BOOTSTRAP.InstallReporter(stream=stream, clock=lambda: 1.0)
             reporter.start("Download source", remaining=("Install core",))
@@ -2114,9 +2124,10 @@ class InstallerVisualLanguage6325Tests(unittest.TestCase):
             reporter._render_locked()
             second = [line for line in stream.getvalue().splitlines() if "running" in line][-1]
             reporter.close()
-        self.assertIn("[*]", first)
-        self.assertIn("[*]", second)
-        self.assertNotIn("\x1b", stream.getvalue())
+        self.assertIn(f"[{BOOTSTRAP.SPINNER_ASCII[0]}]", first)
+        self.assertIn(f"[{BOOTSTRAP.SPINNER_ASCII[1]}]", second)
+        self.assertRegex(stream.getvalue(), r"\x1b\[\d+F")
+        self.assertNotRegex(stream.getvalue(), r"\x1b\[[0-9;]*m")
         self.assertNotIn("⠋", stream.getvalue())
         colored = _Tty()
         with unittest.mock.patch.dict(os.environ, self._clean_env(), clear=True), \
