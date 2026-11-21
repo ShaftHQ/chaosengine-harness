@@ -10,6 +10,16 @@ Open an issue first for a bug, a behavior change, a spec, a story, or a test pla
 
 Open a pull request when the change is ready for review, and link the issue. A small wording or example fix can start as a pull request when no issue exists.
 
+## Finalize a spec
+
+A spec or epic is not done until its temporary branches are gone. As the last step of the implementation:
+
+- Delete every temporary branch created for the spec: feature, research/attachment, and experiment branches.
+- Before you delete a research/attachment branch, move the files that issues link to onto `main` (for example `docs/research/<date>-<slug>/`). Then update the issue and comment links so nothing breaks.
+- Record each deleted branch name and its tip SHA in the closing comment, so a branch can be restored.
+
+The Feature or spec form carries this as its definition-of-done checkbox.
+
 ## Non-code work
 
 Specs, user stories, test plans, and documentation are welcome. You can contribute them without writing code. Use the non-code work form. Say who the work is for and how a reviewer can tell it is done.

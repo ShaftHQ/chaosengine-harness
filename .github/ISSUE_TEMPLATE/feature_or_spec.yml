@@ -29,3 +29,11 @@ body:
       description: Checks a reviewer can apply. Include commands and expected results when the change is code.
     validations:
       required: true
+  - type: checkboxes
+    id: finalization
+    attributes:
+      label: Definition of done
+      description: Every spec or epic finishes with this step. Leave it unchecked until the work is finalized.
+      options:
+        - label: "Finalization: delete every temporary branch created for this spec (feature, research/attachment, experiment branches). Before deleting a research/attachment branch, move its referenced files to main (e.g. docs/research/<date>-<slug>/) and update the issue links, so nothing breaks."
+          required: false
