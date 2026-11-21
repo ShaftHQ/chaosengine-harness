@@ -1043,8 +1043,11 @@ class InstallerUxTests(unittest.TestCase):
         self.assertIn("Launch your agent with this prompt:", output)
         self.assertIn("Open issue:", output)
         self.assertIn("Continue ChaosEngine install in this folder.", output)
-        self.assertIn("Comment findings, solutions, and troubleshooting steps", output)
-        self.assertIn("ChaosEngine upstream repository", output)
+        self.assertIn(
+            "Ask the user before opening or updating an upstream issue or PR, or pushing.",
+            output,
+        )
+        self.assertNotIn("open or update an upstream", output.casefold())
         self.assertIn("the GitHub issue URL printed above", output)
         self.assertIn("unhealthy", output.split("issues/new?", 1)[-1])
         self.assertNotIn("Repair the named", output)
@@ -1087,7 +1090,11 @@ class InstallerUxTests(unittest.TestCase):
             "https://github.com/owner/repo/issues/99",
         )
         self.assertIn("https://github.com/owner/repo/issues/99", filed)
-        self.assertIn("upstream issue/PR", filed)
+        self.assertIn(
+            "Ask the user before opening or updating an upstream issue or PR, or pushing.",
+            filed,
+        )
+        self.assertNotIn("open or update an upstream", filed.casefold())
 
     def test_failure_cause_redacts_local_paths_and_secret_assignments(self):
         private_path = Path(
@@ -1125,7 +1132,8 @@ class InstallerUxTests(unittest.TestCase):
         windows = BOOTSTRAP.one_line_cause(
             RuntimeError(r"failed at C:\Users\runner\work\project\state.json")
         )
-        self.assertIn("[path]", windows)
+        self.assertIn("<home>", windows)
+        self.assertNotIn("runner", windows)
         self.assertNotIn(r"C:\Users", windows)
 
     def test_installer_issue_template_inlines_trace_and_hides_private_paths(self):

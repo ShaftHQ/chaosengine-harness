@@ -713,7 +713,14 @@ log, and doctor JSON. Do not paste or attach those files.
 `CE-INSTALL-FAILED` with core present (including provision-phase MemPalace
 failures) also writes `.chaos-engine-state/heal-handoff.md`,
 `install-console.log`, and `doctor-failure.json`. The printed agent prompt
-names only artifacts that exist on disk.
+names only artifacts that exist on disk. Those artifacts, the console log, and
+the prefilled issue URL are redacted before they are written: home directories,
+the machine hostname, `user:pass@` URLs, bearer credentials, known token
+prefixes, secret environment values, and client-name denylist markers. If
+redaction fails, the file says `redaction failed; artifact withheld`. The
+prompt diagnoses and fixes the install locally, runs `doctor --json` until
+required components are healthy, and asks before opening or updating an
+upstream issue or PR, or pushing.
 
 
 ## Empty-project smoke (< 5 minutes)

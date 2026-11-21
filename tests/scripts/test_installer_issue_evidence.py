@@ -51,9 +51,11 @@ class IssueEvidenceTest(unittest.TestCase):
             )
         body = module.issue_form_markdown(fields)
         self.assertIn("FAIL Resolve source", body)
-        self.assertIn(secret.split()[0].replace("/home/person/project", "[path]")[:6], body)
-        self.assertIn("[path]", body)
+        self.assertIn("<home>/project", body)
+        self.assertNotIn("/home/person", body)
         self.assertNotIn("super-secret", body)
+        snippet = body.split("### Install trace snippet", 1)[1]
+        self.assertIn('"<home>/project token=<redacted>"', snippet)
         self.assertIn("CERTIFICATE_VERIFY_FAILED", body)
         self.assertIn("openssl:", body)
         self.assertNotIn("attach", body.casefold())

@@ -9,10 +9,12 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 import email.utils
 import hashlib
+import importlib.util
 import io
 import json
 import os
 import platform
+import socket
 import fnmatch
 import re
 import shlex
@@ -359,21 +361,93 @@ def install_trace_path(project: Path) -> Path:
 def write_install_trace(project: Path, result: dict[str, object], traces: list[tuple[float, str]]) -> Path:
     path = install_trace_path(project)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps({"result": result, "trace": traces}, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    try:
+        payload = {
+            "result": _redact_obj(result, root=project),
+            "trace": _redact_obj(traces, root=project),
+        }
+    except Exception:
+        text = "redaction failed; artifact withheld\n"
+    else:
+        text = json.dumps(payload, sort_keys=True) + "\n"
+    path.write_text(text, encoding="utf-8")
     return path
 
 
-def runtime_environment() -> dict[str, str]:
-    """Bounded OS/Python facts for installer failure reports (#5703)."""
+# REQ-ERR-02. Environment facts may enter an issue URL only through this list.
+TELEMETRY_ALLOWLIST_KEYS = (
+    "os_name",
+    "os_version",
+    "kernel",
+    "architecture",
+    "windows_kind",
+    "shell",
+    "python_version",
+    "node_version",
+    "uv_version",
+    "version",
+    "commit",
+    "flags",
+    "failing_step",
+    "exit_code",
+    "doctor_code",
+    "trace_tail",
+)
+
+
+def telemetry_allowlist(facts: dict[str, str]) -> dict[str, str]:
+    """Return only non-sensitive telemetry. Every other key is dropped."""
+    kept: dict[str, str] = {}
+    for key in TELEMETRY_ALLOWLIST_KEYS:
+        value = facts.get(key, "")
+        if not isinstance(value, str):
+            continue
+        value = value.strip()
+        if value:
+            kept[key] = value
+    return kept
+
+
+def _telemetry_facts() -> dict[str, str]:
+    kernel = platform.release()[:40]
+    windows_kind = (
+        "wsl"
+        if os.environ.get("WSL_DISTRO_NAME") or "microsoft" in kernel.casefold()
+        else "native"
+    )
+    shell = os.environ.get("SHELL") or os.environ.get("ComSpec") or ""
+    flags = ",".join(
+        name
+        for name in ("CI", "NO_COLOR", "CHAOS_ENGINE_JSON", "CHAOS_ENGINE_QUIET")
+        if os.environ.get(name)
+    )
     return {
         "os_name": platform.system()[:40],
         "os_version": platform.release()[:40],
+        "kernel": kernel,
         "architecture": platform.machine()[:40] or "unknown",
+        "windows_kind": windows_kind,
+        "shell": Path(shell).name if shell else "",
         "python_version": sys.version.split()[0][:32],
-        "machine": platform.platform(terse=True)[:80],
+        "version": product_version(),
+        "flags": flags,
+    }
+
+
+def runtime_environment() -> dict[str, str]:
+    """Bounded OS/Python facts for installer failure reports (#5703).
+
+    Values come from ``telemetry_allowlist``. ``machine`` is the CPU
+    architecture, not ``platform.platform()``, which can embed a hostname.
+    """
+    facts = telemetry_allowlist(_telemetry_facts())
+    architecture = facts.get("architecture") or "unknown"
+    return {
+        "os_name": facts.get("os_name") or "unknown",
+        "os_version": facts.get("os_version") or "unknown",
+        "architecture": architecture,
+        "python_version": facts.get("python_version") or "unknown",
+        "machine": architecture,
     }
 
 
@@ -481,10 +555,14 @@ def write_failure_artifacts(
     traces: list[str] = []
     if reporter is not None:
         traces = [f"[+{ended:.3f}] {message}" for ended, message in reporter.traces]
-    (state / "install-console.log").write_text(
-        ("\n".join(traces) + "\n") if traces else "no installer console traces\n",
-        encoding="utf-8",
-    )
+    try:
+        if traces:
+            console_body = "\n".join(redact(line, root=project) for line in traces) + "\n"
+        else:
+            console_body = "no installer console traces\n"
+    except Exception:
+        console_body = "redaction failed; artifact withheld\n"
+    (state / "install-console.log").write_text(console_body, encoding="utf-8")
     payload = doctor_failure_payload(error)
     if not payload:
         payload = {
@@ -493,28 +571,184 @@ def write_failure_artifacts(
             "components": {},
             "cause": one_line_cause(error),
         }
-    (state / "doctor-failure.json").write_text(
-        json.dumps(payload, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    try:
+        safe_payload = _redact_obj(payload, root=project)
+    except Exception:
+        doctor_body = "redaction failed; artifact withheld\n"
+    else:
+        doctor_body = json.dumps(safe_payload, indent=2, sort_keys=True) + "\n"
+    (state / "doctor-failure.json").write_text(doctor_body, encoding="utf-8")
     return (
         ".chaos-engine-state/install-console.log",
         ".chaos-engine-state/doctor-failure.json",
     )
 
 
-def redact_report_text(text: str) -> str:
-    """Redact paths and secret assignments from multi-line installer reports."""
-    text = re.sub(
-        r"(?<!:)(?:[A-Za-z]:[\\/]|\\\\[^\s\\/]+[\\/]|/(?:(?:media|mnt|Volumes)(?:/\S+?)?/(?:Users|home)|home|Users|tmp|var|private)/)\S+",
-        "[path]",
-        text,
-    )
-    return re.sub(
-        r"(?i)\b(token|secret|password|api_key)=\S+",
-        lambda match: f"{match.group(1)}=<redacted>",
-        text,
-    )
+_REDACTION_FAILED = "redaction failed; artifact withheld"
+_CLIENT_SCRUB_MODULE: object = None
+_TOKEN_PATTERNS = (
+    ("github-token", re.compile(r"github_pat_[A-Za-z0-9_]{16,}")),
+    ("github-token", re.compile(r"gh[pous]_[A-Za-z0-9_]{16,}")),
+    ("gitlab-token", re.compile(r"glpat-[A-Za-z0-9_\-]{16,}")),
+    ("openai-token", re.compile(r"\bsk-[A-Za-z0-9_\-]{16,}")),
+    ("xai-token", re.compile(r"\bxai-[A-Za-z0-9_\-]{16,}")),
+    ("google-api-key", re.compile(r"\bAIza[0-9A-Za-z_\-]{20,}")),
+    ("aws-access-key", re.compile(r"\bAKIA[A-Z0-9]{16}\b")),
+)
+# Stop before JSON quotes and brackets so a serialized trace stays valid.
+_SECRET_VALUE = r"[^\s\"'`<>\[\]{},;]+"
+_BEARER = re.compile(
+    rf"(?i)\b((?:authorization\s*[:=]\s*)?bearer)\s+{_SECRET_VALUE}"
+)
+_USER_PASS = re.compile(r"(?i)\b[A-Za-z0-9._%+\-]{1,64}:[^@\s/:]{1,256}@")
+_ENV_ASSIGN = re.compile(
+    rf"(?i)\b([A-Za-z_][A-Za-z0-9_]*(?:_TOKEN|_KEY|_SECRET|_PASSWORD))\s*=\s*{_SECRET_VALUE}"
+)
+_LEGACY_ASSIGN = re.compile(
+    rf"(?i)\b(token|secret|password|api_key)\s*=\s*{_SECRET_VALUE}"
+)
+_ENV_NAME = re.compile(r"(?i).*(_TOKEN|_KEY|_SECRET|_PASSWORD)$")
+_HOME_PATTERNS = (
+    re.compile(r"(?<![:\w])/mnt/[a-z]/Users/[^/\s]+", re.IGNORECASE),
+    re.compile(r"(?<![:\w])[A-Za-z]:[\\/]Users[\\/][^\\/\s]+"),
+    re.compile(r"(?<![:\w])/Users/[^/\s]+"),
+    re.compile(r"(?<![:\w])/home/[^/\s]+"),
+    re.compile(
+        r"(?<![:\w])\\\\wsl(?:\$|\.localhost)\\[^\\]+\\(?:home|Users)\\[^\\\s]+",
+        re.IGNORECASE,
+    ),
+)
+_OTHER_ABS = re.compile(
+    rf"(?<![:\w])(?:[A-Za-z]:[\\/]|\\\\[^\s\"'`<>\[\]{{}},;\\/]+[\\/]|/(?:media|mnt|Volumes|tmp|var|private)/){_SECRET_VALUE}"
+)
+_CONTROLS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
+
+
+def strip_controls(text: str) -> str:
+    """Drop C0/C1 and ESC from an external value. Keep tab, LF, and CR."""
+    return _CONTROLS.sub("", text)
+
+
+def _scrub_module():
+    """Load ``client_name_scrub`` when this tree has it. Stage-1 may not."""
+    global _CLIENT_SCRUB_MODULE
+    if _CLIENT_SCRUB_MODULE is not None:
+        return _CLIENT_SCRUB_MODULE or None
+    path = runtime_module(Path(__file__).resolve().parent, "client_name_scrub.py")
+    if not path.is_file():
+        _CLIENT_SCRUB_MODULE = False
+        return None
+    spec = importlib.util.spec_from_file_location("ce_client_name_scrub_redact", path)
+    if spec is None or spec.loader is None:
+        _CLIENT_SCRUB_MODULE = False
+        return None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    _CLIENT_SCRUB_MODULE = module
+    return module
+
+
+def _denylist_tokens(root: Path | None) -> tuple[str, ...]:
+    """Same tokens as ``client_name_scrub.load_denylist``."""
+    module = _scrub_module()
+    if module is not None:
+        return tuple(module.load_denylist(root))
+    tokens: list[str] = []
+    raw = (os.environ.get("CHAOS_ENGINE_CLIENT_NAME_DENYLIST") or "").strip()
+    if raw:
+        tokens.extend(part.strip() for part in raw.split(","))
+    if root is not None:
+        path = Path(root) / ".chaos-engine-state" / "client-name-denylist.txt"
+        if path.is_file():
+            for line in path.read_text(encoding="utf-8").splitlines():
+                stripped = line.strip()
+                if stripped and not stripped.startswith("#"):
+                    tokens.append(stripped)
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for token in tokens:
+        if len(token) < 3:
+            continue
+        key = token.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(token)
+    return tuple(cleaned)
+
+
+def _replace_env_values(text: str) -> str:
+    values: list[str] = []
+    for name, value in os.environ.items():
+        if not isinstance(value, str) or not _ENV_NAME.fullmatch(name):
+            continue
+        if len(value) < 8 or value.strip() != value:
+            continue
+        values.append(value)
+    for value in sorted(set(values), key=len, reverse=True):
+        text = re.sub(
+            rf"(?<![A-Za-z0-9]){re.escape(value)}(?![A-Za-z0-9])",
+            "<redacted:env>",
+            text,
+        )
+    return text
+
+
+def _replace_hostname(text: str) -> str:
+    names: list[str] = []
+    for candidate in (
+        socket.gethostname(),
+        platform.node(),
+        os.environ.get("HOSTNAME", ""),
+        os.environ.get("COMPUTERNAME", ""),
+    ):
+        candidate = (candidate or "").strip().strip(".")
+        if len(candidate) < 3:
+            continue
+        if candidate.casefold() in {"localhost", "localhost.localdomain"}:
+            continue
+        names.append(candidate)
+        short = candidate.split(".")[0]
+        if short and short != candidate and len(short) >= 3:
+            names.append(short)
+    for name in sorted(set(names), key=len, reverse=True):
+        text = re.sub(
+            rf"(?i)(?<![A-Za-z0-9._-]){re.escape(name)}(?![A-Za-z0-9._-])",
+            "<host>",
+            text,
+        )
+    return text
+
+
+def redact(text: str, root: Path | None = None) -> str:
+    """Mask secrets and home paths. Same contract S3 will move to ``ce_ui.redact``.
+
+    Placeholders keep the surrounding structure (``<home>/…``,
+    ``<redacted:github-token>``). A raise at a sink writes
+    ``redaction failed; artifact withheld`` instead of the original text.
+    """
+    if not isinstance(text, str):
+        text = str(text)
+    text = strip_controls(text)
+    for label, pattern in _TOKEN_PATTERNS:
+        text = pattern.sub(f"<redacted:{label}>", text)
+    text = _BEARER.sub(lambda match: f"{match.group(1)} <redacted:bearer>", text)
+    text = _USER_PASS.sub("<redacted:user-pass>@", text)
+    text = _ENV_ASSIGN.sub(lambda match: f"{match.group(1)}=<redacted:env>", text)
+    text = _replace_env_values(text)
+    for token in sorted(_denylist_tokens(root), key=len, reverse=True):
+        text = re.sub(re.escape(token), "<redacted:client-name>", text, flags=re.IGNORECASE)
+    for pattern in _HOME_PATTERNS:
+        text = pattern.sub("<home>", text)
+    text = _OTHER_ABS.sub("[path]", text)
+    text = _replace_hostname(text)
+    text = _LEGACY_ASSIGN.sub(lambda match: f"{match.group(1)}=<redacted>", text)
+    return text
+
+
+def redact_report_text(text: str, root: Path | None = None) -> str:
+    """Redact paths and secrets in installer reports. ``redact`` is the contract."""
+    return redact(text, root=root)
 
 
 def github_auth_token() -> str | None:
@@ -584,6 +818,27 @@ def encode_issue_form_url(
 ) -> str:
     """Pack required fields first; optional logs only while under the URL cap."""
     repository = normalize_repository(repository)  # never github.com/https://... (#6234)
+    try:
+        title = redact(title)
+        fields = {
+            key: redact(value) if isinstance(value, str) else value
+            for key, value in fields.items()
+        }
+        if extra:
+            extra = {
+                key: redact(value) if isinstance(value, str) else value
+                for key, value in extra.items()
+            }
+    except Exception:
+        return (
+            f"https://github.com/{repository}/issues/new?"
+            + urllib.parse.urlencode(
+                {
+                    "template": "chaos-engine-installer.yml",
+                    "title": _REDACTION_FAILED,
+                }
+            )
+        )
     packed = {
         key: fields[key]
         for key in REQUIRED_ISSUE_FORM_FIELDS
@@ -639,6 +894,13 @@ def _render_issue_sections(fields: dict[str, str]) -> str:
 
 def issue_form_markdown(fields: dict[str, str]) -> str:
     """Full redacted evidence. Shrink the trace before the console or doctor."""
+    try:
+        fields = {
+            key: redact(value) if isinstance(value, str) else value
+            for key, value in fields.items()
+        }
+    except Exception:
+        return _REDACTION_FAILED + "\n"
     current = dict(fields)
     body = _render_issue_sections(current)
     snippet = current.get("install_trace_snippet") or ""
@@ -712,6 +974,11 @@ def _artifact_read_clause(artifacts: list[str] | None) -> str:
     return ", ".join(artifacts[:-1]) + f", and {artifacts[-1]}"
 
 
+ASK_BEFORE_UPSTREAM = (
+    "Ask the user before opening or updating an upstream issue or PR, or pushing."
+)
+
+
 def heal_handoff_prompt(
     doctor_command: str,
     issue_url: str,
@@ -721,6 +988,9 @@ def heal_handoff_prompt(
     cli = "py -3" if os.name == "nt" else "python3"
     issue_ref = heal_issue_reference(issue_url)
     read_clause = _artifact_read_clause(artifacts)
+    shim = (
+        "That source is the publishing repository, not a consumer chaos-engine/ forwarding shim."
+    )
     if doctor_command == "not available":
         restore = (
             "Restore the portable core with the documented ChaosEngine install one-liner"
@@ -732,12 +1002,10 @@ def heal_handoff_prompt(
         return (
             "Continue ChaosEngine install in this folder. Load ChaosEngine if present. "
             f"{restore}. "
-            "Diagnose and fix the install failure (auto-provision missing JDK/mvn/"
+            "Diagnose and fix the install failure locally (auto-provision missing JDK/mvn/"
             "JAVA_HOME/PATH when possible). "
-            f"Open {issue_ref} with full diagnostics and open or update an upstream "
-            "issue/PR in the ChaosEngine upstream repository that fixes the installer. "
-            "That source is the publishing repository, not a consumer chaos-engine/ forwarding shim. "
-            "Comment findings, solutions, and troubleshooting steps on the issue."
+            "After the core is present, run doctor --json until required components are healthy. "
+            f"The report link is {issue_ref}. {shim} {ASK_BEFORE_UPSTREAM}"
         )
     return (
         "Continue ChaosEngine install in this folder. Load ChaosEngine. "
@@ -745,15 +1013,12 @@ def heal_handoff_prompt(
         "Do not rerun the install one-liner unless the portable core is missing. "
         "If a fix-next says to rerun that one-liner while .chaos-engine/install.py is present, "
         "do not rerun it. "
-        "Diagnose and fix the install failure (auto-provision missing JDK/mvn/"
+        "Diagnose and fix the install failure locally (auto-provision missing JDK/mvn/"
         "JAVA_HOME/PATH only when those tools are actually missing). "
         "Continue unhealthy components with "
         f"{cli} .chaos-engine/install.py repair --project . --component <name> "
-        f"and {doctor_command} until required components are healthy. "
-        f"Open {issue_ref} with full diagnostics and open or update an upstream "
-        "issue/PR in the ChaosEngine upstream repository that fixes the installer. "
-        "That source is the publishing repository, not a consumer chaos-engine/ forwarding shim. "
-        "Comment findings, solutions, and troubleshooting steps on the issue."
+        f"and {doctor_command} until doctor --json reports required components healthy. "
+        f"The report link is {issue_ref}. {shim} {ASK_BEFORE_UPSTREAM}"
     )
 
 
@@ -904,9 +1169,17 @@ def write_heal_handoff(project: Path, fields: dict[str, str], issue_url: str) ->
             "",
             "Do not rerun the install one-liner unless `.chaos-engine/install.py` is missing.",
             "",
+            ASK_BEFORE_UPSTREAM,
+            "",
         ]
     )
-    target.write_text("\n".join(lines), encoding="utf-8")
+    try:
+        text = redact("\n".join(lines), root=project)
+    except Exception:
+        text = "redaction failed; artifact withheld"
+    if not text.endswith("\n"):
+        text += "\n"
+    target.write_text(text, encoding="utf-8")
     return target
 
 
@@ -4571,14 +4844,20 @@ def _defer_installed_upgrade(
     return _failure_before_install_core(reporter)
 
 
-def _redact_report_value(value: object) -> object:
+def _redact_report_value(value: object, root: Path | None = None) -> object:
     if isinstance(value, str):
-        return redact_report_text(value)
+        return redact(value, root=root)
     if isinstance(value, dict):
-        return {str(key): _redact_report_value(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [_redact_report_value(item) for item in value]
+        return {
+            str(key): _redact_report_value(item, root=root) for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [_redact_report_value(item, root=root) for item in value]
     return value
+
+
+def _redact_obj(value: object, root: Path | None = None) -> object:
+    return _redact_report_value(value, root=root)
 
 
 def _bounded_doctor(doctor: dict) -> dict[str, object]:
@@ -5409,18 +5688,10 @@ def one_line_cause(error: BaseException) -> str:
                 f"then rerun the ChaosEngine install one-liner"
             )
     text = " ".join(text.split())
-    # Non-HTML [path] so GitHub issue forms cannot strip the marker and leave a
-    # removable-media mount prefix after redacting a user home directory
-    text = re.sub(
-        r"(?<!:)(?:[A-Za-z]:[\\/]|\\\\[^\s\\/]+[\\/]|/(?:(?:media|mnt|Volumes)(?:/\S+?)?/(?:Users|home)|home|Users|tmp|var|private)/)\S+",
-        "[path]",
-        text,
-    )
-    return re.sub(
-        r"(?i)\b(token|secret|password|api_key)=\S+",
-        lambda match: f"{match.group(1)}=<redacted>",
-        text,
-    )
+    try:
+        return redact(text)
+    except Exception:
+        return _REDACTION_FAILED
 
 
 def installer_issue_fields(
@@ -5467,16 +5738,18 @@ def installer_issue_fields(
             trace = install_trace_path(root)
             if trace.is_file():
                 install_trace = ".chaos-engine-state/install-trace.json"
-                raw = redact_report_text(trace.read_text(encoding="utf-8"))
+                raw = redact_report_text(trace.read_text(encoding="utf-8"), root=root)
                 install_trace_snippet = _bounded_evidence(raw, 40000)
             console_rel, doctor_rel = write_failure_artifacts(root, reporter, error)
             console_path = root / console_rel
             if console_path.is_file():
-                console_log = redact_report_text(console_path.read_text(encoding="utf-8"))
+                console_log = redact_report_text(console_path.read_text(encoding="utf-8"), root=root)
             if doctor_rel != "not available":
                 doctor_path = root / doctor_rel
                 if doctor_path.is_file():
-                    doctor_json = redact_report_text(doctor_path.read_text(encoding="utf-8"))
+                    doctor_json = redact_report_text(
+                        doctor_path.read_text(encoding="utf-8"), root=root
+                    )
         except OSError:
             # Keep default field values when install artifacts cannot be read.
             pass
@@ -5508,6 +5781,34 @@ def installer_issue_fields(
             for part in (
                 "Auto-filled by the ChaosEngine installer.",
                 "The redacted trace, console log, and doctor JSON are in this issue.",
+                json.dumps(
+                    telemetry_allowlist(
+                        {
+                            **_telemetry_facts(),
+                            "failing_step": str(
+                                getattr(error, "phase", None)
+                                or (reporter.current_operation if reporter else "")
+                                or ""
+                            )[:80],
+                            "doctor_code": (
+                                doctor_details if doctor_details != "not reported" else ""
+                            ),
+                            "commit": (
+                                payload.get("commit")
+                                if isinstance(payload.get("commit"), str)
+                                and re.fullmatch(r"[0-9a-fA-F]{40}", payload.get("commit", ""))
+                                else ""
+                            ),
+                            "trace_tail": "\n".join(
+                                str(message)[:200]
+                                for _ended, message in (
+                                    reporter.traces[-15:] if reporter is not None else []
+                                )
+                            ),
+                        }
+                    ),
+                    sort_keys=True,
+                ),
                 install_rollback_summary(error),
                 _exception_chain(error),
                 _ssl_report_facts(error),
@@ -5622,7 +5923,8 @@ def next_fix_hint(code: str, error: BaseException, prefix: str | None) -> str:
             (
                 "ChaosEngine already tried to auto-provision JDK/mvn/JAVA_HOME/PATH; "
                 "open the prefilled issue link and launch your agent with the printed "
-                "prompt so it can fix the install and open an upstream issue."
+                "prompt so it can fix the install locally. "
+                + ASK_BEFORE_UPSTREAM
             ),
         ),
         (

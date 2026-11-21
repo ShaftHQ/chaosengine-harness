@@ -418,7 +418,8 @@ def maven_tools_wrapper_fix_next() -> str:
         "fix-next: the Maven Tools upstream wrapper "
         f"({wrapper}) is missing and managed Maven could not be provisioned "
         "(mvn not resolvable). Open the prefilled installer issue and paste the "
-        "agent prompt so ChaosEngine can repair upstream provisioning."
+        "agent prompt so ChaosEngine can repair provisioning locally. "
+        "Ask the user before opening or updating an upstream issue or PR, or pushing."
     )
 
 
@@ -428,7 +429,8 @@ def maven_tools_unfixable_fix_next(*, required_major: int) -> str:
         "fix-next: ChaosEngine could not auto-provision a Temurin JDK "
         f"{required_major}+ with javac and/or a Maven CLI for Maven Tools. "
         "Open the prefilled GitHub issue link and launch your agent with the "
-        "printed prompt so it can fix the install and open an upstream issue."
+        "printed prompt so it can fix the install locally. "
+        "Ask the user before opening or updating an upstream issue or PR, or pushing."
     )
 
 
