@@ -2331,9 +2331,12 @@ class InstallerVisualLanguage6325Tests(unittest.TestCase):
                 probes={"codex": {"status": "configured", "detail": "trust the hook in /hooks"}},
                 show_receipt_lines=False,
             )
+        guide = "https://shafthq.github.io/docs/agentic/chaos-engine"
+        rows = report.splitlines()
+        action_at = next(index for index, line in enumerate(rows) if "run /hooks once" in line)
         self.assertIn("codex (needs /hooks trust)", report)
-        self.assertIn("Codex: run /hooks once to trust .codex/hooks.json", report)
-        self.assertIn("https://shafthq.github.io/docs/agentic/chaos-engine", report)
+        self.assertIn(guide, rows[action_at + 1])
+        self.assertNotIn("Guide", rows[action_at + 1])
         self.assertNotIn("gemini", report)
         self.assertNotIn("Resolved commit:", report)
         self.assertLessEqual(

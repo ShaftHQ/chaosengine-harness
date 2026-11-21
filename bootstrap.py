@@ -2689,11 +2689,11 @@ def format_install_report(
     )
     guide = installer_user_guide_url(repository)
     for action in actions:
-        value = action
-        with_guide = f"{action} ({guide})"
-        if len(_align_report("Action", with_guide)) <= width:
-            value = with_guide
-        lines.append(_align_report("Action", value, color=color, intensity=intensity))
+        lines.append(_align_report("Action", action, color=color, intensity=intensity))
+        # The doc link stays on the action, not only on the Guide row.
+        # One line keeps the URL whole when the action sentence already fills width 80.
+        shown = osc8(guide, guide) if hyperlinks else guide
+        lines.append("             " + shown)
     if extra_blocks:
         lines.append("")
         for block in extra_blocks:
