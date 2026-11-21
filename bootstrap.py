@@ -1577,13 +1577,23 @@ def source_tree_url(repository: str, commit: str, *, root_layout: bool) -> str:
     return url
 
 
+# install.sh copies this file alone and draws the header before the repository
+# download, so the sibling VERSION file is not there yet. Keep this equal to VERSION.
+_EMBEDDED_VERSION = "0.4.20261115.5"
+
+
 def product_version() -> str:
-    """Version string shipped beside this bootstrap. Empty when VERSION is absent."""
+    """Version string shipped in this bootstrap.
+
+    The sibling ``VERSION`` file wins in a checkout. The embedded copy covers
+    the one-liner, which runs a lone ``bootstrap.py``.
+    """
     path = Path(__file__).resolve().parent / "VERSION"
     try:
-        return path.read_text(encoding="utf-8").strip()
+        text = path.read_text(encoding="utf-8").strip()
     except OSError:
-        return ""
+        text = ""
+    return text or _EMBEDDED_VERSION
 
 
 def brand_lockup() -> str:

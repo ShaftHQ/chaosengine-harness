@@ -332,6 +332,17 @@ class InstallerUxTests(unittest.TestCase):
         self.assertIn(gap + "Project demo", beside[1])
         self.assertEqual(BOOTSTRAP.mark_clear_space(BOOTSTRAP.BRAND_MARK_WIDE), gap.count(" "))
 
+    def test_lone_bootstrap_copy_keeps_the_embedded_version(self):
+        version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+        source = (ROOT / "bootstrap.py").read_text(encoding="utf-8")
+        self.assertIn(f'_EMBEDDED_VERSION = "{version}"', source)
+        self.assertEqual(version, BOOTSTRAP.product_version())
+        with unittest.mock.patch.object(BOOTSTRAP.Path, "read_text", side_effect=OSError):
+            self.assertEqual(version, BOOTSTRAP.product_version())
+        self.assertIn(version, BOOTSTRAP.identity_line(version=version))
+        wide = BOOTSTRAP.brand_lines(width=120, color=False, unicode=True)
+        self.assertIn(version, wide[0])
+
     def test_download_progress_uses_measured_bytes_and_rolling_rate(self):
         class Tty(io.StringIO):
             def isatty(self):
