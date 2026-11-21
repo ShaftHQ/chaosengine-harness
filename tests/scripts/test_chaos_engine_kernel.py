@@ -154,7 +154,7 @@ class ChaosEngineKernelTest(TestCase):
             "copilot": {"additionalContext": "ready"},
             "cursor": {"additional_context": "ready"},
             "opencode": {"additionalContext": "ready"},
-            "antigravity": {"additionalContext": "ready"},
+            "antigravity": {"decision": "allow"},
         }
         expected_deny = {
             "codex": {
@@ -223,7 +223,7 @@ class ChaosEngineKernelTest(TestCase):
                 if host == "cursor":
                     payload = {"followup_message": "unsafe", "additional_context": "unsafe"}
                 elif host == "antigravity" and event == "Stop":
-                    payload = {"decision": "continue"}
+                    payload = {"decision": "continue", "reason": "unsafe"}
                 else:
                     payload = {"decision": "block", "reason": "unsafe"}
                     if not capability.process_exit2_honored:

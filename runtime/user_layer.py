@@ -16,7 +16,7 @@ from runtime.user_paths import data_dir, home_dir
 
 USER_SKILL = "chaos-engine-user"
 PROJECT_SKILL = "chaos-engine"
-HOSTS = ("claude", "codex", "gemini", "copilot", "opencode", "grok", "cursor")
+HOSTS = ("claude", "codex", "gemini", "copilot", "opencode", "grok", "cursor", "antigravity")
 
 
 def user_home() -> Path:
@@ -101,6 +101,30 @@ def _merge_json_hooks(path: Path, command: str) -> bytes:
         if event == "PreToolUse":
             entry["matcher"] = "*"
         groups.append(entry)
+    return (json.dumps(document, indent=2, sort_keys=True) + "\n").encode()
+
+
+def _merge_antigravity_hooks(path: Path, pre_command: str, session_command: str) -> bytes:
+    """Merge named user hook into ~/.gemini/config/hooks.json (Antigravity schema)."""
+    document: dict = {}
+    if path.is_file():
+        try:
+            loaded = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return path.read_bytes()
+        if isinstance(loaded, dict):
+            document = loaded
+    document[USER_SKILL] = {
+        "PreToolUse": [
+            {
+                "matcher": ".*",
+                "hooks": [{"type": "command", "command": pre_command}],
+            }
+        ],
+        "SessionStart": [
+            {"type": "command", "command": session_command}
+        ],
+    }
     return (json.dumps(document, indent=2, sort_keys=True) + "\n").encode()
 
 
@@ -334,6 +358,22 @@ def install_user_layer(
         _store(hook, previous, _hook_document(command).encode(), records, prior)
         if not claude_written:
             _write_merge(grok / "rules" / "chaos-engine-user.md", _pointer(payload), records, prior)
+    if "antigravity" in selected:
+        agy_root = home / ".gemini" / "config"
+        skill = agy_root / "skills" / USER_SKILL / "SKILL.md"
+        _store(skill, skill.read_bytes() if skill.is_file() else None, _skill_text().encode(), records, prior)
+        if hooks:
+            agy_hooks = agy_root / "hooks.json"
+            pre_command = _stable_command(launch, "antigravity", "PreToolUse")
+            session_command = _stable_command(launch, "antigravity", "SessionStart")
+            previous = agy_hooks.read_bytes() if agy_hooks.is_file() else None
+            _store(
+                agy_hooks,
+                previous,
+                _merge_antigravity_hooks(agy_hooks, pre_command, session_command),
+                records,
+                prior,
+            )
     receipt = {
         "scope": "user",
         "commit": commit,

@@ -56,12 +56,13 @@ guidance out of the always-loaded context until it is needed.
 
 ## Supported hosts
 
-The installer accepts eight host ids (`INSTALL_HOST_IDS` in
-[bootstrap.py](../bootstrap.py)). Claude, Codex, Gemini, Grok, Copilot, Cursor,
-and OpenCode have lifecycle hook adapters in
-[hooks/kernel.py](../hooks/kernel.py). Antigravity gets a hook document on a
-full install. Grok Bot stays instruction-only. Measured gaps, including exit-2
-fidelity, are in the [host parity matrix](../references/host-parity-matrix.md).
+The installer accepts nine host ids (`INSTALL_HOST_IDS` in
+[bootstrap.py](../bootstrap.py)): `claude`, `codex`, `grok`, `gemini`,
+`copilot`, `opencode`, `cursor`, `antigravity` (alias `agy`), and `grok-bot`.
+All eight hook-capable hosts have lifecycle hook adapters in
+[hooks/kernel.py](../hooks/kernel.py). Grok Bot stays instruction-only. Measured
+gaps, including exit-2 fidelity, are in the
+[host parity matrix](../references/host-parity-matrix.md).
 
 | Id | Host | What this tree implements |
 | --- | --- | --- |
@@ -72,12 +73,12 @@ fidelity, are in the [host parity matrix](../references/host-parity-matrix.md).
 | `copilot` | GitHub Copilot | Lifecycle hooks for the CLI. Cloud and IDE surfaces are checked statically. This host can ignore an exit-2 deny (GAP-EXIT2). |
 | `opencode` | OpenCode | Guard bridge in `.opencode/plugins/chaos-engine-receipt.js`. A throw from the before-hook denies the tool. `session.idle` does not block. |
 | `cursor` | Cursor | `.cursor/hooks.json` calls `hooks/launch.py`. `preToolUse` can deny. Exit 2 is not yet a proven process block. |
+| `antigravity` | Antigravity (`agy`) | Named hook `"chaos-engine"` in `.agents/hooks.json` calling `hooks/launch.py`. Matcher groups wrap `PreToolUse` and `PostToolUse`; the other four events are flat arrays. Deny and continuation are exit-0 JSON. |
 | `grok-bot` | Grok Bot | Instruction-only. Reads the [bot entry](../references/bot-entry.md) at task start. The installer writes no receipt shim. |
 
-A full install also writes `.agents/hooks.json` for Antigravity. Matcher groups
-are `PreToolUse` and `PostToolUse`. The other four events are flat arrays.
-Deny is JSON on exit 0. Independent agents that load nothing from the
-checkout use the same bot-entry path as Grok Bot.
+A full install writes `.agents/hooks.json` for Antigravity (and `--hosts antigravity`
+or `--hosts agy` selects it explicitly; `--scope user` wires `~/.gemini/config/hooks.json`).
+Independent agents that load nothing from the checkout use the same bot-entry path as Grok Bot.
 
 When the environment shows exactly one of Claude, Codex, Grok, or Cursor, the
 one-liner completes that host. With no inferred host and no `--hosts` or

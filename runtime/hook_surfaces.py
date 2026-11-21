@@ -39,8 +39,10 @@ OPENCODE_NATIVE_EVENTS = (
     "session.idle",
 )
 
+ANTIGRAVITY_HOOK_NAME = "chaos-engine"
 ANTIGRAVITY_MATCHER_EVENTS = ("PreToolUse", "PostToolUse")
 ANTIGRAVITY_FLAT_EVENTS = ("SessionStart", "PreInvocation", "PostInvocation", "Stop")
+ANTIGRAVITY_EVENTS = (*ANTIGRAVITY_MATCHER_EVENTS, *ANTIGRAVITY_FLAT_EVENTS)
 
 _OWNED_MARKERS = ("hooks/launch.py", "receipt_shim.py")
 _OPENCODE_MARKERS = (
@@ -300,13 +302,14 @@ export const ChaosEngineGuard = chaosEnginePlugin;
 
 
 def antigravity_hooks_document() -> dict[str, object]:
-    """Matcher groups for tool events. Flat arrays for the other four.
+    """Named hook object for Antigravity (.agents/hooks.json).
 
-    Swapping those shapes drops the flat events (antigravity-cli#925).
+    Top-level keys are hook names. Matcher groups wrap tool events; the other
+    four events are flat handler arrays (swapping shapes drops flat events).
     """
-    document: dict[str, object] = {}
+    spec: dict[str, object] = {}
     for event in ANTIGRAVITY_MATCHER_EVENTS:
-        document[event] = [{
+        spec[event] = [{
             "matcher": ".*",
             "hooks": [{
                 "type": "command",
@@ -314,11 +317,19 @@ def antigravity_hooks_document() -> dict[str, object]:
             }],
         }]
     for event in ANTIGRAVITY_FLAT_EVENTS:
-        document[event] = [{
+        spec[event] = [{
             "type": "command",
             "command": _locator("antigravity", event),
         }]
-    return document
+    return {ANTIGRAVITY_HOOK_NAME: spec}
+
+
+def antigravity_hook_events(document: dict[str, object]) -> set[str]:
+    """Return event names registered inside the named Antigravity hook spec."""
+    spec = document.get(ANTIGRAVITY_HOOK_NAME)
+    if isinstance(spec, dict):
+        return {str(key) for key in spec if key in ANTIGRAVITY_EVENTS}
+    return {str(key) for key in document if key in ANTIGRAVITY_EVENTS}
 
 
 def _antigravity_owned(entry: object) -> bool:
@@ -332,19 +343,74 @@ def _antigravity_owned(entry: object) -> bool:
     return False
 
 
+def antigravity_hooks_findings(document: object) -> list[str]:
+    """Doctor checks for .agents/hooks.json named-hook schema and shapes."""
+    if not isinstance(document, dict):
+        return ["antigravity hooks document is not a JSON object"]
+    findings: list[str] = []
+    for event in ANTIGRAVITY_EVENTS:
+        legacy = document.get(event)
+        if isinstance(legacy, list) and any(_antigravity_owned(item) for item in legacy):
+            findings.append(
+                f"antigravity hooks use legacy top-level event key {event}; "
+                "must be nested under a named hook object (rerun installer)"
+            )
+            break
+    spec = document.get(ANTIGRAVITY_HOOK_NAME)
+    if not isinstance(spec, dict):
+        findings.append(
+            f"antigravity hooks missing named '{ANTIGRAVITY_HOOK_NAME}' hook object"
+        )
+        return findings
+    for event in ANTIGRAVITY_MATCHER_EVENTS:
+        groups = spec.get(event)
+        if not isinstance(groups, list) or not groups or not isinstance(groups[0], dict):
+            findings.append(f"antigravity hook '{ANTIGRAVITY_HOOK_NAME}' missing {event} matcher group")
+            continue
+        if "matcher" not in groups[0] or not isinstance(groups[0].get("hooks"), list):
+            findings.append(f"antigravity hook '{ANTIGRAVITY_HOOK_NAME}' {event} must use matcher+hooks")
+        elif not any(_antigravity_owned(group) for group in groups):
+            findings.append(f"antigravity hook '{ANTIGRAVITY_HOOK_NAME}' {event} does not call hooks/launch.py")
+    for event in ANTIGRAVITY_FLAT_EVENTS:
+        handlers = spec.get(event)
+        if not isinstance(handlers, list) or not handlers or not isinstance(handlers[0], dict):
+            findings.append(f"antigravity hook '{ANTIGRAVITY_HOOK_NAME}' missing {event} handler list")
+            continue
+        if "matcher" in handlers[0] or "hooks" in handlers[0]:
+            findings.append(f"antigravity hook '{ANTIGRAVITY_HOOK_NAME}' {event} must be a flat handler list")
+        elif not any(_antigravity_owned(handler) for handler in handlers):
+            findings.append(f"antigravity hook '{ANTIGRAVITY_HOOK_NAME}' {event} does not call hooks/launch.py")
+    return findings
+
+
 def merge_antigravity_hooks(existing: dict[str, object] | None) -> dict[str, object]:
+    """Keep foreign named hooks, migrate legacy top-level entries, write chaos-engine hook."""
     document = dict(existing) if isinstance(existing, dict) else {}
-    desired = antigravity_hooks_document()
-    for event, groups in desired.items():
-        current = document.get(event)
+    # Migrate/strip legacy flat top-level ChaosEngine event arrays.
+    for event in ANTIGRAVITY_EVENTS:
+        legacy = document.get(event)
+        if not isinstance(legacy, list):
+            continue
+        kept = [entry for entry in legacy if not _antigravity_owned(entry)]
+        if kept:
+            document[event] = kept
+        else:
+            del document[event]
+    desired_spec = antigravity_hooks_document()[ANTIGRAVITY_HOOK_NAME]
+    assert isinstance(desired_spec, dict)
+    current_spec = document.get(ANTIGRAVITY_HOOK_NAME)
+    merged_spec = dict(current_spec) if isinstance(current_spec, dict) else {}
+    for event, groups in desired_spec.items():
+        current = merged_spec.get(event)
         if not isinstance(current, list):
-            document[event] = groups
+            merged_spec[event] = groups
             continue
         kept = [entry for entry in current if not _antigravity_owned(entry)]
         for entry in groups:
             if entry not in kept:
                 kept.append(entry)
-        document[event] = kept
+        merged_spec[event] = kept
+    document[ANTIGRAVITY_HOOK_NAME] = merged_spec
     return document
 
 
@@ -438,6 +504,27 @@ def uninstall_antigravity(project: Path) -> bool:
     if not isinstance(document, dict):
         return False
     changed = False
+    spec = document.get(ANTIGRAVITY_HOOK_NAME)
+    if isinstance(spec, dict):
+        updated = dict(spec)
+        for event, entries in list(updated.items()):
+            if not isinstance(entries, list):
+                continue
+            kept = [entry for entry in entries if not _antigravity_owned(entry)]
+            if len(kept) != len(entries):
+                changed = True
+                if kept:
+                    updated[event] = kept
+                else:
+                    del updated[event]
+        remaining_events = [
+            key for key, value in updated.items() if isinstance(value, list) and value
+        ]
+        if changed:
+            if remaining_events:
+                document[ANTIGRAVITY_HOOK_NAME] = updated
+            else:
+                del document[ANTIGRAVITY_HOOK_NAME]
     for event, entries in list(document.items()):
         if not isinstance(entries, list):
             continue

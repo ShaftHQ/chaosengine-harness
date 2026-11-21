@@ -80,12 +80,13 @@ class HookParityTests(unittest.TestCase):
 
     def test_antigravity_shapes_are_not_swapped_and_deny_is_json(self):
         document = self.surfaces.antigravity_hooks_document()
+        spec = document["chaos-engine"]
         for event in ("PreToolUse", "PostToolUse"):
-            self.assertIn("matcher", document[event][0])
-            self.assertIn("hooks", document[event][0])
+            self.assertIn("matcher", spec[event][0])
+            self.assertIn("hooks", spec[event][0])
         for event in ("SessionStart", "PreInvocation", "PostInvocation", "Stop"):
-            self.assertNotIn("matcher", document[event][0])
-            self.assertEqual("command", document[event][0]["type"])
+            self.assertNotIn("matcher", spec[event][0])
+            self.assertEqual("command", spec[event][0]["type"])
         deny = self.kernel.adapt_hook_output(
             {"decision": "block", "reason": "no"}, "PreToolUse", "antigravity"
         )
@@ -93,7 +94,7 @@ class HookParityTests(unittest.TestCase):
         stop = self.kernel.adapt_hook_output(
             {"decision": "block", "reason": "keep going"}, "Stop", "antigravity"
         )
-        self.assertEqual({"decision": "continue"}, stop)
+        self.assertEqual({"decision": "continue", "reason": "keep going"}, stop)
 
     def test_antigravity_guard_process_exit_is_zero(self):
         payload = json.dumps(

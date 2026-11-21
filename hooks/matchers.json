@@ -1,16 +1,16 @@
 {
   "preventive": [
-    "Task", "Agent", "spawn_agent", "collaboration[.]spawn_agent", "task", "agent",
-    "Bash", "PowerShell", "shell_command", "exec_command", "functions[.]exec", "run_shell_command", "run_in_terminal",
-    "Write", "Edit", "NotebookEdit", "apply_patch", "write_file", "create_file", "edit_file", "replace", "replace_string_in_file", "multi_replace_string_in_file",
-    "Read", "read_file", "read_many_files", "view", "Grep", "grep_search", "search", "Glob", "list_dir",
+    "Task", "Agent", "spawn_agent", "collaboration[.]spawn_agent", "task", "agent", "invoke_subagent",
+    "Bash", "PowerShell", "shell_command", "exec_command", "functions[.]exec", "run_shell_command", "run_in_terminal", "run_command",
+    "Write", "Edit", "NotebookEdit", "apply_patch", "write_file", "create_file", "edit_file", "replace", "replace_string_in_file", "multi_replace_string_in_file", "write_to_file", "replace_file_content", "multi_replace_file_content",
+    "Read", "read_file", "read_many_files", "view", "view_file", "Grep", "grep_search", "search", "Glob", "list_dir", "find_by_name",
     "store",
     "mcp__[^|]*memory__(?:remember_memory|save_memory_patch)",
     "mcp__mempalace__mempalace_(?:add_drawer|checkpoint|create_tunnel|delete_by_source|delete_drawer|delete_hallway|delete_tunnel|diary_write|kg_(?:add|invalidate|supersede)|mine|sync|update_drawer)"
   ],
   "observational": [
-    "Bash", "PowerShell", "shell_command", "exec_command", "functions[.]exec", "run_shell_command", "run_in_terminal",
-    "Write", "Edit", "NotebookEdit", "apply_patch", "write_file", "create_file", "edit_file", "replace", "replace_string_in_file", "multi_replace_string_in_file",
+    "Bash", "PowerShell", "shell_command", "exec_command", "functions[.]exec", "run_shell_command", "run_in_terminal", "run_command",
+    "Write", "Edit", "NotebookEdit", "apply_patch", "write_file", "create_file", "edit_file", "replace", "replace_string_in_file", "multi_replace_string_in_file", "write_to_file", "replace_file_content", "multi_replace_file_content",
     "mcp__[^|]*memory__(?:remember_memory|save_memory_patch)",
     "mcp__mempalace__mempalace_(?:add_drawer|checkpoint|create_tunnel|delete_by_source|delete_drawer|delete_hallway|delete_tunnel|diary_write|kg_(?:add|invalidate|supersede)|mine|sync|update_drawer)"
   ]

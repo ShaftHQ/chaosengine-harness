@@ -26,6 +26,7 @@ HOST_IDS = (
     "copilot",
     "opencode",
     "cursor",
+    "antigravity",
     "grok-bot",
 )
 IMPLICIT_ENV = (

@@ -367,7 +367,12 @@ def production_hook_registry() -> dict[str, set[str]]:
     if root not in sys.path:
         sys.path.insert(0, root)
     from hooks.kernel import HOST_CAPABILITIES
-    from runtime.hook_surfaces import OPENCODE_NATIVE_EVENTS, antigravity_hooks_document, cursor_hooks_document
+    from runtime.hook_surfaces import (
+        OPENCODE_NATIVE_EVENTS,
+        antigravity_hook_events,
+        antigravity_hooks_document,
+        cursor_hooks_document,
+    )
     from runtime.hosts import copilot_hooks_document, gemini_hooks_document, lifecycle_hooks_document
 
     documents = {
@@ -378,7 +383,7 @@ def production_hook_registry() -> dict[str, set[str]]:
         "copilot": set(json.loads(copilot_hooks_document())["hooks"]),
         "cursor": set(cursor_hooks_document()["hooks"]),
         "opencode": set(OPENCODE_NATIVE_EVENTS),
-        "antigravity": set(antigravity_hooks_document()),
+        "antigravity": antigravity_hook_events(antigravity_hooks_document()),
     }
     registry: dict[str, set[str]] = {}
     for host, names in documents.items():

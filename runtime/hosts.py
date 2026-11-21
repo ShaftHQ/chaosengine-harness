@@ -5137,8 +5137,20 @@ def chaos_guard_locator_command(
         raise ValueError("hook launch command must stay single-quote safe")
     probe = _powershell_interpreter_probe(host, event, block)
     windows_probe = _powershell_interpreter_probe(host, event, block, walk=True)
-    if windows and host == "grok":
-        # Grok's runner rejects unresolved `$NAME` (#7667 keeps Windows Grok `$`-free).
+    if windows and host in {"grok", "antigravity"}:
+        # Grok rejects unresolved `$NAME` (#7667); Antigravity runs Windows hooks
+        # through `cmd /c` (not PowerShell), so both use the cmd-safe Python walker.
+        if host == "antigravity":
+            missing_tail = (
+                "import json;"
+                "print(json.dumps(dict(decision='deny',reason='missing .chaos-engine/hooks/launch.py'))) if f is None else None;"
+                "sys.exit(0 if f is None else subprocess.call([sys.executable,str(f),*sys.argv[1:]]))"
+            )
+        else:
+            missing_tail = (
+                "sys.stderr.write('missing .chaos-engine/hooks/launch.py\\n') if f is None else None;"
+                "sys.exit(2 if f is None else subprocess.call([sys.executable,str(f),*sys.argv[1:]]))"
+            )
         script = (
             "import pathlib,subprocess,sys,shutil;"
             "r=pathlib.Path('.chaos-engine/hooks/launch.py');"
@@ -5151,11 +5163,10 @@ def chaos_guard_locator_command(
             "s=next((q/a/b for a in('.chaos-engine','chaos-engine','.') for b in('runtime/worktree_overlay.py','worktree_overlay.py') if q and (q/a/b).is_file()),None);"
             "subprocess.call([sys.executable,str(s),'adopt']) if s else None;"
             "f=next((x/r for x in (d,*d.parents) if (x/r).is_file()), None) if f is None else f;"
-            "sys.stderr.write('missing .chaos-engine/hooks/launch.py\\n') if f is None else None;"
-            "sys.exit(2 if f is None else subprocess.call([sys.executable,str(f),*sys.argv[1:]]))"
+            + missing_tail
         )
         if "$" in script:
-            raise ValueError("windows grok walker must stay $-free")
+            raise ValueError("windows cmd walker must stay $-free")
         command = f'py -3 -c "{script}" {args}'
     elif windows:
         command = windows_probe
@@ -5424,6 +5435,27 @@ def installed_hook_drift(project: Path) -> list[dict[str, str]]:
                         ),
                     }
                 )
+    antigravity_hooks = project / ".agents" / "hooks.json"
+    if antigravity_hooks.is_file():
+        try:
+            antigravity_document = json.loads(antigravity_hooks.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            antigravity_document = None
+        surfaces_path = Path(__file__).resolve().with_name("hook_surfaces.py")
+        if surfaces_path.is_file():
+            spec = importlib.util.spec_from_file_location("ce_doctor_hook_surfaces", surfaces_path)
+            if spec is not None and spec.loader is not None:
+                surfaces = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(surfaces)
+                for reason in surfaces.antigravity_hooks_findings(antigravity_document):
+                    findings.append(
+                        {
+                            "kind": "antigravity-hooks",
+                            "path": ".agents/hooks.json",
+                            "triage": "open",
+                            "reason": reason,
+                        }
+                    )
     return findings
 
 

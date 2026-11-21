@@ -26,6 +26,8 @@ from pathlib import Path
 def _overlay_module(name: str) -> Path:
     """Prefer runtime/<name> at the tree root; fall back to a flat file."""
     tree = Path(__file__).resolve().parents[1]
+    if str(tree) not in sys.path:
+        sys.path.insert(0, str(tree))
     nested = tree / "runtime" / name
     return nested if nested.is_file() else tree / name
 

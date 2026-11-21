@@ -299,7 +299,7 @@ HOST_CAPABILITIES: Mapping[str, HostCapability] = {
         cli="opencode",
     ),
     "antigravity": HostCapability(
-        ("AGENTS.md",),
+        ("AGENTS.md", "GEMINI.md", ".agents/skills/chaos-engine/SKILL.md"),
         _aliases(
             (),
             SessionStart="SessionStart",
@@ -314,6 +314,7 @@ HOST_CAPABILITIES: Mapping[str, HostCapability] = {
         deny_exit_code=0,
         process_exit2_honored=False,
         blocking_gap=GAP_EXIT2_SENTENCE,
+        cli="agy",
     ),
 }
 
@@ -323,12 +324,15 @@ FIELD_ALIASES = {
     "toolInput": "tool_input",
     "toolArgs": "tool_input",
     "sessionId": "session_id",
+    "conversationId": "session_id",
     "agentId": "agent_id",
     "agentType": "agent_type",
     "toolResponse": "tool_response",
     "toolResult": "tool_result",
     "lastAssistantMessage": "last_assistant_message",
+    "lastUserInput": "prompt",
     "stopHookActive": "stop_hook_active",
+    "continuationActive": "stop_hook_active",
     "toolUseId": "tool_use_id",
     "targetPhase": "target_phase",
 }
@@ -343,8 +347,12 @@ TOOL_ALIASES = {
     "run_shell_command": "PowerShell",
     "runinterminal": "PowerShell",
     "run_in_terminal": "PowerShell",
+    "runcommand": "PowerShell",
+    "run_command": "PowerShell",
     "read": "Read",
     "view": "Read",
+    "viewfile": "Read",
+    "view_file": "Read",
     "readfile": "Read",
     "read_file": "Read",
     "readmanyfiles": "Read",
@@ -352,6 +360,8 @@ TOOL_ALIASES = {
     "glob": "Glob",
     "list_dir": "Glob",
     "listdir": "Glob",
+    "findbyname": "Glob",
+    "find_by_name": "Glob",
     "grep": "Grep",
     "search": "Grep",
     "grepsearch": "Grep",
@@ -364,9 +374,15 @@ TOOL_ALIASES = {
     "replace_string_in_file": "Edit",
     "multireplacestringinfile": "Edit",
     "multi_replace_string_in_file": "Edit",
+    "replacefilecontent": "Edit",
+    "replace_file_content": "Edit",
+    "multireplacefilecontent": "Edit",
+    "multi_replace_file_content": "Edit",
     "write": "Write",
     "writefile": "Write",
     "write_file": "Write",
+    "writetofile": "Write",
+    "write_to_file": "Write",
     "createfile": "Write",
     "create_file": "Write",
     "applypatch": "apply_patch",
@@ -462,6 +478,14 @@ def normalize_event(raw: Mapping[str, object], host: str | None = None) -> HookE
             normalized["tool_name"] = raw.get("tool") or raw.get("name") or ""
         if "tool_input" not in normalized and isinstance(raw.get("args"), Mapping):
             normalized["tool_input"] = raw.get("args")
+    tool_call = raw.get("toolCall")
+    if isinstance(tool_call, Mapping):
+        if not normalized.get("tool_name") and tool_call.get("name"):
+            normalized["tool_name"] = tool_call.get("name")
+        if not normalized.get("tool_use_id") and tool_call.get("id"):
+            normalized["tool_use_id"] = tool_call.get("id")
+        if "tool_input" not in normalized and isinstance(tool_call.get("args"), Mapping):
+            normalized["tool_input"] = tool_call.get("args")
     name = _event_name(normalized.get("hook_event_name"), selected)
     tool_input = normalized.get("tool_input")
     if isinstance(tool_input, str):
@@ -474,6 +498,14 @@ def normalize_event(raw: Mapping[str, object], host: str | None = None) -> HookE
     tool_input = dict(tool_input)
     if "file_path" not in tool_input and "filePath" in tool_input:
         tool_input["file_path"] = tool_input["filePath"]
+    if "file_path" not in tool_input and "Path" in tool_input:
+        tool_input["file_path"] = tool_input["Path"]
+    if "command" not in tool_input and "CommandLine" in tool_input:
+        tool_input["command"] = tool_input["CommandLine"]
+    if "startLine" not in tool_input and "StartLine" in tool_input:
+        tool_input["startLine"] = tool_input["StartLine"]
+    if "endLine" not in tool_input and "EndLine" in tool_input:
+        tool_input["endLine"] = tool_input["EndLine"]
     tool_name = _tool_name(normalized.get("tool_name"))
     return HookEvent(
         name=name,
@@ -511,6 +543,17 @@ def normalize_hook_input(raw: Mapping[str, object]) -> dict[str, object]:
             "stop_hook_active": event.stop_hook_active,
         }
     )
+    if event.tool_call_id and not normalized.get("tool_use_id"):
+        normalized["tool_use_id"] = event.tool_call_id
+    if "prompt" not in normalized and isinstance(raw.get("lastUserInput"), str):
+        normalized["prompt"] = raw["lastUserInput"]
+    if (
+        event.host == "antigravity"
+        and event.name == "PostToolUse"
+        and raw.get("error")
+        and "tool_response" not in normalized
+    ):
+        normalized["tool_response"] = {"isError": True, "error": str(raw["error"])}
     return normalized
 
 
@@ -640,7 +683,7 @@ def adapt_hook_output(
     if host == "cursor":
         _adapt_cursor(adapted, event_name)
     elif host == "antigravity":
-        _adapt_antigravity(adapted, event_name)
+        _adapt_antigravity(adapted, event_name, native_event)
     return adapted
 
 
@@ -667,20 +710,57 @@ def _adapt_cursor(adapted: dict[str, object], event_name: str) -> None:
         adapted["permission"] = "allow"
 
 
-def _adapt_antigravity(adapted: dict[str, object], event_name: str) -> None:
-    """Deny is JSON on exit 0. Stop keeps working with decision continue."""
+def _adapt_antigravity(
+    adapted: dict[str, object], event_name: str, native_event: str = ""
+) -> None:
+    """Project canonical decisions/context into Antigravity's native hook contract.
+
+    Deny is JSON on exit 0. Context uses `injectSteps` with nested `systemMessage`.
+    `PreToolUse` requires `decision`; `PostToolUse` expects `{}`; `Stop` continues
+    with `decision: "continue"` and `reason`.
+    """
     decision = adapted.get("decision")
-    if decision not in {"block", "deny"}:
-        return
     reason = adapted.get("reason")
+    context = adapted.get("additionalContext")
     if event_name == "PreToolUse":
         adapted.clear()
-        adapted["decision"] = "deny"
-        if reason:
-            adapted["reason"] = reason
-    elif event_name == "Stop":
+        if decision in {"block", "deny"}:
+            adapted["decision"] = "deny"
+            if reason:
+                adapted["reason"] = reason
+        else:
+            adapted["decision"] = "allow"
+        return
+    if event_name == "Stop":
         adapted.clear()
-        adapted["decision"] = "continue"
+        if decision in {"block", "deny"}:
+            adapted["decision"] = "continue"
+            if reason:
+                adapted["reason"] = reason
+        return
+    if event_name == "SessionStart":
+        adapted.clear()
+        if isinstance(context, str) and context:
+            adapted["injectSteps"] = [{"systemMessage": {"systemMessage": context}}]
+        return
+    if event_name == "UserPromptSubmit" or native_event == "PreInvocation":
+        adapted.clear()
+        if decision in {"block", "deny"}:
+            adapted["injectSteps"] = [
+                {"errorMessage": {"userMessage": str(reason or "Blocked by ChaosEngine.")}}
+            ]
+            adapted["terminationBehavior"] = "terminate"
+        elif isinstance(context, str) and context:
+            adapted["injectSteps"] = [{"systemMessage": {"systemMessage": context}}]
+        return
+    if native_event == "PostInvocation":
+        adapted.clear()
+        if isinstance(context, str) and context:
+            adapted["injectSteps"] = [{"systemMessage": {"systemMessage": context}}]
+        return
+    if event_name == "PostToolUse":
+        adapted.clear()
+        return
 
 
 _IDENTITY_BODY = re.compile(r"Identity \(`([^`]*)`\):\n(?:- [^\n]*\n)+")

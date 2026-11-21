@@ -20,6 +20,7 @@ HOST_IDS = (
     "copilot",
     "opencode",
     "cursor",
+    "antigravity",
     "grok-bot",
 )
 COMPONENT_NAMES = (

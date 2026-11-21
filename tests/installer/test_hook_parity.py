@@ -84,8 +84,9 @@ def test_fresh_install_and_upgrade_write_guard_surfaces(tmp_path: Path):
     assert "hooks/launch.py" in plugin
     assert "plugin-adapters" not in plugin
     antigravity = json.loads((project / ".agents/hooks.json").read_text(encoding="utf-8"))
-    assert "matcher" in antigravity["PreToolUse"][0]
-    assert "matcher" not in antigravity["Stop"][0]
+    assert "chaos-engine" in antigravity
+    assert "matcher" in antigravity["chaos-engine"]["PreToolUse"][0]
+    assert "matcher" not in antigravity["chaos-engine"]["Stop"][0]
 
     second = install.wire_receipt_shims(project, which=lambda _name: None)
     assert second == first

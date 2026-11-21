@@ -49,6 +49,9 @@ _E_CODES = {
 
 
 def deny(message: str) -> None:
+    if os.environ.get("CHAOS_ENGINE_HOST", "").strip().lower() == "antigravity":
+        print(json.dumps({"decision": "deny", "reason": message}))
+        raise SystemExit(0)
     print(json.dumps({"decision": "block", "reason": message}))
     raise SystemExit(2)
 
@@ -178,6 +181,36 @@ def wait_for_guard(data: str | None):
     return found, data
 
 
+def _payload_tool_name(ev: dict) -> str:
+    tool = ev.get("tool_name") or ev.get("toolName")
+    if not tool and isinstance(ev.get("toolCall"), dict):
+        tool = ev["toolCall"].get("name")
+    return str(tool or "")
+
+
+def _payload_session_id(payload: dict) -> str:
+    value = (
+        payload.get("session_id")
+        or payload.get("sessionId")
+        or payload.get("conversation_id")
+        or payload.get("conversationId")
+        or ""
+    )
+    return str(value)
+
+
+def _payload_tool_call_id(payload: dict) -> str:
+    value = (
+        payload.get("tool_use_id")
+        or payload.get("toolUseId")
+        or payload.get("tool_call_id")
+        or ""
+    )
+    if not value and isinstance(payload.get("toolCall"), dict):
+        value = payload["toolCall"].get("id") or ""
+    return str(value)
+
+
 def apply_matchers(path: pathlib.Path, data: str | None, event: str | None) -> str | None:
     try:
         ev = json.loads(data or "{}")
@@ -189,7 +222,7 @@ def apply_matchers(path: pathlib.Path, data: str | None, event: str | None) -> s
         ev["hook_event_name"] = event
         data = json.dumps(ev)
     name = str(ev.get("hook_event_name") or ev.get("hookEventName") or "")
-    tool = str(ev.get("tool_name") or ev.get("toolName") or "")
+    tool = _payload_tool_name(ev)
     key = (
         "preventive"
         if name in ("PreToolUse", "preToolUse", "BeforeTool")
@@ -213,12 +246,52 @@ def apply_matchers(path: pathlib.Path, data: str | None, event: str | None) -> s
     except (OSError, ValueError):
         pol = None  # matchers.json missing or invalid; do not filter tools
     if pol and not re.fullmatch("(?:" + "|".join(pol[key]) + ")", tool, re.I):
-        print("{}")
+        if (
+            key == "preventive"
+            and os.environ.get("CHAOS_ENGINE_HOST", "").strip().lower() == "antigravity"
+        ):
+            print(json.dumps({"decision": "allow"}))
+        else:
+            print("{}")
         raise SystemExit(0)
     return data
 
 
+def _overlay_root(path: pathlib.Path) -> str:
+    return str(path.resolve().parents[1])
+
+
+def _antigravity_workspace_cwd(base: pathlib.Path, data: str | None) -> pathlib.Path | None:
+    """Antigravity spawns hooks in `.agents/` while passing the workspace in `cwd`."""
+    if os.environ.get("CHAOS_ENGINE_HOST", "").strip().lower() != "antigravity":
+        return None
+    try:
+        payload = json.loads(data or "{}")
+    except ValueError:
+        payload = {}
+    if isinstance(payload, dict):
+        raw_cwd = payload.get("cwd")
+        if isinstance(raw_cwd, str) and raw_cwd.strip():
+            candidate = pathlib.Path(raw_cwd)
+            if candidate.is_dir():
+                return candidate
+    try:
+        current = pathlib.Path.cwd().resolve()
+    except OSError:
+        return None
+    if current.name == ".agents" and base.is_dir():
+        return base
+    return None
+
+
 def run_guard(base: pathlib.Path, path: pathlib.Path, data: str | None) -> None:
+    overlay_root = _overlay_root(path)
+    target_cwd = _antigravity_workspace_cwd(base, data)
+    if target_cwd is not None:
+        try:
+            os.chdir(target_cwd)
+        except OSError:
+            pass
     ptr = base / HOOK_PYTHON_POINTER
     py = (
         ptr.read_text(encoding="utf-8").strip()
@@ -226,6 +299,10 @@ def run_guard(base: pathlib.Path, path: pathlib.Path, data: str | None) -> None:
         else ""
     )
     if py and os.path.isfile(py) and os.path.realpath(py) != os.path.realpath(sys.executable):
+        existing_pp = os.environ.get("PYTHONPATH", "")
+        parts = [item for item in existing_pp.split(os.pathsep) if item]
+        if overlay_root not in parts:
+            os.environ["PYTHONPATH"] = os.pathsep.join([overlay_root, *parts])
         if data is not None:
             tmp = tempfile.TemporaryFile()
             tmp.write(data.encode("utf-8"))
@@ -233,6 +310,8 @@ def run_guard(base: pathlib.Path, path: pathlib.Path, data: str | None) -> None:
             tmp.seek(0)
             os.dup2(tmp.fileno(), 0)
         os.execv(py, [py, str(path)])  # nosec B606 - argv is fixed managed python + guard path
+    if overlay_root not in sys.path:
+        sys.path.insert(0, overlay_root)
     if data is not None:
         sys.stdin = io.StringIO(data)
     try:
@@ -330,18 +409,8 @@ def append_hook_trace(host: str, data: str | None, event: str | None) -> None:
         payload = {}
     if not isinstance(payload, dict):
         payload = {}
-    session = (
-        payload.get("session_id")
-        or payload.get("sessionId")
-        or payload.get("conversation_id")
-        or ""
-    )
-    tool_call = (
-        payload.get("tool_use_id")
-        or payload.get("toolUseId")
-        or payload.get("tool_call_id")
-        or ""
-    )
+    session = _payload_session_id(payload)
+    tool_call = _payload_tool_call_id(payload)
     native = payload.get("hook_event_name") or payload.get("hookEventName") or event or ""
     line = f"{host}\t{native}\t{session}\t{tool_call}\t{os.getpid()}\n"
     try:
@@ -379,7 +448,7 @@ def _session_id(data: str | None) -> str:
         return ""
     if not isinstance(payload, dict):
         return ""
-    session = payload.get("session_id") or payload.get("sessionId") or ""
+    session = _payload_session_id(payload)
     if isinstance(session, str) and re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", session):
         return session
     return ""

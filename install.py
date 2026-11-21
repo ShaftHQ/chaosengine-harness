@@ -4509,13 +4509,18 @@ def _tracing_dependency_runner(reporter, runner):
     return traced
 
 
-RECEIPT_SHIM_HOSTS = ("cursor", "opencode")
+RECEIPT_SHIM_HOSTS = ("cursor", "opencode", "antigravity")
 GUARD_SURFACE_HOSTS = ("cursor", "opencode", "antigravity")
 RECEIPT_SHIM_MARKERS = {
     "cursor": (".cursor",),
     "opencode": (".opencode", "opencode.json", "opencode.jsonc"),
+    "antigravity": (".agents/hooks.json",),
 }
-RECEIPT_SHIM_COMMANDS = {"cursor": ("cursor", "cursor-agent"), "opencode": ("opencode",)}
+RECEIPT_SHIM_COMMANDS = {
+    "cursor": ("cursor", "cursor-agent"),
+    "opencode": ("opencode",),
+    "antigravity": ("agy",),
+}
 RECEIPT_SHIM_TARGETS = {
     "cursor": ".cursor/hooks.json",
     "opencode": ".opencode/plugins/chaos-engine-receipt.js",
@@ -4670,8 +4675,8 @@ def wire_receipt_shims(project: Path, *, which=None) -> dict[str, str]:
     """Write the shared guard on Cursor, OpenCode, and Antigravity.
 
     A fresh install writes all three. `which` is accepted so callers that
-    probe PATH keep a stable signature. Selection uses
-    wire_selected_receipt_shims and does not add Antigravity.
+    probe PATH keep a stable signature. Explicit client selection uses
+    wire_selected_receipt_shims.
     """
     del which
     module = _receipt_shim_module()
@@ -4726,11 +4731,11 @@ def read_completion_targets(project: Path) -> tuple[str, ...]:
 
 
 def wire_selected_receipt_shims(project: Path, targets: tuple[str, ...]) -> dict[str, str]:
-    """Call the existing receipt-shim install for cursor and opencode only.
+    """Call the shared-guard surface install for selected cursor, opencode, and antigravity targets.
 
     grok-bot is not a shim host. receipt_shim.install() writes the OpenCode
-    plugin for every host other than cursor, so this function never calls it
-    for grok-bot.
+    plugin for every host other than cursor and antigravity, so this function
+    never calls it for grok-bot.
     """
     selected = tuple(host for host in RECEIPT_SHIM_HOSTS if host in targets)
     module = _receipt_shim_module() if selected else None
