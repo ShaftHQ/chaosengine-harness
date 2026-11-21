@@ -21,6 +21,9 @@ user's framing disagree about size, say so in one line and work to the larger.
 During planning, keep asking material follow-ups until the plan is
 decision-ready. After owner approval, execution is unattended; dispatch a
 consultant agent for implementation ambiguity rather than asking the user.
+When the owner says not to ask again, or closes a decision with "you decide",
+do not reopen it. Dispatch a read-only consultant subagent for the remaining
+ambiguity and proceed on its guidance.
 
 ## Full pass
 

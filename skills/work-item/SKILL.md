@@ -15,6 +15,10 @@ Load this skill when the deliverable is **open or rewrite a work item**. Do not
 vendor Spec Kit or create `.specify/`. Keep GitHub PR delivery on
 `work-github-playbook.md`. One GitHub issue tracks the full plan. When the owner names a currently active PR, deliver the plan and the user-issue fix in that same PR.
 
+## Session handoff
+
+When a session must stop with work still open, finish what this session can still land, then create one GitHub ticket that states where the next session picks up. Do not open a second pickup ticket for the same handoff.
+
 Contract and adapters: [work-item.md](../../references/work-item.md).
 
 ## One item, one problem
