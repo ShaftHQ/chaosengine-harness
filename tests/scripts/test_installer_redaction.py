@@ -9,6 +9,7 @@ import os
 import socket
 import unittest
 import unittest.mock
+import urllib.parse
 from pathlib import Path
 
 
@@ -148,14 +149,80 @@ class RedactionTests(unittest.TestCase):
         self.assertIn("doctor --json", prompt)
         self.assertNotIn("issues/new?", prompt)
 
+    def test_file_denylist_stays_out_of_the_issue_url(self) -> None:
+        marker = "AcmeClientZZ"
+        with tempfile_project() as project:
+            state = project / ".chaos-engine-state"
+            state.mkdir(parents=True)
+            core = project / ".chaos-engine"
+            core.mkdir()
+            (core / "install.py").write_text("# installer\n", encoding="utf-8")
+            (state / "client-name-denylist.txt").write_text(marker + "\n", encoding="utf-8")
+            reporter = BOOTSTRAP.InstallReporter(stream=io.StringIO())
+            reporter.traces.append((1.0, f"last {marker}"))
+            stderr = io.StringIO()
+            env = {
+                key: value
+                for key, value in os.environ.items()
+                if key not in {"CHAOS_ENGINE_CLIENT_NAME_DENYLIST", "CHAOS_ENGINE_FILE_ISSUE"}
+            }
+            with unittest.mock.patch.dict(os.environ, env, clear=True), unittest.mock.patch.object(
+                BOOTSTRAP.sys, "stderr", stderr
+            ):
+                BOOTSTRAP.emit_install_failure(
+                    "CE-INSTALL-FAILED",
+                    RuntimeError(f"boom at {marker} path"),
+                    "owner/repo",
+                    reporter=reporter,
+                    project=project,
+                )
+            output = stderr.getvalue()
+            decoded = urllib.parse.unquote(output)
+            handoff = (state / "heal-handoff.md").read_text(encoding="utf-8")
+            self.assertNotIn(marker, decoded)
+            self.assertNotIn(marker, handoff)
+            self.assertIn("<redacted:client-name>", decoded)
+
+    def test_short_secret_env_value_is_absent_from_url_and_handoff(self) -> None:
+        secret = "secret1"
+        with tempfile_project() as project:
+            core = project / ".chaos-engine"
+            core.mkdir(parents=True)
+            (core / "install.py").write_text("# installer\n", encoding="utf-8")
+            stderr = io.StringIO()
+            env = {
+                key: value
+                for key, value in os.environ.items()
+                if key != "CHAOS_ENGINE_FILE_ISSUE"
+            }
+            env["SHORT_PASSWORD"] = secret
+            with unittest.mock.patch.dict(os.environ, env, clear=True), unittest.mock.patch.object(
+                BOOTSTRAP.sys, "stderr", stderr
+            ):
+                BOOTSTRAP.emit_install_failure(
+                    "CE-INSTALL-FAILED",
+                    RuntimeError(f"failed with {secret}"),
+                    "owner/repo",
+                    project=project,
+                )
+            output = urllib.parse.unquote(stderr.getvalue())
+            handoff = (project / ".chaos-engine-state" / "heal-handoff.md").read_text(
+                encoding="utf-8"
+            )
+            self.assertNotIn(secret, output)
+            self.assertNotIn(secret, handoff)
+            self.assertIn("<redacted:env>", output)
+
     def test_redaction_failure_withholds_artifact(self) -> None:
         with tempfile_project() as project:
             state = project / ".chaos-engine-state"
             state.mkdir(parents=True)
+            reporter = BOOTSTRAP.InstallReporter(stream=io.StringIO())
+            reporter.traces.append((1.0, "home /home/secret/proj token=super-secret"))
             with unittest.mock.patch.object(BOOTSTRAP, "redact", side_effect=RuntimeError("boom")):
                 BOOTSTRAP.write_failure_artifacts(
                     project,
-                    None,
+                    reporter,
                     RuntimeError("home /home/secret/proj token=super-secret"),
                 )
             console = (state / "install-console.log").read_text(encoding="utf-8")

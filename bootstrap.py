@@ -682,9 +682,12 @@ def _replace_env_values(text: str) -> str:
     for name, value in os.environ.items():
         if not isinstance(value, str) or not _ENV_NAME.fullmatch(name):
             continue
-        if len(value) < 8 or value.strip() != value:
-            continue
-        values.append(value)
+        # Every matching value, including short ones. Empty values cannot leak.
+        stripped = value.strip()
+        if stripped:
+            values.append(stripped)
+        if value and value != stripped:
+            values.append(value)
     for value in sorted(set(values), key=len, reverse=True):
         text = re.sub(
             rf"(?<![A-Za-z0-9]){re.escape(value)}(?![A-Za-z0-9])",
@@ -815,18 +818,19 @@ def encode_issue_form_url(
     title: str,
     fields: dict[str, str],
     extra: dict[str, str] | None = None,
+    root: Path | None = None,
 ) -> str:
     """Pack required fields first; optional logs only while under the URL cap."""
     repository = normalize_repository(repository)  # never github.com/https://... (#6234)
     try:
-        title = redact(title)
+        title = redact(title, root=root)
         fields = {
-            key: redact(value) if isinstance(value, str) else value
+            key: redact(value, root=root) if isinstance(value, str) else value
             for key, value in fields.items()
         }
         if extra:
             extra = {
-                key: redact(value) if isinstance(value, str) else value
+                key: redact(value, root=root) if isinstance(value, str) else value
                 for key, value in extra.items()
             }
     except Exception:
@@ -892,11 +896,11 @@ def _render_issue_sections(fields: dict[str, str]) -> str:
     return "\n".join(sections).strip() + "\n"
 
 
-def issue_form_markdown(fields: dict[str, str]) -> str:
+def issue_form_markdown(fields: dict[str, str], root: Path | None = None) -> str:
     """Full redacted evidence. Shrink the trace before the console or doctor."""
     try:
         fields = {
-            key: redact(value) if isinstance(value, str) else value
+            key: redact(value, root=root) if isinstance(value, str) else value
             for key, value in fields.items()
         }
     except Exception:
@@ -5210,7 +5214,7 @@ def _publish_heal_handoff(
         f"{prefix} status --project . --json",
         f"{prefix} doctor --project . --json",
     )
-    issue_url = publish_installer_issue(repository, "CE-INSTALL-FAILED", fields)
+    issue_url = publish_installer_issue(repository, "CE-INSTALL-FAILED", fields, root=project)
     write_heal_handoff(project, fields, issue_url)
     doctor["clients"] = clients.get("clients", {})
     if terminal_context is not None:
@@ -5826,17 +5830,22 @@ def publish_installer_issue(
     opener=urllib.request.urlopen,
     token: str | None = None,
     extra: dict[str, str] | None = None,
+    root: Path | None = None,
 ) -> str:
     title = f"[ChaosEngine installer] {code}"
     repository = normalize_repository(repository)
     resolved = resolve_issue_token(token)
     if resolved:
         created = create_installer_github_issue(
-            repository, title, issue_form_markdown(fields), resolved, opener=opener
+            repository,
+            title,
+            issue_form_markdown(fields, root=root),
+            resolved,
+            opener=opener,
         )
         if created:
             return created
-    return encode_issue_form_url(repository, title, fields, extra=extra)
+    return encode_issue_form_url(repository, title, fields, extra=extra, root=root)
 
 
 def _process_text(value: object) -> str:
@@ -6028,6 +6037,7 @@ def emit_install_failure(
         opener=opener,
         token=token,
         extra=upgrade_query_extras(error),
+        root=project,
     )
     if project is not None and core_install_py(project):
         write_heal_handoff(project, fields, issue_url)
