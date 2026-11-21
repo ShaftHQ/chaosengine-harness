@@ -1733,15 +1733,83 @@ def enhancement_errors(message: str) -> list[str]:
     return list(module.enhancement_errors(message))
 
 
-def _terminal_reflection_reason(event: dict, session_id: str) -> str:
-    """Stop does not run the one-hour retrospective.
+_IGNORED_STOP_REASONS = frozenset({"channel_closed", "shutdown"})
 
-    SessionEnd files the notes, and a later SessionEnd files a note still
-    missing from filed.txt. A pass that left nothing unfiled does not file
-    again. A turn Stop is not the end of the session.
+
+def _in_flight_background(event: dict) -> bool:
+    """True when Grok still has a shell, monitor, or subagent in flight.
+
+    ``backgroundTasks`` is empty when nothing is running. A missing field is
+    not in-flight work. Scheduled ``sessionCrons`` are later wakeups, not a
+    running monitor.
     """
-    del event, session_id
-    return ""
+    for key in ("backgroundTasks", "background_tasks"):
+        tasks = event.get(key)
+        if isinstance(tasks, list) and tasks:
+            return True
+    return False
+
+
+def _delegates_still_open(event: dict, session_id: str) -> bool:
+    if session_scratch is None:
+        return False
+    try:
+        return bool(session_scratch.open_agents(_scratch_project(event), session_id))
+    except Exception:
+        return False
+
+
+def _terminal_note(event: dict) -> str:
+    message = event.get("last_assistant_message")
+    if not isinstance(message, str):
+        message = event.get("lastAssistantMessage")
+    return message if isinstance(message, str) else ""
+
+
+def _terminal_note_accepted(message: str) -> bool:
+    folded = message.casefold()
+    if any(label not in folded for label in TERMINAL_LABELS):
+        return False
+    return not enhancement_errors(message)
+
+
+def _terminal_reflection_reason(event: dict, session_id: str) -> str:
+    """Demand the learning retrospective on a live Stop after one hour.
+
+    SessionEnd still files the notes. Grok does not show a SessionEnd
+    systemMessage, so the note the user reads is this turn's reply.
+    A Stop while a subagent or a background task is still in flight does
+    not ask (#74). ``channel_closed`` and ``shutdown`` are ignored because
+    that Stop decision does not continue the turn. ``stop_hook_active``
+    does not clear an unpaid note.
+    """
+    if str(event.get("hook_event_name") or "") == "SubagentStop":
+        return ""
+    reason = str(event.get("reason") or "").strip().casefold()
+    if reason in _IGNORED_STOP_REASONS:
+        return ""
+    if reflection.has_valid_terminal_receipt(session_id):
+        return ""
+    elapsed = reflection.session_elapsed_seconds(session_id)
+    if elapsed is None or elapsed <= 3600:
+        return ""
+    if _in_flight_background(event) or _delegates_still_open(event, session_id):
+        return ""
+    if _terminal_note_accepted(_terminal_note(event)):
+        reflection.accept_terminal_reflection(session_id)
+        return ""
+    return (
+        "Terminal reflection required. This session exceeded one hour and "
+        "background work has exited. Write the learning retrospective in this "
+        "reply. what can we learn from what happened so far for our harness "
+        "or memory modules to avoid such failures in the future? "
+        "Include what happened, why it happened, continue doing, stop doing, "
+        "start doing, and next action. File an actionable ChaosEngine change "
+        "on the configured upstream repository before the note and cite the "
+        "issue URL. Close with one ## Enhancements block. Each bullet starts "
+        "with shipped:, tracked:, or rejected:. nothing actionable is the "
+        "only close with no URL."
+    )
 
 
 _PULL_REQUEST_URL = re.compile(r"/pull/(\d+)\b")
@@ -2064,6 +2132,12 @@ def _stop_block_reason(event: dict, session_id: str) -> str:
         loop_reason = learning_session_reason(session_id, event)
         if loop_reason:
             return loop_reason
+        # An unpaid one-hour retrospective survives the host retry. Open PR
+        # and Learning Session stay ahead of it. In-flight background work
+        # returns no reason, so a turn can finish while a monitor is running.
+        terminal = _terminal_reflection_reason(event, session_id)
+        if terminal:
+            return terminal
     # FR-002: a host retry skips the retrieve gap. It does not skip the checks above.
     hook_retry = bool(event.get("stop_hook_active") or event.get("stopHookActive"))
     if (

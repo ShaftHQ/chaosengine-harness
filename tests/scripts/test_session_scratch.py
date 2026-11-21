@@ -437,7 +437,7 @@ class SessionScratchTest(unittest.TestCase):
         self.assertNotIn("# Session prevention", result.stdout)
         self.assertNotIn("Elapsed seconds", result.stdout)
 
-    def test_stop_does_not_demand_a_retrospective_and_session_end_runs_once(self):
+    def test_idle_stop_demands_the_hour_retrospective_and_session_end_files_once(self):
         with tempfile.TemporaryDirectory() as temporary:
             project = Path(temporary)
             env = isolated_env(temporary)
@@ -492,8 +492,66 @@ class SessionScratchTest(unittest.TestCase):
                 check=False,
                 env=env,
             )
-            self.assertNotIn("Terminal reflection required", stop.stdout)
-            self.assertNotEqual("block", json.loads(stop.stdout or "{}").get("decision"))
+            self.assertEqual(2, stop.returncode, stop.stderr)
+            self.assertIn("Terminal reflection required", stop.stdout)
+            self.assertEqual("block", json.loads(stop.stdout).get("decision"))
+            busy = subprocess.run(
+                [sys.executable, str(HOOK)],
+                input=json.dumps(
+                    {
+                        "hook_event_name": "Stop",
+                        "session_id": "retro-end",
+                        "cwd": str(project),
+                        "last_assistant_message": "still working",
+                        "backgroundTasks": [
+                            {"id": "mon", "type": "monitor", "status": "running"}
+                        ],
+                    }
+                ),
+                capture_output=True,
+                text=True,
+                check=False,
+                env=env,
+            )
+            self.assertNotIn("Terminal reflection required", busy.stdout)
+            self.assertNotEqual("block", json.loads(busy.stdout or "{}").get("decision"))
+            scratch.open_agent(project, "retro-end", "delegate")
+            delegated = subprocess.run(
+                [sys.executable, str(HOOK)],
+                input=json.dumps(
+                    {
+                        "hook_event_name": "Stop",
+                        "session_id": "retro-end",
+                        "cwd": str(project),
+                        "last_assistant_message": "still working",
+                    }
+                ),
+                capture_output=True,
+                text=True,
+                check=False,
+                env=env,
+            )
+            scratch.close_agent(project, "retro-end", "delegate")
+            self.assertNotIn("Terminal reflection required", delegated.stdout)
+            self.assertNotEqual("block", json.loads(delegated.stdout or "{}").get("decision"))
+            closing = subprocess.run(
+                [sys.executable, str(HOOK)],
+                input=json.dumps(
+                    {
+                        "hook_event_name": "Stop",
+                        "session_id": "retro-end",
+                        "cwd": str(project),
+                        "reason": "channel_closed",
+                        "last_assistant_message": "still working",
+                    }
+                ),
+                capture_output=True,
+                text=True,
+                check=False,
+                env=env,
+            )
+            self.assertNotIn("Terminal reflection required", closing.stdout)
+            self.assertNotEqual("block", json.loads(closing.stdout or "{}").get("decision"))
             first = subprocess.run(
                 [sys.executable, str(HOOK)],
                 input=json.dumps(
