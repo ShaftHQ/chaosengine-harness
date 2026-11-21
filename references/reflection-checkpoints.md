@@ -21,6 +21,12 @@ source excerpts, or user-specific absolute paths.
 - A valid receipt authorizes one following `git commit` of that fix. The
   receipt and the commit are separate commands. A combined shell does not
   hide the third failure. A Stop does not demand a one-hour terminal receipt.
+  Set `GIT_COMMITTER_NAME` and `GIT_COMMITTER_EMAIL` on the command that
+  creates the commit. Environment committer variables override `git -c user.*`.
+  `git rebase --onto <base> <base>` is a no-op and does not rewrite the
+  committer. When the intent is the commits after a revision, use
+  `git format-patch <rev>..HEAD`. `git format-patch -N <rev>` writes the N
+  commits that end at that revision, not the N commits after it.
 - Also stop after two local/CI disagreements, repeated
   review or user corrections, repeated guard blocks, a safety incident, scope
   expansion, an invalidated premise, or an unchanged rerun.
@@ -81,7 +87,9 @@ with `--`. The regression is
 
 For a terminal receipt, the final user-facing summary is one retrospective:
 what happened, why it happened, continue doing, stop doing, start doing, and
-one next action. That is the Start-Stop-Continue close (gather the facts,
+one next action.
+Write the learning retrospective only after the merge SHA exists and after subagents and monitors have exited. A non-required check must not start the note and must not be the only reason the note waits.
+That is the Start-Stop-Continue close (gather the facts,
 name the cause, decide the behaviors, commit one action). An actionable line
 would change a later session and is not already shipped or already open.
 File it with `gh` before the note. A ChaosEngine change (skills, hooks,

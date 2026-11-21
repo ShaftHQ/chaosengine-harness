@@ -158,6 +158,7 @@ def copy_source(destination: Path) -> Path:
         skipped = set(patterns(directory, names))
         if Path(directory).resolve() == SOURCE.resolve():
             skipped |= {".git", "tests", ".chaos-engine-state"} & set(names)
+            skipped.update(name for name in names if name.startswith("tmp"))
         return skipped
 
     copied = Path(shutil.copytree(SOURCE, destination, ignore=ignored))
@@ -5001,6 +5002,7 @@ class NestedOverlayTree6225Test(unittest.TestCase):
                 skipped = set(patterns(directory, names))
                 if Path(directory).resolve() == SOURCE.resolve():
                     skipped |= {".git", "tests", ".chaos-engine-state", "graphify-out"} & set(names)
+                    skipped.update(name for name in names if name.startswith("tmp"))
                 return skipped
 
             source = Path(shutil.copytree(SOURCE, destination, ignore=ignored))

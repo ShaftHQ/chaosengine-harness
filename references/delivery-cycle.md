@@ -53,9 +53,13 @@ this order, with a one-line bigger-picture note. The cap is not a quota.
       only when the platform queues the merge until required checks succeed.
       When that arm would merge immediately, watch until every check on the
       head has finished successfully and no review thread is unresolved,
-      then merge with `gh pr merge --merge`. A pending, failed, cancelled,
-      skipped, or empty check list is not success. `gh pr merge` is refused
-      until then, including when `--auto` is present.
+      then merge with `gh pr merge --merge`. A pending check is not success.
+      A skipped required check is not success.
+      A skipped check outside the required set does not block.
+      An empty check list is not success.
+      A failed or cancelled check still blocks when it is required, and it
+      still blocks when no check in the rollup is marked required.
+      `gh pr merge` is refused until then, including when `--auto` is present.
 
    One-review work finalizes after step 3. Two-review work runs steps 4 and
    5 before finalize. A commit that acts on review N is the input to review
@@ -147,6 +151,15 @@ That rule is not limited to the active session. The cap in this file
 stays as written. For a complex video or audio edit, one accepted Check is not final.
 Other work still stops when Check accepts. A new cut is a new head, so an
 unchanged head is still not reviewed a third time.
+
+## Git identity
+
+Set `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_COMMITTER_NAME`, and
+`GIT_COMMITTER_EMAIL` on the command that creates the commit.
+Environment committer variables override `git -c user.*`.
+`git rebase --onto <base> <base>` is a no-op and does not rewrite the committer.
+When the intent is the commits after a revision, use `git format-patch <rev>..HEAD`.
+`git format-patch -N <rev>` writes the N commits that end at that revision, not the N commits after it.
 
 ## Adoption
 

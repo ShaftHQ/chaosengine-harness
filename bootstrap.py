@@ -3401,9 +3401,24 @@ def copy_source_from_local_clone(
             relative = PurePosixPath(*parts, name)
             if omitted_source_relative(relative):
                 skipped.add(name)
+        if not parts:
+            # A repo-root tempfile directory is not source.
+            skipped.update(name for name in names if name.startswith("tmp"))
         return skipped
 
-    shutil.copytree(source_src, source, ignore=ignore)
+    try:
+        shutil.copytree(source_src, source, ignore=ignore)
+    except shutil.Error as error:
+        rows = error.args[0] if error.args else []
+        vanished_temp = rows and all(
+            isinstance(row, tuple)
+            and len(row) >= 3
+            and Path(str(row[0])).name.startswith("tmp")
+            and "No such file or directory" in str(row[2])
+            for row in rows
+        )
+        if not vanished_temp:
+            raise
     if not (source / "skills/chaos-engine/SKILL.md").is_file():
         raise ValueError("local ChaosEngine clone is incomplete")
     if reporter is not None:

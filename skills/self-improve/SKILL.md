@@ -123,6 +123,8 @@ python3 -c "from pathlib import Path; assert Path('chaos-engine/skills/self-impr
 
 ## Retrospective
 
+Write the learning retrospective only after the merge SHA exists and after subagents and monitors have exited. A non-required check must not start the note and must not be the only reason the note waits.
+
 One closing note. The first required question is:
 
 what can we learn from what happened so far for our harness or memory modules to avoid such failures in the future?

@@ -51,8 +51,29 @@ def git(cwd: Path, *args: str) -> str:
 
 
 def copy_source(destination: Path) -> None:
-    ignored = shutil.ignore_patterns("__pycache__", "*.pyc")
-    copied = Path(shutil.copytree(SOURCE, destination, ignore=ignored))
+    patterns = shutil.ignore_patterns("__pycache__", "*.pyc")
+
+    def ignored(directory, names):
+        skipped = set(patterns(directory, names))
+        if Path(directory).resolve() == SOURCE.resolve():
+            skipped.update(name for name in names if name.startswith("tmp"))
+        return skipped
+
+    try:
+        copied = Path(shutil.copytree(SOURCE, destination, ignore=ignored))
+    except shutil.Error as error:
+        rows = error.args[0] if error.args else []
+        if not rows or any(
+            not (
+                isinstance(row, tuple)
+                and len(row) >= 3
+                and Path(str(row[0])).name.startswith("tmp")
+                and "No such file or directory" in str(row[2])
+            )
+            for row in rows
+        ):
+            raise
+        copied = Path(destination)
     # CE-10: the project pack ships beside the core tree.
     shutil.copytree(
         SOURCE.parent / "shaft-skills/ce-pack",
