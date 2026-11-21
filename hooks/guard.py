@@ -945,12 +945,24 @@ def _check_block_reason(check: object) -> str:
     return name + " is not successful."
 
 
+_OUTSIDE_REQUIRED_CONCLUSIONS = frozenset({"SKIPPED", "NEUTRAL"})
+
+
+def _check_conclusion(check: Mapping) -> str:
+    return str(check.get("conclusion") or check.get("state") or "").strip().upper()
+
+
 def merge_readiness_reason(snapshot: Mapping) -> str:
     """Empty when merge is allowed. A denial when checks or review threads are not ready.
 
     A pending check is not success. An empty check list has not finished.
-    ``SKIPPED`` and ``NEUTRAL`` are not success. ``DRAFT``, ``DIRTY``, and
-    ``BLOCKED`` deny. ``BEHIND`` does not deny by itself.
+    A skipped required check is not success. When at least one check is
+    required, only that set is decided: ``isRequired: false`` does not block.
+    When no check is required, ``SKIPPED`` and ``NEUTRAL`` with
+    ``isRequired: false`` stay outside the set, and a failure, cancellation,
+    or pending check still blocks. An unmarked skip still blocks, so a probe
+    that cannot read ``isRequired`` does not let every skip pass.
+    ``DRAFT``, ``DIRTY``, and ``BLOCKED`` deny. ``BEHIND`` does not deny by itself.
     """
     error = str(snapshot.get("error") or "").strip()
     if error:
@@ -968,7 +980,13 @@ def merge_readiness_reason(snapshot: Mapping) -> str:
     checks = snapshot.get("checks")
     if not isinstance(checks, list) or not checks:
         return "ChaosEngine refused gh pr merge: CI checks have not finished."
+    required_present = any(
+        isinstance(check, Mapping) and check.get("isRequired") is True for check in checks
+    )
     for check in checks:
+        if isinstance(check, Mapping) and check.get("isRequired") is False:
+            if required_present or _check_conclusion(check) in _OUTSIDE_REQUIRED_CONCLUSIONS:
+                continue
         reason = _check_block_reason(check)
         if reason:
             return "ChaosEngine refused gh pr merge: " + reason
@@ -999,9 +1017,71 @@ def _gh_json(args: list[str]) -> tuple[object | None, str]:
         return None, "gh returned invalid JSON."
 
 
+def checks_from_rollup_contexts(nodes: list) -> list:
+    """Map GraphQL status-check nodes to the dicts ``merge_readiness_reason`` reads.
+
+    ``isRequired`` is copied only when GitHub returned a boolean. A missing flag
+    stays unmarked so the gate treats that check as required.
+    """
+    checks: list = []
+    for node in nodes:
+        if not isinstance(node, Mapping):
+            checks.append(node)
+            continue
+        if node.get("__typename") == "StatusContext":
+            item: dict = {
+                "context": str(node.get("context") or ""),
+                "state": str(node.get("state") or ""),
+            }
+        else:
+            item = {
+                "name": str(node.get("name") or ""),
+                "status": str(node.get("status") or ""),
+                "conclusion": str(node.get("conclusion") or ""),
+            }
+        if isinstance(node.get("isRequired"), bool):
+            item["isRequired"] = node["isRequired"]
+        checks.append(item)
+    return checks
+
+
+def _marked_required_checks(owner: str, name: str, number: str, pr_id: str) -> tuple[list | None, str]:
+    """Return checks with ``isRequired`` set, or ``(None, "")`` when the query cannot be read.
+
+    A rollup that does not fit in one page is an error. A failed query falls
+    back to the unmarked REST rollup instead of allowing every skip.
+    """
+    if not re.fullmatch(r"[A-Za-z0-9_]+", pr_id or ""):
+        return None, ""
+    query = (
+        "query { repository(owner: \"%s\", name: \"%s\") { pullRequest(number: %d) "
+        "{ commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) "
+        "{ pageInfo { hasNextPage } nodes { __typename "
+        "... on CheckRun { name status conclusion isRequired(pullRequestId: \"%s\") } "
+        "... on StatusContext { context state isRequired(pullRequestId: \"%s\") } "
+        "} } } } } } } } }"
+        % (owner, name, int(number), pr_id, pr_id)
+    )
+    graph, graph_error = _gh_json(["api", "graphql", "-f", "query=" + query])
+    if graph_error or not isinstance(graph, dict) or graph.get("errors"):
+        return None, ""
+    try:
+        commit = graph["data"]["repository"]["pullRequest"]["commits"]["nodes"][0]["commit"]
+        contexts = commit["statusCheckRollup"]["contexts"]
+        page = contexts["pageInfo"]
+        nodes = contexts["nodes"]
+    except (KeyError, TypeError, IndexError):
+        return None, ""
+    if not isinstance(page, dict) or not isinstance(nodes, list):
+        return None, ""
+    if page.get("hasNextPage") is True:
+        return None, "CI checks did not fit in one page."
+    return checks_from_rollup_contexts(nodes), ""
+
+
 def live_merge_probe(target: str) -> dict:
     """Read check rollup and unresolved review threads. Fail closed on any gap."""
-    view = ["pr", "view", "--json", "statusCheckRollup,url,mergeStateStatus"]
+    view = ["pr", "view", "--json", "id,statusCheckRollup,url,mergeStateStatus"]
     if target:
         view.insert(2, target)
     payload, error = _gh_json(view)
@@ -1038,8 +1118,15 @@ def live_merge_probe(target: str) -> dict:
         if not isinstance(node, dict) or node.get("isResolved") is not True:
             unresolved += 1
     checks = payload.get("statusCheckRollup")
+    if not isinstance(checks, list):
+        checks = []
+    marked, mark_error = _marked_required_checks(owner, name, number, str(payload.get("id") or ""))
+    if mark_error:
+        return {"error": mark_error}
+    if marked is not None:
+        checks = marked
     return {
-        "checks": checks if isinstance(checks, list) else [],
+        "checks": checks,
         "unresolved": unresolved,
         "hasNextPage": page.get("hasNextPage") is True,
         "mergeStateStatus": str(payload.get("mergeStateStatus") or ""),

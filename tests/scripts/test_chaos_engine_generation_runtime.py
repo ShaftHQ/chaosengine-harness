@@ -25,6 +25,30 @@ SOURCE = ROOT
 TEST_COMMIT = "1" * 40
 
 
+def _copy_source(destination: Path) -> None:
+    """Copy the checkout. Skip root ``tmp*`` dirs that parallel tests delete mid-walk."""
+
+    def ignore(directory, contents):
+        if Path(directory).resolve() != ROOT.resolve():
+            return set()
+        return {name for name in contents if name.startswith("tmp")}
+
+    try:
+        shutil.copytree(SOURCE, destination, ignore=ignore)
+    except shutil.Error as error:
+        rows = error.args[0] if error.args else []
+        if not rows or any(
+            not (
+                isinstance(row, tuple)
+                and len(row) >= 3
+                and Path(str(row[0])).name.startswith("tmp")
+                and "No such file or directory" in str(row[2])
+            )
+            for row in rows
+        ):
+            raise
+
+
 def load_controller():
     specification = importlib.util.spec_from_file_location(
         "chaos_engine_generation_dependencies", CONTROLLER
@@ -351,7 +375,7 @@ class GenerationRuntimeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             source = root / "source"
-            shutil.copytree(SOURCE, source)
+            _copy_source(source)
             project = root / "consumer"
             project.mkdir()
             with mock.patch.object(
@@ -400,7 +424,7 @@ class GenerationRuntimeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             source = root / "source"
-            shutil.copytree(SOURCE, source)
+            _copy_source(source)
             project = root / "consumer"
             project.mkdir()
             with mock.patch.object(
@@ -504,7 +528,7 @@ class GenerationRuntimeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             source = root / "source"
-            shutil.copytree(SOURCE, source)
+            _copy_source(source)
             project = root / "consumer"
             project.mkdir()
             with mock.patch.object(
@@ -586,7 +610,7 @@ class GenerationRuntimeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             source = root / "source"
-            shutil.copytree(SOURCE, source)
+            _copy_source(source)
             project = root / "consumer"
             project.mkdir()
             with mock.patch.object(
@@ -732,7 +756,7 @@ class GenerationRuntimeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             source = root / "source"
-            shutil.copytree(SOURCE, source)
+            _copy_source(source)
             project = root / "consumer"
             project.mkdir()
             with mock.patch.object(
@@ -782,7 +806,7 @@ class GenerationRuntimeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             source = root / "source"
-            shutil.copytree(SOURCE, source)
+            _copy_source(source)
             project = root / "consumer"
             project.mkdir()
             with mock.patch.object(
@@ -839,7 +863,7 @@ class GenerationRuntimeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             source = root / "source"
-            shutil.copytree(SOURCE, source)
+            _copy_source(source)
             project = root / "consumer"
             project.mkdir()
             with mock.patch.object(
@@ -907,7 +931,7 @@ class GenerationRuntimeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             source = root / "source"
-            shutil.copytree(SOURCE, source)
+            _copy_source(source)
             project = root / "consumer"
             project.mkdir()
             with mock.patch.object(
@@ -975,7 +999,7 @@ class GenerationRuntimeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             source = root / "source"
-            shutil.copytree(SOURCE, source)
+            _copy_source(source)
             project = root / "consumer"
             project.mkdir()
             with mock.patch.object(
@@ -1042,7 +1066,7 @@ class GenerationRuntimeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             source = root / "source"
-            shutil.copytree(SOURCE, source)
+            _copy_source(source)
             project = root / "consumer"
             project.mkdir()
             with mock.patch.object(

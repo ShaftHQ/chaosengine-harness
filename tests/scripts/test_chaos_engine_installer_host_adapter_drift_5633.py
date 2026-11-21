@@ -18,6 +18,30 @@ INSTALL = ROOT / "install.py"
 SOURCE = ROOT
 
 
+def _ignore_checkout(directory, names):
+    skipped = set(shutil.ignore_patterns("__pycache__", "*.pyc")(directory, names))
+    if Path(directory).resolve() == SOURCE.resolve():
+        skipped.update(name for name in names if name.startswith("tmp"))
+    return skipped
+
+
+def _copy_checkout(destination: Path) -> None:
+    try:
+        shutil.copytree(SOURCE, destination, ignore=_ignore_checkout)
+    except shutil.Error as error:
+        rows = error.args[0] if error.args else []
+        if not rows or any(
+            not (
+                isinstance(row, tuple)
+                and len(row) >= 3
+                and Path(str(row[0])).name.startswith("tmp")
+                and "No such file or directory" in str(row[2])
+            )
+            for row in rows
+        ):
+            raise
+
+
 def load(path: Path, name: str):
     spec = importlib.util.spec_from_file_location(name, path)
     if spec is None or spec.loader is None:
@@ -290,9 +314,7 @@ class HostAdapterDrift5633Test(unittest.TestCase):
             project = root / "project"
             project.mkdir()
             source = root / "chaos-engine-source"
-            shutil.copytree(
-                SOURCE, source, ignore=shutil.ignore_patterns("__pycache__", "*.pyc")
-            )
+            _copy_checkout(source)
 
             load_controller = install.load_dependency_controller
 
@@ -361,9 +383,7 @@ class HostAdapterDrift5633Test(unittest.TestCase):
             project = root / "project"
             project.mkdir()
             source = root / "chaos-engine-source"
-            shutil.copytree(
-                SOURCE, source, ignore=shutil.ignore_patterns("__pycache__", "*.pyc")
-            )
+            _copy_checkout(source)
             load_controller = install.load_dependency_controller
 
             def account_loader(installed_root: Path):
@@ -401,9 +421,7 @@ class HostAdapterDrift5633Test(unittest.TestCase):
             project = root / "project"
             project.mkdir()
             source = root / "chaos-engine-source"
-            shutil.copytree(
-                SOURCE, source, ignore=shutil.ignore_patterns("__pycache__", "*.pyc")
-            )
+            _copy_checkout(source)
             load_controller = install.load_dependency_controller
 
             def account_loader(installed_root: Path):
@@ -465,6 +483,7 @@ class HostAdapterDrift5633Test(unittest.TestCase):
                     for name in names
                     if name in {"__pycache__", "graphify-out"}
                     or name.startswith(".chaos-engine")
+                    or name.startswith("tmp")
                     or name.endswith(".pyc")
                 }
 
@@ -536,6 +555,7 @@ class HostAdapterDrift5633Test(unittest.TestCase):
                     for name in names
                     if name in {"__pycache__", "graphify-out"}
                     or name.startswith(".chaos-engine")
+                    or name.startswith("tmp")
                     or name.endswith(".pyc")
                 }
 
@@ -667,9 +687,7 @@ class OrphanCoreMissingHosts5636Test(unittest.TestCase):
             project = root / "project"
             project.mkdir()
             source = root / "chaos-engine-source"
-            shutil.copytree(
-                SOURCE, source, ignore=shutil.ignore_patterns("__pycache__", "*.pyc")
-            )
+            _copy_checkout(source)
             load_controller = install.load_dependency_controller
 
             def account_loader(installed_root: Path):

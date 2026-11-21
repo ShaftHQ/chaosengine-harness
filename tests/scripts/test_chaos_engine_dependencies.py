@@ -2859,12 +2859,15 @@ class GraphifyExtractProvision6934Test(unittest.TestCase):
                 return r"C:\Users\PC\AppData\Local\Microsoft\WindowsApps\python3.exe"
             return None
 
-        windows_local, windows_commands = module.discover_account_commands(
-            specification, which=which_windows, runner=runner
-        )
-        posix_local, posix_commands = module.discover_account_commands(
-            specification, which=lambda *_args, **_kwargs: None, runner=runner
-        )
+        # A developer machine records python3 in user.properties. That record
+        # is not the WindowsApps alias this test injects through which.
+        with mock.patch.object(module, "load_greenlit_commands", return_value={}):
+            windows_local, windows_commands = module.discover_account_commands(
+                specification, which=which_windows, runner=runner
+            )
+            posix_local, posix_commands = module.discover_account_commands(
+                specification, which=lambda *_args, **_kwargs: None, runner=runner
+            )
         self.assertEqual("missing", windows_local["python"]["status"])
         self.assertEqual("missing", posix_local["python"]["status"])
         self.assertNotIn("python3", windows_commands)
@@ -3026,9 +3029,10 @@ class GraphifyExtractProvision6934Test(unittest.TestCase):
         def version_runner(*_args, **_kwargs):
             return SimpleNamespace(returncode=0, stdout="graphify 0.9.88", stderr="")
 
-        local, _commands = module.discover_account_commands(
-            specification, which=which, runner=version_runner
-        )
+        with mock.patch.object(module, "load_greenlit_commands", return_value={}):
+            local, _commands = module.discover_account_commands(
+                specification, which=which, runner=version_runner
+            )
         return module.account_host_probes(local)
 
     def test_false_extract_continues_and_genuine_extract_keeps_the_child_reason(self):

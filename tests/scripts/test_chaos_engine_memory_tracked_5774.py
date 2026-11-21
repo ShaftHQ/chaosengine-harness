@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -39,12 +40,20 @@ class MemoryTracked5774Test(unittest.TestCase):
         self.assertNotEqual(0, result.returncode, result.stdout)
 
     def test_mempalace_yaml_is_not_ignored(self) -> None:
-        result = subprocess.run(
-            ["git", "-C", str(ROOT), "check-ignore", "-v", "mempalace.yaml"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        # The installed consumer overlay writes info/exclude in this checkout.
+        # The contract is the shipped gitignore, read by git in a clean repo.
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary)
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            (repo / ".gitignore").write_text(GITIGNORE.read_text(encoding="utf-8"), encoding="utf-8")
+            (repo / "mempalace.yaml").write_text("palace: {}\n", encoding="utf-8")
+            result = subprocess.run(
+                ["git", "check-ignore", "-v", "mempalace.yaml"],
+                cwd=repo,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
         self.assertNotEqual(0, result.returncode, result.stdout)
 
     def test_retrieve_first_and_graphify_instructions_are_active(self) -> None:

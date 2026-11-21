@@ -33,8 +33,32 @@ def _ignore_repo_copy(directory, contents):
     return ignored
 
 
+def _ephemeral_copy_error(error: shutil.Error) -> bool:
+    """True when every copy error is a temp directory deleted by a parallel test."""
+    rows = error.args[0] if error.args else []
+    if not rows:
+        return False
+    for row in rows:
+        if not isinstance(row, tuple) or len(row) < 3:
+            return False
+        if not Path(str(row[0])).name.startswith("tmp"):
+            return False
+        if "No such file or directory" not in str(row[2]):
+            return False
+    return True
+
+
+def copy_checkout(source: Path, destination: Path, **kwargs) -> None:
+    """Copy a checkout. A vanished ``tmp*`` entry from another worker is not a failure."""
+    try:
+        shutil.copytree(source, destination, **kwargs)
+    except shutil.Error as error:
+        if not _ephemeral_copy_error(error):
+            raise
+
+
 def _copy_repo(destination: Path) -> None:
-    shutil.copytree(ROOT, destination, dirs_exist_ok=True, ignore=_ignore_repo_copy)
+    copy_checkout(ROOT, destination, dirs_exist_ok=True, ignore=_ignore_repo_copy)
 
 
 class ChaosEngineReadmeInventoryTest(unittest.TestCase):

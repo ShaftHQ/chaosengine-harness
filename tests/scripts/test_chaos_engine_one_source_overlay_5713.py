@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tests.scripts.test_validate_chaos_engine_readme import _ignore_repo_copy
+from tests.scripts.test_validate_chaos_engine_readme import copy_checkout, _ignore_repo_copy
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -20,7 +20,7 @@ OVERLAY_TEMP = ROOT / "scripts/ci/overlay_in_temp.py"
 
 
 def _copy_origin_tree(destination: Path) -> None:
-    shutil.copytree(ROOT, destination, ignore=_ignore_repo_copy)
+    copy_checkout(ROOT, destination, ignore=_ignore_repo_copy)
 
 
 def load(path: Path, name: str):

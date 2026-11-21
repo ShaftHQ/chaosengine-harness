@@ -4709,7 +4709,9 @@ LAUNCH_PYTHON_UNAVAILABLE = (
 # Short reason for #7667 shell fail-closed JSON (keeps command <= HOOK_COMMAND_MAX_CHARS).
 # #7766: what is missing, why, and the one fix. Kept short so the hook
 # command stays within HOOK_COMMAND_MAX_CHARS.
-HOOK_LAUNCH_PYTHON_BLOCK = "no Python 3.11+; hooks need it; rerun installer"
+# Short enough that the unix polyglot, including the Stop receipt and the zsh
+# heredoc, stays within HOOK_COMMAND_MAX_CHARS. What is missing, and the fix.
+HOOK_LAUNCH_PYTHON_BLOCK = "no Python 3.11+; rerun installer"
 _CWD_UNAVAILABLE_ERRNOS = {
     errno.ENOENT,
     getattr(errno, "ESTALE", 116),
@@ -5102,7 +5104,12 @@ def chaos_guard_locator_command(
     else:
         # Copilot CLI runs the unix `command` through PowerShell (#7831). The
         # same string is bash on Linux (#7830). `>` must not name a file.
-        command = _unix_powershell_polyglot(target, block, probe)
+        command = _unix_powershell_polyglot(
+            target,
+            block,
+            probe,
+            consumer_stop=event is not None and event.casefold() == "stop",
+        )
     targets = powershell_out_file_targets(command)
     if targets:
         raise ValueError(f"hook command Out-File target {targets[0]}")
@@ -5188,7 +5195,7 @@ def _powershell_interpreter_probe(host: str, event: str | None, block: str, *, w
     )
 
 
-def _unix_powershell_polyglot(target: str, block: str, probe: str) -> str:
+def _unix_powershell_polyglot(target: str, block: str, probe: str, *, consumer_stop: bool = False) -> str:
     """One command: bash exec-chain, PowerShell foreach. No file Out-File target.
 
     ``<#`` is a bash syntax error, so the comment starts after ``echo``.
@@ -5198,12 +5205,29 @@ def _unix_powershell_polyglot(target: str, block: str, probe: str) -> str:
     the next interpreter. The command walks parents for ``launch.py``. On a
     miss it runs ``worktree_overlay.py adopt`` (git primary, real hook copy)
     and, when the launcher is still absent, exits 2 on stderr before ``shopt``.
+    Stop is the exception (#118): a git toplevel with no ``.chaos-engine``
+    directory is a consumer checkout, not a broken harness install. Stop writes
+    ``no-harness-runtime`` to stderr and exits 0. It does not create a file.
+    PreToolUse still exits 2. A tree that already has ``.chaos-engine`` still
+    exits 2 when ``launch.py`` is missing.
     A non-interactive bash exits on a failed ``exec`` before ``||`` can try
     the next name, so ``execfail`` is set when ``BASH_VERSION`` is set.
     Dash leaves ``shopt`` unexecuted. PowerShell never sees those lines:
     they are inside ``<# #>``.
+    The PowerShell tail sits in a quoted heredoc so ``bash -n`` and ``zsh -n``
+    do not parse ``foreach`` (#125). PowerShell still runs that tail: the
+    heredoc opener is inside the ``<#`` comment, and ``#>`` closes it.
     ``LASTEXITCODE=``, ``n=``, and ``r=`` satisfy Grok's ``$NAME`` scanner for the probe.
     """
+    if consumer_stop:
+        # stderr is the receipt. A new file would mutate a consumer checkout.
+        miss = (
+            '[ -n "$d" ]&&[ -f "$d/$h" ]||{ [ -d "$d/.chaos-engine" ]||'
+            '{ echo no-harness-runtime>&2;exit 0;};'
+            'echo "missing $h" >&2;exit 2;}\n'
+        )
+    else:
+        miss = '[ -n "$d" ]&&[ -f "$d/$h" ]||{ echo "missing $h" >&2; exit 2; }\n'
     return (
         "echo `# <#` >&2\n"
         "LASTEXITCODE=\n"
@@ -5213,14 +5237,16 @@ def _unix_powershell_polyglot(target: str, block: str, probe: str) -> str:
         '[ -f "$d/$h" ]||{ p=$(git rev-parse --path-format=absolute --git-common-dir);p=${p%/.git};'
         'o=worktree_overlay.py;for n in .chaos-engine chaos-engine .;do for r in runtime/ "";do python3 "$p/$n/$r$o" adopt&&break 2;done;done;'
         'd=$(git rev-parse --show-toplevel); };'
-        '[ -n "$d" ]&&[ -f "$d/$h" ]||{ echo "missing $h" >&2; exit 2; }\n'
-        '[ -n "${BASH_VERSION-}" ] && shopt -s execfail\n'
+        + miss
+        + '[ -n "${BASH_VERSION-}" ] && shopt -s execfail\n'
         'f="$d/$h";a="'
         f"{target.partition(' ')[2]}"
         '";exec python3 "$f" $a||exec py -3 "$f" $a'
         f"||{{ echo '{block}'; exit 2; }}\n"
+        ": <<'#'\n"
         "#> > $null\n"
-        f"{probe}"
+        f"{probe}\n"
+        "#\n"
     )
 
 
@@ -5430,6 +5456,15 @@ def lifecycle_hooks_document(host: str, events: dict[str, str] | None = None, ma
     hooks = {}
     for native in selected:
         command = dict(handler)
+        if native.casefold() == "stop":
+            # One shared command cannot tell Stop from PreToolUse. Stop alone
+            # records a consumer receipt instead of failing closed (#118).
+            command["command"] = chaos_guard_locator_command(
+                windows=False, host=host, managed_python=managed_python, event="Stop",
+            )
+            command["commandWindows"] = chaos_guard_locator_command(
+                windows=True, host=host, managed_python=managed_python, event="Stop",
+            )
         if native == "SessionEnd" and host in {"codex", "grok"}:
             command["timeout"] = 3
         group = {"hooks": [command]}
