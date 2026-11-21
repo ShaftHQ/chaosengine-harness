@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import difflib
+import fnmatch
 import glob
 import hashlib
 import json
@@ -2223,6 +2224,71 @@ def cmd_wordtiming(args: argparse.Namespace) -> int:
     return report("wordtiming", PASS, lines=len(data["lines"]))
 
 
+_SCRATCH_TAKE = "*.scratch.*"
+
+
+def addon_whisper_bin() -> Path | None:
+    """whisper.cpp only when this add-on contains the file. Not PATH, not another ASR."""
+    candidate = Path(__file__).resolve().parent.parent / "bin" / "whisper-cli"
+    return candidate if candidate.is_file() else None
+
+
+def _spoken_words(line: dict) -> list[str]:
+    words = line.get("words")
+    if not isinstance(words, list):
+        return []
+    spoken = []
+    for item in words:
+        text = item.get("text") if isinstance(item, dict) else None
+        if isinstance(text, str) and text.strip():
+            spoken.append(text.strip())
+    return spoken
+
+
+def word_cue_reasons(data: object, whisper: Path | None) -> list[str]:
+    """Overflow, take, scratch name, and cue word. The timing file is the evidence.
+
+    A shipped file fails when the add-on whisper.cpp binary is missing. A draft
+    may omit it. This does not execute that file.
+    """
+    if not isinstance(data, dict):
+        return ["missing-lines"]
+    draft = data.get("draft") is True
+    reasons: list[str] = []
+    if not draft and not (isinstance(whisper, Path) and whisper.is_file()):
+        reasons.append("missing-whisper")
+    lines = data.get("lines")
+    if not isinstance(lines, list):
+        return reasons
+    for line in lines:
+        if not isinstance(line, dict):
+            reasons.append("bad-line")
+            continue
+        take = line.get("take")
+        if not isinstance(take, str) or not take.strip():
+            reasons.append("missing-take")
+        elif not draft and fnmatch.fnmatch(Path(take.strip()).name, _SCRATCH_TAKE):
+            reasons.append("scratch-take")
+        if "overflow" not in line or line.get("overflow") is not False:
+            reasons.append("overflow-text")
+        cue = line.get("word")
+        if not isinstance(cue, str) or cue.strip() not in _spoken_words(line):
+            reasons.append("cue-without-word")
+    return reasons
+
+
+def cmd_wordcue(args: argparse.Namespace) -> int:
+    """Shipped cues need a real take, no scratch name, a fitting line, and a spoken word."""
+    raw = Path(args.timings).read_text(encoding="utf-8")
+    if not raw.strip():
+        return report("wordcue", FAIL, reason="empty-file")
+    data = json.loads(raw)
+    reasons = word_timing_reasons(data) + word_cue_reasons(data, addon_whisper_bin())
+    if reasons:
+        return report("wordcue", FAIL, reason=reasons[0], reasons=reasons)
+    return report("wordcue", PASS, lines=len(data["lines"]))
+
+
 AT_RE = re.compile(r"^\s*([A-Za-z_]\w*|-?\d+(?:\.\d+)?)((?:\s*[+-]\s*\d+(?:\.\d+)?)*)\s*$")
 
 
@@ -2958,6 +3024,8 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--max", type=float, default=0.8, help="longest gap inside a clause")
     p.add_argument("--sentence-max", type=float, default=1.6, help="longest gap after . ? ! ; :")
     p = add("wordtiming", cmd_wordtiming, "word-timed picture cues from narration timings")
+    p.add_argument("timings", help="JSON object with a lines array")
+    p = add("wordcue", cmd_wordcue, "take, overflow, scratch name, and cue word; no ASR run")
     p.add_argument("timings", help="JSON object with a lines array")
     p = add("revealhold", cmd_revealhold, "last reveal holds before the scene cut")
     p.add_argument("timeline", help="JSON with scenes [{id, start, duration, beats, reveals}]")
