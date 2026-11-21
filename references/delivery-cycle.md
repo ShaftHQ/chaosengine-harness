@@ -51,15 +51,17 @@ this order, with a one-line bigger-picture note. The cap is not a quota.
       If that repair changes behavior beyond the failing check, repeat step
       4 once instead of opening a third reviewer. Arm `gh pr merge --auto`
       only when the platform queues the merge until required checks succeed.
-      When that arm would merge immediately, watch until every check on the
-      head has finished successfully and no review thread is unresolved,
-      then merge with `gh pr merge --merge`. A pending check is not success.
+      When that arm would merge immediately, watch until the required checks
+      are ready and no review thread is unresolved, then merge with
+      `gh pr merge --squash`. This repository allows only squash merges.
+      A pending check is not success.
       A skipped required check is not success.
-      A skipped check outside the required set does not block.
+      A skipped or neutral check outside the required set does not block.
+      A failed, cancelled, or pending check blocks when it is required and
+      when no check is marked required. An unmarked skip blocks.
       An empty check list is not success.
-      A failed or cancelled check still blocks when it is required, and it
-      still blocks when no check in the rollup is marked required.
       `gh pr merge` is refused until then, including when `--auto` is present.
+      When the only remaining gate is an owner-only artifact this session cannot create, record `blocking: unverifiable` once and end the goal (`runtime/owner_gate.py`).
 
    One-review work finalizes after step 3. Two-review work runs steps 4 and
    5 before finalize. A commit that acts on review N is the input to review
@@ -179,5 +181,9 @@ the self-accepted head. The first fix starts from whichever of review 1 and
 CI returns first. The next review starts only after the other result is
 reconciled and one push lands. The cap stops the loop. A CI-only repair on
 the final watch does not start a third reviewer.
-There is no zero-review path. Merge waits for that sequence and for every
-CI check on the head to finish successfully. A pending check is not success.
+There is no zero-review path. Merge waits for that sequence and for the
+required checks, then `gh pr merge --squash`. A skipped or neutral check
+outside the required set does not block. A failed, cancelled, or pending
+check blocks when it is required and when no check is marked required.
+An unmarked skip blocks. An empty check list is not success.
+A pending check is not success.

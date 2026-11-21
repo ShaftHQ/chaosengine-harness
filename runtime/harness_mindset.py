@@ -637,6 +637,128 @@ def sibling_trackers(signature: str) -> list[dict[str, Any]]:
     return payload if isinstance(payload, list) else []
 
 
+_NIGHTLY_SHA = re.compile(r"^[0-9a-fA-F]{7,40}$")
+_NIGHTLY_RUN = re.compile(r"^(?:https://github\.com/\S+/actions/runs/\d+|\d{6,})$")
+_NIGHTLY_REPO = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+
+
+def _nightly_evidence(cause_on_main: bool, fixing_sha: str, failing_run: str) -> bool:
+    return (
+        bool(cause_on_main)
+        and _NIGHTLY_SHA.fullmatch(fixing_sha or "") is not None
+        and _NIGHTLY_RUN.fullmatch(failing_run or "") is not None
+    )
+
+
+def decide_nightly_failure_close(
+    *,
+    repo: str,
+    number: int,
+    cause_on_main: bool,
+    fixing_sha: str,
+    failing_run: str,
+    closing_keyword_in_product_pr: bool = False,
+    partial_jobs_dispatch: bool = False,
+) -> dict[str, Any]:
+    """A product-PR closing keyword and a partial jobs= dispatch do not close the tracker.
+
+    When the failing cause is already on main, the command is ``gh issue close``
+    with a comment that cites the fixing SHA and the failing run. A later red
+    nightly may file a new tracker.
+    """
+    if closing_keyword_in_product_pr:
+        return {
+            "action": "refuse-closing-keyword",
+            "commands": [],
+            "comment": "",
+            "reason": (
+                "Say Related to. A product pull request must not use a closing "
+                "keyword on a nightly-failure tracker."
+            ),
+        }
+    evidence = _nightly_evidence(cause_on_main, fixing_sha, failing_run)
+    if partial_jobs_dispatch and not evidence:
+        return {
+            "action": "refuse-partial-dispatch",
+            "commands": [],
+            "comment": "",
+            "reason": "A partial jobs= dispatch is not recovery.",
+        }
+    valid_target = (
+        _NIGHTLY_REPO.fullmatch(repo or "") is not None
+        and not isinstance(number, bool)
+        and isinstance(number, int)
+        and number > 0
+    )
+    if not evidence or not valid_target:
+        return {
+            "action": "leave-open",
+            "commands": [],
+            "comment": "",
+            "reason": "The failing cause is not on main with a fixing SHA and a failing run.",
+        }
+    comment = (
+        f"The failing cause is already on main at {fixing_sha}. "
+        f"Failing run: {failing_run}. "
+        "A later red nightly may file a new tracker."
+    )
+    command = ["gh", "issue", "close", str(number), "--repo", repo, "--comment", comment]
+    return {
+        "action": "evidence-close",
+        "commands": [command],
+        "comment": comment,
+        "reason": "cause-on-main",
+    }
+
+
+def _run_gh(argv: list[str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(  # nosec B603 - gh argv from decide_nightly_failure_close, no shell.
+        argv,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def close_nightly_failure_tracker(
+    *,
+    repo: str,
+    number: int,
+    cause_on_main: bool,
+    fixing_sha: str,
+    failing_run: str,
+    closing_keyword_in_product_pr: bool = False,
+    partial_jobs_dispatch: bool = False,
+    runner: Any = None,
+) -> dict[str, Any]:
+    """Run the nightly close. Tests pass ``runner``; the default is ``gh`` with no shell."""
+    decision = decide_nightly_failure_close(
+        repo=repo,
+        number=number,
+        cause_on_main=cause_on_main,
+        fixing_sha=fixing_sha,
+        failing_run=failing_run,
+        closing_keyword_in_product_pr=closing_keyword_in_product_pr,
+        partial_jobs_dispatch=partial_jobs_dispatch,
+    )
+    if decision["action"] != "evidence-close":
+        return decision
+    run = runner if runner is not None else _run_gh
+    results = []
+    for command in decision["commands"]:
+        result = run(list(command))
+        results.append(result)
+        code = getattr(result, "returncode", 0)
+        if code not in (0, None):
+            failed = dict(decision)
+            failed["action"] = "close-failed"
+            failed["results"] = results
+            return failed
+    done = dict(decision)
+    done["results"] = results
+    return done
+
+
 def _read_json(path: Path, default: dict[str, Any]) -> dict[str, Any]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))

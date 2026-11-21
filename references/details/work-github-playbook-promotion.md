@@ -39,12 +39,19 @@ transcripts, private routes, model identities, credentials, and local paths.
 
 ## Nightly-failure recovery
 
-A nightly-failure tracker (label prefix `nightly-failure:`) is recovered only
-when its owning workflow concludes success with a full job set (`jobs=all`,
-nothing skipped). A merge, a closing keyword, a manual `gh issue close`, and
-a partial `workflow_dispatch` are not recovery. A product pull request must
-not use a closing keyword on that tracker. Say `Related to #N`.
-Decision: `scripts/ci/validate_pr_closing_keywords.py` `nightly_tracker_recovered`.
+A nightly-failure tracker (label prefix `nightly-failure:`) is recovered when
+its owning workflow concludes success with a full job set (`jobs=all`,
+nothing skipped). A partial `jobs=` dispatch is not recovery. A product pull
+request must not use a closing keyword on that tracker. Say `Related to #N`.
+A merge alone is not recovery.
+
+When the failing cause is already on `main`, close the tracker with
+`gh issue close` and a comment that cites the fixing SHA and the failing
+run. Do not wait for the next scheduled owning workflow. That evidence close
+is not a product-PR closing keyword and not a partial `jobs=` dispatch.
+A later red nightly may file a new tracker.
+
+Decision: `runtime/harness_mindset.py` `decide_nightly_failure_close`.
 
 ## ROG machineId
 

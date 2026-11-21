@@ -9,6 +9,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -412,6 +413,137 @@ def _apply_upstream(receipt: dict) -> None:
         receipt["upstreamIssueUrls"] = (existing if isinstance(existing, list) else []) + urls
 
 
+HARNESS_UPSTREAM_REPO = "ShaftHQ/chaosengine-harness"
+
+
+def _default_gh(argv: list[str]):
+    import subprocess
+
+    return subprocess.run(argv, capture_output=True, text=True, check=False)  # nosec B603 - gh argv, no shell
+
+
+def _runner_ok(result: object) -> bool:
+    code = getattr(result, "returncode", 0)
+    return code in (0, None)
+
+
+def _runner_stdout(result: object) -> str:
+    if isinstance(result, str):
+        return result
+    return str(getattr(result, "stdout", "") or "")
+
+
+def _issue_body(item: dict[str, str]) -> str:
+    heading = "Prevention" if item["kind"] == "prevention" else "Enhancement"
+    return (
+        f"## {heading}\n\n{item['text']}\n\n"
+        f"## External proof\n\n{item['proof']}\n\n"
+        f"## Harness surface\n\n{item['surface']}\n\n"
+        "The retrospective does not implement this change.\n"
+    )
+
+
+def _same_open_issue(item: dict[str, str], issue: dict) -> str:
+    text = item["text"].casefold()
+    title = str(issue.get("title") or "")
+    body = str(issue.get("body") or "")
+    url = str(issue.get("url") or "").strip()
+    if not url or text not in f"{title}\n{body}".casefold():
+        return ""
+    return url
+
+
+def file_abstractable_upstream(note: str, *, runner) -> dict[str, object]:
+    """Search ShaftHQ/chaosengine-harness, then file or cite. Does not implement the change."""
+    if runner is None:
+        raise ValueError("runner required")
+    checker = _load_sibling("enhancement_disposition.py")
+    found = checker.abstractable_harness_items(note or "")
+    if not found:
+        return {"action": "none", "issues": [], "implemented": False}
+    issues: list[dict[str, str]] = []
+    for item in found:
+        search = [
+            "gh", "issue", "list",
+            "--repo", HARNESS_UPSTREAM_REPO,
+            "--state", "open",
+            "--limit", "20",
+            "--search", item["text"],
+            "--json", "number,title,url,body",
+        ]
+        listed = runner(search)
+        if not _runner_ok(listed):
+            issues.append({"action": "search-failed", "url": "", "text": item["text"]})
+            continue
+        try:
+            payload = json.loads(_runner_stdout(listed) or "[]")
+        except json.JSONDecodeError:
+            payload = []
+        cited = ""
+        if isinstance(payload, list):
+            for candidate in payload:
+                if isinstance(candidate, dict):
+                    cited = _same_open_issue(item, candidate)
+                    if cited:
+                        break
+        if cited:
+            issues.append({"action": "cited", "url": cited, "text": item["text"]})
+            continue
+        title = f"{item['kind']}: {item['text']}"[:120]
+        create = [
+            "gh", "issue", "create",
+            "--repo", HARNESS_UPSTREAM_REPO,
+            "--title", title,
+            "--body", _issue_body(item),
+        ]
+        created = runner(create)
+        url = ""
+        if _runner_ok(created):
+            lines = [line.strip() for line in _runner_stdout(created).splitlines() if line.strip()]
+            if lines and lines[-1].startswith("https://"):
+                url = lines[-1]
+        issues.append({
+            "action": "filed" if url else "file-failed",
+            "url": url,
+            "text": item["text"],
+        })
+    if any(row["action"] == "filed" for row in issues):
+        action = "filed"
+    elif any(row["action"] == "cited" for row in issues):
+        action = "cited"
+    elif issues:
+        action = issues[0]["action"]
+    else:
+        action = "none"
+    return {"action": action, "issues": issues, "implemented": False}
+
+
+def cite_harness_upstream(note: str, filing: dict) -> str:
+    """Cite filed or matched issues inside the Enhancements block. Does not change product code."""
+    bullets: list[str] = []
+    for issue in filing.get("issues") or []:
+        if not isinstance(issue, dict):
+            continue
+        url = str(issue.get("url") or "").strip()
+        text = str(issue.get("text") or "harness change").strip()
+        if url and url not in (note or ""):
+            bullets.append(f"- tracked: {text} {url}")
+    if not bullets:
+        return note
+    addition = "\n".join(bullets)
+    match = re.search(r"(?im)^##[ \t]+enhancements[ \t]*$", note or "")
+    if match is None:
+        return (note or "").rstrip() + "\n\n## Enhancements\n" + addition + "\n"
+    rest = note[match.end():]
+    nxt = re.search(r"(?m)^##[ \t]+\S", rest)
+    block = rest[: nxt.start()] if nxt else rest
+    tail = rest[nxt.start():] if nxt else ""
+    kept = [line for line in block.splitlines() if "nothing actionable" not in line.casefold()]
+    body = "\n".join(kept).strip()
+    merged = (body + "\n" if body else "") + addition
+    return note[: match.end()] + "\n" + merged + "\n" + tail
+
+
 def _enhancement_tracking(note: str | None, disposition: str) -> list[str]:
     """Tracked URLs from a note. Structural errors raise for every disposition."""
     if note is None:
@@ -434,13 +566,24 @@ def finalize(
     host: str | None = None,
     apply_upstream: bool = False,
     note: str | None = None,
+    upstream_runner=None,
 ) -> dict[str, object]:
     """Record a portable completion receipt. Never auto-opens draft PRs."""
     if not isinstance(session_id, str) or not session_id.strip():
         raise ValueError("session id required")
     if disposition not in {"issues-first", "no-durable", "blocked"}:
         raise ValueError("unsupported disposition")
-    tracked = _enhancement_tracking(note, disposition)
+    filed_note = note
+    harness_upstream = None
+    if isinstance(note, str) and note.strip():
+        checker = _load_sibling("enhancement_disposition.py")
+        if checker.abstractable_harness_items(note):
+            harness_upstream = file_abstractable_upstream(
+                note,
+                runner=upstream_runner if upstream_runner is not None else _default_gh,
+            )
+            filed_note = cite_harness_upstream(note, harness_upstream)
+    tracked = _enhancement_tracking(filed_note, disposition)
     learning = _load_learning()
     receipt = {
         "schemaVersion": 1,
@@ -482,6 +625,16 @@ def finalize(
         receipt["upstreamBodies"] = plan["bodies"]
     if disposition == "issues-first" and tracked:
         receipt["trackingIssues"] = tracked
+    if harness_upstream is not None and harness_upstream.get("action") != "none":
+        receipt["harnessUpstream"] = {
+            "action": harness_upstream.get("action"),
+            "implemented": False,
+            "urls": [
+                str(item.get("url"))
+                for item in harness_upstream.get("issues") or []
+                if isinstance(item, dict) and item.get("url")
+            ],
+        }
     if apply_upstream:
         _apply_upstream(receipt)
 

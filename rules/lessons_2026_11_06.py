@@ -30,18 +30,36 @@ def _load_sibling(name: str):
 _SECRET = re.compile(
     r"\b(?:ghp_[A-Za-z0-9]{8,}|github_pat_[A-Za-z0-9_]{8,}|AKIA[0-9A-Z]{16}|xox[baprs]-[A-Za-z0-9-]{8,})\b"
 )
-_PASSWORD = re.compile(r"\b(?:password|token)\s*[:=]\s*(\S+)", re.I)
+_PASSWORD = re.compile(r"\b(?:password|token)[ \t]*[:=][ \t]*(\S+)", re.I)
 _PLACEHOLDER_VALUE = re.compile(
     r"^(?:#.*|//.*|\$(?:\{[^}]*\}|\w+)|<[^>]*>|changeme|placeholder|todo|\*+|x{3,}|your_token|['\"]+)$",
     re.I,
 )
+_CODE_EXPR = re.compile(
+    r"^(?:"
+    r"[A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)*\[[^\]]*\]"
+    r"|[A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)*\([^)]*\)"
+    r"|[A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)+"
+    r")$"
+)
+_BARE_NAME = re.compile(r"^[A-Za-z_][\w]*$")
 _JWT = re.compile(r"eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}")
 
 
+def _credential_looking(value: str) -> bool:
+    """An expression or a plain name is not a credential. A digit in a bare name is."""
+    if _CODE_EXPR.match(value):
+        return False
+    if _BARE_NAME.match(value):
+        return any(char.isdigit() for char in value)
+    return True
+
+
 def _password_hit(text: str) -> bool:
-    """True for a real assignment value. Comments, env refs, and placeholders are not."""
+    """True for a credential assignment. Expressions, placeholders, and the next line are not."""
     for match in _PASSWORD.finditer(text or ""):
-        if _PLACEHOLDER_VALUE.match(match.group(1)):
+        value = match.group(1)
+        if _PLACEHOLDER_VALUE.match(value) or not _credential_looking(value):
             continue
         return True
     return False

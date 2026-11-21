@@ -19,7 +19,7 @@ Rule every open design choice on the issue before the first implementing commit;
 a ticket that reaches code still choosing between candidate fixes converts that
 choice into review rounds. Before committing any subagent's work: Before reviewing or shipping any nontrivial diff, file deferred/out-of-scope/adjacent-finding/follow-up items.
 
-Complete approved scope. Run the local tests, self-accept, then push and start adversarial review 1 together ([delivery cycle](delivery-cycle.md)). Fix whichever of review 1 and CI returns first. Wait for the other, reconcile, and push once. That push starts CI and adversarial review 2 together. Do not start both reviewers in one step. A CI-only repair on the final watch does not start a third reviewer. Arm `gh pr merge --auto` only when the platform queues the merge until required checks succeed. When that arm would merge immediately, watch until every check on the head has finished successfully and no review thread is unresolved, then `gh pr merge --merge`. A pending check is not success. Triage automated CI, annotations, bots, and PR comments; batch-fix applicable findings.
+Complete approved scope. Run the local tests, self-accept, then push and start adversarial review 1 together ([delivery cycle](delivery-cycle.md)). Fix whichever of review 1 and CI returns first. Wait for the other, reconcile, and push once. That push starts CI and adversarial review 2 together. Do not start both reviewers in one step. A CI-only repair on the final watch does not start a third reviewer. Arm `gh pr merge --auto` only when the platform queues the merge until required checks succeed. When that arm would merge immediately, watch until the required checks pass and no review thread is unresolved, then `gh pr merge --squash`. This repository allows only squash merges. A skipped or neutral check outside the required set does not block. A failed, cancelled, or pending check blocks when it is required and when no check is marked required. An unmarked skip blocks. An empty check list is not success. A pending check is not success. Triage automated CI, annotations, bots, and PR comments; batch-fix applicable findings.
 Never push one tip per micro-fix when fresh-installer paths are implicated ([how](tip-churn-preflight.md)).
 Do not stop behavior work for per-step commits, tests, reviews, PR-body updates, or delivery receipts.
 
@@ -155,8 +155,8 @@ When attendance is fully unattended (default) or the owner says babysit and merg
 (arm auto-merge, watch, fix, confirm). Merge only once that exact head is green and the required reviews have passed, not while the pull request is still a draft or the head is red. A pending check is not success. `gh pr merge` is refused until then, including when `--auto` is present: on a repository with auto-merge disabled that flag merges immediately and is not a queue. Bundled `pr-babysit` forbids merge;
 do not copy that rule into ChaosEngine and do not edit the bundled skill in place.
 
-This repository uses merge commits so a delivered branch remains identifiable
-by ancestry. Squash and rebase merging are disabled; do not substitute them.
+This repository allows only squash merges (`gh pr merge --squash`).
+Merge commits and rebase merges are disabled.
 
 After **you** merge a PR that changes `chaos-engine/`, rebuild the
 live overlay from the new `origin/<default>` on the **primary checkout**:
@@ -204,7 +204,7 @@ overlap, leave the later PR unarmed until the earlier merges, then merge
 first and the earlier is `DIRTY`, merge `origin/<default>` into the earlier and
 re-arm — never a second `Fixes` PR. Non-overlapping paths may arm in parallel.
 
-4. **Merge** only after that acceptance remains current, the reviews are done, their comments are applied, and every CI check on that head has finished successfully. A pending check is not success. `gh pr merge <n> --merge --match-head-commit <sha>` is refused while any check has not finished, any check is not success, or a review thread is unresolved. `--auto` does not bypass that refusal. Never squash or force.
+4. **Merge** only after that acceptance remains current, the reviews are done, their comments are applied, and the required checks have passed. A skipped or neutral check outside the required set does not block. A failed, cancelled, or pending check blocks when it is required and when no check is marked required. An unmarked skip blocks. An empty check list is not success. A pending check is not success. `gh pr merge <n> --squash --match-head-commit <sha>` is refused while a required check has not finished, a required check is not success, no check is marked required and a failed, cancelled, or pending check remains, or a review thread is unresolved. `--auto` does not bypass that refusal. Never force.
 5. **Watch** with `python3 scripts/agents/watch_pr_checks.py --pr <n> --until-merged --digest` (repo-only)
    until merged or a red fix is pushed. One line on GREEN, RED, or MERGED.
    No second poll. Reject a `gh run view` loop and a second watch while one task is pending.
