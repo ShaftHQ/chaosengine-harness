@@ -36,7 +36,9 @@ AGENT_ENV_KEYS = (
 
 
 def state_dir() -> Path:
-    return Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local/state") / "chaos-engine"
+    from runtime.user_paths import state_dir as user_state_dir
+
+    return user_state_dir()
 
 
 def log_path() -> Path:

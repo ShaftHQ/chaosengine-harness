@@ -64,7 +64,7 @@ class RulesSourceTests(unittest.TestCase):
         ).decode("utf-8")
         self.assertIn("Project tests use pytest.", merged)
         self.assertIn("Before every task", merged)
-        self.assertLess(merged.index("Project tests use pytest."), merged.index(self.hosts.START))
+        self.assertLess(merged.index(self.hosts.START), merged.index("Project tests use pytest."))
 
     def test_closest_agents_file_wins_and_nested_files_are_not_written(self):
         with tempfile.TemporaryDirectory() as temporary:

@@ -547,12 +547,10 @@ def session_manifest_path(explicit: Path | None = None) -> Path | None:
 def _session_hmac_key_path(manifest: Path) -> Path:
     """Per-manifest HMAC key file outside any checkout (XDG config)."""
     digest = hashlib.sha256(str(manifest.resolve()).encode("utf-8")).hexdigest()[:24]
-    return (
-        Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
-        / "chaos-engine"
-        / "session-manifest-hmac-keys"
-        / f"{digest}.hmac-key"
-    )
+    from runtime.user_paths import config_dir, legacy_config_dir, prefer_existing
+
+    root = prefer_existing(config_dir(), legacy_config_dir())
+    return root / "session-manifest-hmac-keys" / f"{digest}.hmac-key"
 
 
 def _read_session_hmac_key(manifest: Path) -> bytes | None:
@@ -1595,7 +1593,9 @@ def path_reason(path: Path, project: Path | None = None, rev: str | None = None)
 
 
 def _ack_store() -> Path:
-    return Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local/state") / "chaos-engine" / "delete-acks.json"
+    from runtime.user_paths import legacy_state_dir, prefer_existing, state_dir
+
+    return prefer_existing(state_dir(), legacy_state_dir()) / "delete-acks.json"
 
 
 def _log(entry: dict) -> None:

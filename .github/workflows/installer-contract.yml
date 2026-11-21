@@ -33,96 +33,160 @@ jobs:
             framework: none
             timeout: 15
             output: tty-pty
+            config_source: none
+            scope: user
+            instructions_mode: merge
+            pre_existing: rich
           - os: windows-latest
             mode: upgrade
             context: consumer-shaft
             framework: testng
             timeout: 20
             output: log
+            config_source: project
+            scope: both
+            instructions_mode: replace
+            pre_existing: rich
           - os: windows-latest
             mode: fresh
             context: shaft-dev
             framework: none
             timeout: 25
             output: json
+            config_source: user
+            scope: project
+            instructions_mode: merge
+            pre_existing: rich
           - os: windows-latest
             mode: upgrade
             context: harness-dev
             framework: none
             timeout: 20
             output: tty-pty
+            config_source: project+local
+            scope: project
+            instructions_mode: merge
+            pre_existing: none
           - os: ubuntu-latest
             mode: fresh
             context: consumer-shaft
             framework: junit
             timeout: 20
             output: log
+            config_source: user
+            scope: both
+            instructions_mode: replace
+            pre_existing: rich
           - os: ubuntu-latest
             mode: upgrade
             context: empty
             framework: none
             timeout: 15
             output: json
+            config_source: project+local
+            scope: project
+            instructions_mode: replace
+            pre_existing: none
           - os: ubuntu-latest
             mode: fresh
             context: harness-dev
             framework: none
             timeout: 20
             output: tty-pty
+            config_source: none
+            scope: project
+            instructions_mode: merge
+            pre_existing: rich
           - os: ubuntu-latest
             mode: upgrade
             context: shaft-dev
             framework: none
             timeout: 25
             output: log
+            config_source: project
+            scope: user
+            instructions_mode: merge
+            pre_existing: none
           - os: macos-latest
             mode: fresh
             context: shaft-dev
             framework: none
             timeout: 35
             output: json
+            config_source: project+local
+            scope: both
+            instructions_mode: merge
+            pre_existing: none
           - os: macos-latest
             mode: upgrade
             context: consumer-shaft
             framework: cucumber
             timeout: 35
             output: tty-pty
+            config_source: none
+            scope: user
+            instructions_mode: merge
+            pre_existing: rich
           - os: macos-latest
             mode: fresh
             context: empty
             framework: none
             timeout: 30
             output: log
+            config_source: project
+            scope: project
+            instructions_mode: replace
+            pre_existing: rich
           - os: macos-latest
             mode: upgrade
             context: harness-dev
             framework: none
             timeout: 30
             output: json
+            config_source: user
+            scope: project
+            instructions_mode: merge
+            pre_existing: none
           - os: ubuntu-latest
             mode: fresh
             context: non-maven
             framework: none
             timeout: 15
             output: tty-pty
+            config_source: none
+            scope: project
+            instructions_mode: merge
+            pre_existing: none
           - os: ubuntu-latest
             mode: upgrade
             context: non-maven
             framework: none
             timeout: 20
             output: log
+            config_source: none
+            scope: project
+            instructions_mode: merge
+            pre_existing: none
           - os: ubuntu-latest
             mode: fresh
             context: maven-not-shaft
             framework: none
             timeout: 20
             output: json
+            config_source: none
+            scope: project
+            instructions_mode: merge
+            pre_existing: none
           - os: ubuntu-latest
             mode: upgrade
             context: maven-not-shaft
             framework: none
             timeout: 20
             output: tty-pty
+            config_source: none
+            scope: project
+            instructions_mode: merge
+            pre_existing: none
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -141,6 +205,10 @@ jobs:
             --framework "${{ matrix.framework }}" \
             --timeout-minutes "${{ matrix.timeout }}" \
             --output "${{ matrix.output }}" \
+            --config-source "${{ matrix.config_source }}" \
+            --scope "${{ matrix.scope }}" \
+            --instructions-mode "${{ matrix.instructions_mode }}" \
+            --pre-existing "${{ matrix.pre_existing }}" \
             > installer-contract-cell.log 2>&1 < /dev/null
 
       - name: Upload cell log

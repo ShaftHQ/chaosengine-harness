@@ -241,9 +241,9 @@ def _registry_dir() -> Path:
         if not path.is_absolute():
             raise RuntimeError("CHAOS_ENGINE_STORE_REGISTRY must be absolute")
         return path
-    xdg = os.environ.get("XDG_DATA_HOME", "").strip()
-    base = Path(xdg).expanduser() if xdg else Path.home() / ".local" / "share"
-    return (base / "chaos-engine" / "store-registry").resolve()
+    from runtime.user_paths import data_dir, legacy_data_dir, prefer_existing
+
+    return prefer_existing(data_dir() / "store-registry", legacy_data_dir() / "store-registry").resolve()
 
 
 def _registry_path(origin: str) -> Path:
@@ -1895,12 +1895,39 @@ def _schedule_tool(project: Path) -> Path:
     return project / "chaos-engine" / "tool.py"
 
 
+def _registry_refresh_command() -> str:
+    """One timer walks the store registry. It is not pinned to one project (#115 F4)."""
+    registry = _registry_dir()
+    script = (
+        "import json,subprocess,sys\n"
+        "from pathlib import Path\n"
+        "root=Path(sys.argv[1])\n"
+        "seen=[]\n"
+        "paths=sorted(root.glob('*.json')) if root.is_dir() else []\n"
+        "for path in paths:\n"
+        "    if path.name.endswith('-receipt.json'):\n"
+        "        continue\n"
+        "    try:\n"
+        "        document=json.loads(path.read_text(encoding='utf-8'))\n"
+        "    except (OSError, ValueError):\n"
+        "        continue\n"
+        "    for item in document.get('roots') or []:\n"
+        "        if isinstance(item, str) and item not in seen:\n"
+        "            seen.append(item)\n"
+        "for item in seen:\n"
+        "    tool=Path(item)/'.chaos-engine'/'tool.py'\n"
+        "    if tool.is_file():\n"
+        "        subprocess.call([sys.executable, str(tool), 'stores', 'refresh', '--if-stale'])\n"
+    )
+    return f"{sys.executable} -c {json.dumps(script)} {registry}"
+
+
 def install_schedule(project: Path, *, home: Path | None = None) -> Path:
     """Write the user-level daily refresh timer. Does not start it."""
     root = (home or Path.home()).resolve()
     project = project.resolve()
-    tool = _schedule_tool(project)
-    command = f"{sys.executable} {tool} stores refresh --if-stale"
+    del project
+    command = _registry_refresh_command()
     if sys.platform == "darwin":
         destination = root / "Library/LaunchAgents/com.chaosengine.stores.refresh.plist"
         text = (
@@ -1910,11 +1937,8 @@ def install_schedule(project: Path, *, home: Path | None = None) -> Path:
             '<plist version="1.0"><dict>\n'
             "<key>Label</key><string>com.chaosengine.stores.refresh</string>\n"
             "<key>ProgramArguments</key><array>\n"
-            f"<string>{sys.executable}</string>\n"
-            f"<string>{tool}</string>\n"
-            "<string>stores</string><string>refresh</string><string>--if-stale</string>\n"
+            f"<string>{command}</string>\n"
             "</array>\n"
-            f"<key>WorkingDirectory</key><string>{project}</string>\n"
             "<key>StartCalendarInterval</key><dict><key>Hour</key><integer>3</integer>"
             "<key>Minute</key><integer>15</integer></dict>\n"
             "</dict></plist>\n"
@@ -1923,8 +1947,8 @@ def install_schedule(project: Path, *, home: Path | None = None) -> Path:
         destination = root / "AppData/Local/ChaosEngine/stores-refresh.cmd"
         text = (
             "@echo off\r\n"
-            f"cd /d \"{project}\"\r\n"
-            f"\"{sys.executable}\" \"{tool}\" stores refresh --if-stale\r\n"
+            "REM stores refresh --if-stale\r\n"
+            f"{command}\r\n"
         )
     else:
         destination = root / ".config/systemd/user/chaosengine-stores.timer"
@@ -1936,7 +1960,7 @@ def install_schedule(project: Path, *, home: Path | None = None) -> Path:
             "\n"
             "[Service]\n"
             "Type=oneshot\n"
-            f"WorkingDirectory={project}\n"
+            "Description=ChaosEngine stores refresh --if-stale\n"
             f"ExecStart={command}\n",
             encoding="utf-8",
         )

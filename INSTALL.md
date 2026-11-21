@@ -73,6 +73,10 @@ The same flags work on `install.sh`, `bootstrap.py`, and `install.py`. PowerShel
 | `--ascii` | `-Ascii` | ASCII glyphs. Same as `CHAOS_ENGINE_ASCII=1` |
 | `--no-hyperlinks` | `-NoHyperlinks` | No OSC 8 links. `CHAOS_ENGINE_HYPERLINKS=0\|1` overrides the allowlist |
 | `--no-modify-path` | `-NoModifyPath` | Leave the user Path unchanged |
+| `--config FILE` | `-Config FILE` | Read this file instead of the user `config.toml`. See [configuration](docs/configuration.md) |
+| `--scope project\|user\|both` | `-Scope` | `project` (default) installs into this folder. `user` writes only under the home directory. `both` does project, then user |
+| `--mode merge\|replace` | `-Mode` | `merge` (default) keeps existing instruction bytes. `replace` backs them up and deletes the harness-owned set. It needs `--yes` when stdin is not a TTY |
+| `--instructions-placement top\|bottom` | `-InstructionsPlacement` | Where the instruction block sits. Default `top` |
 | `--hosts grok` | `-Hosts grok` | Complete that client |
 | `--without-caveman` | `-WithoutCaveman` | Skip that bundle |
 | `--with-<addon>` / `--without-<addon>` | `-With<Name>` / `-Without<Name>` | Select or refuse an add-on |
@@ -82,6 +86,56 @@ The same flags work on `install.sh`, `bootstrap.py`, and `install.py`. PowerShel
 | `verify` / `uninstall` | the same subcommands | Check the payload, or remove it and keep edited files |
 
 `install.sh` and `install.ps1` print `Installing ChaosEngine into …` and `Download:` only with `--verbose` / `-Verbose`, or when Stage-0 itself fails. `CHAOS_ENGINE_JSON=1` matches `--json`. After a successful install the summary is at most 18 lines: a readiness line, active hosts, the trace and guide, a receipt link on a TTY, and two Next steps (open a host and invoke `/chaos-engine`, then doctor). Log mode still prints the four `Receipt` lines. `--verbose` adds the first-session brief and host cards. Uninstall stays `python3 .chaos-engine/install.py uninstall --project .`.
+
+The catalog, the precedence, and the telemetry statement are in [docs/configuration.md](docs/configuration.md). ChaosEngine sends no usage data.
+
+## Install scope
+
+`--scope` defaults to `project`. The bare one-liner does not pass it.
+
+| Scope | What is written |
+| --- | --- |
+| `project` | The overlay and host files in this folder |
+| `user` | Home files only. The target folder gains nothing. Receipt: `<data>/user-receipt.json` |
+| `both` | Project first, then the user layer |
+
+User-layer files, when that host is selected:
+
+| Host | Instructions | Skill | Hooks |
+| --- | --- | --- | --- |
+| Claude | `~/.claude/CLAUDE.md` | `~/.claude/skills/chaos-engine-user/SKILL.md` | `~/.claude/settings.json` |
+| Codex | `~/.codex/AGENTS.md` | `~/.agents/skills/chaos-engine-user/` | `~/.codex/hooks.json` |
+| Gemini | `~/.gemini/GEMINI.md` | the shared skill | `~/.gemini/settings.json` |
+| Copilot | `~/.copilot/copilot-instructions.md` |  | `~/.copilot/hooks/chaos-engine-user.json` |
+| Cursor | no `~/.cursor/hooks.json` | `~/.agents/skills/chaos-engine-user/` |  |
+| OpenCode | `~/.config/opencode/plugins/chaos-engine-user.js`. `AGENTS.md` is not created when `~/.claude/CLAUDE.md` already exists |  |  |
+| Grok | `~/.grok/hooks/chaos-engine-user.json`. Rules text only when the Claude block was not written |  |  |
+
+The skill name is `chaos-engine-user`. A project skill named `chaos-engine` wins. Hook commands point at `<data>/current/launch.py` and stay byte-identical across upgrades. `CODEX_HOME`, `COPILOT_HOME`, and `GROK_HOME` override those host directories.
+
+There is no remote "all machines" config. A user-scope install covers the account on this machine. Another machine needs its own `--scope user`.
+
+```bash
+python3 install.py install --project . --scope user --source . --commit <40-hex>
+python3 .chaos-engine/install.py uninstall --scope user
+```
+
+`uninstall --scope project` leaves the home layer in place. `uninstall --scope user` restores each home file from the receipt and does not touch the project.
+
+## Existing instructions
+
+`--mode merge` is the default. It keeps every byte outside the ChaosEngine markers and places the block first, after a BOM or YAML front matter. A second merge does not rewrite the file. `CLAUDE.md` and `GEMINI.md` keep a leading `@AGENTS.md` line.
+
+`--mode replace` prints the plan with `--dry-run`. Without a TTY and without `--yes` it exits 2 and prints `CE_MODE_REPLACE_NEEDS_YES`. It refuses a config-file `replace`, `--scope user`, `--consumer`, a dirty instruction file (unless `--allow-dirty`), and the ChaosEngine or SHAFT_ENGINE source tree (unless `--force-replace-source-tree`). The backup is `.chaos-engine-state/backups/<stamp>-replace/`. `install.py restore --backup <stamp>` writes those bytes back.
+
+Class I is the harness-owned instruction set (root and nested `AGENTS.md`, host instruction files, host settings, and host skills). Class P is personal (`CLAUDE.local.md` and other `*.local.toml` / `*.local.json`) and is kept unless `--include-local`. The lists are `references/instruction-inventory.json` and `references/instruction-conflicts.json`.
+
+```bash
+python3 install.py install --project . --mode replace --dry-run --source . --commit <40-hex>
+python3 install.py install --project . --mode replace --yes --source . --commit <40-hex>
+python3 .chaos-engine/install.py restore --list
+python3 .chaos-engine/install.py restore --backup <stamp>-replace
+```
 
 ## Local CLI
 

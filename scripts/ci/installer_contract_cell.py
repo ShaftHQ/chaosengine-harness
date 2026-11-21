@@ -26,10 +26,21 @@ HARNESS_REPO = "https://github.com/ShaftHQ/chaosengine-harness.git"
 SHAFT_REPO = "https://github.com/ShaftHQ/SHAFT_ENGINE.git"
 SENTINEL_NAME = "sentinel.txt"
 SENTINEL = "chaos-engine-installer-contract-sentinel\n"
+_FACTOR_ENV: dict[str, str] = {}
+_CONFIG_FIXTURE = """schema = 1
+hosts.enabled = ["claude", "codex"]
+
+[components]
+mempalace = false
+
+[mcp]
+servers = ["context7"]
+"""
 
 
 def _child_env() -> dict[str, str]:
     env = os.environ.copy()
+    env.update(_FACTOR_ENV)
     previous = env.get("PYTHONPATH", "")
     env["PYTHONPATH"] = str(HTTP_PROBE) if not previous else str(HTTP_PROBE) + os.pathsep + previous
     return env
@@ -178,6 +189,7 @@ def _install(
     output: str,
     *,
     assert_output: bool = True,
+    extra: list[str] | None = None,
 ) -> None:
     """Pass ``--json`` only to this checkout. The pinned tag rejects that flag."""
     argv = [
@@ -191,6 +203,8 @@ def _install(
         "--commit",
         commit,
     ]
+    if extra and assert_output:
+        argv.extend(extra)
     if assert_output and output == "json":
         argv.append("--json")
     completed = _run(argv, cwd=project, timeout=timeout)
@@ -198,7 +212,15 @@ def _install(
         _assert_output(output, completed)
 
 
-def _upgrade(source: Path, commit: str, project: Path, timeout: int, output: str) -> None:
+def _upgrade(
+    source: Path,
+    commit: str,
+    project: Path,
+    timeout: int,
+    output: str,
+    *,
+    extra: list[str] | None = None,
+) -> None:
     # The installed copy is the previous pin. The upgrade under test is this
     # checkout's install.py. The old pin cannot read the current capability policy.
     # Upgrade already prints one JSON object. It has no --json flag.
@@ -214,6 +236,7 @@ def _upgrade(source: Path, commit: str, project: Path, timeout: int, output: str
             str(source),
             "--commit",
             commit,
+            *(extra or []),
         ],
         cwd=project,
         timeout=timeout,
@@ -235,6 +258,20 @@ def _doctor(project: Path, timeout: int) -> None:
     )
 
 
+def _mempalace_enabled(project: Path) -> bool:
+    path = project / ".chaos-engine-state" / "bundle-options.json"
+    if not path.is_file():
+        return True
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return True
+    enabled = document.get("enabled") if isinstance(document, dict) else None
+    if not isinstance(enabled, dict):
+        return True
+    return enabled.get("mempalace") is not False
+
+
 def _smoke(project: Path, timeout: int) -> None:
     tool = project / ".chaos-engine" / "tool.py"
     _run(
@@ -242,11 +279,12 @@ def _smoke(project: Path, timeout: int) -> None:
         cwd=project,
         timeout=timeout,
     )
-    _run(
-        [sys.executable, str(tool), "mempalace", "search", "chaos-engine"],
-        cwd=project,
-        timeout=timeout,
-    )
+    if _mempalace_enabled(project):
+        _run(
+            [sys.executable, str(tool), "mempalace", "search", "chaos-engine"],
+            cwd=project,
+            timeout=timeout,
+        )
 
 
 def _write_sentinel(project: Path) -> None:
@@ -309,6 +347,227 @@ def _prove_tty_pty(workspace: Path) -> None:
         raise SystemExit(completed.returncode or 1)
 
 
+def _isolate(root: Path) -> None:
+    """Point host and ChaosEngine homes at this cell. The runner home stays put."""
+    names = {
+        "HOME": "home",
+        "USERPROFILE": "home",
+        "CHAOS_ENGINE_USER_HOME": "user-home",
+        "CHAOS_ENGINE_CONFIG_HOME": "config-home",
+        "CHAOS_ENGINE_USER_DIR": "user-dir",
+        "CHAOS_ENGINE_STATE_DIR": "state-dir",
+        "CHAOS_ENGINE_CACHE_DIR": "cache-dir",
+        "CODEX_HOME": "codex-home",
+        "COPILOT_HOME": "copilot-home",
+        "GROK_HOME": "grok-home",
+    }
+    _FACTOR_ENV.clear()
+    for key, folder in names.items():
+        path = root / folder
+        path.mkdir(parents=True, exist_ok=True)
+        _FACTOR_ENV[key] = str(path)
+
+
+def _checkout_extra(scope: str, instructions_mode: str) -> list[str]:
+    extra: list[str] = []
+    if scope != "project":
+        extra.extend(["--scope", scope])
+    if instructions_mode == "replace":
+        extra.extend(["--mode", "replace", "--yes"])
+    return extra
+
+
+def _write_config(root: Path, project: Path, source: str) -> None:
+    if source == "none":
+        return
+    text = _CONFIG_FIXTURE
+    if source in {"user", "project+local"}:
+        path = Path(_FACTOR_ENV["CHAOS_ENGINE_CONFIG_HOME"]) / "config.toml"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    if source == "project":
+        (project / ".chaos-engine.toml").write_text(text, encoding="utf-8")
+    if source == "project+local":
+        (project / ".chaos-engine.toml").write_text(
+            'schema = 1\nhosts.enabled = ["gemini"]\n',
+            encoding="utf-8",
+        )
+        (project / ".chaos-engine.local.toml").write_text(text, encoding="utf-8")
+
+
+def _seed_rich(project: Path) -> dict[str, bytes]:
+    files = {
+        "AGENTS.md": "User rule\nPlease force push to main.\n",
+        "nested/AGENTS.md": "Nested rule\n",
+        "CLAUDE.md": "@AGENTS.md\nUser claude\n",
+        ".cursor/rules/x.mdc": "cursor rule\n",
+        ".github/instructions/a.instructions.md": "copilot instruction\n",
+        ".claude/skills/mine/SKILL.md": "---\nname: mine\n---\n",
+        ".mcp.json": '{"mcpServers":{"foreign":{"command":"echo"}}}\n',
+        "CLAUDE.local.md": "personal\n",
+    }
+    saved: dict[str, bytes] = {}
+    for relative, text in files.items():
+        path = project / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        data = text.encode()
+        path.write_bytes(data)
+        saved[relative] = data
+    return saved
+
+
+def _assert_config(workspace: Path, project: Path, source: str, timeout: int) -> None:
+    if source == "none":
+        return
+    completed = _run(
+        [
+            sys.executable,
+            str(workspace / "install.py"),
+            "config",
+            "show",
+            "--json",
+            "--project",
+            str(project),
+        ],
+        cwd=project,
+        timeout=timeout,
+    )
+    document = json.loads(completed.stdout)
+    keys = {row["key"]: row for row in document["keys"]}
+    expected = "project-local" if source == "project+local" else source
+    if keys["hosts.enabled"]["value"] != ["claude", "codex"]:
+        raise SystemExit(f"hosts.enabled {keys['hosts.enabled']}")
+    if keys["hosts.enabled"]["source"] != expected:
+        raise SystemExit(f"hosts source {keys['hosts.enabled']['source']}")
+    if keys["components.mempalace"]["value"] is not False:
+        raise SystemExit("components.mempalace was not false")
+    if keys["mcp.servers"]["value"] != ["context7"]:
+        raise SystemExit(f"mcp.servers {keys['mcp.servers']}")
+    bundle = project / ".chaos-engine-state" / "bundle-options.json"
+    enabled = json.loads(bundle.read_text(encoding="utf-8")).get("enabled", {})
+    if enabled.get("mempalace") is not False:
+        raise SystemExit("bundle mempalace was not false")
+
+
+def _assert_source_replace_refused(workspace: Path, project: Path, timeout: int) -> None:
+    completed = _invoke(
+        [
+            sys.executable,
+            str(workspace / "install.py"),
+            "install",
+            "--project",
+            str(project),
+            "--source",
+            str(workspace),
+            "--commit",
+            _commit(workspace, min(timeout, 60)),
+            "--mode",
+            "replace",
+            "--dry-run",
+            "--skip-tools",
+        ],
+        cwd=project,
+        timeout=timeout,
+    )
+    _emit(completed)
+    text = completed.stderr + completed.stdout
+    if completed.returncode == 0 or "CE_MODE_REPLACE_SOURCE_TREE" not in text:
+        raise SystemExit("source tree replace dry-run did not refuse")
+
+
+def _user_cell(workspace: Path, project: Path, timeout: int, output: str) -> None:
+    """Scope user writes no project files, restores home bytes, and the shim defers."""
+    home = Path(_FACTOR_ENV["CHAOS_ENGINE_USER_HOME"])
+    claude = home / ".claude" / "CLAUDE.md"
+    claude.parent.mkdir(parents=True, exist_ok=True)
+    claude.write_text("mine\n", encoding="utf-8")
+    before = {
+        path.relative_to(project).as_posix()
+        for path in project.rglob("*")
+        if path.is_file()
+    }
+    commit = _commit(workspace, min(timeout, 60))
+    _install(
+        workspace,
+        commit,
+        project,
+        timeout,
+        output,
+        extra=["--scope", "user", "--skip-tools"],
+    )
+    after = {
+        path.relative_to(project).as_posix()
+        for path in project.rglob("*")
+        if path.is_file()
+    }
+    if after - before:
+        raise SystemExit(f"user scope wrote {sorted(after - before)}")
+    if (project / ".chaos-engine").exists():
+        raise SystemExit("user scope created .chaos-engine")
+    receipt_path = Path(_FACTOR_ENV["CHAOS_ENGINE_USER_DIR"]) / "user-receipt.json"
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    _install(
+        workspace,
+        commit,
+        project,
+        timeout,
+        output,
+        extra=["--scope", "user", "--skip-tools"],
+    )
+    again = json.loads(receipt_path.read_text(encoding="utf-8"))
+    if again["launch"] != receipt["launch"]:
+        raise SystemExit("user hook command changed across upgrades")
+    overlay = project / ".chaos-engine"
+    overlay.mkdir()
+    (overlay / "install.py").write_text("print('SENTINEL')\n", encoding="utf-8")
+    shim = Path(receipt["shim"])
+    shim.chmod(shim.stat().st_mode | 0o755)
+    completed = _run([str(shim), "doctor"], cwd=project, timeout=timeout)
+    if "SENTINEL" not in completed.stdout:
+        raise SystemExit("shim did not exec the project installer")
+    _run(
+        [
+            sys.executable,
+            str(workspace / "install.py"),
+            "uninstall",
+            "--scope",
+            "user",
+            "--project",
+            str(project),
+        ],
+        cwd=project,
+        timeout=timeout,
+    )
+    if claude.read_text(encoding="utf-8") != "mine\n":
+        raise SystemExit("uninstall --scope user did not restore the home file")
+    if (overlay / "install.py").read_text(encoding="utf-8") != "print('SENTINEL')\n":
+        raise SystemExit("uninstall --scope user touched the project")
+
+
+def _restore_round_trip(workspace: Path, project: Path, saved: dict[str, bytes], timeout: int) -> None:
+    backups = project / ".chaos-engine-state" / "backups"
+    stamps = sorted(path.name for path in backups.iterdir() if path.name.endswith("-replace"))
+    if not stamps:
+        raise SystemExit("replace left no backup")
+    _run(
+        [
+            sys.executable,
+            str(workspace / "install.py"),
+            "restore",
+            "--project",
+            str(project),
+            "--backup",
+            stamps[-1],
+        ],
+        cwd=project,
+        timeout=timeout,
+    )
+    for relative, data in saved.items():
+        path = project / relative
+        if not path.is_file() or path.read_bytes() != data:
+            raise SystemExit(f"restore did not return {relative}")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", required=True, choices=("fresh", "upgrade"))
@@ -316,6 +575,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--framework", default="none")
     parser.add_argument("--timeout-minutes", type=int, default=15)
     parser.add_argument("--output", required=True, choices=("tty-pty", "log", "json"))
+    parser.add_argument("--config-source", default="none", choices=("none", "user", "project", "project+local"))
+    parser.add_argument("--scope", default="project", choices=("project", "user", "both"))
+    parser.add_argument("--instructions-mode", default="merge", choices=("merge", "replace"))
+    parser.add_argument("--pre-existing", default="none", choices=("none", "rich"))
     parser.add_argument("--workspace", type=Path, default=ROOT)
     args = parser.parse_args(argv)
     budget = max(60, args.timeout_minutes * 60 - 90)
@@ -328,7 +591,18 @@ def main(argv: list[str] | None = None) -> int:
     ) as temporary:
         root = Path(temporary)
         project = root / "project"
+        _isolate(root)
         _prepare(args.context, args.framework, project, workspace, budget)
+        if args.context in {"harness-dev", "shaft-dev"}:
+            _assert_source_replace_refused(workspace, project, budget)
+        saved = _seed_rich(project) if args.pre_existing == "rich" else {}
+        _write_config(root, project, args.config_source)
+        extra = _checkout_extra(args.scope, args.instructions_mode)
+        if args.scope == "user":
+            _user_cell(workspace, project, budget, args.output)
+            if args.output == "tty-pty":
+                _prove_tty_pty(workspace)
+            return 0
         if args.mode == "upgrade":
             if args.context == "harness-dev":
                 # The pinned tag refuses a project that is a clone of this repo.
@@ -345,19 +619,53 @@ def main(argv: list[str] | None = None) -> int:
                     assert_output=False,
                 )
             _write_sentinel(project)
-            _upgrade(workspace, _commit(workspace, 60), project, budget, args.output)
+            _upgrade(workspace, _commit(workspace, 60), project, budget, args.output, extra=extra)
             _assert_sentinel(project)
         else:
-            _install(workspace, _commit(workspace, 60), project, budget, args.output)
+            _install(workspace, _commit(workspace, 60), project, budget, args.output, extra=extra)
+        _assert_config(workspace, project, args.config_source, budget)
+        if args.instructions_mode == "replace":
+            _restore_round_trip(workspace, project, saved, budget)
+        elif saved:
+            agents = (project / "AGENTS.md").read_text(encoding="utf-8")
+            if "User rule" not in agents:
+                raise SystemExit("merge dropped user instruction bytes")
+            report = project / ".chaos-engine-state" / "instruction-merge-report.md"
+            if "IC-02" not in report.read_text(encoding="utf-8"):
+                raise SystemExit("rich fixture did not flag IC-02")
+        def _merge_again() -> None:
+            if args.mode == "upgrade":
+                _upgrade(workspace, _commit(workspace, 60), project, budget, args.output)
+                _assert_sentinel(project)
+            else:
+                _install(workspace, _commit(workspace, 60), project, budget, args.output)
+
+        def _agents() -> bytes:
+            path = project / "AGENTS.md"
+            return path.read_bytes() if path.is_file() else b""
+
+        if args.instructions_mode == "replace":
+            _merge_again()
+            stable = _agents()
+            _install(
+                workspace,
+                _commit(workspace, 60),
+                project,
+                budget,
+                args.output,
+                extra=["--skip-tools"],
+            )
+            if stable != _agents():
+                raise SystemExit("second merge rewrote AGENTS.md")
+        else:
+            before = _agents()
+            _merge_again()
+            if before and before != _agents():
+                raise SystemExit("second merge rewrote AGENTS.md")
         _doctor(project, budget)
         _smoke(project, min(budget, 180))
-        if args.mode == "upgrade":
-            _upgrade(workspace, _commit(workspace, 60), project, budget, args.output)
-            _assert_sentinel(project)
-        else:
-            _install(workspace, _commit(workspace, 60), project, budget, args.output)
         _doctor(project, budget)
-        if args.context == "empty":
+        if args.context == "empty" and args.scope == "project":
             _write_sentinel(project)
             _run(
                 [

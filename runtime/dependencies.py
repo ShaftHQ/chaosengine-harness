@@ -385,16 +385,9 @@ def _user_path_publish_enabled() -> bool:
 
 def user_data_dir() -> Path:
     """Per-user ChaosEngine directory. Not the project checkout and not a secret store."""
-    override = os.environ.get("CHAOS_ENGINE_USER_DIR", "").strip()
-    if override:
-        return Path(override)
-    if os.name == "nt":
-        base = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData/Local")
-    elif sys.platform == "darwin":
-        base = Path.home() / "Library/Application Support"
-    else:
-        base = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local/share")
-    return base / "chaos-engine"
+    from runtime.user_paths import data_dir
+
+    return data_dir()
 
 
 def account_runtime_root(kind: str) -> Path:
@@ -3417,16 +3410,9 @@ def node_dispatch(generation: Path, script: Path) -> dict[str, object]:
 
 def download_cache_root() -> Path:
     """Return the user-level, project-independent artifact cache keyed by sha256 (#6416)."""
-    override = os.environ.get("CHAOS_ENGINE_CACHE_DIR")
-    if override:
-        base = Path(override)
-    elif os.name == "nt":
-        base = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData/Local") / "chaos-engine"
-    elif sys.platform == "darwin":
-        base = Path.home() / "Library/Caches/chaos-engine"
-    else:
-        base = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "chaos-engine"
-    return base / "downloads"
+    from runtime.user_paths import download_cache_dir
+
+    return download_cache_dir()
 
 
 def download_cache_status() -> dict[str, object]:

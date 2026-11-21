@@ -166,13 +166,13 @@ for argument in "$@"; do
     --hosts)
       pending_hosts=1
       ;;
-    --version|--shaft-skills-version|--color)
+    --version|--shaft-skills-version|--color|--config|--mode|--scope|--instructions-placement|--user-hosts)
       pending=$argument
       ;;
-    --hosts=*|--version=*|--shaft-skills-version=*|--color=*)
+    --hosts=*|--version=*|--shaft-skills-version=*|--color=*|--config=*|--mode=*|--scope=*|--instructions-placement=*|--user-hosts=*)
       forwarded_flags="$forwarded_flags $argument"
       ;;
-    -n|--dry-run|--yes|--no-input|-q|--quiet|--json|--no-color|--ascii|--no-hyperlinks|--copy-prompt|--no-modify-path|--keep-edits|--offline|--force|--no-auto-addons|--skip-pack-post-install|--verbose|--interactive)
+    -n|--dry-run|--yes|--no-input|-q|--quiet|--json|--no-color|--ascii|--no-hyperlinks|--copy-prompt|--no-modify-path|--keep-edits|--offline|--force|--no-auto-addons|--skip-pack-post-install|--verbose|--interactive|--include-local|--allow-dirty|--force-replace-source-tree|--no-user-hooks)
       forwarded_flags="$forwarded_flags $argument"
       ;;
     --without-memory|--without-mempalace|--without-graphify|--without-ponytail|--without-caveman)

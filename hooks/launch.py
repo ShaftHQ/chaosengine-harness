@@ -351,15 +351,92 @@ def append_hook_trace(host: str, data: str | None, event: str | None) -> None:
         return
 
 
-def main(argv: list[str]) -> None:
-    if sys.version_info < HOOK_PYTHON_FLOOR:
-        deny(PYTHON_UNAVAILABLE)
+def _launch_options(argv: list[str]) -> tuple[str, str | None, str | None]:
     if len(argv) < 2 or not re.fullmatch(r"[a-z0-9-]+", argv[1] or ""):
         deny("ChaosEngine launch.py requires host name (e.g. claude)")
     host = argv[1]
-    event = argv[2] if len(argv) > 2 else None
-    if event is not None and not re.fullmatch(r"[A-Za-z]+", event):
-        deny("ChaosEngine launch.py event must be alphanumeric")
+    event = None
+    layer = None
+    index = 2
+    while index < len(argv):
+        item = argv[index]
+        if item == "--layer" and index + 1 < len(argv):
+            layer = argv[index + 1]
+            index += 2
+            continue
+        if event is None:
+            if not re.fullmatch(r"[A-Za-z]+", item):
+                deny("ChaosEngine launch.py event must be alphanumeric")
+            event = item
+        index += 1
+    return host, event, layer
+
+
+def _session_id(data: str | None) -> str:
+    try:
+        payload = json.loads(data or "{}")
+    except ValueError:
+        return ""
+    if not isinstance(payload, dict):
+        return ""
+    session = payload.get("session_id") or payload.get("sessionId") or ""
+    if isinstance(session, str) and re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", session):
+        return session
+    return ""
+
+
+def _project_root(start: pathlib.Path) -> pathlib.Path | None:
+    for candidate in (start, *start.parents):
+        if (candidate / ".chaos-engine" / "install.py").is_file():
+            return candidate
+    return None
+
+
+def _note_project_layer(start: pathlib.Path, data: str | None) -> None:
+    session = _session_id(data)
+    root = _project_root(start)
+    if not session or root is None:
+        return
+    path = root / ".chaos-engine-state" / "sessions" / f"{session}.layer"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not path.is_file():
+        path.write_text("project\n", encoding="utf-8")
+
+
+def _user_should_defer(start: pathlib.Path, data: str | None) -> bool:
+    session = _session_id(data)
+    root = _project_root(start)
+    if not session or root is None:
+        return False
+    return (root / ".chaos-engine-state" / "sessions" / f"{session}.layer").is_file()
+
+
+def _foreign_user_host(adapter: str) -> bool:
+    inferred = ""
+    if os.environ.get("GROK_HOOK_EVENT"):
+        inferred = "grok"
+    elif os.environ.get("CLAUDE_CODE_ENTRYPOINT"):
+        inferred = "claude"
+    elif os.environ.get("CURSOR_TRACE_ID"):
+        inferred = "cursor"
+    return bool(inferred) and inferred != adapter
+
+
+def _user_payload_guard():
+    raw = os.environ.get("CHAOS_ENGINE_USER_PAYLOAD", "").strip()
+    if not raw:
+        return None
+    root = pathlib.Path(raw)
+    guard = root / "hooks" / "guard.py"
+    if guard.is_file():
+        return root, guard
+    return None
+
+
+def main(argv: list[str]) -> None:
+    if sys.version_info < HOOK_PYTHON_FLOOR:
+        deny(PYTHON_UNAVAILABLE)
+    host, event, layer = _launch_options(argv)
     os.environ["CHAOS_ENGINE_HOST"] = host
     data = read_payload(event)
     if data is None:
@@ -369,6 +446,12 @@ def main(argv: list[str]) -> None:
             data = ""
     append_hook_trace(host, data, event)
     start = usable_cwd()
+    if layer == "user" and _foreign_user_host(host):
+        raise SystemExit(0)
+    if layer == "user" and _user_should_defer(start, data):
+        raise SystemExit(0)
+    if layer != "user" and event == "SessionStart":
+        _note_project_layer(start, data)
     if not installing(start):
         try:
             seed_delegate_hooks_if_guard_missing(start)
@@ -377,6 +460,8 @@ def main(argv: list[str]) -> None:
     found, data = find_guard(data)
     if found is None:
         found, data = wait_for_guard(data)
+    if found is None and layer == "user":
+        found = _user_payload_guard()
     if found is None:
         start = usable_cwd()
         deny(GUARD_TEMPORARILY_UNAVAILABLE if installing(start) else GUARD_UNAVAILABLE)

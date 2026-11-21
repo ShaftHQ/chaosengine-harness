@@ -5335,9 +5335,10 @@ def bundle_from_install_args(args: argparse.Namespace) -> dict[str, bool]:
     """Resolve install CLI flags. Explicit CLI wins over a stored file."""
     raw: dict[str, object] = {}
     for name in (*DEFAULT_BUNDLE_COMPONENTS, *OPT_IN_BUNDLE_COMPONENTS):
-        if getattr(args, f"without_{name}", False):
+        attr = name.replace("-", "_")
+        if getattr(args, f"without_{attr}", False):
             raw[f"without_{name}"] = True
-        if getattr(args, f"with_{name}", False):
+        if getattr(args, f"with_{attr}", False):
             raw[f"with_{name}"] = True
     return normalize_bundle_options(raw, honor_env=True)
 
@@ -7970,95 +7971,9 @@ def parser() -> argparse.ArgumentParser:
         ),
     )
     install_command.add_argument("--project", type=Path, default=Path("."), help="Project root (default: current working directory)")
-    install_command.add_argument("--source", type=Path)
-    install_command.add_argument("--commit")
-    install_command.add_argument(
-        "--from-bundle",
-        type=Path,
-        help="Install offline from a checksum-verified `install.py bundle` zip (#6415).",
-    )
-    install_command.add_argument(
-        "--distribution", default=None, help="override the distribution the add-on selection implies"
-    )
-    install_command.add_argument("--skip-tools", action="store_true")
-    install_command.add_argument(
-        "--if-changed",
-        action="store_true",
-        help="No-op when the installed overlay already matches the source byte-for-byte (#6179).",
-    )
-    install_command.add_argument("--with-maven-tools", action="store_true")
-    install_command.add_argument(
-        "--skip-prerequisites",
-        action="store_true",
-        help="Do not check or provision git, mvn, gh, Node.js, winget, PowerShell 7 (#7220).",
-    )
-    install_command.add_argument(
-        "--consumer",
-        action="store_true",
-        help=(
-            "consumer-repository mode (#6237): never edit tracked files; hide the overlay "
-            "through .git/info/exclude (also CHAOS_ENGINE_CONSUMER=1)"
-        ),
-    )
-    mcp_choice = install_command.add_mutually_exclusive_group()
-    mcp_choice.add_argument(
-        "--with-mcp",
-        action="store_true",
-        help="also publish MCP servers whose job a ChaosEngine CLI already does (#6199)",
-    )
-    mcp_choice.add_argument(
-        "--without-mcp", action="store_true", help="withdraw a previous --with-mcp opt-in"
-    )
-    install_command.add_argument(
-        "--maven-tools-mode", choices=("native", "docker"), default="native"
-    )
-    for bundle_name in DEFAULT_BUNDLE_COMPONENTS:
-        install_command.add_argument(
-            f"--without-{bundle_name}",
-            action="store_true",
-            help=f"Disable default-on {bundle_name} provisioning.",
-        )
-    install_command.add_argument(
-        "--no-secret-guard",
-        action=_NoSecretGuard,
-        nargs=0,
-        default=False,
-        help=(
-            "Do not wire the secret guard into git pre-commit and pre-push "
-            "(also CHAOS_ENGINE_SECRET_GUARD=0)."
-        ),
-    )
-    install_command.add_argument(
-        "--lean-grok-skills",
-        action="store_true",
-        default=False,
-        help=(
-            "Recommended for ChaosEngine: merge [skills] disabled for game-* and "
-            "imagine into ~/.grok/config.toml (also CHAOS_ENGINE_LEAN_GROK_SKILLS=1)."
-        ),
-    )
-    install_command.add_argument(
-        "--hosts",
-        action="append",
-        default=None,
-        help="Client ids to complete (comma-separated). Also CHAOS_ENGINE_HOST.",
-    )
-    install_command.add_argument("--json", action="store_true", help="One JSON document on stdout.")
-    install_command.add_argument("-q", "--quiet", action="store_true", help="Errors only.")
-    install_command.add_argument("--no-color", action="store_true", help="Disable ANSI color.")
-    install_command.add_argument(
-        "--color",
-        choices=("auto", "always", "never"),
-        default=None,
-        help="Colour mode. NO_COLOR and --no-color win over always.",
-    )
-    install_command.add_argument("--ascii", action="store_true", help="Force ASCII glyphs.")
-    install_command.add_argument("--no-hyperlinks", action="store_true", help="Do not emit OSC 8 hyperlinks.")
-    install_command.add_argument(
-        "--copy-prompt",
-        action="store_true",
-        help="Copy the failure prompt on a local TTY (CHAOS_ENGINE_COPY_PROMPT=1).",
-    )
+    import runtime.install_options as install_options
+
+    install_options.add_install_flags(install_command, entry="install")
     repair_command = commands.add_parser(
         "repair",
         help="Targeted zero-LLM repair for one component (no full wipe).",
@@ -8078,6 +7993,13 @@ def parser() -> argparse.ArgumentParser:
     for name in ("status", "doctor", "rollback", "uninstall"):
         command = commands.add_parser(name)
         command.add_argument("--project", type=Path, default=Path("."), help="Project root (default: current working directory)")
+        if name == "uninstall":
+            command.add_argument(
+                "--scope",
+                choices=("project", "user", "all"),
+                default="project",
+                help="Remove one scope. Others are untouched.",
+            )
         if name in {"status", "doctor"}:
             command.add_argument("--json", action="store_true")
             command.add_argument(
@@ -8151,11 +8073,50 @@ def parser() -> argparse.ArgumentParser:
     upgrade_command.add_argument("--project", type=Path, default=Path("."), help="Project root (default: current working directory)")
     upgrade_command.add_argument("--source", type=Path)
     upgrade_command.add_argument("--commit", help="40-hex pin. HEAD is refused.")
+    upgrade_command.add_argument("--mode", dest="instructions_mode", choices=("merge", "replace"), default=None)
+    upgrade_command.add_argument("--scope", dest="scope", choices=("project", "user", "both"), default=None)
+    upgrade_command.add_argument("--yes", "--no-input", dest="no_input", action="store_true")
+    upgrade_command.add_argument("--dry-run", "-n", dest="dry_run", action="store_true")
+    upgrade_command.add_argument("--allow-dirty", dest="allow_dirty", action="store_true")
+    upgrade_command.add_argument("--force-replace-source-tree", dest="force_replace_source_tree", action="store_true")
+    upgrade_command.add_argument("--include-local", dest="include_local", action="store_true")
     verify_command = commands.add_parser("verify", help="Exit 1 and name drifted payload files.")
     verify_command.add_argument("--project", type=Path, default=Path("."), help="Project root (default: current working directory)")
     restore_command = commands.add_parser("restore-edits", help="Copy one kept-edits stamp back into .chaos-engine.")
     restore_command.add_argument("stamp")
     restore_command.add_argument("--project", type=Path, default=Path("."), help="Project root (default: current working directory)")
+    config_command = commands.add_parser("config", help="Show or edit the layered installer config.")
+    config_commands = config_command.add_subparsers(dest="config_command", required=True)
+    config_show = config_commands.add_parser("show")
+    config_path = config_commands.add_parser("path")
+    config_validate = config_commands.add_parser("validate")
+    config_set = config_commands.add_parser("set")
+    config_migrate = config_commands.add_parser("migrate-paths")
+    for command in (config_show, config_path, config_validate, config_migrate):
+        command.add_argument("--project", type=Path, default=Path("."), help="Project root (default: current working directory)")
+        command.add_argument("--config", dest="config_path", default=None)
+    config_show.add_argument("--json", action="store_true")
+    config_validate.add_argument("file", nargs="?")
+    config_set.add_argument("--root", type=Path, default=Path("."), dest="project")
+    config_set.add_argument("--config", dest="config_path", default=None)
+    config_set.add_argument("key")
+    config_set.add_argument("value")
+    config_level = config_set.add_mutually_exclusive_group(required=True)
+    config_level.add_argument("--user", dest="level", action="store_const", const="user")
+    config_level.add_argument("--project", dest="level", action="store_const", const="project")
+    config_level.add_argument("--local", dest="level", action="store_const", const="local")
+    config_migrate.add_argument("--yes", action="store_true")
+    config_migrate.add_argument("--dry-run", action="store_true")
+    instruction_restore = commands.add_parser("restore", help="Undo a --mode replace.")
+    instruction_restore.add_argument("--project", type=Path, default=Path("."), help="Project root (default: current working directory)")
+    instruction_restore.add_argument("--backup", default=None, help="Stamp from restore --list.")
+    instruction_restore.add_argument("--list", action="store_true", dest="list_backups")
+    instruction_restore.add_argument("--dry-run", action="store_true")
+    instructions_command = commands.add_parser(
+        "instructions",
+        help="Print the inventory and conflict report without installing.",
+    )
+    instructions_command.add_argument("--project", type=Path, default=Path("."), help="Project root (default: current working directory)")
     return result
 
 
@@ -8236,8 +8197,11 @@ def _read_guided_tool(project: Path) -> str | None:
 def _merge_entry(project: Path, relative: str, merge) -> None:
     path = project / relative
     before = path.read_bytes() if path.is_file() and not path.is_symlink() else None
+    merged = merge(before)
+    if before == merged and path.is_file():
+        return
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(merge(before))
+    path.write_bytes(merged)
 
 
 def _write_thin_entries(project: Path, hosts) -> None:
@@ -8371,12 +8335,23 @@ def _annotate_install_contract(project: Path, result: object) -> object:
 
 def _run_guided_upgrade(args: argparse.Namespace) -> dict[str, object]:
     project = Path(args.project)
+    if getattr(args, "instructions_mode", None) or getattr(args, "scope", None):
+        _apply_install_config(args)
+        replaced = _instruction_replace(args)
+        if replaced == "dry-run":
+            return {"status": "dry-run"}
+        if getattr(args, "_user_scope", False):
+            user = _install_user_scope(args)
+            return {"status": "installed", "root": str(project), "userLayer": user.get("status")}
     source, commit = _guided_pin(args)
     target = _publish_guided_overlay(project, source, commit, _read_guided_tool(project))
     with contextlib.suppress(OSError):
         _strip_retired_mcp(project)
     _rebind_contract_drift(project)
     payload: dict[str, object] = {"status": "installed", "root": str(target), "commit": commit}
+    if getattr(args, "_user_scope_also", False):
+        user = _install_user_scope(args)
+        payload["userLayer"] = user.get("status")
     names = _contract_blockers(project)
     if names is None:
         return _needs_repair_payload(payload, [])
@@ -9642,6 +9617,12 @@ def format_health_report(document: dict[str, object], *, kind: str | None = None
         f"ChaosEngine {label}: {status}",
         f"commit: {commit_text}",
     ]
+    config_row = document.get("config")
+    if isinstance(config_row, dict) and config_row.get("status"):
+        lines.append(f"config: {config_row['status']}")
+    instructions_row = document.get("instructions_merge")
+    if isinstance(instructions_row, dict) and instructions_row.get("status"):
+        lines.append(f"instructions-merge: {instructions_row['status']}")
     last_install = document.get("lastInstall")
     if isinstance(last_install, dict) and last_install.get("status") == "rolled-back":
         requested = str(last_install.get("requestedCommit") or "")[:12] or "unknown"
@@ -10094,8 +10075,103 @@ def completion_targets_from_args(args) -> tuple[str, ...] | None:
     return resolution.hosts or None
 
 
+def _apply_install_config(args) -> None:
+    """Resolve layered config onto ``args``. Defaults do not change the namespace."""
+    import runtime.install_config as install_config
+
+    try:
+        resolved = install_config.resolve_config(
+            Path(args.project),
+            args=args,
+            explicit_config=getattr(args, "config_path", None),
+        )
+    except install_config.ConfigError as error:
+        raise RuntimeError(str(error)) from error
+    install_config.apply_namespace(args, resolved)
+    install_config.announce(resolved)
+    args._resolved_mode = resolved.values.get("instructions.mode") or "merge"
+    args._resolved_scope = resolved.values.get("install.scope") or "project"
+    placement = resolved.values.get("instructions.placement")
+    if placement in {"top", "bottom"} and resolved.sources.get("instructions.placement") != "default":
+        os.environ["CHAOS_ENGINE_INSTRUCTIONS_PLACEMENT"] = str(placement)
+    scope = args._resolved_scope
+    scope_source = resolved.sources.get("install.scope")
+    if scope == "user" and scope_source != "default":
+        args._user_scope = True
+    elif scope == "both" and scope_source != "default":
+        args._user_scope_also = True
+
+
+def _user_layer_commit(args) -> str:
+    commit = str(getattr(args, "commit", None) or "")
+    if COMMIT_PATTERN.fullmatch(commit):
+        return commit
+    detected = detect_full_commit(Path(__file__).resolve().parent)
+    return detected or ("0" * 40)
+
+
+def _install_user_scope(args) -> dict[str, object]:
+    import runtime.user_layer as user_layer
+
+    project = Path(args.project)
+    project.mkdir(parents=True, exist_ok=True)
+    before = {path.name for path in project.iterdir()}
+    result = user_layer.install_user_layer(
+        home=user_layer.user_home(),
+        project=project,
+        source=Path(__file__).resolve().parent,
+        commit=_user_layer_commit(args),
+        hosts=getattr(args, "user_hosts", None),
+        hooks=not getattr(args, "no_user_hooks", False),
+        dry_run=bool(getattr(args, "dry_run", False)),
+    )
+    after = {path.name for path in project.iterdir()}
+    if after - before:
+        raise RuntimeError("CE_SCOPE_USER_WROTE_PROJECT")
+    return result
+
+
+def _instruction_replace(args) -> str | None:
+    """Run confirmed replace. ``dry-run`` means the caller must not install."""
+    if getattr(args, "_resolved_mode", "merge") != "replace":
+        return None
+    if getattr(args, "_user_scope", False) or getattr(args, "_resolved_scope", "project") == "user":
+        print("CE_MODE_SCOPE_CONFLICT", file=sys.stderr)
+        raise SystemExit(2)
+    import runtime.instruction_mode as instruction_mode
+
+    try:
+        outcome = instruction_mode.begin_replace(
+            Path(args.project),
+            yes=bool(getattr(args, "no_input", False)),
+            dry_run=bool(getattr(args, "dry_run", False)),
+            consumer=bool(getattr(args, "consumer", False)),
+            scope=str(getattr(args, "_resolved_scope", "project")),
+            allow_dirty=bool(getattr(args, "allow_dirty", False)),
+            force_source=bool(getattr(args, "force_replace_source_tree", False)),
+            include_local=bool(getattr(args, "include_local", False)),
+        )
+    except instruction_mode.ReplaceRefusal as error:
+        print(error.code, file=sys.stderr)
+        raise SystemExit(error.exit_code) from error
+    if outcome.get("status") == "dry-run":
+        print(json.dumps(outcome, sort_keys=True))
+        return "dry-run"
+    args._replace_stamp = outcome.get("stamp")
+    import runtime.instruction_mode as instruction_mode
+
+    args._replace_present = instruction_mode.relative_files(Path(args.project))
+    return "replaced"
+
+
 def _run_install_command(args, requested, removed) -> object:
     """The `install` subcommand: the JSON result, or ``_HANDLED`` for an unchanged no-op."""
+    _apply_install_config(args)
+    replaced = _instruction_replace(args)
+    if replaced == "dry-run":
+        return _HANDLED
+    if getattr(args, "_user_scope", False):
+        return _install_user_scope(args)
     args.project = lift_consumer_project(Path(args.project))
     if args.from_bundle is not None:
         args.source, args.commit = extract_bundle(
@@ -10145,7 +10221,7 @@ def _run_install_command(args, requested, removed) -> object:
             args.commit,
             distribution=args.distribution,
             with_maven_tools=args.with_maven_tools,
-            maven_tools_mode=args.maven_tools_mode,
+            maven_tools_mode=args.maven_tools_mode or "native",
             bundle_options=bundle,
             addons=addons,
         )
@@ -10187,7 +10263,32 @@ def _run_install_command(args, requested, removed) -> object:
             seed_graphify_ignore(args.project)
     _install_store_schedule(args.project)
     _attach_prerequisites(args, result)
-    return _annotate_install_contract(args.project, result)
+    result = _annotate_install_contract(args.project, result)
+    stamp = getattr(args, "_replace_stamp", None)
+    if stamp:
+        import runtime.instruction_mode as instruction_mode
+
+        present = set(getattr(args, "_replace_present", []) or [])
+        created = [
+            relative
+            for relative in instruction_mode.relative_files(Path(args.project))
+            if relative not in present
+        ]
+        instruction_mode.note_created(Path(args.project), str(stamp), created)
+    if getattr(args, "_user_scope_also", False):
+        user_result = _install_user_scope(args)
+        if isinstance(result, dict):
+            result["userLayer"] = user_result.get("status")
+    try:
+        import runtime.instruction_mode as instruction_mode
+
+        instruction_mode.write_inventory(Path(args.project))
+        report = instruction_mode.write_report(Path(args.project))
+        if isinstance(result, dict):
+            result["instructions"] = report.read_text(encoding="utf-8").splitlines()[0]
+    except (OSError, ValueError):
+        pass
+    return result
 
 
 def _cache_result(args) -> object:
@@ -10239,6 +10340,10 @@ def _command_result(args, extra) -> object:
     if unknown or ((requested or removed) and args.command != "install"):
         parser().parse_args()  # argparse reports the unrecognized arguments and exits
     validate_install_options(args)
+    if args.command == "config":
+        import runtime.install_config as install_config
+
+        raise SystemExit(install_config.run_config_command(args))
     if args.command == "install":
         return _run_install_command(args, requested, removed)
     if args.command == "repair":
@@ -10272,6 +10377,12 @@ def _command_result(args, extra) -> object:
         if legacy_packs:
             result["migration"] = {"hardCut": hard_cut_message(legacy_packs)}
         _require_overlay_tool(result, args.project)
+        import runtime.install_config as install_config
+
+        result["config"] = install_config.doctor_row(Path(args.project))
+        import runtime.instruction_mode as instruction_mode
+
+        result["instructions_merge"] = instruction_mode.doctor_row(Path(args.project))
     elif args.command == "explain":
         result = explain_json(
             args.project,
@@ -10297,9 +10408,39 @@ def _command_result(args, extra) -> object:
                 result = _needs_repair_payload(result, names or [])
     elif args.command == "restore-edits":
         result = restore_kept_edits(args.project, args.stamp)
+    elif args.command == "restore":
+        import runtime.instruction_mode as instruction_mode
+
+        if getattr(args, "list_backups", False):
+            result = {"backups": instruction_mode.list_backups(Path(args.project))}
+        elif not getattr(args, "backup", None):
+            raise RuntimeError("CE_MODE_RESTORE_STAMP")
+        else:
+            result = instruction_mode.restore(
+                Path(args.project),
+                str(args.backup),
+                dry_run=bool(getattr(args, "dry_run", False)),
+            )
+    elif args.command == "instructions":
+        import runtime.instruction_mode as instruction_mode
+
+        inventory = instruction_mode.write_inventory(Path(args.project))
+        report = instruction_mode.write_report(Path(args.project))
+        result = {
+            "inventory": str(inventory),
+            "report": report.read_text(encoding="utf-8"),
+        }
+    elif args.command == "uninstall":
+        scope = getattr(args, "scope", None) or "project"
+        if scope in {"user", "all"}:
+            import runtime.user_layer as user_layer
+
+            user_layer.uninstall_user_layer(user_layer.user_home())
+        if scope != "user":
+            uninstall_with_dependencies(args.project)
+        result = {"status": "uninstalled", "scope": scope}
     else:
-        uninstall_with_dependencies(args.project)
-        result = {"status": "uninstalled"}
+        raise RuntimeError(f"unknown command {args.command}")
     return result
 
 

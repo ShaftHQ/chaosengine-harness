@@ -10,6 +10,8 @@
 
 ChaosEngine is a portable, provider-neutral working contract for software agents. Testers, developers, product owners and scrum masters install it into a project so their coding agents (Claude Code, Codex, Gemini CLI, Grok, GitHub Copilot, OpenCode, Cursor, Grok Bot) follow one loop: research first, plan, implement, verify with evidence, get an adversarial review, and record what was learned. Agents load [skills/chaos-engine/SKILL.md](skills/chaos-engine/SKILL.md); people start with the [overview](guides/overview.md).
 
+ChaosEngine sends no usage data.
+
 ## Quick start
 
 There are two install channels:

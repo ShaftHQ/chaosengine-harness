@@ -577,6 +577,28 @@ class WorkflowContractTest(unittest.TestCase):
         self.assertIn("if: always()", text)
         self.assertIn("installer_contract_cell.py", text)
         self.assertIn("< /dev/null", text)
+        self.assertIn("--config-source", text)
+        self.assertIn("--instructions-mode", text)
+        factors = re.findall(
+            r"- os: (?P<os>\S+)\n\s+mode: (?P<mode>\S+)\n\s+context: (?P<context>\S+)\n"
+            r"(?:.*\n)*?\s+config_source: (?P<config>\S+)\n\s+scope: (?P<scope>\S+)\n"
+            r"\s+instructions_mode: (?P<instructions>\S+)\n\s+pre_existing: (?P<pre>\S+)",
+            text,
+        )
+        self.assertEqual(16, len(factors))
+        assigned = {(row[0], row[1], row[2]): row[3:] for row in factors}
+        self.assertEqual(
+            ("none", "user", "merge", "rich"),
+            assigned[("windows-latest", "fresh", "empty")],
+        )
+        self.assertEqual(
+            ("project", "both", "replace", "rich"),
+            assigned[("windows-latest", "upgrade", "consumer-shaft")],
+        )
+        self.assertEqual(
+            ("none", "project", "merge", "none"),
+            assigned[("ubuntu-latest", "fresh", "non-maven")],
+        )
 
     def test_upstream_watch_stays_one_compare_job(self):
         text = UPSTREAM.read_text(encoding="utf-8")

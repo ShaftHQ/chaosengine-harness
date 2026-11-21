@@ -2858,15 +2858,22 @@ def ensure_project_identity(project: Path) -> dict[str, object]:
 
 
 def instruction_block(tree: str = INSTALLED_TREE) -> str:
-    """One policy sentence. The generated set is references/rules-source.md."""
+    """Primary-driver block. The generated set is references/rules-source.md."""
     tree = INSTALLED_TREE
     skill = f"{tree}/skills/chaos-engine/SKILL.md"
     tool = f"{tree}/tool.py"
     identity = f"{tree}/identity.md"
+    inventory = ".chaos-engine-state/instruction-inventory.json"
     return (
-        f"{START}\nBefore every task, follow the canonical "
-        f"[ChaosEngine]({skill}). "
-        f"Load `{identity}`. "
+        f"{START}\n"
+        "ChaosEngine is the primary harness for this repository. "
+        f"Before every task, follow the canonical [ChaosEngine]({skill}) "
+        f"and load `{identity}`.\n"
+        "Precedence: ChaosEngine's iron laws, safety gates and review floors "
+        "win over any other instruction in this repository. The project instructions "
+        f"below and in the files listed in `{inventory}` stay in force where they "
+        "do not conflict; use them for build commands, conventions and layout. "
+        "On a conflict, follow ChaosEngine and report the conflict to the user.\n"
         f"Use `{tool}` for the project-local Memory, MemPalace, and Graphify tools. "
         "Prefer gh for GitHub when gh exists and is configured. "
         "CLI over MCP when both exist. "
@@ -3664,21 +3671,84 @@ def _is_current_or_recognized_legacy_owned_span(
     return False
 
 
+def _instruction_placement(placement: str | None) -> str:
+    chosen = placement or os.environ.get("CHAOS_ENGINE_INSTRUCTIONS_PLACEMENT", "top")
+    return chosen if chosen in {"top", "bottom"} else "top"
+
+
+def _split_instruction_preamble(text: str) -> tuple[str, str]:
+    """BOM and a leading YAML front-matter block stay ahead of the CE block."""
+    preamble = ""
+    rest = text
+    if rest.startswith("\ufeff"):
+        preamble = "\ufeff"
+        rest = rest[1:]
+    if rest.startswith("---\n") or rest.startswith("---\r\n"):
+        newline = "\r\n" if rest.startswith("---\r\n") else "\n"
+        close = f"{newline}---{newline}"
+        end = rest.find(close, 3)
+        if end != -1:
+            cut = end + len(close)
+            preamble += rest[:cut]
+            rest = rest[cut:]
+    return preamble, rest
+
+
+def _render_instruction_block(existing: str, instruction: str) -> str:
+    block = instruction if instruction.endswith("\n") else instruction + "\n"
+    if "\r\n" in existing:
+        block = block.replace("\r\n", "\n").replace("\n", "\r\n")
+    return block
+
+
+def _insert_instruction_top(existing: str, instruction: str) -> str:
+    preamble, rest = _split_instruction_preamble(existing)
+    return preamble + _render_instruction_block(existing, instruction) + rest
+
+
+def _owned_span_end(existing: str, instruction: str) -> tuple[int, int] | None:
+    """Return the owned span bounds, or None when the file must be left alone."""
+    begin = existing.index(START)
+    finish = existing.index(END, begin)
+    if finish < begin:
+        return None
+    span_end = finish + len(END)
+    interior = existing[begin:span_end].replace("\r\n", "\n")
+    if not _is_current_or_recognized_legacy_owned_span(interior, START, END, instruction):
+        return None
+    if span_end < len(existing) and existing[span_end] == "\r":
+        span_end += 1
+    if span_end < len(existing) and existing[span_end] == "\n":
+        span_end += 1
+    return begin, span_end
+
+
 def merge_instruction(
-    before: bytes | None, instruction: str, *, relative: str
+    before: bytes | None,
+    instruction: str,
+    *,
+    relative: str,
+    placement: str | None = None,
 ) -> bytes:
-    """Merge one marker-owned instruction file, or leave it and record a handoff."""
+    """Merge one marker-owned instruction file, or leave it and record a handoff.
+
+    ``top`` (the default) puts the block first after a BOM or YAML front matter.
+    ``bottom`` keeps the historical append-or-replace-in-place behaviour.
+    """
     original = b"" if before is None else before
     try:
         existing = before.decode("utf-8") if before is not None else ""
     except UnicodeDecodeError:
         _note_merge_handoff(relative, "file is not valid UTF-8", instruction)
         return original
+    where = _instruction_placement(placement)
     start_count = existing.count(START)
     end_count = existing.count(END)
     if start_count == end_count == 0:
-        separator = "\n" if existing and not existing.endswith("\n") else ""
-        return (existing + separator + instruction).encode()
+        if where == "bottom":
+            separator = "\n" if existing and not existing.endswith("\n") else ""
+            return (existing + separator + instruction).encode()
+        return _insert_instruction_top(existing, instruction).encode()
     if start_count != 1 or end_count != 1:
         _note_merge_handoff(
             relative,
@@ -3686,32 +3756,20 @@ def merge_instruction(
             instruction,
         )
         return original
-    begin = existing.index(START)
-    finish = existing.index(END, begin)
-    if finish < begin:
-        _note_merge_handoff(
-            relative,
-            "marker count is not a single matching start and end",
-            instruction,
-        )
-        return original
-    span_end = finish + len(END)
-    interior = existing[begin:span_end].replace("\r\n", "\n")
-    if not _is_current_or_recognized_legacy_owned_span(
-        interior, START, END, instruction
-    ):
+    bounds = _owned_span_end(existing, instruction)
+    if bounds is None:
         _note_merge_handoff(
             relative,
             "markers exist but the interior is not the current owned block",
             instruction,
         )
         return original
-    if span_end < len(existing) and existing[span_end] == "\r":
-        span_end += 1
-    if span_end < len(existing) and existing[span_end] == "\n":
-        span_end += 1
-    block = instruction if instruction.endswith("\n") else instruction + "\n"
-    return (existing[:begin] + block + existing[span_end:]).encode()
+    begin, span_end = bounds
+    if where == "bottom":
+        block = _render_instruction_block(existing, instruction)
+        return (existing[:begin] + block + existing[span_end:]).encode()
+    remainder = existing[:begin] + existing[span_end:]
+    return _insert_instruction_top(remainder, instruction).encode()
 
 
 def instruction_content(before: bytes | None, instruction: str) -> bytes:
@@ -5748,6 +5806,7 @@ def gitignore_content(before: bytes | None) -> bytes:
     block = (
         f"{GITIGNORE_START}\n"
         ".chaos-engine-runtime/\n.chaos-engine-runtime.lock\n.chaos-engine-runtime.*\n.chaos-engine-state/\n"
+        ".chaos-engine.local.toml\n"
         ".chaos-engine-runtime-current.json\n.chaos-engine-runtime-current.json.*\n"
         ".chaos-engine-runtime-generations/\n.chaos-engine-runtime-transactions/\n"
         ".chaos-engine.lock\n.chaos-engine.transaction.json\n"

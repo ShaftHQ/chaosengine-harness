@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "rules": [
+    {"id": "IC-01", "regex": "(?i)--no-verify|skip hooks|disable hooks", "rule": "Gates are not bypassed", "fix": "Keep the hooks. Do not pass --no-verify."},
+    {"id": "IC-02", "regex": "(?i)push --force|push -f|force push", "rule": "Force-push guard", "fix": "Do not force-push a protected branch."},
+    {"id": "IC-03", "regex": "(?i)commit directly to main|commit directly to master|\\bno PR\\b", "rule": "PR and review floor", "fix": "Open a pull request."},
+    {"id": "IC-04", "regex": "(?i)skip tests|don't run tests|do not run tests", "rule": "Verification before done", "fix": "Run the tests."},
+    {"id": "IC-05", "regex": "(?i)git reset --hard|git clean -fdx|rm -rf", "rule": "Delete guard", "fix": "Do not treat destructive git or rm as routine."},
+    {"id": "IC-06", "regex": "(?i)<!-- BEGIN |primary harness", "rule": "One primary driver", "fix": "Keep a single ChaosEngine primary block."},
+    {"id": "IC-07", "regex": "(?i)alwaysApply:\\s*true", "rule": "One router load", "fix": "Do not always-apply a second router skill."},
+    {"id": "IC-10", "regex": "(?i)hook name collision|mcp server collision", "rule": "Ownership", "fix": "Rename the foreign hook or server."}
+  ]
+}
