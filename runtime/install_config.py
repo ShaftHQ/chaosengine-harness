@@ -1,8 +1,10 @@
 """Layered installer config: flag, env, project-local, project, user, default.
 
-Files are TOML (``tomllib``). A missing file changes nothing. ``replace`` for
-``instructions.mode`` is refused from every file. CLI-only keys in a file are
-ignored with a warning.
+Files are TOML (``tomllib``). A missing file changes nothing. A file level
+applies a key only when that level's letter is in the catalog row (``U`` user,
+``P`` project, ``L`` project-local). ``replace`` for ``instructions.mode`` is
+refused from every file before that skip. CLI-only keys in a file are ignored
+with a warning.
 """
 
 from __future__ import annotations
@@ -225,6 +227,10 @@ def _load_file(path: Path, *, source: str, warnings: list[str]) -> dict[str, tup
         coerced = _coerce(row, value, path)
         if key == "instructions.mode" and coerced == "replace":
             raise ConfigError("CE_CONFIG_REPLACE_FROM_FILE", f"{path}:{key}")
+        letter = {"user": "U", "project": "P", "project-local": "L"}.get(source)
+        if letter is not None and letter not in row.levels:
+            warnings.append(f"ignored {key} in {source}; level {letter} is not allowed")
+            continue
         found[key] = (coerced, source)
     return found
 

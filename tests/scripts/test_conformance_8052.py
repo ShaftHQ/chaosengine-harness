@@ -65,6 +65,48 @@ class ConformanceTests(unittest.TestCase):
             self._write_current(project)
             self.assertEqual([], self.conformance.check_layout(project, fixture))
 
+    def test_instruction_catalog_tracks_marker_policy_files(self):
+        self.assertEqual(
+            [],
+            self.conformance.check_instruction_catalog(ROOT, self.hosts.MARKER_POLICY_FILES),
+        )
+        inventory = json.loads(
+            (ROOT / "references" / "instruction-inventory.json").read_text(encoding="utf-8")
+        )
+        conflicts = json.loads(
+            (ROOT / "references" / "instruction-conflicts.json").read_text(encoding="utf-8")
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            tree = Path(temporary)
+            refs = tree / "references"
+            refs.mkdir()
+            dropped = [row for row in inventory["class_i"] if row["glob"] != "AGENTS.md"]
+            (refs / "instruction-inventory.json").write_text(
+                json.dumps({**inventory, "class_i": dropped}),
+                encoding="utf-8",
+            )
+            (refs / "instruction-conflicts.json").write_text(
+                json.dumps(conflicts),
+                encoding="utf-8",
+            )
+            missing_glob = self.conformance.check_instruction_catalog(
+                tree, self.hosts.MARKER_POLICY_FILES
+            )
+            self.assertTrue(any("AGENTS.md" in item for item in missing_glob))
+            kept = [row for row in conflicts["rules"] if row["id"] != "IC-06"]
+            (refs / "instruction-inventory.json").write_text(
+                json.dumps(inventory),
+                encoding="utf-8",
+            )
+            (refs / "instruction-conflicts.json").write_text(
+                json.dumps({**conflicts, "rules": kept}),
+                encoding="utf-8",
+            )
+            missing_rule = self.conformance.check_instruction_catalog(
+                tree, self.hosts.MARKER_POLICY_FILES
+            )
+            self.assertTrue(any("IC-06" in item for item in missing_rule))
+
     def test_wrong_filename_and_disallowed_keys_fail(self):
         fixture = self.conformance.load_fixture()
         with tempfile.TemporaryDirectory() as temporary:

@@ -194,9 +194,19 @@ class PrecedenceTests(unittest.TestCase):
             with self.assertRaises(CONFIG.ConfigError) as raised:
                 CONFIG.resolve_config(project, environ={})
             self.assertEqual(raised.exception.code, "CE_CONFIG_SECRET")
-            path.write_text("schema = 1\n[network]\nuse_gh_token = false\n", encoding="utf-8")
-            resolved = CONFIG.resolve_config(project, environ={})
+            path.write_text("schema = 1\n", encoding="utf-8")
+            home = project / "home"
+            home.mkdir()
+            (home / "config.toml").write_text(
+                "schema = 1\n[network]\nuse_gh_token = false\n",
+                encoding="utf-8",
+            )
+            resolved = CONFIG.resolve_config(
+                project,
+                environ={"CHAOS_ENGINE_CONFIG_HOME": str(home)},
+            )
             self.assertFalse(resolved.values["network.use_gh_token"])
+            self.assertEqual("user", resolved.sources["network.use_gh_token"])
 
     def test_config_set_keeps_crlf_and_bom(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -295,7 +305,39 @@ class PrecedenceTests(unittest.TestCase):
             return f"/tmp/ce-config-{index}"
         return f"configured-{index}"
 
+    def test_project_file_cannot_set_install_scope(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project = root / "project"
+            home = root / "home"
+            project.mkdir()
+            home.mkdir()
+            (project / ".chaos-engine.toml").write_text(
+                'schema = 1\n[install]\nscope = "user"\n',
+                encoding="utf-8",
+            )
+            blocked = CONFIG.resolve_config(
+                project,
+                environ={"CHAOS_ENGINE_CONFIG_HOME": str(home)},
+            )
+            self.assertEqual("project", blocked.values["install.scope"])
+            self.assertEqual("default", blocked.sources["install.scope"])
+            self.assertTrue(
+                any("install.scope" in item and " in project;" in item for item in blocked.warnings)
+            )
+            (home / "config.toml").write_text(
+                'schema = 1\n[install]\nscope = "user"\n',
+                encoding="utf-8",
+            )
+            allowed = CONFIG.resolve_config(
+                project,
+                environ={"CHAOS_ENGINE_CONFIG_HOME": str(home)},
+            )
+            self.assertEqual("user", allowed.values["install.scope"])
+            self.assertEqual("user", allowed.sources["install.scope"])
+
     def _assert_layers(self, row):
+        letters = set(row.levels)
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             home = root / "home"
@@ -308,14 +350,28 @@ class PrecedenceTests(unittest.TestCase):
                 project,
                 environ={"CHAOS_ENGINE_CONFIG_HOME": str(home)},
             )
-            self.assertEqual("user", user_resolved.sources[row.key])
+            if "U" in letters:
+                self.assertEqual("user", user_resolved.sources[row.key])
+            else:
+                self.assertNotEqual("user", user_resolved.sources[row.key])
+                self.assertTrue(
+                    any(row.key in item and " in user;" in item for item in user_resolved.warnings),
+                    user_resolved.warnings,
+                )
             project_file = project / ".chaos-engine.toml"
             CONFIG.config_set(project_file, row.key, self._raw(row, 1))
             project_resolved = CONFIG.resolve_config(
                 project,
                 environ={"CHAOS_ENGINE_CONFIG_HOME": str(home)},
             )
-            self.assertEqual("project", project_resolved.sources[row.key])
+            if "P" in letters:
+                self.assertEqual("project", project_resolved.sources[row.key])
+            else:
+                self.assertNotEqual("project", project_resolved.sources[row.key])
+                self.assertTrue(
+                    any(row.key in item and " in project;" in item for item in project_resolved.warnings),
+                    project_resolved.warnings,
+                )
             if row.env:
                 env_name = row.env[0]
                 environ = {

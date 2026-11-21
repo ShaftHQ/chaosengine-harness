@@ -32,6 +32,62 @@ def excerpt_hash(excerpt: str) -> str:
     return hashlib.sha256(excerpt.encode("utf-8")).hexdigest()
 
 
+_INSTRUCTION_CONFLICT_IDS = (
+    "IC-01",
+    "IC-02",
+    "IC-03",
+    "IC-04",
+    "IC-05",
+    "IC-06",
+    "IC-07",
+    "IC-10",
+)
+_INSTRUCTION_REQUIRED_GLOBS = (".claude/settings.json",)
+
+
+def check_instruction_catalog(
+    tree: Path,
+    marker_policy_files: tuple[str, ...] | list[str],
+) -> list[str]:
+    """Fail when host marker paths drift out of the instruction inventory.
+
+    ``marker_policy_files`` is the host module's marker list. Both instruction
+    JSON files must exist. A host path that is not a class I glob fails CI.
+    """
+    root = Path(tree)
+    errors: list[str] = []
+    inventory_path = root / "references" / "instruction-inventory.json"
+    conflicts_path = root / "references" / "instruction-conflicts.json"
+    if not inventory_path.is_file():
+        errors.append("missing required path references/instruction-inventory.json")
+    if not conflicts_path.is_file():
+        errors.append("missing required path references/instruction-conflicts.json")
+    if errors:
+        return errors
+    try:
+        inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
+        conflicts = json.loads(conflicts_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return [f"unreadable instruction catalog ({exc})"]
+    globs = {
+        str(row.get("glob"))
+        for row in inventory.get("class_i", [])
+        if isinstance(row, dict)
+    }
+    for relative in tuple(marker_policy_files) + _INSTRUCTION_REQUIRED_GLOBS:
+        if relative not in globs:
+            errors.append(f"instruction inventory missing class_i glob {relative}")
+    ids = {
+        str(row.get("id"))
+        for row in conflicts.get("rules", [])
+        if isinstance(row, dict)
+    }
+    for required in _INSTRUCTION_CONFLICT_IDS:
+        if required not in ids:
+            errors.append(f"instruction conflicts missing {required}")
+    return errors
+
+
 def check_layout(tree: Path, fixture: dict | None = None) -> list[str]:
     """Fail a wrong filename, a missing required path, or a disallowed config key."""
     spec = fixture if fixture is not None else load_fixture()

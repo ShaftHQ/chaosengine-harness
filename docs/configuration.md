@@ -14,7 +14,7 @@ Paths:
 
 `--config FILE` replaces the user file for that run. `install.py config show --json` names the source of every key. `config validate` exits 1 with `CE_CONFIG_INVALID` on a bad file. `config set` keeps comments, CRLF, and a leading UTF-8 BOM.
 
-CLI-only keys are ignored with a warning when they appear in a file: `dry_run`, `yes`, `json`, `if_changed`, `force`, `include_local`, `allow_dirty`, `force_replace_source_tree`, and `no_user_hooks`.
+CLI-only keys are ignored with a warning when they appear in a file: `dry_run`, `yes`, `json`, `if_changed`, `force`, `include_local`, `allow_dirty`, `force_replace_source_tree`, and `no_user_hooks`. A file level applies a key only when the catalog allows that level. `install.scope` is user-only, so a project file cannot opt a checkout into a home install. Flags and environment variables still apply.
 
 | Key | Default | Flag | Environment |
 | --- | --- | --- | --- |

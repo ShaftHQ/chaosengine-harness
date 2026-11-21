@@ -20,6 +20,12 @@ REPORT_NAME = "instruction-merge-report.md"
 BACKUP_ROOT = "backups"
 CE_SKILL_NAMES = {"chaos-engine", "chaos-engine-user"}
 FENCE = re.compile(r"(?ms)^```.*?^```\s*")
+OWNED_START = "<!-- CHAOSENGINE:START -->"
+OWNED_END = "<!-- CHAOSENGINE:END -->"
+OWNED_SPAN = re.compile(
+    re.escape(OWNED_START) + r".*?" + re.escape(OWNED_END) + r"\n?",
+    re.DOTALL,
+)
 CODEX_CAP = 32 * 1024
 CLAUDE_LINE_CAP = 200
 
@@ -168,6 +174,11 @@ def _outside_fences(text: str) -> str:
     return FENCE.sub("", text.replace("\r\n", "\n"))
 
 
+def _outside_owned(text: str) -> str:
+    """Drop the ChaosEngine primary block. Its own wording is not a conflict."""
+    return OWNED_SPAN.sub("", text)
+
+
 def conflicts(project: Path) -> list[dict[str, str]]:
     rules = conflict_document().get("rules", [])
     found: list[dict[str, str]] = []
@@ -181,7 +192,7 @@ def conflicts(project: Path) -> list[dict[str, str]]:
             text = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
-        visible = _outside_fences(text)
+        visible = _outside_owned(_outside_fences(text))
         for rule in rules:
             if re.search(str(rule["regex"]), visible):
                 key = (str(rule["id"]), relative)

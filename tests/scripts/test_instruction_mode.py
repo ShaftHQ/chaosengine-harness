@@ -104,6 +104,20 @@ class ConflictTests(unittest.TestCase):
             (project / "AGENTS.md").write_text("Build with pytest.\n", encoding="utf-8")
             self.assertEqual([], MODE.conflicts(project))
 
+    def test_owned_primary_block_is_not_ic06(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            (project / "AGENTS.md").write_text(
+                HOSTS.instruction_block() + "Build with pytest.\n",
+                encoding="utf-8",
+            )
+            self.assertNotIn("IC-06", {item["id"] for item in MODE.conflicts(project)})
+            (project / "AGENTS.md").write_text(
+                HOSTS.instruction_block() + "Another file is the primary harness.\n",
+                encoding="utf-8",
+            )
+            self.assertIn("IC-06", {item["id"] for item in MODE.conflicts(project)})
+
 
 class ReplaceTests(unittest.TestCase):
     def _repo(self) -> Path:
