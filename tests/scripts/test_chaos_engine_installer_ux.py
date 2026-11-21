@@ -64,7 +64,10 @@ class InstallerUxTests(unittest.TestCase):
                 return True
 
         stream = Tty()
-        environment = {key: value for key, value in os.environ.items() if key != "NO_COLOR"}
+        environment = {
+            key: value for key, value in os.environ.items()
+            if key not in {"NO_COLOR", "CI", "GITHUB_ACTIONS"}
+        }
         environment["TERM"] = "xterm"
         with unittest.mock.patch.dict(os.environ, environment, clear=True), unittest.mock.patch.object(
             BOOTSTRAP.InstallReporter, "_enable_windows_vt", return_value=True
@@ -135,7 +138,7 @@ class InstallerUxTests(unittest.TestCase):
         environment = {
             key: value
             for key, value in os.environ.items()
-            if key not in {"NO_COLOR", "FORCE_COLOR"}
+            if key not in {"NO_COLOR", "FORCE_COLOR", "CI", "GITHUB_ACTIONS"}
         }
         environment.update({"TERM": "xterm", "COLUMNS": "20"})
         with unittest.mock.patch.dict(os.environ, environment, clear=True), unittest.mock.patch.object(
@@ -161,7 +164,12 @@ class InstallerUxTests(unittest.TestCase):
                 return True
 
         stream = Tty()
-        with unittest.mock.patch.dict(os.environ, {"TERM": "xterm", "NO_COLOR": "1"}):
+        environment = {
+            key: value for key, value in os.environ.items()
+            if key not in {"CI", "GITHUB_ACTIONS"}
+        }
+        environment.update({"TERM": "xterm", "NO_COLOR": "1"})
+        with unittest.mock.patch.dict(os.environ, environment, clear=True):
             reporter = BOOTSTRAP.InstallReporter(stream=stream)
             try:
                 reporter.start("Verify installation")
@@ -544,7 +552,10 @@ class InstallerUxTests(unittest.TestCase):
                 return True
 
         stream = Tty()
-        environment = {key: value for key, value in os.environ.items() if key != "NO_COLOR"}
+        environment = {
+            key: value for key, value in os.environ.items()
+            if key not in {"NO_COLOR", "CI", "GITHUB_ACTIONS"}
+        }
         environment["TERM"] = "xterm"
         with unittest.mock.patch.dict(os.environ, environment, clear=True), unittest.mock.patch.object(
             BOOTSTRAP.InstallReporter, "_enable_windows_vt", return_value=True
@@ -2004,7 +2015,10 @@ class InstallerVisualLanguage6325Tests(unittest.TestCase):
     def _clean_env(self, **extra):
         environment = {
             key: value for key, value in os.environ.items()
-            if key not in {"NO_COLOR", "CHAOS_ENGINE_ASCII", "CHAOS_ENGINE_VERBOSE", "CI", "CHAOS_ENGINE_BRAND_SHOWN"}
+            if key not in {
+                "NO_COLOR", "CHAOS_ENGINE_ASCII", "CHAOS_ENGINE_VERBOSE", "CI",
+                "GITHUB_ACTIONS", "CHAOS_ENGINE_BRAND_SHOWN",
+            }
         }
         environment["TERM"] = "xterm-256color"
         environment.update(extra)

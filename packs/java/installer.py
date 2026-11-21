@@ -876,6 +876,7 @@ def _build_and_publish_maven_tools(
                 or "java_home" in detail_cf
             )
             if not java_home_related:
+                _relay_captured_streams(error)
                 raise
             tail = (
                 chr(10).join(maven_out.splitlines()[-30:])

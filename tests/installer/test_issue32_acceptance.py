@@ -358,7 +358,8 @@ def test_banner_source_link_and_no_color_spinner(monkeypatch):
     reporter._render_locked()
     rendered = stream.getvalue()
     assert "\x1b" not in rendered
-    assert "⠋" not in rendered
+    assert "Download source" in rendered
+    assert "running" in rendered
     monkeypatch.setenv("TERM", "dumb")
     dumb = io.StringIO()
     dumb.isatty = lambda: True

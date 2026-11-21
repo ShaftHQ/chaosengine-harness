@@ -19,7 +19,7 @@ param(
     [switch]$Json,
     [switch]$Quiet,
     [switch]$NoColor,
-    [ValidateSet("auto", "always", "never")][string]$Color,
+    [string]$Color,
     [switch]$Ascii,
     [switch]$NoHyperlinks,
     [switch]$NoModifyPath,
@@ -37,6 +37,11 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+# ValidateSet on -Color breaks `Get-Content install.ps1 | iex`: an unset value is
+# empty, and empty is not in the set. A normal -File invocation never hit that.
+if (-not [string]::IsNullOrWhiteSpace($Color) -and $Color -notin @("auto", "always", "never")) {
+    throw "Invalid -Color value '$Color'. Use auto, always, or never."
+}
 $script:ChaosEngineInvocationLine = [string]$MyInvocation.Line
 
 function ConvertTo-ChaosEngineAddOnFlags([string[]]$tokens) {
