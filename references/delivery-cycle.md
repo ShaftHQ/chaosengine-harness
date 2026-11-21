@@ -60,6 +60,7 @@ this order, with a one-line bigger-picture note. The cap is not a quota.
       A failed or cancelled check still blocks when it is required, and it
       still blocks when no check in the rollup is marked required.
       `gh pr merge` is refused until then, including when `--auto` is present.
+      When the only remaining gate is an owner-only artifact this session cannot create, record `blocking: unverifiable` once and end the goal (`runtime/owner_gate.py`).
 
    One-review work finalizes after step 3. Two-review work runs steps 4 and
    5 before finalize. A commit that acts on review N is the input to review

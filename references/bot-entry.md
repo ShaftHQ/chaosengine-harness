@@ -176,6 +176,7 @@ Gate `tests/scripts/test_ce_entry_coverage.py` (in `harness_pr_gate`). Index: [C
 Two fails on one stage/gate, budget overrun, or distinct fails on one stage:
 write a note in `.chaos-engine-state/repeat-failure-pdca/`, then change and
 check. A pull request has no retry cap until merged or a true external blocker.
+When the only remaining gate is an owner-only artifact this session cannot create, record `blocking: unverifiable` once and end the goal (`runtime/owner_gate.py`).
 [rule](../rules/lessons_repeat_failure_pdca.py) ·
 [card](details/ce-repeat-failure-pdca/repeat-failure-pdca.md) ·
 [SPEC](ce-repeat-failure-pdca-SPEC.md) ·

@@ -51,7 +51,7 @@ open pull request is not completion. By default, finish the delivery:
 Stop short of that sequence only when the owner explicitly asked for a local
 change, a draft, or a plan, or when a hard external blocker (credentials,
 denied permission, or a required check that cannot be fixed in this session)
-is stated with evidence.
+is stated with evidence. When the only remaining gate is an owner-only artifact this session cannot create, record `blocking: unverifiable` once and end the goal (`runtime/owner_gate.py`).
 
 ## Invariants
 
