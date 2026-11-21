@@ -37,7 +37,7 @@ ChaosEngine  chaosengine-harness 0.4.20261115.5
 [K
   [32m[✓][0m Resolve source   00:02[K
   [31m[✗][0m Download source  [31mfailed[0m[K
-└─ 1/3 · Elapsed 00:11[K
+└─ Command failed: download timed out[K
 [2m  [·] Install core[0m[K
 [8F[K
 [K
@@ -47,4 +47,19 @@ ChaosEngine  chaosengine-harness 0.4.20261115.5
 [K
 [K
 [K
-[8F
+[8F  [2mProject   [0m <project>
+  [2mSource    [0m ShaftHQ/chaosengine-harness@main
+
+  [32m[✓][0m Resolve source   00:02
+  [31m[✗][0m Download source  [31mfailed[0m
+└─ Command failed: download timed out
+[2m  [·] Install core[0m
+
+  [31m✗[0m [31mInstallation failed at step 2/3: Download source[0m
+
+  1. Report upstream: https://github.com/ShaftHQ/chaosengine-harness/issues/new?template=chaos-engine-installer.yml
+     .chaos-engine-state/failure-report.txt
+  2. Fix locally with your agent · .chaos-engine-state/agent-prompt.md
+────────────────────────────────────────────────────────────────────────
+Continue ChaosEngine install in this folder. Load ChaosEngine if present. Restore the portable core with the documented ChaosEngine install one-liner, then read .chaos-engine-state/failure-report.txt, .chaos-engine-state/install-console.log, .chaos-engine-state/doctor-failure.json, and .chaos-engine-state/agent-prompt.md. Diagnose and fix the install failure locally (auto-provision missing JDK/mvn/JAVA_HOME/PATH when possible). After the core is present, run doctor --json until required components are healthy. The report link is the GitHub issue URL printed above. That source is the publishing repository, not a consumer chaos-engine/ forwarding shim. Ask the user before opening or updating an upstream issue or PR, or pushing.
+────────────────────────────────────────────────────────────────────────

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import urllib.parse
 from pathlib import Path
 
 
@@ -70,7 +71,29 @@ def test_failure_payload_ratio_uses_the_shipped_encoder():
     rows = measure.payload_ratios(measure.load_bootstrap())
     short = next(row for row in rows if row["label"] == "short")
     huge = next(row for row in rows if row["label"] == "trace-50k")
+    assert measure.load_bootstrap().MAX_ISSUE_URL_CHARS == 5578
     assert short["urlChars"] > short["rawChars"]
-    assert short["urlChars"] <= 7800
-    assert huge["urlChars"] <= 7800
+    assert short["urlChars"] <= 5578
+    assert huge["urlChars"] <= 5578
+    assert huge["urlChars"] < huge["rawChars"]
     assert huge["rawChars"] > 50_000
+
+
+def test_fifty_kb_trace_keeps_required_fields_under_the_cap():
+    measure = load_measure()
+    bootstrap = measure.load_bootstrap()
+    fields = {
+        key: "required-value"
+        for key in bootstrap.REQUIRED_ISSUE_FORM_FIELDS
+    }
+    fields["install_trace_snippet"] = "T" * 50_000
+    url = bootstrap.encode_issue_form_url(
+        "ShaftHQ/chaosengine-harness",
+        "ChaosEngine install failed",
+        fields,
+    )
+    assert len(url) <= bootstrap.MAX_ISSUE_URL_CHARS == 5578
+    decoded = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
+    for key in bootstrap.REQUIRED_ISSUE_FORM_FIELDS:
+        assert decoded.get(key), key
+    assert "…truncated…" in urllib.parse.unquote(url)

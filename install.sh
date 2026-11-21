@@ -172,7 +172,7 @@ for argument in "$@"; do
     --hosts=*|--version=*|--shaft-skills-version=*|--color=*)
       forwarded_flags="$forwarded_flags $argument"
       ;;
-    -n|--dry-run|--yes|--no-input|-q|--quiet|--json|--no-color|--ascii|--no-hyperlinks|--no-modify-path|--keep-edits|--offline|--force|--no-auto-addons|--skip-pack-post-install|--verbose|--interactive)
+    -n|--dry-run|--yes|--no-input|-q|--quiet|--json|--no-color|--ascii|--no-hyperlinks|--copy-prompt|--no-modify-path|--keep-edits|--offline|--force|--no-auto-addons|--skip-pack-post-install|--verbose|--interactive)
       forwarded_flags="$forwarded_flags $argument"
       ;;
     --without-memory|--without-mempalace|--without-graphify|--without-ponytail|--without-caveman)

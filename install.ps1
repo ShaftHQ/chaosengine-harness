@@ -22,6 +22,7 @@ param(
     [string]$Color,
     [switch]$Ascii,
     [switch]$NoHyperlinks,
+    [switch]$CopyPrompt,
     [switch]$NoModifyPath,
     [switch]$KeepEdits,
     [switch]$Offline,
@@ -531,6 +532,7 @@ if ($env:CHAOS_ENGINE_ARGV_ONLY -eq "1") {
     if (-not [string]::IsNullOrWhiteSpace($Color)) { $preview += @("--color", $Color) }
     if ($Ascii) { $preview += "--ascii" }
     if ($NoHyperlinks) { $preview += "--no-hyperlinks" }
+    if ($CopyPrompt) { $preview += "--copy-prompt" }
     if ($NoModifyPath) { $preview += "--no-modify-path" }
     if ($KeepEdits) { $preview += "--keep-edits" }
     if ($Offline) { $preview += "--offline" }
@@ -604,6 +606,7 @@ try {
     if (-not [string]::IsNullOrWhiteSpace($Color)) { $arguments += @("--color", $Color) }
     if ($Ascii) { $arguments += "--ascii" }
     if ($NoHyperlinks) { $arguments += "--no-hyperlinks" }
+    if ($CopyPrompt) { $arguments += "--copy-prompt" }
     if ($NoModifyPath) { $arguments += "--no-modify-path" }
     if ($KeepEdits) { $arguments += "--keep-edits" }
     if ($Offline) { $arguments += "--offline" }

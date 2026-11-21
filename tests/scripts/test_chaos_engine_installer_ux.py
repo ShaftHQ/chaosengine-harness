@@ -6,6 +6,7 @@ import io
 import json
 import os
 import re
+import subprocess
 import tempfile
 import threading
 import time
@@ -867,9 +868,12 @@ class InstallerUxTests(unittest.TestCase):
         shell = (ROOT / "install.sh").read_text(encoding="utf-8")
         powershell = (ROOT / "install.ps1").read_text(encoding="utf-8")
         self.assertIn('"--interactive"', shell)
+        self.assertIn("--copy-prompt", shell)
         self.assertIn("[switch]$Interactive", powershell)
+        self.assertIn("[switch]$CopyPrompt", powershell)
         self.assertNotIn("CHAOS_ENGINE_INTERACTIVE", powershell)
         self.assertIn('arguments += "--interactive"', powershell)
+        self.assertIn('arguments += "--copy-prompt"', powershell)
 
     def test_wrappers_leave_brand_and_checklist_to_python(self):
         shell = (ROOT / "install.sh").read_text(encoding="utf-8")
@@ -915,21 +919,30 @@ class InstallerUxTests(unittest.TestCase):
                     ):
                         self.assertEqual(1, BOOTSTRAP.main())
                     self.assertEqual("", stdout.getvalue())
+                    report_text = (
+                        project / ".chaos-engine-state" / "failure-report.txt"
+                    ).read_text(encoding="utf-8")
+                    url = next(
+                        line.split("Issue: ", 1)[1]
+                        for line in report_text.splitlines()
+                        if line.startswith("Issue: ")
+                    )
                     cause_q = urllib.parse.quote_plus(str(error).split("\n", 1)[0])
-                    self.assertIn(cause_q, stderr.getvalue().split("issues/new?", 1)[-1])
-                    self.assertIn(code, stderr.getvalue())
-                    self.assertIn("Restore the portable core", stderr.getvalue())
+                    self.assertIn(cause_q, url)
+                    self.assertIn(code, url)
+                    self.assertIn("template=chaos-engine-installer.yml", url)
+                    self.assertLessEqual(len(url), BOOTSTRAP.MAX_ISSUE_URL_CHARS)
+                    err = stderr.getvalue()
+                    self.assertIn("Installation failed", err)
+                    self.assertIn("Report upstream:", err)
+                    self.assertIn("Fix locally with your agent", err)
+                    self.assertIn("Restore the portable core", err)
+                    self.assertIn(
+                        "https://github.com/owner/repo/issues/new?template=chaos-engine-installer.yml",
+                        err,
+                    )
                     if code == "CE-INSTALL-FAILED":
-                        err = stderr.getvalue()
-                        self.assertIn("Open issue:", err)
-                        self.assertIn("Launch your agent with this prompt:", err)
                         self.assertIn("Continue ChaosEngine install in this folder.", err)
-                        report = [
-                            line for line in err.splitlines()
-                            if line.startswith("https://github.com/owner/repo/issues/new?")
-                        ][0]
-                        self.assertIn("template=chaos-engine-installer.yml", report)
-                        self.assertLessEqual(len(report), 2000)
 
     def test_keyboard_interrupt_emits_cancelled_without_traceback(self):
         stdout = io.StringIO()
@@ -954,7 +967,6 @@ class InstallerUxTests(unittest.TestCase):
         self.assertEqual(1, code)
         self.assertEqual("", stdout.getvalue())
         err = stderr.getvalue()
-        self.assertIn("Installation failed", err)
         self.assertIn("Last verified generation", err)
         self.assertIn("Rerun the same install command", err)
         self.assertNotIn("Traceback", err)
@@ -994,27 +1006,33 @@ class InstallerUxTests(unittest.TestCase):
     def test_unexpected_exception_includes_issue_url_without_traceback(self):
         stdout = io.StringIO()
         stderr = io.StringIO()
-        with unittest.mock.patch.object(
-            BOOTSTRAP, "install_latest", side_effect=Exception("sealed walk exploded")
-        ), unittest.mock.patch.object(BOOTSTRAP.sys, "stdout", stdout), unittest.mock.patch.object(
-            BOOTSTRAP.sys, "stderr", stderr
-        ), unittest.mock.patch.object(
-            BOOTSTRAP.sys, "argv", ["bootstrap.py", "--project", ".", "--repository", "owner/repo"]
-        ):
-            try:
-                code = BOOTSTRAP.main()
-            except Exception:
-                self.fail("unexpected exception leaked to the caller")
-        self.assertEqual(1, code)
-        err = stderr.getvalue()
-        self.assertIn("Installation failed", err)
-        self.assertIn("https://github.com/owner/repo/issues/new", err)
-        self.assertIn("Open issue:", err)
-        self.assertIn("Launch your agent with this prompt:", err)
-        self.assertIn("Continue ChaosEngine install in this folder.", err)
-        # Cause text lives in the prefilled issue URL / heal-handoff, not stderr.
-        self.assertIn("sealed", err.split("issues/new?", 1)[-1].casefold())
-        self.assertNotIn("Traceback", err)
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            with unittest.mock.patch.object(
+                BOOTSTRAP, "install_latest", side_effect=Exception("sealed walk exploded")
+            ), unittest.mock.patch.object(BOOTSTRAP.sys, "stdout", stdout), unittest.mock.patch.object(
+                BOOTSTRAP.sys, "stderr", stderr
+            ), unittest.mock.patch.object(
+                BOOTSTRAP.sys,
+                "argv",
+                ["bootstrap.py", "--project", str(project), "--repository", "owner/repo"],
+            ):
+                try:
+                    code = BOOTSTRAP.main()
+                except Exception:
+                    self.fail("unexpected exception leaked to the caller")
+            self.assertEqual(1, code)
+            err = stderr.getvalue()
+            self.assertIn("Installation failed", err)
+            self.assertIn("https://github.com/owner/repo/issues/new", err)
+            self.assertIn("Fix locally with your agent", err)
+            self.assertIn("Continue ChaosEngine install in this folder.", err)
+            self.assertNotIn("Traceback", err)
+            report = (project / ".chaos-engine-state" / "failure-report.txt").read_text(
+                encoding="utf-8"
+            )
+            self.assertIn("sealed", report.casefold())
+            self.assertNotIn("Traceback", report)
 
     def test_install_health_error_ignores_optional_absent_components(self):
         error = BOOTSTRAP.InstallHealthError(
@@ -1056,7 +1074,7 @@ class InstallerUxTests(unittest.TestCase):
             self.assertIn("Installation failed", err)
             self.assertNotIn(".chaos-engine/install.py", err)
             self.assertIn("Restore the portable core", err)
-            self.assertIn("Launch your agent with this prompt:", err)
+            self.assertIn("Fix locally with your agent", err)
             self.assertIn("https://github.com/owner/repo/issues/new", err)
 
     def test_failure_cta_names_installer_cli_only_when_present(self):
@@ -1075,7 +1093,7 @@ class InstallerUxTests(unittest.TestCase):
                 )
             err = stderr.getvalue()
             self.assertIn("Installation failed", err)
-            self.assertIn("Launch your agent with this prompt:", err)
+            self.assertIn("Fix locally with your agent", err)
             # Doctor/status stay in heal-handoff + issue fields / agent prompt.
             self.assertIn("doctor", err.casefold())
 
@@ -1089,8 +1107,8 @@ class InstallerUxTests(unittest.TestCase):
             BOOTSTRAP.emit_install_failure("CE-INSTALL-FAILED", error, "owner/repo")
         output = stderr.getvalue()
         self.assertIn("Installation failed", output)
-        self.assertIn("Launch your agent with this prompt:", output)
-        self.assertIn("Open issue:", output)
+        self.assertIn("Fix locally with your agent", output)
+        self.assertIn("Report upstream:", output)
         self.assertIn("Continue ChaosEngine install in this folder.", output)
         self.assertIn(
             "Ask the user before opening or updating an upstream issue or PR, or pushing.",
@@ -1102,14 +1120,14 @@ class InstallerUxTests(unittest.TestCase):
         self.assertNotIn("Repair the named", output)
         self.assertNotIn("Give this prompt", output)
         prompt_line = next(
-            line for line in output.splitlines() if line.startswith("`Continue ChaosEngine")
+            line for line in output.splitlines() if line.startswith("Continue ChaosEngine")
         )
         self.assertNotIn("issues/new?", prompt_line)
-        report = [
+        report = next(
             line
             for line in output.splitlines()
             if line.startswith("https://github.com/owner/repo/issues/new?")
-        ][0]
+        )
         query = urllib.parse.parse_qs(urllib.parse.urlsplit(report).query)
         self.assertEqual(["chaos-engine-installer.yml"], query["template"])
         self.assertEqual(["Verify installation"], query["failed_phase"])
@@ -1229,12 +1247,14 @@ class InstallerUxTests(unittest.TestCase):
                     project=project,
                 )
             output = stderr.getvalue()
-            report = next(
-                line
-                for line in output.splitlines()
-                if line.startswith("https://github.com/owner/repo/issues/new?")
+            issue_line = next(
+                line.split("Issue: ", 1)[1]
+                for line in (
+                    project / ".chaos-engine-state" / "failure-report.txt"
+                ).read_text(encoding="utf-8").splitlines()
+                if line.startswith("Issue: ")
             )
-            query = urllib.parse.parse_qs(urllib.parse.urlsplit(report).query)
+            query = urllib.parse.parse_qs(urllib.parse.urlsplit(issue_line).query)
             self.assertEqual(
                 [".chaos-engine-state/install-trace.json"], query["install_trace"]
             )
@@ -1272,9 +1292,9 @@ class InstallerUxTests(unittest.TestCase):
                     },
                 },
             )
-            reporter = BOOTSTRAP.InstallReporter(stream=io.StringIO())
-            reporter.traces.append((1.0, "PASS Download source (00:01)"))
             stderr = io.StringIO()
+            reporter = BOOTSTRAP.InstallReporter(stream=stderr)
+            reporter.traces.append((1.0, "PASS Download source (00:01)"))
             with unittest.mock.patch.object(BOOTSTRAP.sys, "stderr", stderr):
                 BOOTSTRAP.emit_install_failure(
                     "CE-INSTALL-FAILED",
@@ -1285,9 +1305,11 @@ class InstallerUxTests(unittest.TestCase):
                 )
             output = stderr.getvalue()
             report = next(
-                line
-                for line in output.splitlines()
-                if line.startswith("https://github.com/owner/repo/issues/new?")
+                line.split("Issue: ", 1)[1]
+                for line in (
+                    project / ".chaos-engine-state" / "failure-report.txt"
+                ).read_text(encoding="utf-8").splitlines()
+                if line.startswith("Issue: ")
             )
             query = urllib.parse.parse_qs(urllib.parse.urlsplit(report).query)
             self.assertTrue(query.get("os_name"))
@@ -1336,13 +1358,13 @@ class InstallerUxTests(unittest.TestCase):
                 '{"status":"failed","error":"CE-INSTALL-FAILED"}\n',
                 encoding="utf-8",
             )
-            reporter = BOOTSTRAP.InstallReporter(stream=io.StringIO())
+            stderr = io.StringIO()
+            reporter = BOOTSTRAP.InstallReporter(stream=stderr)
             reporter.traces.append((16.37, "run [path] init . --yes --no-llm --auto-mine"))
             reporter.traces.append(
                 (110.76, "kept installed core after provision failure for self-heal")
             )
             reporter.current_operation = "Provision dependencies"
-            stderr = io.StringIO()
             error = RuntimeError("MemPalace init did not create the exact target")
             with unittest.mock.patch.object(BOOTSTRAP.sys, "stderr", stderr):
                 BOOTSTRAP.emit_install_failure(
@@ -1419,7 +1441,8 @@ class InstallerUxTests(unittest.TestCase):
                     },
                 },
             )
-            reporter = BOOTSTRAP.InstallReporter(stream=io.StringIO())
+            stderr = io.StringIO()
+            reporter = BOOTSTRAP.InstallReporter(stream=stderr)
             reporter.traces.append((1.0, "PASS Download source (00:01)"))
             posted: list[object] = []
 
@@ -1431,7 +1454,6 @@ class InstallerUxTests(unittest.TestCase):
                 ).encode()
                 return Response(payload)
 
-            stderr = io.StringIO()
             with unittest.mock.patch.object(BOOTSTRAP.sys, "stderr", stderr):
                 BOOTSTRAP.emit_install_failure(
                     "CE-INSTALL-FAILED",
@@ -1445,7 +1467,7 @@ class InstallerUxTests(unittest.TestCase):
             output = stderr.getvalue()
             self.assertIn("https://github.com/owner/repo/issues/99", output)
             self.assertIn("GitHub issue:", output)
-            self.assertIn("Launch your agent with this prompt:", output)
+            self.assertIn("Fix locally with your agent", output)
             self.assertIn("https://github.com/owner/repo/issues/99", output)
             self.assertIn("Continue ChaosEngine install in this folder.", output)
             self.assertFalse(
@@ -1561,10 +1583,18 @@ class InstallerUxTests(unittest.TestCase):
             self.assertEqual("heal-handoff", result["status"])
             self.assertTrue((project / ".chaos-engine-state/heal-handoff.md").is_file())
             output = stream.getvalue()
-            self.assertIn("Heal handoff", output)
+            self.assertIn("Installation failed", output)
             self.assertIn("issues/new?", output)
-            self.assertIn("Launch your agent with this prompt:", output)
+            self.assertIn("Fix locally with your agent", output)
             self.assertIn("Continue ChaosEngine install in this folder.", output)
+            report = (project / ".chaos-engine-state" / "failure-report.txt").read_text(
+                encoding="utf-8"
+            )
+            self.assertIn("issues/new?", report)
+            prompt = (project / ".chaos-engine-state" / "agent-prompt.md").read_text(
+                encoding="utf-8"
+            )
+            self.assertEqual(prompt.strip("\n"), output.split("─" * 72)[1].strip("\n"))
             self.assertNotIn("Repair the named", output)
             self.assertNotIn("Give this prompt", output)
             handoff = (project / ".chaos-engine-state/heal-handoff.md").read_text(
@@ -2394,8 +2424,14 @@ class InstallerVisualLanguage6325Tests(unittest.TestCase):
         output = stream.getvalue()
         self.assertNotIn("Installation Successful!", output)
         self.assertNotIn("Installed with warnings", output)
+        self.assertIn("Installation failed", output)
         self.assertIn("Doctor degraded (1/2)", output)
-        self.assertIn("Doctor: degraded (1/2 components healthy)", output)
+        self.assertIn("Fix locally with your agent", output)
+        self.assertNotIn("│", output)
+        self.assertIn(
+            "Ask the user before opening or updating an upstream issue or PR, or pushing.",
+            output,
+        )
         self.assertNotIn("\x1b", output)
 
     def test_summary_rows_are_aligned_and_next_steps_are_numbered(self):
@@ -2432,11 +2468,104 @@ class InstallerVisualLanguage6325Tests(unittest.TestCase):
             )
         err = stderr.getvalue()
         self.assertIn("Installation failed", err)
-        self.assertIn("Launch your agent with this prompt:", err)
+        self.assertIn("Fix locally with your agent", err)
         self.assertIn("issues/new?", err)
-        # Cause is URL-encoded into the prefilled issue, not echoed as stderr noise.
-        self.assertIn("EACCES", err.split("issues/new?", 1)[-1])
+        self.assertIn("EACCES", err)
+        self.assertNotIn("│", err)
         self.assertNotIn("\x1b", err)
+
+    def test_cancelled_install_keeps_the_short_resume_text(self):
+        stderr = io.StringIO()
+        with tempfile.TemporaryDirectory() as tmp, \
+                unittest.mock.patch.object(BOOTSTRAP.sys, "stderr", stderr), \
+                unittest.mock.patch.dict(os.environ, self._clean_env(), clear=True):
+            project = Path(tmp)
+            BOOTSTRAP.emit_install_failure(
+                "CE-INSTALL-CANCELLED",
+                BOOTSTRAP.InstallCancelled("declined"),
+                "owner/repo",
+                project=project,
+            )
+            self.assertIn("Installation interrupted", stderr.getvalue())
+            self.assertFalse((project / ".chaos-engine-state" / "failure-report.txt").exists())
+            self.assertNotIn("Report upstream", stderr.getvalue())
+
+    def test_copy_prompt_is_opt_in_and_picks_one_native_tool(self):
+        self.assertEqual("off", BOOTSTRAP.copy_prompt_mode({}, tty=True))
+        self.assertEqual(
+            "off",
+            BOOTSTRAP.copy_prompt_mode({"CHAOS_ENGINE_COPY_PROMPT": "1"}, tty=False),
+        )
+        self.assertEqual(
+            "off",
+            BOOTSTRAP.copy_prompt_mode({"CHAOS_ENGINE_COPY_PROMPT": "1", "CI": "true"}, tty=True),
+        )
+        self.assertEqual(
+            "native",
+            BOOTSTRAP.copy_prompt_mode({"CHAOS_ENGINE_COPY_PROMPT": "1"}, tty=True),
+        )
+        self.assertEqual(
+            "osc52",
+            BOOTSTRAP.copy_prompt_mode({"CHAOS_ENGINE_COPY_PROMPT": "osc52"}, tty=True),
+        )
+        found = {"pbcopy", "wl-copy", "xclip", "xsel", "clip", "powershell"}
+
+        def which(name: str) -> str | None:
+            return f"/bin/{name}" if name in found else None
+
+        self.assertEqual(["pbcopy"], BOOTSTRAP._clipboard_argv("darwin", which))
+        self.assertEqual(["wl-copy"], BOOTSTRAP._clipboard_argv("linux", which))
+        self.assertEqual(["clip"], BOOTSTRAP._clipboard_argv("win32", which))
+        self.assertEqual(
+            ["xclip", "-selection", "clipboard"],
+            BOOTSTRAP._clipboard_argv("linux", lambda name: "/bin/xclip" if name == "xclip" else None),
+        )
+        self.assertEqual(
+            ["xsel", "--clipboard"],
+            BOOTSTRAP._clipboard_argv("linux", lambda name: "/bin/xsel" if name == "xsel" else None),
+        )
+        calls: list[list[str]] = []
+
+        def run(argv, input=None, check=False):  # noqa: A002 - subprocess.run signature
+            calls.append(list(argv))
+            return subprocess.CompletedProcess(argv, 0)
+
+        stderr = io.StringIO()
+        quiet_env = self._clean_env()
+        for key in ("CHAOS_ENGINE_FILE_ISSUE", "CHAOS_ENGINE_COPY_PROMPT", "GITHUB_TOKEN", "GH_TOKEN"):
+            quiet_env.pop(key, None)
+        with unittest.mock.patch.object(BOOTSTRAP.subprocess, "run", run), \
+                unittest.mock.patch.dict(os.environ, quiet_env, clear=True):
+            BOOTSTRAP.emit_install_failure(
+                "CE-INSTALL-FAILED",
+                RuntimeError("disk full"),
+                "owner/repo",
+            )
+        self.assertEqual([], calls)
+
+        class _TtyStream(io.StringIO):
+            def isatty(self) -> bool:
+                return True
+
+        tty_stream = _TtyStream()
+        env = self._clean_env(CHAOS_ENGINE_COPY_PROMPT="osc52", CHAOS_ENGINE_HYPERLINKS="0")
+        for key in ("CHAOS_ENGINE_FILE_ISSUE", "GITHUB_TOKEN", "GH_TOKEN"):
+            env.pop(key, None)
+        with unittest.mock.patch.object(BOOTSTRAP.subprocess, "run", run), \
+                unittest.mock.patch.dict(os.environ, env, clear=True), \
+                unittest.mock.patch.object(BOOTSTRAP.threading.Thread, "start", lambda self: None):
+            reporter = BOOTSTRAP.InstallReporter(stream=tty_stream, environ=env)
+            reporter.start("Download source", remaining=("Install core",))
+            reporter.fail("disk full")
+            BOOTSTRAP.emit_install_failure(
+                "CE-INSTALL-FAILED",
+                RuntimeError("disk full"),
+                "owner/repo",
+                reporter=reporter,
+            )
+        self.assertEqual([], calls)
+        self.assertIn("\x1b]52;c;", tty_stream.getvalue())
+        self.assertIn("copied to clipboard", tty_stream.getvalue())
 
     def test_failure_marks_the_running_step_failed_on_pipe_and_tty(self):
         pipe = io.StringIO()
@@ -2460,6 +2589,31 @@ class InstallerVisualLanguage6325Tests(unittest.TestCase):
         self.assertIn("[x] Provision dependencies", last)
         self.assertIn("failed", last)
         self.assertNotIn("running", last)
+
+    def test_failure_panel_uses_the_live_step_count(self):
+        stderr = io.StringIO()
+        with unittest.mock.patch.dict(os.environ, self._clean_env(), clear=True):
+            reporter = BOOTSTRAP.InstallReporter(stream=stderr, clock=lambda: 1.0)
+            reporter.complete("Resolve source", remaining=(
+                "Download source", "Install core", "Provision dependencies",
+                "Verify installation", "Activate clients",
+            ))
+            reporter.complete("Download source", remaining=(
+                "Install core", "Provision dependencies", "Verify installation", "Activate clients",
+            ))
+            reporter.complete("Install core", remaining=(
+                "Provision dependencies", "Verify installation", "Activate clients",
+            ))
+            reporter.start("Provision dependencies", remaining=("Verify installation", "Activate clients"))
+            reporter.fail("dependency command failed")
+            reporter.close()
+            BOOTSTRAP.emit_install_failure(
+                "CE-INSTALL-FAILED",
+                RuntimeError("dependency command failed"),
+                "owner/repo",
+                reporter=reporter,
+            )
+        self.assertIn("Installation failed at step 4/6: Provision dependencies", stderr.getvalue())
 
     def test_harden_stream_encoding_replaces_unencodable_text_on_legacy_consoles(self):
         class Legacy:

@@ -91,10 +91,10 @@ class RedactionTests(unittest.TestCase):
                     },
                 },
             )
-            reporter = BOOTSTRAP.InstallReporter(stream=io.StringIO())
+            stderr = io.StringIO()
+            reporter = BOOTSTRAP.InstallReporter(stream=stderr)
             reporter.traces.append((1.0, blob))
             reporter.current_operation = "Verify installation"
-            stderr = io.StringIO()
             env = {
                 key: value
                 for key, value in os.environ.items()
@@ -121,6 +121,8 @@ class RedactionTests(unittest.TestCase):
                 )
             pieces = [stderr.getvalue()]
             for name in (
+                "failure-report.txt",
+                "agent-prompt.md",
                 "heal-handoff.md",
                 "install-console.log",
                 "doctor-failure.json",
@@ -135,6 +137,13 @@ class RedactionTests(unittest.TestCase):
             self.assertIn("word sk hex abc123", combined)
             self.assertIn(ASK, stderr.getvalue())
             self.assertNotIn("open or update an upstream", stderr.getvalue().casefold())
+            self.assertNotIn("│", stderr.getvalue())
+            prompt_file = (state / "agent-prompt.md").read_text(encoding="utf-8")
+            self.assertNotIn("│", prompt_file)
+            self.assertIn(prompt_file.strip("\n"), stderr.getvalue())
+            handoff = (state / "heal-handoff.md").read_text(encoding="utf-8")
+            self.assertIn(".chaos-engine-state/failure-report.txt", handoff)
+            self.assertIn(".chaos-engine-state/agent-prompt.md", handoff)
             doctor = json.loads((state / "doctor-failure.json").read_text(encoding="utf-8"))
             self.assertNotIn("fuzzuser0", json.dumps(doctor))
 
@@ -176,8 +185,8 @@ class RedactionTests(unittest.TestCase):
                     reporter=reporter,
                     project=project,
                 )
-            output = stderr.getvalue()
-            decoded = urllib.parse.unquote(output)
+            report = (state / "failure-report.txt").read_text(encoding="utf-8")
+            decoded = urllib.parse.unquote(stderr.getvalue() + "\n" + report)
             handoff = (state / "heal-handoff.md").read_text(encoding="utf-8")
             self.assertNotIn(marker, decoded)
             self.assertNotIn(marker, handoff)
@@ -205,7 +214,10 @@ class RedactionTests(unittest.TestCase):
                     "owner/repo",
                     project=project,
                 )
-            output = urllib.parse.unquote(stderr.getvalue())
+            report = (project / ".chaos-engine-state" / "failure-report.txt").read_text(
+                encoding="utf-8"
+            )
+            output = urllib.parse.unquote(stderr.getvalue() + "\n" + report)
             handoff = (project / ".chaos-engine-state" / "heal-handoff.md").read_text(
                 encoding="utf-8"
             )

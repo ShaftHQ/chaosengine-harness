@@ -8054,6 +8054,11 @@ def parser() -> argparse.ArgumentParser:
     )
     install_command.add_argument("--ascii", action="store_true", help="Force ASCII glyphs.")
     install_command.add_argument("--no-hyperlinks", action="store_true", help="Do not emit OSC 8 hyperlinks.")
+    install_command.add_argument(
+        "--copy-prompt",
+        action="store_true",
+        help="Copy the failure prompt on a local TTY (CHAOS_ENGINE_COPY_PROMPT=1).",
+    )
     repair_command = commands.add_parser(
         "repair",
         help="Targeted zero-LLM repair for one component (no full wipe).",
@@ -10380,6 +10385,8 @@ def _apply_ui_flags(args) -> None:
         os.environ["CHAOS_ENGINE_ASCII"] = "1"
     if getattr(args, "no_hyperlinks", False):
         os.environ["CHAOS_ENGINE_HYPERLINKS"] = "0"
+    if getattr(args, "copy_prompt", False) and os.environ.get("CHAOS_ENGINE_COPY_PROMPT") != "osc52":
+        os.environ["CHAOS_ENGINE_COPY_PROMPT"] = "1"
     if getattr(args, "json", False):
         os.environ["CHAOS_ENGINE_JSON"] = "1"
     if getattr(args, "quiet", False):

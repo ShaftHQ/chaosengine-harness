@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
@@ -269,7 +270,7 @@ def harden_stream_encoding(stream) -> None:
         reconfigure(errors="replace")
     except (AttributeError, OSError, ValueError):
         return
-MAX_ISSUE_URL_CHARS = 7800
+MAX_ISSUE_URL_CHARS = 5578
 MAX_ISSUE_BODY_CHARS = 60000
 HEAL_HANDOFF_RELATIVE = ".chaos-engine-state/heal-handoff.md"
 ISSUE_FORM_FIELD_IDS = (
@@ -468,7 +469,11 @@ def doctor_failure_payload(error: BaseException) -> dict[str, object]:
     }
 
 
+FAILURE_REPORT_RELATIVE = ".chaos-engine-state/failure-report.txt"
+AGENT_PROMPT_RELATIVE = ".chaos-engine-state/agent-prompt.md"
 FAILURE_ARTIFACT_NAMES = (
+    "failure-report.txt",
+    "agent-prompt.md",
     "heal-handoff.md",
     "official-self-heal-handoff.md",
     "install-trace.json",
@@ -1198,6 +1203,13 @@ def encode_issue_form_url(
         return f"https://github.com/{repository}/issues/new?{urllib.parse.urlencode(query)}"
 
     url = render(packed)
+    if len(url) > MAX_ISSUE_URL_CHARS:
+        for key in list(packed):
+            shrink = packed[key]
+            while len(url) > MAX_ISSUE_URL_CHARS and len(shrink) > 48:
+                shrink = shrink[: len(shrink) // 2] + "\n…truncated…"
+                packed[key] = shrink
+                url = render(packed)
     for key, value in optional.items():
         candidate = dict(packed)
         candidate[key] = value
@@ -1764,6 +1776,7 @@ class InstallReporter:
         self._frame = 0
         self._last_heartbeat: float | None = None
         self.failed_operation: str | None = None
+        self.failure_cause: str | None = None
         self.commit_label: str | None = None
         self.commit_full: str | None = None
         self._commit_logged = False
@@ -1942,9 +1955,11 @@ class InstallReporter:
         """Stream every trace line (`--verbose`)."""
         self._verbose = True
 
-    def fail(self) -> None:
+    def fail(self, cause: str | None = None) -> None:
         """Mark the running step failed so the last frame never says `running` (#6325)."""
         with self._lock:
+            if cause:
+                self.failure_cause = " ".join(str(cause).split())
             operation = self.current_operation or (self._in_flight[-1] if self._in_flight else None)
             if operation is None:
                 return
@@ -2178,7 +2193,11 @@ class InstallReporter:
             lines.append(
                 self._checklist_row(item, name_width=name_width, active=active, check=check, empty=empty)
             )
-            if item == self.current_operation:
+            if item == self.failed_operation and self.failure_cause:
+                cause_line = self._cause_line()
+                if cause_line:
+                    lines.append(cause_line)
+            elif item == self.current_operation:
                 lines.extend(self._rail_lines(now, elapsed))
         if self.cursor and self._lines:
             self.stream.write(f"\x1b[{self._lines}F")
@@ -2290,6 +2309,23 @@ class InstallReporter:
         )
         self.close()
         write_install_receipt(Path(project), self.install_receipt)
+        if doctor_status in UNHEALTHY_DOCTOR_STATUSES:
+            # #134: a non-healthy doctor after the steps is the failure panel.
+            self.summary_printed = True
+            if not self.failure_cause:
+                ratio = f" ({healthy}/{total})" if total else ""
+                self.failure_cause = f"Doctor {doctor_status}{ratio}"
+            emit_install_failure(
+                "CE-INSTALL-FAILED",
+                InstallHealthError(
+                    self.failed_operation or "Verify installation",
+                    doctor if isinstance(doctor, dict) else {},
+                ),
+                repository,
+                reporter=self,
+                project=Path(project),
+            )
+            return
         if self._env.get("CHAOS_ENGINE_QUIET") == "1" or self.mode == "quiet":
             return
         report = format_install_report(
@@ -2334,6 +2370,42 @@ class InstallReporter:
             self.stream.write(self._aligned_live_row("Commit", self.commit_label) + "\n")
             self._commit_logged = True
         self.stream.write(report)
+        self.stream.flush()
+
+    def _cause_line(self) -> str | None:
+        if not self.failure_cause:
+            return None
+        prefix = "└─ " if self._unicode else "+- "
+        cause = strip_controls(self.failure_cause)
+        shown = prefix + cause
+        return shown if line_may_exceed_width(cause) else self._truncate(shown)
+
+    def show_failure_panel(self, panel: str) -> None:
+        """Reprint the checklist on a TTY, then the failure panel. Log mode appends."""
+        self.summary_printed = True
+        if self._tty and self.mode not in {"quiet", "json"}:
+            block = self._header_lines()
+            if block:
+                block.append("")
+            frames = SPINNER_UNICODE if self._unicode else SPINNER_ASCII
+            active = frames[self._frame % len(frames)]
+            check = status_glyph("ok", unicode=self._unicode)
+            empty = status_glyph("pending", unicode=self._unicode)
+            operations = self._operations()
+            name_width = max((len(item) for item in operations), default=0)
+            for item in operations:
+                block.append(
+                    self._checklist_row(
+                        item, name_width=name_width, active=active, check=check, empty=empty
+                    )
+                )
+                if item == self.failed_operation:
+                    cause_line = self._cause_line()
+                    if cause_line:
+                        block.append(cause_line)
+            if block:
+                self.stream.write("\n".join(block) + "\n")
+        self.stream.write(panel)
         self.stream.flush()
 
     def close(self) -> None:
@@ -6241,6 +6313,11 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--ascii", action="store_true", help="Force ASCII glyphs (CHAOS_ENGINE_ASCII=1).")
     result.add_argument("--no-hyperlinks", action="store_true", help="Do not emit OSC 8 hyperlinks.")
     result.add_argument(
+        "--copy-prompt",
+        action="store_true",
+        help="Copy the failure prompt on a local TTY (CHAOS_ENGINE_COPY_PROMPT=1).",
+    )
+    result.add_argument(
         "--version",
         dest="version_pin",
         help="Release 0.4.YYYYMMDD.N or a 40-hex commit. Also CHAOS_ENGINE_VERSION.",
@@ -6636,6 +6713,161 @@ def terminal_issue_link(issue_url: str, *, saved: bool, live: bool) -> str:
     )
 
 
+def _clipboard_argv(platform_name: str, finder) -> list[str] | None:
+    """Native clipboard tool for this OS. The command is spawned only when copy is opted in."""
+    if platform_name == "darwin":
+        return ["pbcopy"] if finder("pbcopy") else None
+    if platform_name == "win32":
+        if finder("clip"):
+            return ["clip"]
+        if finder("powershell"):
+            return ["powershell", "-NoProfile", "-Command", "Set-Clipboard"]
+        return None
+    if finder("wl-copy"):
+        return ["wl-copy"]
+    if finder("xclip"):
+        return ["xclip", "-selection", "clipboard"]
+    if finder("xsel"):
+        return ["xsel", "--clipboard"]
+    return None
+
+
+def copy_prompt_mode(environ=None, *, tty: bool) -> str:
+    """``off``, ``native``, or ``osc52``. CI and a non-TTY never copy."""
+    environ = os.environ if environ is None else environ
+    if environ.get("CI") or environ.get("GITHUB_ACTIONS") == "true":
+        return "off"
+    if not tty:
+        return "off"
+    value = environ.get("CHAOS_ENGINE_COPY_PROMPT", "")
+    if value == "osc52":
+        return "osc52"
+    if value == "1":
+        return "native"
+    return "off"
+
+
+def copy_install_prompt(text: str, *, mode: str, stream) -> bool:
+    """Copy the prompt. OSC 52 only for ``CHAOS_ENGINE_COPY_PROMPT=osc52``."""
+    if mode == "osc52":
+        encoded = base64.b64encode(text.encode("utf-8")).decode("ascii")
+        stream.write(f"\x1b]52;c;{encoded}\x1b\\")
+        stream.flush()
+        return True
+    if mode != "native":
+        return False
+    argv = _clipboard_argv(sys.platform, shutil.which)
+    if not argv:
+        return False
+    try:
+        subprocess.run(argv, input=text.encode("utf-8"), check=False)  # nosec B603 - fixed argv
+    except (OSError, ValueError):
+        return False
+    return True
+
+
+def _gh_issue_hint(repository: str) -> str | None:
+    """Printed hint. This function never runs ``gh``."""
+    if shutil.which("gh") is None:
+        return None
+    return (
+        "gh issue create --repo "
+        + repository
+        + " --template chaos-engine-installer.yml --body-file "
+        + FAILURE_REPORT_RELATIVE
+    )
+
+
+def _failure_step(reporter: InstallReporter | None) -> tuple[int, int, str]:
+    if reporter is None:
+        return 0, 0, ""
+    name = reporter.failed_operation or ""
+    operations = reporter._operations()
+    if name and name in operations:
+        return operations.index(name) + 1, len(operations), name
+    return 0, len(operations), name
+
+
+def _write_named_artifact(project: Path, relative: str, text: str) -> None:
+    path = Path(project) / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not text.endswith("\n"):
+        text += "\n"
+    path.write_text(text, encoding="utf-8")
+
+
+def format_install_failure_panel(
+    *,
+    step_index: int,
+    step_total: int,
+    step_name: str,
+    cause: str,
+    cause_on_checklist: bool,
+    issue_url: str,
+    repository: str,
+    project: Path | None,
+    prompt: str,
+    unicode: bool,
+    color: bool,
+    intensity: bool,
+    hyperlinks: bool,
+    copied: bool,
+) -> str:
+    """Failure panel: headline, report option, and a prompt between horizontal rules."""
+    glyph = status_glyph("fail", unicode=unicode)
+    if step_index and step_total and step_name:
+        headline = f"Installation failed at step {step_index}/{step_total}: {step_name}"
+    elif step_name:
+        headline = f"Installation failed: {step_name}"
+    else:
+        headline = "Installation failed"
+    lines = [
+        "",
+        "  "
+        + _report_style(glyph, "31", enabled=color, intensity=intensity)
+        + " "
+        + _report_style(headline, "31", enabled=color, intensity=intensity),
+        "",
+    ]
+    if cause and not cause_on_checklist:
+        prefix = "└─ " if unicode else "+- "
+        lines.append(prefix + strip_controls(cause))
+        lines.append("")
+    short = (
+        f"https://github.com/{repository}/issues/new?template=chaos-engine-installer.yml"
+    )
+    if "issues/new?" not in issue_url:
+        lines.append("  1. GitHub issue:")
+        lines.append(issue_url)
+        if project is not None:
+            lines.append("     " + FAILURE_REPORT_RELATIVE)
+    elif hyperlinks:
+        link = osc8(issue_url, "Open pre-filled GitHub issue")
+        lines.append("  1. Report upstream: " + link)
+        lines.append("     " + FAILURE_REPORT_RELATIVE)
+    elif project is None:
+        lines.append("  1. Report upstream:")
+        lines.append(issue_url)
+    else:
+        lines.append("  1. Report upstream: " + short)
+        lines.append("     " + FAILURE_REPORT_RELATIVE)
+        hint = _gh_issue_hint(repository)
+        if hint:
+            lines.append("     " + hint)
+    option = "  2. Fix locally with your agent"
+    if copied:
+        option += " · copied to clipboard" if unicode else " | copied to clipboard"
+    option += " · " + AGENT_PROMPT_RELATIVE if unicode else " | " + AGENT_PROMPT_RELATIVE
+    lines.append(option)
+    rule = ("─" if unicode else "-") * 72
+    body = prompt if prompt.endswith("\n") else prompt + "\n"
+    lines.append(rule)
+    lines.append(body.rstrip("\n"))
+    lines.append(rule)
+    lines.append("")
+    return "\n".join(lines)
+
+
 def emit_install_failure(
     code: str,
     error: BaseException,
@@ -6645,32 +6877,22 @@ def emit_install_failure(
     opener=urllib.request.urlopen,
     token: str | None = None,
 ) -> str | None:
-    """Print only three user-facing items (L94); details go to heal-handoff/issue."""
-    unicode = stream_supports_unicode(sys.stderr)
-    color = (
-        reporter.color_enabled
-        if reporter is not None
-        else terminal_color_enabled(tty=stream_is_tty(sys.stderr))
-    )
-    prefix = installer_cli_prefix(project)
-    status_command = f"{prefix} status --project . --json" if prefix else "not available"
-    doctor_command = f"{prefix} doctor --project . --json" if prefix else "not available"
-    print(file=sys.stderr)
-    print(
-        "  "
-        + _report_style(status_glyph("fail", unicode=unicode), "31", enabled=color)
-        + " "
-        + _report_style("Installation failed", "31", enabled=color),
-        file=sys.stderr,
-    )
-    print(file=sys.stderr)
+    """Print the failure panel. Cancellation stays a short resume hint with no report."""
+    stream = reporter.stream if reporter is not None else sys.stderr
+    unicode = reporter._unicode if reporter is not None else stream_supports_unicode(stream)
+    color = reporter._color if reporter is not None else False
+    intensity = reporter._intensity if reporter is not None else False
+    tty = reporter._tty if reporter is not None else stream_is_tty(stream)
+    hyperlinks = reporter._hyperlinks if reporter is not None else False
     if code == "CE-INSTALL-CANCELLED":
-        # Cancellation is not a defect report; keep the short resume hint only.
-        print("Installation interrupted. Last verified generation was kept.", file=sys.stderr)
-        print("Rerun the same install command to continue.", file=sys.stderr)
+        print("Installation interrupted. Last verified generation was kept.", file=stream)
+        print("Rerun the same install command to continue.", file=stream)
         if os.environ.get("CHAOS_ENGINE_DEBUG") == "1":
             traceback.print_exc()
         return None
+    prefix = installer_cli_prefix(project)
+    status_command = f"{prefix} status --project . --json" if prefix else "not available"
+    doctor_command = f"{prefix} doctor --project . --json" if prefix else "not available"
     fields = installer_issue_fields(
         code,
         error,
@@ -6689,33 +6911,57 @@ def emit_install_failure(
         extra=upgrade_query_extras(error),
         root=project,
     )
-    if project is not None and core_install_py(project):
-        write_heal_handoff(project, fields, issue_url)
-    artifacts = present_state_artifacts(project) if project is not None else []
-    prompt = heal_handoff_prompt(
-        fields["doctor_command"], issue_url, artifacts=artifacts
+    prompt = heal_handoff_prompt(fields["doctor_command"], issue_url, artifacts=[])
+    if project is not None:
+        try:
+            report = "Issue: " + issue_url + "\n\n" + issue_form_markdown(fields, root=project)
+            _write_named_artifact(project, FAILURE_REPORT_RELATIVE, report)
+            artifacts = present_state_artifacts(project)
+            for relative in (FAILURE_REPORT_RELATIVE, AGENT_PROMPT_RELATIVE):
+                if relative not in artifacts:
+                    artifacts.append(relative)
+            if core_install_py(project) and HEAL_HANDOFF_RELATIVE not in artifacts:
+                artifacts.append(HEAL_HANDOFF_RELATIVE)
+            prompt = heal_handoff_prompt(
+                fields["doctor_command"],
+                issue_url,
+                artifacts=artifacts,
+            )
+            _write_named_artifact(project, AGENT_PROMPT_RELATIVE, prompt)
+            if core_install_py(project):
+                write_heal_handoff(project, fields, issue_url)
+        except OSError:
+            pass
+    if reporter is not None and not reporter.failure_cause:
+        reporter.failure_cause = one_line_cause(error)
+    cause = reporter.failure_cause if reporter is not None and reporter.failure_cause else one_line_cause(error)
+    environ = reporter._env if reporter is not None else os.environ
+    mode = copy_prompt_mode(environ, tty=tty)
+    copied = copy_install_prompt(prompt, mode=mode, stream=stream)
+    step_index, step_total, step_name = _failure_step(reporter)
+    if not step_name and cause.startswith("Doctor "):
+        step_name = cause
+    panel = format_install_failure_panel(
+        step_index=step_index,
+        step_total=step_total,
+        step_name=step_name,
+        cause=cause,
+        cause_on_checklist=bool(reporter is not None and reporter._tty and reporter.failed_operation),
+        issue_url=issue_url,
+        repository=repository,
+        project=project,
+        prompt=prompt,
+        unicode=unicode,
+        color=color,
+        intensity=intensity,
+        hyperlinks=hyperlinks,
+        copied=copied,
     )
-    # (2) prefilled GitHub issue link (diagnostics live in the URL / handoff)
-    if "issues/new?" in issue_url:
-        print("Open issue:", file=sys.stderr)
+    if reporter is not None:
+        reporter.show_failure_panel(panel)
     else:
-        print("GitHub issue:", file=sys.stderr)
-    print(
-        terminal_issue_link(
-            issue_url,
-            saved=project is not None and core_install_py(project),
-            live=(
-                stream_is_tty(sys.stderr)
-                and hyperlinks_allowed()
-                and select_mode(tty=stream_is_tty(sys.stderr)) == "tty"
-            ),
-        ),
-        file=sys.stderr,
-    )
-    print(file=sys.stderr)
-    # (3) copy-paste agent prompt
-    print("Launch your agent with this prompt:", file=sys.stderr)
-    print(f"`{prompt}`", file=sys.stderr)
+        stream.write(panel)
+        stream.flush()
     if os.environ.get("CHAOS_ENGINE_DEBUG") == "1":
         traceback.print_exc()
     return issue_url
@@ -6948,6 +7194,8 @@ def apply_install_flags(args) -> dict[str, str | None]:
         assign("CHAOS_ENGINE_ASCII", "1")
     if getattr(args, "no_hyperlinks", False):
         assign("CHAOS_ENGINE_HYPERLINKS", "0")
+    if getattr(args, "copy_prompt", False) and os.environ.get("CHAOS_ENGINE_COPY_PROMPT") != "osc52":
+        assign("CHAOS_ENGINE_COPY_PROMPT", "1")
     if getattr(args, "dry_run", False):
         assign("CHAOS_ENGINE_DRY_RUN", "1")
     if getattr(args, "keep_edits", False):
@@ -7079,7 +7327,7 @@ def main() -> int:
     except BaseException as error:
         if isinstance(error, SystemExit):
             raise
-        reporter.fail()
+        reporter.fail(one_line_cause(error))
         reporter.close()
         code = classify_install_error(error)
         write_install_trace(

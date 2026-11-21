@@ -16,6 +16,7 @@ import os
 import pty
 import re
 import select
+import shutil
 import sys
 import tempfile
 import termios
@@ -84,7 +85,12 @@ def case_name(mode: str, width: int, no_color: bool, ascii_mode: bool, outcome: 
 
 
 def project_for(name: str) -> Path:
-    del name
+    if name.startswith("failure"):
+        path = Path("/tmp/ce-golden-failure") / name
+        if path.exists():
+            shutil.rmtree(path)
+        path.mkdir(parents=True)
+        return path
     PROJECT_ROOT.mkdir(parents=True, exist_ok=True)
     return PROJECT_ROOT
 
@@ -131,8 +137,15 @@ def _play(stream, project: Path, outcome: str) -> None:
     reporter.complete("Resolve source", remaining=("Download source", "Install core"))
     reporter.start("Download source", remaining=("Install core",))
     if outcome == "failure":
-        reporter.fail()
+        reporter.fail("Command failed: download timed out")
         reporter.close()
+        BOOTSTRAP.emit_install_failure(
+            "CE-INSTALL-FAILED",
+            RuntimeError("Command failed: download timed out"),
+            "ShaftHQ/chaosengine-harness",
+            reporter=reporter,
+            project=project,
+        )
         return
     reporter.complete("Download source", remaining=())
     reporter.success(

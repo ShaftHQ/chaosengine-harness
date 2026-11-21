@@ -4,7 +4,18 @@
   |          |          |
   `-----'    |       ---+
          ChaosEngine
-  Project    <project>
+  Project    /tmp/ce-golden-failure/failure-log...
   Source     ShaftHQ/chaosengine-harness@main
 [1/3] DONE  Resolve source
 [2/3] FAIL  Download source
+
+  x Installation failed at step 2/3: Download source
+
++- Command failed: download timed out
+
+  1. Report upstream: https://github.com/ShaftHQ/chaosengine-harness/issues/new?template=chaos-engine-installer.yml
+     .chaos-engine-state/failure-report.txt
+  2. Fix locally with your agent | .chaos-engine-state/agent-prompt.md
+------------------------------------------------------------------------
+Continue ChaosEngine install in this folder. Load ChaosEngine if present. Restore the portable core with the documented ChaosEngine install one-liner, then read .chaos-engine-state/failure-report.txt, .chaos-engine-state/install-console.log, .chaos-engine-state/doctor-failure.json, and .chaos-engine-state/agent-prompt.md. Diagnose and fix the install failure locally (auto-provision missing JDK/mvn/JAVA_HOME/PATH when possible). After the core is present, run doctor --json until required components are healthy. The report link is the GitHub issue URL printed above. That source is the publishing repository, not a consumer chaos-engine/ forwarding shim. Ask the user before opening or updating an upstream issue or PR, or pushing.
+------------------------------------------------------------------------

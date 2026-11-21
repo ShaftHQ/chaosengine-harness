@@ -698,11 +698,14 @@ class ChaosEngineBootstrapTest(unittest.TestCase):
                     project=project,
                 )
             text = stderr.getvalue()
+            report = (project / ".chaos-engine-state" / "failure-report.txt").read_text(
+                encoding="utf-8"
+            )
             self.assertIn("Installation failed", text)
-            self.assertIn("Launch your agent with this prompt:", text)
+            self.assertIn("Fix locally with your agent", text)
             self.assertIn("issues/new?", text)
-            # L94: filesystem diagnostics stay in the prefilled issue URL, not stderr noise.
-            self.assertIn("hosts_receipt=present", text.split("issues/new?", 1)[1])
+            # Filesystem diagnostics stay in the prefilled issue URL, not stderr noise.
+            self.assertIn("hosts_receipt=present", report.split("issues/new?", 1)[1])
             self.assertNotIn("Filesystem:", text)
 
     def test_upgrade_health_failure_issue_query_includes_sha_and_safe_components(self):
@@ -778,7 +781,7 @@ class ChaosEngineBootstrapTest(unittest.TestCase):
                     installer.uninstall_with_dependencies.assert_not_called()
                     installer.rollback.assert_not_called()
                     err = stderr.getvalue()
-                    self.assertIn("Installation failed", err)
+                    self.assertIn("Installation interrupted", err)
                     self.assertIn("Last verified generation was kept.", err)
                     self.assertIn("Rerun the same install command", err)
                     self.assertNotIn("Traceback", err)
@@ -1544,7 +1547,7 @@ class GitHubAuthAndRateLimitTest(unittest.TestCase):
             )
         output = stderr.getvalue()
         self.assertIn("Installation failed", output)
-        self.assertIn("Launch your agent with this prompt:", output)
+        self.assertIn("Fix locally with your agent", output)
         self.assertIn("issues/new?", output)
         # Token value must never appear; advice may live in the prefilled URL.
         self.assertNotIn(self.FIXTURE_VALUE, output + str(raised.exception) + repr(raised.exception.args))
