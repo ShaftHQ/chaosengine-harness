@@ -1631,9 +1631,8 @@ class InstallSummaryMatchesDoctorTest(unittest.TestCase):
         self.assertIn(f"components: {healthy}/{total} healthy", doctor_text)
         self.assertEqual((3, 5), (healthy, total))
         self.assertEqual(("graphify degraded", "mempalace sync-advisory"), attention)
-        self.assertIn(
-            "3/5 components (needs attention: graphify degraded, mempalace sync-advisory)", report
-        )
+        self.assertIn("Needs attention: graphify degraded, mempalace sync-advisory", report)
+        self.assertIn("Installed in 00:01 - Doctor healthy (3/5)", report)
         self.assertIn("Doctor: healthy (3/5 components healthy)", report)
 
     def test_final_summary_runs_doctor_from_the_installed_core(self):

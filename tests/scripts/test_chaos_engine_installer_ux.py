@@ -495,8 +495,9 @@ class InstallerUxTests(unittest.TestCase):
             repository="ShaftHQ/SHAFT_ENGINE",
         )
         output = stream.getvalue()
-        self.assertLess(output.index("DONE  Activate clients"), output.index("Installation Successful!"))
-        self.assertIn("Installation Successful!", output)
+        self.assertLess(output.index("DONE  Activate clients"), output.index("Installed in"))
+        self.assertIn("Installed in", output)
+        self.assertNotIn("Installation Successful!", output)
         self.assertNotIn("You can now start a new agent session using Codex, Claude, Grok, Gemini, or Copilot", output)
         self.assertIn(f"Resolved commit: {commit}", output)
         self.assertIn("Doctor: healthy (2/2 components healthy)", output)
@@ -508,17 +509,17 @@ class InstallerUxTests(unittest.TestCase):
         )
         self.assertNotIn("Owned managed dependencies", output)
         self.assertNotIn("Continue working in", output)
-        self.assertIn("To get started:", output)
-        self.assertIn("First-session brief:", output)
-        self.assertIn("Landed: portable core", output)
-        self.assertIn("Untracked: generated indexes", output)
-        self.assertIn("Open one activated host (claude, codex)", output)
-        self.assertIn("Ask the agent to load / use the `chaos-engine` skill.", output)
-        self.assertIn("Run a small sample task", output)
+        self.assertNotIn("To get started:", output)
+        self.assertNotIn("First-session brief:", output)
+        self.assertNotIn("Landed: portable core", output)
+        self.assertNotIn("Caveman", output)
+        self.assertIn("invoke /chaos-engine", output)
+        self.assertIn("doctor --project . anytime", output)
+        self.assertNotIn("uninstall", output.casefold())
         self.assertNotIn("\x1b[", output)
         self.assertNotIn("\r", output)
-        report = output[output.index("Installation Successful!"):]
-        self.assertLessEqual(len(report.splitlines()), 40)
+        report = output[output.index("Installed in"):]
+        self.assertLessEqual(len(report.splitlines()), 18)
 
     def test_success_counts_compatible_legacy_in_healthy_total(self):
         stream = io.StringIO()
@@ -565,7 +566,7 @@ class InstallerUxTests(unittest.TestCase):
             reporter.start("Activate clients")
             reporter.success(Path("/project"), {}, {}, repository="owner/repo")
         self.assertTrue(reporter._stop.is_set())
-        self.assertIn("Installation Successful!", stream.getvalue())
+        self.assertIn("Installed in", stream.getvalue())
 
     def test_tty_success_uses_brand_colors_without_painting_every_line(self):
         class Tty(io.StringIO):
@@ -592,8 +593,10 @@ class InstallerUxTests(unittest.TestCase):
                 repository="ShaftHQ/SHAFT_ENGINE",
             )
         output = stream.getvalue()
-        self.assertIn("\x1b[32mInstallation Successful!\x1b[0m", output)
-        self.assertIn("\x1b[2mTo get started:\x1b[0m", output)
+        self.assertIn("\x1b[32mInstalled in 00:00 · Doctor healthy\x1b[0m", output)
+        self.assertIn("\x1b[2mNext\x1b[0m", output)
+        self.assertNotIn("To get started:", output)
+        self.assertNotIn("Resolved commit:", output)
         self.assertNotIn("38;2;", output)
         self.assertNotIn("\x1b[34m", output)
         self.assertNotIn("\r", output)
@@ -1604,7 +1607,7 @@ class InstallerUxTests(unittest.TestCase):
                 repository="owner/repo",
             )
             output = stream.getvalue()
-            self.assertIn("Installation Successful!", output)
+            self.assertIn("Installed in", output)
             self.assertIn("Doctor: healthy (1/1 components healthy)", output)
             self.assertNotIn("Heal handoff", output)
             self.assertNotIn("Open issue:", output)
@@ -1985,11 +1988,37 @@ class InstallerUxTests(unittest.TestCase):
                 repository="owner/repo",
             )
         output = stream.getvalue()
-        self.assertIn("Host onboarding cards:", output)
-        self.assertIn("marketplace/plugin", output)
-        self.assertIn("file/hook", output)
-        self.assertEqual(1, output.count("how:"))
-        self.assertEqual(1, output.count("gap:"))
+        self.assertNotIn("Host onboarding cards:", output)
+        self.assertNotIn("file/hook", output)
+        self.assertNotIn("Caveman", output)
+        loud = io.StringIO()
+        with unittest.mock.patch.dict(os.environ, {"CHAOS_ENGINE_VERBOSE": "1"}, clear=False), \
+                unittest.mock.patch.object(
+                    BOOTSTRAP,
+                    "detect_install_hosts",
+                    return_value=[
+                        ("claude", "Claude Code", True),
+                        ("codex", "Codex", False),
+                        ("grok", "Grok", False),
+                        ("gemini", "Gemini", False),
+                        ("copilot", "GitHub Copilot", False),
+                    ],
+                ):
+            verbose = BOOTSTRAP.InstallReporter(stream=loud)
+            verbose.success(
+                Path("/project"),
+                {"commit": "d" * 40, "status": "healthy", "components": {}},
+                {"claude": {"status": "healthy"}},
+                repository="owner/repo",
+            )
+        cards = loud.getvalue()
+        self.assertIn("Host onboarding cards:", cards)
+        self.assertIn("marketplace/plugin", cards)
+        self.assertIn("file/hook", cards)
+        self.assertIn("First-session brief:", cards)
+        self.assertIn("Caveman + Ponytail", cards)
+        self.assertEqual(1, cards.count("how:"))
+        self.assertEqual(1, cards.count("gap:"))
 
     def test_first_session_brief_lists_landed_untracked_and_three_next_actions(self):
         with_clients = BOOTSTRAP.format_first_session_brief(
@@ -2207,6 +2236,148 @@ class InstallerVisualLanguage6325Tests(unittest.TestCase):
         last_provision = [row for row in rows if "Provision dependencies" in row][-1]
         self.assertEqual(last_resolve.index("00:00"), last_provision.index("00:00"))
 
+    def test_tty_summary_stays_within_18_lines_and_moves_the_receipt(self):
+        """#133: width 80 tty summary, from the readiness line, is at most 18 lines.
+
+        Receipt text moves to install-receipt.json. The four log lines are a
+        separate test. Inactive hosts, the first-session brief, and onboarding
+        cards stay behind --verbose.
+        """
+        stream = _Tty()
+        environment = self._clean_env(NO_COLOR="1", COLUMNS="80")
+        project = Path("/tmp/ce133s")
+        project.mkdir(parents=True, exist_ok=True)
+        detected = [
+            ("claude", "Claude Code", True),
+            ("codex", "Codex", False),
+            ("grok", "Grok", False),
+            ("gemini", "Gemini", False),
+            ("copilot", "GitHub Copilot", False),
+        ]
+        with unittest.mock.patch.dict(os.environ, environment, clear=True), \
+                unittest.mock.patch.object(BOOTSTRAP.threading.Thread, "start", lambda self: None), \
+                unittest.mock.patch.object(BOOTSTRAP, "detect_install_hosts", return_value=detected):
+            reporter = BOOTSTRAP.InstallReporter(
+                stream=stream, clock=lambda: 1.0, environ=environment
+            )
+            reporter.success(
+                project,
+                {
+                    "commit": "e" * 40,
+                    "status": "healthy",
+                    "components": {"core": {"status": "healthy"}},
+                },
+                {"claude": {"status": "healthy"}},
+                repository="ShaftHQ/chaosengine-harness",
+            )
+        visible = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", stream.getvalue())
+        lines = visible.splitlines()
+        starts = [index for index, line in enumerate(lines) if "Installed in" in line]
+        self.assertTrue(starts, visible)
+        tail = lines[starts[-1]:]
+        while tail and not tail[-1].strip():
+            tail.pop()
+        self.assertLessEqual(len(tail), 18, "\n".join(tail))
+        self.assertNotIn("Resolved commit:", visible)
+        self.assertNotIn("Full install trace:", visible)
+        self.assertNotIn("Installation Successful!", visible)
+        self.assertNotIn("Installed with warnings", visible)
+        self.assertNotIn("Caveman", visible)
+        self.assertNotIn("file/hook", visible)
+        self.assertNotIn("First-session brief:", visible)
+        self.assertNotIn("Host onboarding cards:", visible)
+        self.assertNotIn("gemini", visible)
+        self.assertIn("claude (active)", visible)
+        self.assertIn(".chaos-engine-state/install-receipt.json", visible)
+        self.assertIn("Next", visible)
+        self.assertIn("/chaos-engine", visible)
+        self.assertNotIn("uninstall", visible.casefold())
+        receipt = json.loads(
+            (project / ".chaos-engine-state" / "install-receipt.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            {"clients", "commit", "doctorHealthy", "doctorStatus", "doctorTotal", "trace"},
+            set(receipt),
+        )
+        self.assertEqual("e" * 40, receipt["commit"])
+        self.assertEqual("healthy", receipt["doctorStatus"])
+        self.assertEqual(1, receipt["doctorHealthy"])
+        self.assertEqual(1, receipt["doctorTotal"])
+        self.assertEqual({"claude": {"status": "healthy"}}, receipt["clients"])
+        self.assertTrue(receipt["trace"].endswith(".chaos-engine-state/install-trace.json"))
+
+    def test_codex_hook_trust_is_one_action_line(self):
+        """#133: a host that still needs /hooks trust gets one action line and its doc link."""
+        detected = [
+            ("claude", "Claude Code", False),
+            ("codex", "Codex", True),
+            ("grok", "Grok", False),
+            ("gemini", "Gemini", False),
+            ("copilot", "GitHub Copilot", False),
+        ]
+        with unittest.mock.patch.object(BOOTSTRAP, "detect_install_hosts", return_value=detected):
+            report = BOOTSTRAP.format_install_report(
+                project=Path("/project"),
+                doctor_status="healthy",
+                healthy=1,
+                total=1,
+                commit="f" * 40,
+                clients={"codex": {"status": "healthy"}},
+                repository="ShaftHQ/chaosengine-harness",
+                source_label=None,
+                elapsed="00:01",
+                unicode=True,
+                width=80,
+                probes={"codex": {"status": "configured", "detail": "trust the hook in /hooks"}},
+                show_receipt_lines=False,
+            )
+        self.assertIn("codex (needs /hooks trust)", report)
+        self.assertIn("Codex: run /hooks once to trust .codex/hooks.json", report)
+        self.assertIn("https://shafthq.github.io/docs/agentic/chaos-engine", report)
+        self.assertNotIn("gemini", report)
+        self.assertNotIn("Resolved commit:", report)
+        self.assertLessEqual(
+            len(report[report.index("Installed in"):].splitlines()),
+            18,
+        )
+
+    def test_log_summary_keeps_the_four_receipt_lines(self):
+        """#133: log mode still prints the four receipt lines unchanged."""
+        stream = io.StringIO()
+        project = Path("/tmp/ce133s")
+        commit = "e" * 40
+        with unittest.mock.patch.dict(os.environ, self._clean_env(), clear=True), \
+                unittest.mock.patch.object(
+                    BOOTSTRAP,
+                    "detect_install_hosts",
+                    return_value=[("claude", "Claude Code", True)],
+                ):
+            reporter = BOOTSTRAP.InstallReporter(stream=stream)
+            reporter.success(
+                project,
+                {
+                    "commit": commit,
+                    "status": "healthy",
+                    "components": {"core": {"status": "healthy"}},
+                },
+                {"claude": {"status": "healthy"}},
+                repository="ShaftHQ/chaosengine-harness",
+            )
+        output = stream.getvalue()
+        trace = (project / ".chaos-engine-state" / "install-trace.json").as_posix()
+        self.assertIn(f"Resolved commit: {commit}", output)
+        self.assertIn("Doctor: healthy (1/1 components healthy)", output)
+        self.assertEqual(reporter.install_receipt["trace"], trace)
+        merged = BOOTSTRAP.attach_install_receipt(
+            {"status": "installed", "commit": commit},
+            reporter,
+        )
+        self.assertEqual(commit, merged["commit"])
+        self.assertEqual(reporter.install_receipt, merged["installReceipt"])
+        self.assertIn("Clients: claude", output)
+        self.assertIn(f"Full install trace: {trace}", output)
+        self.assertIn("Installed in", output)
+
     def test_summary_headline_reflects_unhealthy_doctor_without_color(self):
         stream = io.StringIO()
         with unittest.mock.patch.dict(os.environ, self._clean_env(), clear=True):
@@ -2219,7 +2390,8 @@ class InstallerVisualLanguage6325Tests(unittest.TestCase):
             )
         output = stream.getvalue()
         self.assertNotIn("Installation Successful!", output)
-        self.assertIn("Installed with warnings", output)
+        self.assertNotIn("Installed with warnings", output)
+        self.assertIn("Doctor degraded (1/2)", output)
         self.assertIn("Doctor: degraded (1/2 components healthy)", output)
         self.assertNotIn("\x1b", output)
 
@@ -2234,15 +2406,15 @@ class InstallerVisualLanguage6325Tests(unittest.TestCase):
                 repository="ShaftHQ/SHAFT_ENGINE",
             )
         output = stream.getvalue()
-        report = output[output.index("Installation Successful!"):]
-        self.assertRegex(report, r"\n  Doctor     \+ healthy  1/1 components\n")
-        self.assertRegex(report, r"\n  Hosts      claude\n")
-        self.assertIn("    1. Open one activated host (claude)", report)
-        self.assertIn("    2. Ask the agent to load / use the `chaos-engine` skill.", report)
-        self.assertIn("    3. Run a small sample task", report)
-        self.assertLessEqual(len(report.splitlines()), 40)
+        report = output[output.index("Installed in"):]
+        self.assertRegex(report, r"Installed in .+ - Doctor healthy \(1/1\)")
+        self.assertIn("claude (active)", report)
+        self.assertIn("    1. Open claude in this project and invoke /chaos-engine", report)
+        self.assertIn("    2. Run python3 .chaos-engine/install.py doctor --project . anytime", report)
+        self.assertNotIn("    3. ", report)
+        self.assertLessEqual(len(report.splitlines()), 18)
         for line in report.splitlines():
-            if re.match(r"  (Project|Doctor|Hosts|Commit) {2,}\S", line):
+            if re.match(r"  (Hosts|Guide|Receipt) {2,}\S", line):
                 self.assertEqual(" ", line[12], line)
                 self.assertNotEqual(" ", line[13], line)
 

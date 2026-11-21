@@ -81,7 +81,7 @@ The same flags work on `install.sh`, `bootstrap.py`, and `install.py`. PowerShel
 | `--skip-pack-post-install` | `-SkipPackPostInstall` | Do not run the selected pack postInstall |
 | `verify` / `uninstall` | the same subcommands | Check the payload, or remove it and keep edited files |
 
-`install.sh` and `install.ps1` print `Installing ChaosEngine into …` and `Download:` only with `--verbose` / `-Verbose`, or when Stage-0 itself fails. `CHAOS_ENGINE_JSON=1` matches `--json`. After a successful install the Next list is: open a host and invoke `/chaos-engine`, then doctor anytime. Uninstall stays `python3 .chaos-engine/install.py uninstall --project .`.
+`install.sh` and `install.ps1` print `Installing ChaosEngine into …` and `Download:` only with `--verbose` / `-Verbose`, or when Stage-0 itself fails. `CHAOS_ENGINE_JSON=1` matches `--json`. After a successful install the summary is at most 18 lines: a readiness line, active hosts, the trace and guide, a receipt link on a TTY, and two Next steps (open a host and invoke `/chaos-engine`, then doctor). Log mode still prints the four `Receipt` lines. `--verbose` adds the first-session brief and host cards. Uninstall stays `python3 .chaos-engine/install.py uninstall --project .`.
 
 ## Local CLI
 
@@ -920,7 +920,7 @@ The installer, `doctor`, and `status --digest` share one grammar.
 | Steps | Checklist redraws in place. `NO_COLOR` keeps the redraw and dim, and drops colour. The running row has at most two `└─` detail lines | One `[n/N] DONE  <step>` line per completed step. No cursor codes |
 | Detail | Rate, elapsed, or `waiting for data` on that rail, under the running step only | Trace lines only with `--verbose` or `CHAOS_ENGINE_VERBOSE=1`. A stalled download prints one `... waiting for data` line per 15 s |
 | Glyphs | `✓` done, `✗` failed, `!` warning, braille spinner | ASCII `+`, `x`, `!`, spinner `-\|/`. Every glyph sits next to a word or a duration, so meaning never depends on color |
-| Summary | One header (`Project`, `Source`, `Commit` once; Commit updates after Resolve source), the checklist, then the headline. The summary does not repeat Project, Source, or Commit. Log mode still prints the `Receipt` lines (`Resolved commit:`, `Doctor:`, `Clients:`, `Full install trace:`) | Same receipt text, no color and no cursor codes |
+| Summary | One header (`Project`, `Source`, `Commit` once; Commit updates after Resolve source), the checklist, then at most 18 lines: readiness, active hosts, action lines only when a host needs a step, trace, guide, a `Receipt` link, and two Next steps. Inactive hosts, the first-session brief, and host cards need `--verbose`. The summary does not repeat Project, Source, or Commit | Log mode prints the same summary and still prints the four `Receipt` lines (`Resolved commit:`, `Doctor:`, `Clients:`, `Full install trace:`). No color and no cursor codes |
 | Failure | `✗ Installation failed (<code>)`, `<code>: <one-line cause>`, then exactly one `Next fix:` | Same. A long prefilled issue URL becomes a terminal hyperlink on a TTY, and the full URL is saved in `.chaos-engine-state/heal-handoff.md` |
 | Doctor rows | `[error\|warning\|info] <name> — <status>` plus `  fix-next: <command>` | `status --digest` prints the same rows for failing checks only |
 

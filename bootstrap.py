@@ -2279,7 +2279,17 @@ class InstallReporter:
             )
         if commit is not None and not self.commit_label:
             self._remember_commit(commit)
+        client_map = clients if isinstance(clients, dict) else {}
+        self.install_receipt = install_receipt_document(
+            commit=commit,
+            doctor_status=doctor_status,
+            healthy=healthy,
+            total=total,
+            clients=client_map,
+            trace=install_trace_path(Path(project)).as_posix(),
+        )
         self.close()
+        write_install_receipt(Path(project), self.install_receipt)
         if self._env.get("CHAOS_ENGINE_QUIET") == "1" or self.mode == "quiet":
             return
         report = format_install_report(
@@ -2289,7 +2299,7 @@ class InstallReporter:
             total=total,
             attention=attention,
             commit=commit,
-            clients=clients if isinstance(clients, dict) else {},
+            clients=client_map,
             repository=repository,
             source_label=self.source_label,
             elapsed=elapsed,
@@ -2300,7 +2310,10 @@ class InstallReporter:
             width=self._width(),
             probes=installed_host_probes(project),
             hyperlinks=self._hyperlinks,
+            verbose=self._verbose,
+            show_receipt_lines=self.mode != "tty",
         )
+        self.summary_printed = True
         if self._tty:
             block = self._header_lines()
             if block:
@@ -2452,12 +2465,166 @@ def verify_gate_doctor(installer, target: Path, project: Path) -> dict[str, obje
     return run(project, verify_clients=False)
 
 
-def _doctor_glyph_kind(doctor_status: str) -> str:
-    if doctor_status == "healthy":
-        return "ok"
-    if doctor_status in UNHEALTHY_DOCTOR_STATUSES:
-        return "warn"
-    return "info"
+def install_receipt_document(
+    *,
+    commit: str | None,
+    doctor_status: str,
+    healthy: int,
+    total: int,
+    clients: dict[str, object],
+    trace: str,
+) -> dict[str, object]:
+    """Machine receipt. The same object is written to disk and added to ``--json``."""
+    return {
+        "commit": commit,
+        "doctorStatus": doctor_status,
+        "doctorHealthy": int(healthy),
+        "doctorTotal": int(total),
+        "clients": dict(clients) if isinstance(clients, dict) else {},
+        "trace": trace,
+    }
+
+
+def attach_install_receipt(result: dict[str, object], reporter: object) -> dict[str, object]:
+    """Add the receipt object to an install result. Existing keys stay put."""
+    receipt = getattr(reporter, "install_receipt", None)
+    if not isinstance(receipt, dict):
+        return result
+    merged = dict(result)
+    merged["installReceipt"] = receipt
+    return merged
+
+
+def write_install_receipt(project: Path, document: dict[str, object]) -> Path | None:
+    """Write ``.chaos-engine-state/install-receipt.json``. Skip a missing project directory."""
+    root = Path(project)
+    try:
+        if not root.is_dir():
+            return None
+    except OSError:
+        return None
+    path = root / ".chaos-engine-state" / "install-receipt.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return path
+
+
+_CODEX_TRUST_STATUSES = frozenset({"configured", "disabled", "unsupported"})
+
+
+def summarize_install_hosts(
+    *,
+    detected: list[tuple[str, str, bool]],
+    activated: dict[str, object],
+    probes: dict[str, dict] | None,
+    verbose: bool,
+) -> tuple[list[str], list[str]]:
+    """Active host phrases, plus action lines. Inactive hosts stay hidden unless verbose."""
+    detected_map = {host_id: found for host_id, _label, found in detected}
+    activated_names = {str(name).casefold() for name in activated}
+    probe_map = probes or {}
+    phrases: list[str] = []
+    actions: list[str] = []
+    for host_id, _command, label in HOST_DETECT_COMMANDS:
+        found = bool(detected_map.get(host_id))
+        turned_on = host_id in activated_names or any(
+            name == host_id or name.startswith(f"{host_id}-") for name in activated_names
+        )
+        probe = probe_map.get(host_id)
+        probe = probe if isinstance(probe, dict) else None
+        needs_trust = (
+            host_id == "codex"
+            and probe is not None
+            and probe.get("status") in _CODEX_TRUST_STATUSES
+        )
+        grok_action = (
+            host_id == "grok"
+            and probe is not None
+            and probe.get("status") not in {None, "healthy", "absent"}
+            and (found or turned_on)
+        )
+        if not (found or turned_on or needs_trust) and not verbose:
+            continue
+        if needs_trust:
+            state = "needs /hooks trust"
+        elif host_id == "copilot" and found and not turned_on:
+            state = "IDE"
+        elif turned_on or (
+            host_id == "grok" and probe is not None and probe.get("status") == "healthy"
+        ):
+            state = "active"
+        elif found:
+            state = "on PATH"
+        else:
+            state = "not on PATH"
+        phrases.append(f"{host_id} ({state})")
+        if needs_trust:
+            actions.append(f"{label}: run /hooks once to trust .codex/hooks.json")
+        elif grok_action:
+            actions.append(f"{label}: run /hooks-trust, then reload hooks")
+    return phrases, actions
+
+
+def _summary_readiness(
+    *,
+    unhealthy: bool,
+    doctor_status: str,
+    healthy: int,
+    total: int,
+    elapsed: str,
+    unicode: bool,
+    color: bool,
+    intensity: bool,
+) -> str:
+    """One readiness line. An unhealthy doctor is not a success headline."""
+    if unhealthy:
+        glyph = status_glyph("warn", unicode=unicode)
+        text = f"Doctor {doctor_status}"
+        if total:
+            text += f" ({healthy}/{total})"
+        role = "33"
+    else:
+        glyph = status_glyph("ok", unicode=unicode)
+        sep = " · " if unicode else " - "
+        ratio = f" ({healthy}/{total})" if total else ""
+        text = f"Installed in {elapsed}{sep}Doctor {doctor_status}{ratio}"
+        role = "32"
+    return (
+        "  "
+        + _report_style(glyph, role, enabled=color, intensity=intensity)
+        + " "
+        + _report_style(text, role, enabled=color, intensity=intensity)
+    )
+
+
+def _summary_next_lines(
+    project: Path,
+    clients: dict[str, object],
+    *,
+    color: bool,
+    intensity: bool,
+) -> list[str]:
+    names = sorted(str(name) for name in clients) if isinstance(clients, dict) else []
+    if names:
+        opened = "Open " + ", ".join(names) + " in this project and invoke /chaos-engine"
+    else:
+        opened = "Open a host in this project and invoke /chaos-engine"
+    doctor = installer_cli_prefix(project)
+    if doctor is None:
+        doctor = "py -3 .chaos-engine/install.py" if os.name == "nt" else "python3 .chaos-engine/install.py"
+    second = f"Run {doctor} doctor --project . anytime"
+    heading = "  " + _report_style("Next", "dim", enabled=color, intensity=intensity)
+    return [heading, f"    1. {opened}", f"    2. {second}"]
+
+
+def _linked_or_plain(path: Path, label: str, *, hyperlinks: bool) -> str:
+    if not hyperlinks:
+        return label
+    try:
+        target = path.resolve().as_uri()
+    except (OSError, ValueError):
+        return label
+    return osc8(target, label)
 
 
 def format_install_report(
@@ -2479,46 +2646,54 @@ def format_install_report(
     width: int = 80,
     probes: dict[str, dict] | None = None,
     hyperlinks: bool = False,
+    verbose: bool = False,
+    show_receipt_lines: bool = True,
 ) -> str:
-    """Render the finish receipt. Project, Source, and Commit stay in the header, not here."""
+    """Render the finish summary. Project, Source, and Commit stay in the header.
+
+    ``show_receipt_lines`` keeps the four receipt text lines (log mode). A TTY
+    shows a receipt link instead. The long brief and host cards are verbose-only.
+    """
     unhealthy = doctor_status in UNHEALTHY_DOCTOR_STATUSES
-    tone = "33" if unhealthy else "32"
-    title = "Installed with warnings" if unhealthy else "Installation Successful!"
-    glyph = status_glyph("warn" if unhealthy else "ok", unicode=unicode)
-    headline = (
-        f"{_report_style(glyph, tone, enabled=color, intensity=intensity)} "
-        f"{_report_style(title, tone, enabled=color, intensity=intensity)}"
-    )
-    lines = ["", f"  {headline}  ({elapsed})"]
-    if width >= 48:
-        rule = "──" if unicode else "--"
-        lines.append("  " + _report_style(rule * 18, "dim", enabled=color, intensity=intensity))
-    lines.append("")
-    doctor_glyph = status_glyph(_doctor_glyph_kind(doctor_status), unicode=unicode)
-    doctor_value = f"{doctor_glyph} {doctor_status}"
-    if total:
-        doctor_value += f"  {healthy}/{total} components"
-    if attention:
-        doctor_value += f" (needs attention: {', '.join(attention)})"
-    lines.append(_align_report("Doctor", doctor_value, color=color, intensity=intensity))
     client_names = sorted(clients) if isinstance(clients, dict) else []
+    detected = detect_install_hosts()
+    phrases, actions = summarize_install_hosts(
+        detected=detected,
+        activated=clients if isinstance(clients, dict) else {},
+        probes=probes,
+        verbose=verbose,
+    )
+    separator = " · " if unicode else " | "
+    lines = [
+        "",
+        _summary_readiness(
+            unhealthy=unhealthy,
+            doctor_status=doctor_status,
+            healthy=healthy,
+            total=total,
+            elapsed=elapsed,
+            unicode=unicode,
+            color=color,
+            intensity=intensity,
+        ),
+    ]
+    if attention:
+        lines.append("  Needs attention: " + ", ".join(attention))
     lines.append(
         _align_report(
             "Hosts",
-            ", ".join(client_names) or "none activated yet",
+            separator.join(phrases) if phrases else "none active",
             color=color,
             intensity=intensity,
         )
     )
-    lines.append("")
-    started = format_first_session_brief(clients=clients).rstrip("\n")
-    if color or intensity:
-        started = started.replace(
-            "To get started:",
-            _report_style("To get started:", "dim", enabled=color, intensity=True),
-            1,
-        )
-    lines.append(started)
+    guide = installer_user_guide_url(repository)
+    for action in actions:
+        value = action
+        with_guide = f"{action} ({guide})"
+        if len(_align_report("Action", with_guide)) <= width:
+            value = with_guide
+        lines.append(_align_report("Action", value, color=color, intensity=intensity))
     if extra_blocks:
         lines.append("")
         for block in extra_blocks:
@@ -2527,18 +2702,21 @@ def format_install_report(
                 lines.append("  " + _report_style(block, role, enabled=color, intensity=intensity))
             else:
                 lines.append(block)
-    lines.append("")
-    lines.append(
-        format_host_onboarding_cards(
-            detected=detect_install_hosts(),
-            activated=clients,
-            color=color,
-            intensity=intensity,
-            probes=probes,
-        ).rstrip("\n")
-    )
-    lines.append("")
-    guide = installer_user_guide_url(repository)
+    trace = install_trace_path(Path(project)).as_posix()
+    if not show_receipt_lines:
+        plain_trace = _align_report("Trace", trace, color=False)
+        if len(plain_trace) <= width:
+            shown = _linked_or_plain(install_trace_path(Path(project)), trace, hyperlinks=hyperlinks)
+            lines.append(_align_report("Trace", shown, color=color, intensity=intensity))
+        else:
+            label = _align_report("Trace", "", color=color, intensity=intensity).rstrip()
+            if not color:
+                label = re.sub(r" +\x1b\[0m$", "\x1b[0m", label)
+            lines.append(label)
+            # A path stays whole. Wrapping it splits install-trace.json.
+            lines.append(
+                _linked_or_plain(install_trace_path(Path(project)), trace, hyperlinks=hyperlinks)
+            )
     if hyperlinks:
         lines.append(
             _align_report("Guide", osc8(guide, link_label(guide)), color=color, intensity=intensity)
@@ -2555,32 +2733,74 @@ def format_install_report(
                 label = re.sub(r" +\x1b\[0m$", "\x1b[0m", label)
             lines.append(label)
             lines.extend(layout_lines(guide, width, hyperlinks=False))
-    trace = install_trace_path(Path(project)).as_posix()
-    # Stable machine-readable receipt lines (agents and tests parse these).
-    receipt = []
-    if commit is not None:
-        receipt.append(f"Resolved commit: {commit}")
-    if total:
-        receipt.append(f"Doctor: {doctor_status} ({healthy}/{total} components healthy)")
+    if show_receipt_lines:
+        # Stable machine-readable receipt lines (agents and tests parse these).
+        receipt = []
+        if commit is not None:
+            receipt.append(f"Resolved commit: {commit}")
+        if total:
+            receipt.append(f"Doctor: {doctor_status} ({healthy}/{total} components healthy)")
+        else:
+            receipt.append(f"Doctor: {doctor_status}")
+        if client_names:
+            receipt.append(f"Clients: {', '.join(client_names)}")
+        receipt.append(f"Full install trace: {trace}")
+        lines.append(
+            _align_report(
+                "Receipt",
+                _report_style(receipt[0], "dim", enabled=color, intensity=intensity),
+                color=color,
+                intensity=intensity,
+            )
+        )
+        lines.extend(
+            "             " + _report_style(item, "dim", enabled=color, intensity=intensity)
+            for item in receipt[1:]
+        )
     else:
-        receipt.append(f"Doctor: {doctor_status}")
-    if client_names:
-        receipt.append(f"Clients: {', '.join(client_names)}")
-    receipt.append(f"Full install trace: {trace}")
-    lines.append(
-        _align_report(
-            "Receipt",
-            _report_style(receipt[0], "dim", enabled=color, intensity=intensity),
+        receipt_path = Path(project) / ".chaos-engine-state" / "install-receipt.json"
+        lines.append(
+            _align_report(
+                "Receipt",
+                _linked_or_plain(
+                    receipt_path,
+                    ".chaos-engine-state/install-receipt.json",
+                    hyperlinks=hyperlinks,
+                ),
+                color=color,
+                intensity=intensity,
+            )
+        )
+    if verbose:
+        lines.append("")
+        started = format_first_session_brief(clients=clients).rstrip("\n")
+        if color or intensity:
+            started = started.replace(
+                "To get started:",
+                _report_style("To get started:", "dim", enabled=color, intensity=True),
+                1,
+            )
+        lines.append(started)
+        lines.append("")
+        lines.append(
+            format_host_onboarding_cards(
+                detected=detected,
+                activated=clients,
+                color=color,
+                intensity=intensity,
+                probes=probes,
+            ).rstrip("\n")
+        )
+        lines.extend(format_landed_untracked_lines())
+    lines.append("")
+    lines.extend(
+        _summary_next_lines(
+            Path(project),
+            clients if isinstance(clients, dict) else {},
             color=color,
             intensity=intensity,
         )
     )
-    lines.extend(
-        "             " + _report_style(item, "dim", enabled=color, intensity=intensity)
-        for item in receipt[1:]
-    )
-    lines.extend(format_landed_untracked_lines())
-    lines.append("")
     return "\n".join(lines) + "\n"
 
 
@@ -5642,14 +5862,17 @@ def _publish_heal_handoff(
         include_heal_handoff=True,
     )
     reporter.close()
-    return {
-        "status": "heal-handoff",
-        "root": str(target),
-        "commit": commit,
-        "clients": clients,
-        "doctor": doctor,
-        "issueUrl": issue_url,
-    }
+    return attach_install_receipt(
+        {
+            "status": "heal-handoff",
+            "root": str(target),
+            "commit": commit,
+            "clients": clients,
+            "doctor": doctor,
+            "issueUrl": issue_url,
+        },
+        reporter,
+    )
 
 
 def _rollback_failed_verify(
@@ -5796,13 +6019,16 @@ def _verify_and_activate(
         terminal_context.__exit__(None, None, None)
     reporter.success(project, doctor, doctor["clients"], repository=repository)
     reporter.close()
-    return {
-        "status": "installed",
-        "root": str(target),
-        "commit": commit,
-        "clients": clients,
-        "doctor": doctor,
-    }
+    return attach_install_receipt(
+        {
+            "status": "installed",
+            "root": str(target),
+            "commit": commit,
+            "clients": clients,
+            "doctor": doctor,
+        },
+        reporter,
+    )
 
 
 def lift_consumer_project(project: Path) -> Path:
@@ -6886,7 +7112,7 @@ def main() -> int:
     want_json = json_mode or not stdout_tty
     if want_json:
         print(json.dumps(result, sort_keys=True))
-    elif not quiet_mode:
+    elif not quiet_mode and not getattr(reporter, "summary_printed", False):
         print("Next:", file=sys.stderr)
         print("  1. open a host and invoke `/chaos-engine`", file=sys.stderr)
         print("  2. doctor anytime", file=sys.stderr)

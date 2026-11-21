@@ -50,37 +50,14 @@ ChaosEngine  chaosengine-harness 0.4.20261115.5
   [32m[+][0m Resolve source   00:02
   [32m[+][0m Download source  00:02
 
-  [32m+[0m [32mInstallation Successful![0m  (00:10)
-  [2m------------------------------------[0m
-
-  [2mDoctor    [0m + healthy  1/1 components
-  [2mHosts     [0m grok
-
-First-session brief:
-  [2mTo get started:[0m
-    1. Open one activated host (grok) in this project.
-    2. Ask the agent to load / use the `chaos-engine` skill.
-    3. Run a small sample task (for example: ask doctor status, or a one-file reversible edit).
-
-Host onboarding cards:
-  [2mHosts[0m
-    Claude Code      [2mnot on PATH   [0m marketplace/plugin
-      how: Install registers a path-unique local marketplace and installs the `chaos-engine` (+ companions) plugins at project scope. Restart Claude Code, then ask it to use the chaos-engine skill.
-      gap: Requires the `claude` CLI on PATH for automatic marketplace activation.
-    Codex            [2mnot on PATH   [0m marketplace/plugin
-    Grok             [32mactivated     [0m file/hook
-    Gemini           [2mnot on PATH   [0m file/hook
-    GitHub Copilot   [2mnot on PATH   [0m file/hook
-
+  [32m+[0m [32mInstalled in 00:10 - Doctor healthy (1/1)[0m
+  [2mHosts     [0m grok (active)
+  [2mTrace     [0m
+<project>/.chaos-engine-state/install-trace.json
   [2mGuide     [0m
 https://shafthq.github.io/docs/agentic/chaos-engine
-  [2mReceipt   [0m [2mResolved commit: 0123456789abcdef0123456789abcdef01234567[0m
-             [2mDoctor: healthy (1/1 components healthy)[0m
-             [2mClients: grok[0m
-             [2mFull install trace: <project>/.chaos-engine-state/install-trace.json[0m
-  Landed: portable core (`.chaos-engine/`), lifecycle hooks, five host adapters,
-    Caveman + Ponytail companions, self-improve skill, Memory / MemPalace / Graphify store tooling.
-  Untracked: generated indexes, caches, receipts, and runtimes
-    (`.chaos-engine-runtime*`, dependency/host receipts, `graphify-out`, local tool caches).
-    Canonical adapters and config stay trackable.
+  [2mReceipt   [0m .chaos-engine-state/install-receipt.json
 
+  [2mNext[0m
+    1. Open grok in this project and invoke /chaos-engine
+    2. Run python3 .chaos-engine/install.py doctor --project . anytime

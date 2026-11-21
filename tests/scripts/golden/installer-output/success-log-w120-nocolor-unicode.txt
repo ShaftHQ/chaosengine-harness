@@ -10,36 +10,14 @@
 [2/2] DONE  Download source
   Commit     0123456789ab…
 
-  ✓ Installation Successful!  (00:05)
-  ────────────────────────────────────
-
-  Doctor     ✓ healthy  1/1 components
-  Hosts      grok
-
-First-session brief:
-  To get started:
-    1. Open one activated host (grok) in this project.
-    2. Ask the agent to load / use the `chaos-engine` skill.
-    3. Run a small sample task (for example: ask doctor status, or a one-file reversible edit).
-
-Host onboarding cards:
-  Hosts
-    Claude Code      not on PATH    marketplace/plugin
-      how: Install registers a path-unique local marketplace and installs the `chaos-engine` (+ companions) plugins at project scope. Restart Claude Code, then ask it to use the chaos-engine skill.
-      gap: Requires the `claude` CLI on PATH for automatic marketplace activation.
-    Codex            not on PATH    marketplace/plugin
-    Grok             activated      file/hook
-    Gemini           not on PATH    file/hook
-    GitHub Copilot   not on PATH    file/hook
-
+  ✓ Installed in 00:05 · Doctor healthy (1/1)
+  Hosts      grok (active)
   Guide      https://shafthq.github.io/docs/agentic/chaos-engine
   Receipt    Resolved commit: 0123456789abcdef0123456789abcdef01234567
              Doctor: healthy (1/1 components healthy)
              Clients: grok
              Full install trace: <project>/.chaos-engine-state/install-trace.json
-  Landed: portable core (`.chaos-engine/`), lifecycle hooks, five host adapters,
-    Caveman + Ponytail companions, self-improve skill, Memory / MemPalace / Graphify store tooling.
-  Untracked: generated indexes, caches, receipts, and runtimes
-    (`.chaos-engine-runtime*`, dependency/host receipts, `graphify-out`, local tool caches).
-    Canonical adapters and config stay trackable.
 
+  Next
+    1. Open grok in this project and invoke /chaos-engine
+    2. Run python3 .chaos-engine/install.py doctor --project . anytime
