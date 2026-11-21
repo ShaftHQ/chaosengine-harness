@@ -1566,12 +1566,22 @@ class InstallerUxTests(unittest.TestCase):
             }
             stream = io.StringIO()
             reporter = BOOTSTRAP.InstallReporter(stream=stream)
+            published: list[str] = []
+            real_publish = BOOTSTRAP.publish_installer_issue
+
+            def counting_publish(*args, **kwargs):
+                url = real_publish(*args, **kwargs)
+                published.append(url)
+                return url
+
             with unittest.mock.patch.object(
                 BOOTSTRAP, "resolve_latest", return_value=("a" * 40, "main")
             ), unittest.mock.patch.object(
                 BOOTSTRAP, "download_source", return_value=ROOT
             ), unittest.mock.patch.object(
                 BOOTSTRAP, "load_installer", return_value=installer
+            ), unittest.mock.patch.object(
+                BOOTSTRAP, "publish_installer_issue", counting_publish
             ):
                 result = BOOTSTRAP.install_latest(
                     project,
@@ -1580,6 +1590,8 @@ class InstallerUxTests(unittest.TestCase):
                     opener=unittest.mock.Mock(),
                     reporter=reporter,
                 )
+            self.assertEqual(1, len(published))
+            self.assertEqual(published[0], result["issueUrl"])
             self.assertEqual("heal-handoff", result["status"])
             self.assertTrue((project / ".chaos-engine-state/heal-handoff.md").is_file())
             output = stream.getvalue()
@@ -1590,6 +1602,7 @@ class InstallerUxTests(unittest.TestCase):
             report = (project / ".chaos-engine-state" / "failure-report.txt").read_text(
                 encoding="utf-8"
             )
+            self.assertTrue(report.startswith("Issue: " + published[0]))
             self.assertIn("issues/new?", report)
             prompt = (project / ".chaos-engine-state" / "agent-prompt.md").read_text(
                 encoding="utf-8"
@@ -1600,6 +1613,7 @@ class InstallerUxTests(unittest.TestCase):
             handoff = (project / ".chaos-engine-state/heal-handoff.md").read_text(
                 encoding="utf-8"
             )
+            self.assertIn("Issue: " + published[0], handoff)
             self.assertIn("Do not rerun the install one-liner", handoff)
             self.assertIn("Continue with one agent step", handoff)
             installer.rollback.assert_not_called()

@@ -380,6 +380,8 @@ class Stage0ShellTests(unittest.TestCase):
         curl.write_text(body, encoding="utf-8")
         curl.chmod(0o755)
         env = os.environ.copy()
+        # A sibling test can leave JAVA_HOME pointed at a deleted temp JDK.
+        env.pop("JAVA_HOME", None)
         env["PATH"] = str(binary) + os.pathsep + env.get("PATH", "")
         return env
 
@@ -512,6 +514,7 @@ class Stage0ShellTests(unittest.TestCase):
                 stub.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
                 stub.chmod(0o755)
             env = os.environ.copy()
+            env.pop("JAVA_HOME", None)
             env["PATH"] = str(bindir) + os.pathsep + env.get("PATH", "")
             completed = subprocess.run(
                 ["sh", str(script)],
@@ -596,6 +599,7 @@ class Stage0ShellTests(unittest.TestCase):
                         py.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
                         py.chmod(0o755)
                     env = os.environ.copy()
+                    env.pop("JAVA_HOME", None)
                     env["PATH"] = str(bindir) + os.pathsep + env.get("PATH", "")
                     env["HOME"] = str(root / "home")
                     env.pop("XDG_DATA_HOME", None)

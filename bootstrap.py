@@ -2228,6 +2228,7 @@ class InstallReporter:
         healthy, total, attention = doctor_component_counts(components)
         elapsed = self._duration(max(0.0, self.clock() - self.started))
         extra: list[str] = []
+        published_url: str | None = None
         handoff = project / ".chaos-engine-state" / "merge-handoff.md"
         if handoff.is_file() and not handoff.is_symlink():
             doctor_cli = "py -3" if os.name == "nt" else "python3"
@@ -2278,6 +2279,8 @@ class InstallReporter:
             except OSError:
                 # Keep the fallback issue locator when the handoff file cannot be read.
                 pass
+            if issue_url.startswith("https://"):
+                published_url = issue_url
             doctor_cli = "py -3" if os.name == "nt" else "python3"
             doctor_command = f"{doctor_cli} .chaos-engine/install.py doctor --project ."
             prompt = heal_handoff_prompt(
@@ -2324,6 +2327,7 @@ class InstallReporter:
                 repository,
                 reporter=self,
                 project=Path(project),
+                published_url=published_url,
             )
             return
         if self._env.get("CHAOS_ENGINE_QUIET") == "1" or self.mode == "quiet":
@@ -6876,6 +6880,7 @@ def emit_install_failure(
     project: Path | None = None,
     opener=urllib.request.urlopen,
     token: str | None = None,
+    published_url: str | None = None,
 ) -> str | None:
     """Print the failure panel. Cancellation stays a short resume hint with no report."""
     stream = reporter.stream if reporter is not None else sys.stderr
@@ -6902,15 +6907,19 @@ def emit_install_failure(
         doctor_command,
     )
     fields["fix_next"] = next_fix_hint(code, error, prefix)
-    issue_url = publish_installer_issue(
-        repository,
-        code,
-        fields,
-        opener=opener,
-        token=token,
-        extra=upgrade_query_extras(error),
-        root=project,
-    )
+    if published_url:
+        # The heal-handoff path already published this URL. Do not file again.
+        issue_url = published_url
+    else:
+        issue_url = publish_installer_issue(
+            repository,
+            code,
+            fields,
+            opener=opener,
+            token=token,
+            extra=upgrade_query_extras(error),
+            root=project,
+        )
     prompt = heal_handoff_prompt(fields["doctor_command"], issue_url, artifacts=[])
     if project is not None:
         try:
