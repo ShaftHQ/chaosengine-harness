@@ -917,17 +917,23 @@ The installer, `doctor`, and `status --digest` share one grammar.
 
 | Surface | TTY | Pipe, CI, `TERM=dumb` |
 | --- | --- | --- |
-| Steps | Checklist redraws in place. `NO_COLOR` keeps the redraw and drops SGR colour. The running row has at most two `└─` detail lines | One `[n/N] DONE  <step>` line per completed step. No cursor codes |
+| Steps | Checklist redraws in place. `NO_COLOR` keeps the redraw and dim, and drops colour. The running row has at most two `└─` detail lines | One `[n/N] DONE  <step>` line per completed step. No cursor codes |
 | Detail | Rate, elapsed, or `waiting for data` on that rail, under the running step only | Trace lines only with `--verbose` or `CHAOS_ENGINE_VERBOSE=1`. A stalled download prints one `... waiting for data` line per 15 s |
 | Glyphs | `✓` done, `✗` failed, `!` warning, braille spinner | ASCII `+`, `x`, `!`, spinner `-\|/`. Every glyph sits next to a word or a duration, so meaning never depends on color |
 | Summary | One header (`Project`, `Source`, `Commit` once; Commit updates after Resolve source), the checklist, then the headline. The summary does not repeat Project, Source, or Commit. Log mode still prints the `Receipt` lines (`Resolved commit:`, `Doctor:`, `Clients:`, `Full install trace:`) | Same receipt text, no color and no cursor codes |
 | Failure | `✗ Installation failed (<code>)`, `<code>: <one-line cause>`, then exactly one `Next fix:` | Same. A long prefilled issue URL becomes a terminal hyperlink on a TTY, and the full URL is saved in `.chaos-engine-state/heal-handoff.md` |
 | Doctor rows | `[error\|warning\|info] <name> — <status>` plus `  fix-next: <command>` | `status --digest` prints the same rows for failing checks only |
 
-Color follows [no-color.org](https://no-color.org/): a non-empty `NO_COLOR`
-turns it off, and so does `TERM=dumb`. A non-TTY stays plain unless
-`--color=always`, `CHAOS_ENGINE_COLOR=always`, or `FORCE_COLOR` is set.
-`FORCE_COLOR` does not turn cursor redraw on for a pipe. Set
+Text uses the terminal's own foreground. Labels and captions use dim.
+Done, warning, failure, and the running step use the terminal's green,
+yellow, red, and cyan. The mark's core uses Cybernetic Red only when
+`COLORTERM` is `truecolor` or `24bit`. Colour follows
+[no-color.org](https://no-color.org/): a non-empty `NO_COLOR` or
+`--no-color` drops colour and keeps dim on a TTY, and both win over
+`FORCE_COLOR` and `--color=always`. `TERM=dumb` stays plain, including dim.
+A non-TTY stays plain unless `--color=always`, `CHAOS_ENGINE_COLOR=always`,
+or `FORCE_COLOR` is set. `FORCE_COLOR` does not turn cursor redraw on for a
+pipe. Set
 `CHAOS_ENGINE_ASCII=1` to force ASCII glyphs on terminals whose font lacks
 them. Glyphs fall back to ASCII automatically when the stream encoding
 (for example a Windows `cp1252` console) cannot encode them. On such consoles

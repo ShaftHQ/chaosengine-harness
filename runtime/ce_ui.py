@@ -88,6 +88,42 @@ def color_level(environ=None, *, enabled: bool) -> str:
     return "16"
 
 
+# Cybernetic Red #FF3B4D. The mark's core only, and only on a truecolor terminal.
+CYBERNETIC_RED = "\x1b[38;2;255;59;77m"
+_COLOR_ROLES = {"ok": "32", "warn": "33", "fail": "31", "accent": "36"}
+
+
+def paint(value: str, role: str, *, color: bool, intensity: bool = False) -> str:
+    """Paint one semantic role. Prose stays the terminal's default foreground.
+
+    ``dim`` and ``bold`` are intensity, so ``NO_COLOR`` keeps them. Colour roles
+    use the terminal's own ANSI palette. Fixed RGB does not belong here.
+    """
+    if role in {"", "plain", "value"}:
+        return value
+    if role == "dim":
+        if not intensity and not color:
+            return value
+        return f"\x1b[2m{value}\x1b[0m"
+    if role == "bold":
+        if not intensity and not color:
+            return value
+        return f"\x1b[1m{value}\x1b[0m"
+    if not color:
+        return value
+    code = _COLOR_ROLES.get(role)
+    if code is None:
+        return value
+    return f"\x1b[{code}m{value}\x1b[0m"
+
+
+def paint_core(glyph: str, *, truecolor: bool) -> str:
+    """Colour the mark's core. Armor and every other glyph stay unpainted."""
+    if not truecolor:
+        return glyph
+    return f"{CYBERNETIC_RED}{glyph}\x1b[0m"
+
+
 def cursor_enabled(*, tty: bool, environ=None, vt_ok: bool = True) -> bool:
     """Cursor addressing follows the TTY, not ``NO_COLOR`` or ``FORCE_COLOR``."""
     environ = _environ(environ)

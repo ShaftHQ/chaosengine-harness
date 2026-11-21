@@ -5,35 +5,35 @@
   █▄▄▄▄▄▀    │       ───┘
 ChaosEngine  chaosengine-harness 0.4.20261115.5
 [K
-  Project    <project>[K
-  Source     ShaftHQ/chaosengine-harness@main[K
+  [2mProject   [0m <project>[K
+  [2mSource    [0m ShaftHQ/chaosengine-harness@main[K
 [K
 [4F[K
-  Project    <project>[K
-  Source     ShaftHQ/chaosengine-harness@main[K
+  [2mProject   [0m <project>[K
+  [2mSource    [0m ShaftHQ/chaosengine-harness@main[K
 [K
   [⠋] Resolve source   running[K
 └─ 0/3 · Elapsed 00:03[K
-  [·] Download source[K
-  [·] Install core[K
+[2m  [·] Download source[0m[K
+[2m  [·] Install core[0m[K
 [8F[K
-  Project    <project>[K
-  Source     ShaftHQ/chaosengine-harness@main[K
+  [2mProject   [0m <project>[K
+  [2mSource    [0m ShaftHQ/chaosengine-harness@main[K
 [K
   [✓] Resolve source   00:02[K
-  [·] Download source[K
-  [·] Install core[K
+[2m  [·] Download source[0m[K
+[2m  [·] Install core[0m[K
 [7F[K
-  Project    <project>[K
-  Source     ShaftHQ/chaosengine-harness@main[K
+  [2mProject   [0m <project>[K
+  [2mSource    [0m ShaftHQ/chaosengine-harness@main[K
 [K
   [✓] Resolve source   00:02[K
   [⠋] Download source  running[K
 └─ 1/3 · Elapsed 00:07[K
-  [·] Install core[K
+[2m  [·] Install core[0m[K
 [8F[K
-  Project    <project>[K
-  Source     ShaftHQ/chaosengine-harness@main[K
+  [2mProject   [0m <project>[K
+  [2mSource    [0m ShaftHQ/chaosengine-harness@main[K
 [K
   [✓] Resolve source   00:02[K
   [✓] Download source  00:02[K
@@ -43,40 +43,40 @@ ChaosEngine  chaosengine-harness 0.4.20261115.5
 [K
 [K
 [K
-[6F  Project    <project>
-  Source     ShaftHQ/chaosengine-harness@main
-  Commit     0123456789ab…
+[6F  [2mProject   [0m <project>
+  [2mSource    [0m ShaftHQ/chaosengine-harness@main
+  [2mCommit    [0m 0123456789ab…
 
   [✓] Resolve source   00:02
   [✓] Download source  00:02
 
   ✓ Installation Successful!  (00:10)
-  ────────────────────────────────────
+  [2m────────────────────────────────────[0m
 
-  Doctor     ✓ healthy  1/1 components
-  Hosts      grok
+  [2mDoctor    [0m ✓ healthy  1/1 components
+  [2mHosts     [0m grok
 
 First-session brief:
-  To get started:
+  [2mTo get started:[0m
     1. Open one activated host (grok) in this project.
     2. Ask the agent to load / use the `chaos-engine` skill.
     3. Run a small sample task (for example: ask doctor status, or a one-file reversible edit).
 
 Host onboarding cards:
-  Hosts
-    Claude Code      not on PATH    marketplace/plugin
+  [2mHosts[0m
+    Claude Code      [2mnot on PATH   [0m marketplace/plugin
       how: Install registers a path-unique local marketplace and installs the `chaos-engine` (+ companions) plugins at project scope. Restart Claude Code, then ask it to use the chaos-engine skill.
       gap: Requires the `claude` CLI on PATH for automatic marketplace activation.
-    Codex            not on PATH    marketplace/plugin
-    Grok             activated      file/hook
-    Gemini           not on PATH    file/hook
-    GitHub Copilot   not on PATH    file/hook
+    Codex            [2mnot on PATH   [0m marketplace/plugin
+    Grok             [2mactivated     [0m file/hook
+    Gemini           [2mnot on PATH   [0m file/hook
+    GitHub Copilot   [2mnot on PATH   [0m file/hook
 
-  Guide      https://shafthq.github.io/docs/agentic/chaos-engine
-  Receipt    Resolved commit: 0123456789abcdef0123456789abcdef01234567
-             Doctor: healthy (1/1 components healthy)
-             Clients: grok
-             Full install trace: <project>/.chaos-engine-state/install-trace.json
+  [2mGuide     [0m https://shafthq.github.io/docs/agentic/chaos-engine
+  [2mReceipt   [0m [2mResolved commit: 0123456789abcdef0123456789abcdef01234567[0m
+             [2mDoctor: healthy (1/1 components healthy)[0m
+             [2mClients: grok[0m
+             [2mFull install trace: <project>/.chaos-engine-state/install-trace.json[0m
   Landed: portable core (`.chaos-engine/`), lifecycle hooks, five host adapters,
     Caveman + Ponytail companions, self-improve skill, Memory / MemPalace / Graphify store tooling.
   Untracked: generated indexes, caches, receipts, and runtimes

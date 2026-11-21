@@ -294,7 +294,9 @@ def test_no_color_tty_redraws_in_place():
         pytest.skip("redraw capture uses the POSIX pty")
     text = render("tty", 80, True, False, "success")
     assert CURSOR_UP.search(text), "NO_COLOR=1 TTY appended frames instead of redrawing"
-    assert not re.search(r"\x1b\[[0-9;]*m", text), "NO_COLOR=1 TTY frame used SGR colour"
+    # AC-02: colour SGR is gone. Bold and dim stay.
+    for code in re.findall(r"\x1b\[([0-9;]*)m", text):
+        assert code in {"0", "1", "2", "22"}, code
 
 
 def test_plan_prints_bare_tool_names_on_stderr():

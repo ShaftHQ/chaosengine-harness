@@ -163,9 +163,6 @@ TRANSIENT_SSL_MARKERS = (
     "CONNECTION RESET BY PEER",
 )
 LOCAL_CLONE_ENV = "CHAOS_ENGINE_LOCAL_CLONE"
-CYBERNETIC_RED = "\x1b[38;2;255;59;77m"
-ION_BLUE = "\x1b[38;2;47;125;255m"
-OPTICAL_WHITE = "\x1b[38;2;242;247;255m"
 BRAND_ASCII = (
     "  ,-----.    |       ---+",
     "  |          |          |",
@@ -667,6 +664,42 @@ def color_level(environ=None, *, enabled: bool) -> str:
     if "256color" in (environ.get("TERM") or ""):
         return "256"
     return "16"
+
+
+# Cybernetic Red #FF3B4D. The mark's core only, and only on a truecolor terminal.
+CYBERNETIC_RED = "\x1b[38;2;255;59;77m"
+_COLOR_ROLES = {"ok": "32", "warn": "33", "fail": "31", "accent": "36"}
+
+
+def paint(value: str, role: str, *, color: bool, intensity: bool = False) -> str:
+    """Paint one semantic role. Prose stays the terminal's default foreground.
+
+    ``dim`` and ``bold`` are intensity, so ``NO_COLOR`` keeps them. Colour roles
+    use the terminal's own ANSI palette. Fixed RGB does not belong here.
+    """
+    if role in {"", "plain", "value"}:
+        return value
+    if role == "dim":
+        if not intensity and not color:
+            return value
+        return f"\x1b[2m{value}\x1b[0m"
+    if role == "bold":
+        if not intensity and not color:
+            return value
+        return f"\x1b[1m{value}\x1b[0m"
+    if not color:
+        return value
+    code = _COLOR_ROLES.get(role)
+    if code is None:
+        return value
+    return f"\x1b[{code}m{value}\x1b[0m"
+
+
+def paint_core(glyph: str, *, truecolor: bool) -> str:
+    """Colour the mark's core. Armor and every other glyph stay unpainted."""
+    if not truecolor:
+        return glyph
+    return f"{CYBERNETIC_RED}{glyph}\x1b[0m"
 
 
 def cursor_enabled(*, tty: bool, environ=None, vt_ok: bool = True) -> bool:
@@ -1514,7 +1547,14 @@ def brand_lockup() -> str:
     return f"ChaosEngine  chaosengine-harness {version}".rstrip()
 
 
-def brand_lines(*, width: int = 80, color: bool = False, unicode: bool = False, lockup: bool = True) -> list[str]:
+def brand_lines(
+    *,
+    width: int = 80,
+    color: bool = False,
+    unicode: bool = False,
+    lockup: bool = True,
+    truecolor: bool = False,
+) -> list[str]:
     if width < 28:
         templates = BRAND_NARROW
         glyph = "*"
@@ -1524,7 +1564,7 @@ def brand_lines(*, width: int = 80, color: bool = False, unicode: bool = False, 
     else:
         templates = BRAND_ASCII
         glyph = "*"
-    core = f"{CYBERNETIC_RED}{glyph}\x1b[0m" if color else glyph
+    core = paint_core(glyph, truecolor=bool(color and truecolor))
     painted = []
     for template in templates:
         line = template.replace(glyph, core, 1) if glyph in template else template
@@ -1713,6 +1753,11 @@ class InstallReporter:
             and (self._tty or terminal_color_enabled(tty=False, environ=self._env))
         )
         self.cursor = self._tty and self._caps.cursor
+        # Dim and bold are intensity, not colour. A TTY keeps them when colour
+        # is off. Dumb, JSON, quiet, a failed VT enable, and a plain log do not.
+        self._intensity = self.mode not in {"json", "quiet"} and (
+            self._color or (self._tty and self._caps.cursor)
+        )
         self._unicode = self._caps.unicode
         self._hyperlinks = self._tty and self._caps.hyperlinks
         self._verbose = verbose_enabled(self._env)
@@ -1731,6 +1776,7 @@ class InstallReporter:
                 color=self._color,
                 unicode=self._tty and self._unicode,
                 lockup=self._tty,
+                truecolor=self._caps.color == "truecolor",
             )
             for line in lines:
                 self.stream.write(line + "\n")
@@ -1757,12 +1803,8 @@ class InstallReporter:
             with self._lock:
                 self._render_locked()
         else:
-            self.stream.write(
-                self._truncate(_align_report("Project", self.project_root)) + "\n"
-            )
-            self.stream.write(
-                self._truncate(_align_report("Source", self.source_label)) + "\n"
-            )
+            self.stream.write(self._aligned_live_row("Project", self.project_root) + "\n")
+            self.stream.write(self._aligned_live_row("Source", self.source_label) + "\n")
             self.stream.flush()
 
     def trace(self, message: str) -> None:
@@ -1802,17 +1844,12 @@ class InstallReporter:
         prefix = f"  {label:<10} "
         if not plain.startswith(prefix):
             return plain
-        return _align_report(label, plain[len(prefix) :], color=self._color)
+        return _align_report(
+            label, plain[len(prefix) :], color=self._color, intensity=self._intensity
+        )
 
     def _wrap(self, value: str) -> list[str]:
         return layout_lines(value, self._width(), hyperlinks=self._hyperlinks)
-
-    def _paint(self, value: str, color: str) -> str:
-        if not self._color:
-            return value
-        if color.startswith("\x1b"):
-            return f"{color}{value}\x1b[0m"
-        return f"\x1b[{color}m{value}\x1b[0m"
 
     def _duration(self, seconds: float) -> str:
         seconds = max(0, round(seconds))
@@ -1891,7 +1928,9 @@ class InstallReporter:
             if self._tty:
                 self._render_locked()
             else:
-                self.stream.write(f"{self._step_label(operation)}DONE  {operation}\n")
+                self.stream.write(
+                    f"{self._step_label(operation)}{self._style('DONE', 'ok')}  {operation}\n"
+                )
                 self.stream.flush()
 
     @property
@@ -1921,7 +1960,9 @@ class InstallReporter:
             if self._tty:
                 self._render_locked()
             else:
-                self.stream.write(f"{self._step_label(operation)}FAIL  {operation}\n")
+                self.stream.write(
+                    f"{self._step_label(operation)}{self._style('FAIL', 'fail')}  {operation}\n"
+                )
                 self.stream.flush()
 
     def begin_download(self, total: int | None, *, detail: str | None = None) -> None:
@@ -2052,7 +2093,7 @@ class InstallReporter:
             with self._lock:
                 self._render_locked()
         elif not self._commit_logged:
-            self.stream.write(self._truncate(_align_report("Commit", self.commit_label or "")) + "\n")
+            self.stream.write(self._aligned_live_row("Commit", self.commit_label or "") + "\n")
             self.stream.flush()
             self._commit_logged = True
 
@@ -2066,16 +2107,31 @@ class InstallReporter:
             lines.append(self._aligned_live_row("Commit", strip_controls(self.commit_label)))
         return lines
 
+    def _style(self, value: str, role: str) -> str:
+        return paint(value, role, color=self._color, intensity=self._intensity)
+
     def _checklist_row(self, item: str, *, name_width: int, active: str, check: str, empty: str) -> str:
         if item in self.completed_operations:
+            mark = f"[{check}]"
             duration = self._duration(self._completed_elapsed.get(item, 0.0))
-            return self._paint(self._truncate(f"  [{check}] {item:<{name_width}}  {duration}"), "32")
+            plain = self._truncate(f"  {mark} {item:<{name_width}}  {duration}")
+            return plain.replace(mark, self._style(mark, "ok"), 1)
         if item == self.failed_operation:
             failed = status_glyph("fail", unicode=self._unicode)
-            return self._paint(self._truncate(f"  [{failed}] {item:<{name_width}}  failed"), "31")
+            mark = f"[{failed}]"
+            plain = self._truncate(f"  {mark} {item:<{name_width}}  failed")
+            painted = plain.replace(mark, self._style(mark, "fail"), 1)
+            if painted.endswith("failed"):
+                painted = painted[:-6] + self._style("failed", "fail")
+            return painted
         if item == self.current_operation or item in self._in_flight:
-            return self._paint(self._truncate(f"  [{active}] {item:<{name_width}}  running"), ION_BLUE)
-        return self._paint(self._truncate(f"  [{empty}] {item}"), "2")
+            mark = f"[{active}]"
+            plain = self._truncate(f"  {mark} {item:<{name_width}}  running")
+            painted = plain.replace(mark, self._style(mark, "accent"), 1)
+            if painted.endswith("running"):
+                painted = painted[:-7] + self._style("running", "accent")
+            return painted
+        return self._style(self._truncate(f"  [{empty}] {item}"), "dim")
 
     def _rail_lines(self, now: float, elapsed: float) -> list[str]:
         """At most two detail lines under the running step. No Trace or Status row."""
@@ -2239,6 +2295,7 @@ class InstallReporter:
             elapsed=elapsed,
             extra_blocks=extra,
             color=self._color,
+            intensity=self._intensity,
             unicode=self._unicode,
             width=self._width(),
             probes=installed_host_probes(project),
@@ -2261,7 +2318,7 @@ class InstallReporter:
             if block:
                 self.stream.write("\n".join(block) + "\n")
         elif self.commit_label and not self._commit_logged:
-            self.stream.write(self._truncate(_align_report("Commit", self.commit_label)) + "\n")
+            self.stream.write(self._aligned_live_row("Commit", self.commit_label) + "\n")
             self._commit_logged = True
         self.stream.write(report)
         self.stream.flush()
@@ -2284,16 +2341,13 @@ class InstallReporter:
 
 
 
-def _report_style(value: str, color: str, *, enabled: bool) -> str:
-    if not enabled:
-        return value
-    if color.startswith("\x1b"):
-        return f"{color}{value}\x1b[0m"
-    return f"\x1b[{color}m{value}\x1b[0m"
+def _report_style(value: str, role: str, *, enabled: bool, intensity: bool = False) -> str:
+    mapped = {"2": "dim", "32": "ok", "31": "fail", "33": "warn", "36": "accent"}.get(role, role)
+    return paint(value, mapped, color=enabled, intensity=intensity)
 
 
-def _align_report(label: str, value: str, *, color: bool = False) -> str:
-    painted = _report_style(f"{label:<10}", ION_BLUE, enabled=color)
+def _align_report(label: str, value: str, *, color: bool = False, intensity: bool = False) -> str:
+    painted = _report_style(f"{label:<10}", "dim", enabled=color, intensity=intensity)
     return f"  {painted} {value}"
 
 
@@ -2420,6 +2474,7 @@ def format_install_report(
     elapsed: str,
     extra_blocks: list[str] | None = None,
     color: bool = False,
+    intensity: bool = False,
     unicode: bool = False,
     width: int = 80,
     probes: dict[str, dict] | None = None,
@@ -2431,13 +2486,13 @@ def format_install_report(
     title = "Installed with warnings" if unhealthy else "Installation Successful!"
     glyph = status_glyph("warn" if unhealthy else "ok", unicode=unicode)
     headline = (
-        f"{_report_style(glyph, tone, enabled=color)} "
-        f"{_report_style(title, tone, enabled=color)}"
+        f"{_report_style(glyph, tone, enabled=color, intensity=intensity)} "
+        f"{_report_style(title, tone, enabled=color, intensity=intensity)}"
     )
     lines = ["", f"  {headline}  ({elapsed})"]
     if width >= 48:
         rule = "──" if unicode else "--"
-        lines.append("  " + _report_style(rule * 18, ION_BLUE, enabled=color))
+        lines.append("  " + _report_style(rule * 18, "dim", enabled=color, intensity=intensity))
     lines.append("")
     doctor_glyph = status_glyph(_doctor_glyph_kind(doctor_status), unicode=unicode)
     doctor_value = f"{doctor_glyph} {doctor_status}"
@@ -2445,17 +2500,22 @@ def format_install_report(
         doctor_value += f"  {healthy}/{total} components"
     if attention:
         doctor_value += f" (needs attention: {', '.join(attention)})"
-    lines.append(_align_report("Doctor", doctor_value, color=color))
+    lines.append(_align_report("Doctor", doctor_value, color=color, intensity=intensity))
     client_names = sorted(clients) if isinstance(clients, dict) else []
     lines.append(
-        _align_report("Hosts", ", ".join(client_names) or "none activated yet", color=color)
+        _align_report(
+            "Hosts",
+            ", ".join(client_names) or "none activated yet",
+            color=color,
+            intensity=intensity,
+        )
     )
     lines.append("")
     started = format_first_session_brief(clients=clients).rstrip("\n")
-    if color:
+    if color or intensity:
         started = started.replace(
             "To get started:",
-            _report_style("To get started:", ION_BLUE, enabled=True),
+            _report_style("To get started:", "dim", enabled=color, intensity=True),
             1,
         )
     lines.append(started)
@@ -2463,8 +2523,8 @@ def format_install_report(
         lines.append("")
         for block in extra_blocks:
             if block in {"Merge handoff", "Heal handoff"}:
-                paint = "31" if block == "Heal handoff" else ION_BLUE
-                lines.append("  " + _report_style(block, paint, enabled=color))
+                role = "fail" if block == "Heal handoff" else "accent"
+                lines.append("  " + _report_style(block, role, enabled=color, intensity=intensity))
             else:
                 lines.append(block)
     lines.append("")
@@ -2473,19 +2533,27 @@ def format_install_report(
             detected=detect_install_hosts(),
             activated=clients,
             color=color,
+            intensity=intensity,
             probes=probes,
         ).rstrip("\n")
     )
     lines.append("")
     guide = installer_user_guide_url(repository)
     if hyperlinks:
-        lines.append(_align_report("Guide", osc8(guide, link_label(guide)), color=color))
+        lines.append(
+            _align_report("Guide", osc8(guide, link_label(guide)), color=color, intensity=intensity)
+        )
     else:
         plain = _align_report("Guide", guide, color=False)
         if len(plain) <= width:
-            lines.append(_align_report("Guide", guide, color=color))
+            lines.append(_align_report("Guide", guide, color=color, intensity=intensity))
         else:
-            lines.append(_align_report("Guide", "", color=color).rstrip())
+            label = _align_report("Guide", "", color=color, intensity=intensity).rstrip()
+            if not color:
+                # An unpainted empty label was rstripped, so the pad goes too.
+                # Colour kept the pad inside the SGR, ahead of the reset.
+                label = re.sub(r" +\x1b\[0m$", "\x1b[0m", label)
+            lines.append(label)
             lines.extend(layout_lines(guide, width, hyperlinks=False))
     trace = install_trace_path(Path(project)).as_posix()
     # Stable machine-readable receipt lines (agents and tests parse these).
@@ -2499,9 +2567,17 @@ def format_install_report(
     if client_names:
         receipt.append(f"Clients: {', '.join(client_names)}")
     receipt.append(f"Full install trace: {trace}")
-    lines.append(_align_report("Receipt", _report_style(receipt[0], "2", enabled=color), color=color))
+    lines.append(
+        _align_report(
+            "Receipt",
+            _report_style(receipt[0], "dim", enabled=color, intensity=intensity),
+            color=color,
+            intensity=intensity,
+        )
+    )
     lines.extend(
-        "             " + _report_style(item, "2", enabled=color) for item in receipt[1:]
+        "             " + _report_style(item, "dim", enabled=color, intensity=intensity)
+        for item in receipt[1:]
     )
     lines.extend(format_landed_untracked_lines())
     lines.append("")
@@ -2602,6 +2678,7 @@ def format_host_onboarding_cards(
     detected: list[tuple[str, str, bool]] | None = None,
     activated: dict[str, object] | None = None,
     color: bool = False,
+    intensity: bool = False,
     targets: tuple[str, ...] | None = None,
     probes: dict[str, dict] | None = None,
 ) -> str:
@@ -2645,7 +2722,7 @@ def format_host_onboarding_cards(
             if not detected_map.get(host_id) and not _row_ready(host_id):
                 actionable = host_id
                 break
-    heading = _report_style("Hosts", ION_BLUE, enabled=color)
+    heading = _report_style("Hosts", "dim", enabled=color, intensity=intensity)
     lines = ["Host onboarding cards:", f"  {heading}"]
     for host_id, _command, _label in HOST_DETECT_COMMANDS:
         card = HOST_ONBOARDING_CARDS[host_id]
@@ -2665,9 +2742,9 @@ def format_host_onboarding_cards(
             status = "not on PATH"
         status_cell = f"{status:<14}"
         if color and status == "activated":
-            status_cell = _report_style(status_cell, "32", enabled=True)
-        elif color:
-            status_cell = _report_style(status_cell, "2", enabled=True)
+            status_cell = _report_style(status_cell, "ok", enabled=True, intensity=True)
+        elif color or intensity:
+            status_cell = _report_style(status_cell, "dim", enabled=color, intensity=intensity)
         path = card["path"].replace("file/hook injection", "file/hook")
         lines.append(f"    {card['label']:<16} {status_cell} {path}")
         if host_id == actionable:
@@ -2851,10 +2928,13 @@ def run_first_run_wizard(
     unicode = stream_supports_unicode(output)
     found_glyph = status_glyph("ok", unicode=unicode)
     missing_glyph = status_glyph("pending", unicode=unicode)
+    caps = detect_capabilities(output)
+    color_on = caps.color != "none"
+    intensity = color_on or bool(caps.tty and caps.cursor)
     output.write("ChaosEngine first-run wizard\n")
-    output.write(_align_report("Project", str(project)) + "\n")
-    output.write(_align_report("Source", repository) + "\n")
-    output.write("\n  1. What gets installed\n")
+    output.write(_align_report("Project", str(project), color=color_on, intensity=intensity) + "\n")
+    output.write(_align_report("Source", repository, color=color_on, intensity=intensity) + "\n")
+    output.write("\n  " + paint("1. What gets installed", "dim", color=color_on, intensity=intensity) + "\n")
     output.write(
         "     The portable ChaosEngine core, lifecycle hooks, Memory, MemPalace,\n"
         "     Graphify CLI, five host adapters, and the Caveman + Ponytail companion\n"
@@ -2862,7 +2942,7 @@ def run_first_run_wizard(
     )
     if with_maven_tools:
         output.write("     Maven Tools MCP will also be installed for this project.\n")
-    output.write("\n  2. Hosts\n")
+    output.write("\n  " + paint("2. Hosts", "dim", color=color_on, intensity=intensity) + "\n")
     if present:
         output.write("     Detected host CLIs: " + ", ".join(present) + "\n")
     else:
@@ -2875,11 +2955,19 @@ def run_first_run_wizard(
     for _host_id, label, found in hosts:
         glyph = found_glyph if found else missing_glyph
         status = "on PATH" if found else "not on PATH"
-        output.write(f"       {glyph} {label:<16} {status}\n")
-    output.write("\n  3. Next after install\n")
+        role = "ok" if found else "dim"
+        output.write(
+            f"       {paint(glyph, role, color=color_on, intensity=intensity)} "
+            f"{label:<16} {paint(status, role, color=color_on, intensity=intensity)}\n"
+        )
+    output.write("\n  " + paint("3. Next after install", "dim", color=color_on, intensity=intensity) + "\n")
     for host_id, label, found in hosts:
         glyph = found_glyph if found else missing_glyph
-        output.write(f"     {glyph} {label}: {HOST_NEXT_ACTIONS[host_id]}\n")
+        role = "ok" if found else "dim"
+        output.write(
+            f"     {paint(glyph, role, color=color_on, intensity=intensity)} "
+            f"{label}: {HOST_NEXT_ACTIONS[host_id]}\n"
+        )
     if resolved_hosts:
         selected: tuple[str, ...] | None = tuple(resolved_hosts)
     elif ask_clients:

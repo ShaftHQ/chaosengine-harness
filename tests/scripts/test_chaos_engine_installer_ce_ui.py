@@ -240,7 +240,87 @@ class CeUiTests(unittest.TestCase):
             reporter.close()
         text = stream.getvalue()
         self.assertRegex(text, r"\x1b\[\d+F")
-        self.assertNotRegex(text, r"\x1b\[[0-9;]*m")
+        self.assertNotRegex(text, r"\x1b\[(?!0m|1m|2m|22m)[0-9;]*m")
+
+    def test_palette_uses_terminal_colours_and_keeps_dim_under_no_color(self):
+        """#132 / AC-02: no fixed-RGB text, no blue, dim survives NO_COLOR."""
+        sources = {
+            "ce_ui": (ROOT / "runtime" / "ce_ui.py").read_text(encoding="utf-8"),
+            "bootstrap": (ROOT / "bootstrap.py").read_text(encoding="utf-8"),
+        }
+        for name, source in sources.items():
+            self.assertNotIn("\\x1b[34m", source, name)
+            self.assertNotIn("48;2;", source, name)
+            start = 0
+            while True:
+                index = source.find("38;2;", start)
+                if index < 0:
+                    break
+                window = source[max(0, index - 80) : index + 40]
+                self.assertIn("CYBERNETIC_RED", window, name)
+                start = index + 5
+        stream = _Tty()
+        env = {"TERM": "xterm", "NO_COLOR": "1", "COLUMNS": "80", "FORCE_COLOR": "1"}
+        with unittest.mock.patch.dict(os.environ, env, clear=True), unittest.mock.patch.object(
+            BOOTSTRAP.threading.Thread, "start", lambda self: None
+        ):
+            reporter = BOOTSTRAP.InstallReporter(stream=stream, clock=lambda: 1.0, environ=env)
+            reporter.announce(Path("/project"), "owner/repo", "main")
+            reporter.start("Download source", remaining=("Install core",))
+            reporter.close()
+        text = stream.getvalue()
+        self.assertIn("\x1b[2m", text)
+        self.assertIn("Project", text)
+        self.assertNotIn("38;2;", text)
+        self.assertNotIn("\x1b[34m", text)
+        self.assertNotRegex(text, r"\x1b\[(?!0m|1m|2m|22m)[0-9;]*m")
+        self.assertRegex(text, r"\x1b\[\d+F")
+        plain = "\n".join(BOOTSTRAP.brand_lines(width=80, color=True, unicode=True))
+        self.assertNotIn("38;2;", plain)
+        core = "\n".join(BOOTSTRAP.brand_lines(width=80, color=True, unicode=True, truecolor=True))
+        self.assertEqual(1, core.count("38;2;"))
+
+    def test_color_log_and_wizard_dim_labels(self):
+        stream = io.StringIO()
+        env = {
+            "TERM": "xterm-256color",
+            "COLUMNS": "80",
+            "FORCE_COLOR": "1",
+            "PATH": "/usr/bin",
+            "HOME": "/tmp",
+        }
+        with unittest.mock.patch.dict(os.environ, env, clear=True), unittest.mock.patch.object(
+            BOOTSTRAP.threading.Thread, "start", lambda self: None
+        ):
+            reporter = BOOTSTRAP.InstallReporter(stream=stream, clock=lambda: 1.0, environ=env)
+            reporter.announce(Path("/project"), "owner/repo", "main")
+            reporter.note_commit("a" * 40)
+            reporter.start("Resolve source", remaining=())
+            reporter.complete("Resolve source", remaining=())
+        text = stream.getvalue()
+        self.assertFalse(reporter.cursor)
+        self.assertRegex(text, r"\x1b\[2mProject\s+\x1b\[0m /project")
+        self.assertRegex(text, r"\x1b\[2mSource\s+\x1b\[0m owner/repo@main")
+        self.assertRegex(text, r"\x1b\[2mCommit\s+\x1b\[0m aaaaaaaaaaaa")
+        self.assertIn("\x1b[32mDONE\x1b[0m", text)
+        self.assertNotIn("38;2;", text)
+
+        wizard = _Tty()
+        wizard_env = {"TERM": "xterm", "NO_COLOR": "1", "CI": "1", "COLUMNS": "80"}
+        with unittest.mock.patch.dict(os.environ, wizard_env, clear=True):
+            BOOTSTRAP.run_first_run_wizard(
+                project=Path("/project"),
+                repository="owner/repo",
+                with_maven_tools=False,
+                input_stream=io.StringIO(""),
+                output=wizard,
+                which=lambda name: "/bin/claude" if name == "claude" else None,
+            )
+        shown = wizard.getvalue()
+        self.assertRegex(shown, r"\x1b\[2mProject\s+\x1b\[0m /project")
+        self.assertIn("\x1b[2mnot on PATH\x1b[0m", shown)
+        self.assertNotRegex(shown, r"\x1b\[(?!0m|1m|2m|22m)[0-9;]*m")
+        self.assertNotIn("\x1b[32m", shown)
 
     def test_forced_color_paints_a_pipe_and_skips_the_cursor(self):
         cases = (
