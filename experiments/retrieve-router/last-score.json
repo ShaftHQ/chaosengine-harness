@@ -1,0 +1,65 @@
+{
+  "gap_closed": 0.23076923076923078,
+  "implicit_gap_points": 9.743589743589745,
+  "implicit_questions": 15,
+  "k2_follow_up": false,
+  "label": "fixture backends, not live stores",
+  "p7": "not run",
+  "questions": 26,
+  "recall_at_5": {
+    "implicit": 0.13333333333333333,
+    "no_retrieve": 0.0,
+    "oracle": 1.0,
+    "router": 0.23076923076923078
+  },
+  "routing_accuracy": 1.0,
+  "scale": {
+    "memory": {
+      "16N": {
+        "bytes": 800,
+        "bytes_max": 800,
+        "items": 128,
+        "p95_seconds": 0.007177873980253935,
+        "within_budget": true
+      },
+      "4N": {
+        "bytes": 800,
+        "bytes_max": 800,
+        "items": 32,
+        "p95_seconds": 0.006942359003005549,
+        "within_budget": true
+      },
+      "N": {
+        "bytes": 800,
+        "bytes_max": 800,
+        "items": 8,
+        "p95_seconds": 0.006755687994882464,
+        "within_budget": true
+      }
+    },
+    "mempalace": {
+      "16N": {
+        "bytes": 800,
+        "bytes_max": 800,
+        "items": 128,
+        "p95_seconds": 0.03487272097845562,
+        "within_budget": true
+      },
+      "4N": {
+        "bytes": 800,
+        "bytes_max": 800,
+        "items": 32,
+        "p95_seconds": 0.032923097984166816,
+        "within_budget": true
+      },
+      "N": {
+        "bytes": 800,
+        "bytes_max": 800,
+        "items": 8,
+        "p95_seconds": 0.03402915201149881,
+        "within_budget": true
+      }
+    }
+  },
+  "store_calls": 76
+}
