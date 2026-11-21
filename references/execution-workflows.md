@@ -15,7 +15,9 @@ Select from work shape and qualified capacity, never from a provider, model, or
 marketing label. `ORCHESTRATOR + SINGLE IMPLEMENTER` stays valid when there is only one unit.
 It is not the default when several file-disjoint streams fit the resource check.
 Select `ORCHESTRATOR + PARALLEL IMPLEMENTERS` for independent
-file scopes and cap writers at four. This is an explicit cap of four parallel
+file scopes and cap writers at four. When the owner says to work as orchestrator
+and parallelize, select that workflow for file-disjoint streams and do not
+implement every stream on the main thread. This is an explicit cap of four parallel
 agents, not a transport-specific default. Use
 `SOLO` when no qualified implementer remains. Review is not an implementation
 stream. Finish or hand over owned implementation before switching workflows.

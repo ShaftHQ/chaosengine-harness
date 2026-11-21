@@ -99,6 +99,24 @@ class LearnContractTests(unittest.TestCase):
         self.assertIn("cited", research.casefold())
         self.assertIn("Do not install duplicates under `~/.grok/skills`", learn)
 
+    def test_repeated_session_lessons_join_the_owning_contract(self):
+        work_item = WORK_ITEM.read_text(encoding="utf-8")
+        kanban = (ROOT / "skills/kanban/SKILL.md").read_text(encoding="utf-8")
+        consult = (ROOT / "references/consult-first.md").read_text(encoding="utf-8")
+        workflows = re.sub(
+            r"\s+",
+            " ",
+            (ROOT / "references/execution-workflows.md").read_text(encoding="utf-8"),
+        )
+        self.assertIn("one GitHub ticket that states where the next session picks up", work_item)
+        self.assertIn("Do not open a second pickup ticket", work_item)
+        self.assertIn("supersede pull requests that are already open", kanban)
+        self.assertIn("Do not leave them open beside the mega pull request", kanban)
+        self.assertIn('closes a decision with "you decide"', consult)
+        self.assertIn("do not reopen it", consult)
+        self.assertIn("work as orchestrator", workflows)
+        self.assertIn("do not implement every stream on the main thread", workflows)
+
 
 if __name__ == "__main__":
     unittest.main()
