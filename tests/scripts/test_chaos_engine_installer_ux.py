@@ -45,9 +45,11 @@ class InstallerUxTests(unittest.TestCase):
     def test_reporter_brand_is_first_and_pipe_output_is_durable(self):
         stream = io.StringIO()
         clock = iter((10.0, 12.0, 12.0, 15.0)).__next__
-        reporter = BOOTSTRAP.InstallReporter(stream=stream, clock=clock)
-        reporter.start("Resolve source", remaining=("Download source",))
-        reporter.complete("Resolve source", remaining=("Download source",))
+        env = {"TERM": "xterm", "COLUMNS": "80", "LANG": "C.UTF-8"}
+        with unittest.mock.patch.dict(os.environ, env, clear=True):
+            reporter = BOOTSTRAP.InstallReporter(stream=stream, clock=clock, environ=env)
+            reporter.start("Resolve source", remaining=("Download source",))
+            reporter.complete("Resolve source", remaining=("Download source",))
         output = stream.getvalue()
         self.assertNotIn("transparent automation", output)
         self.assertNotIn("AUTONOMOUS INSTALL", output)
@@ -114,14 +116,25 @@ class InstallerUxTests(unittest.TestCase):
                 return True
 
         pipe = io.StringIO()
-        reporter = BOOTSTRAP.InstallReporter(stream=pipe, clock=lambda: 1.0)
-        reporter.announce(Path("/project"), "ShaftHQ/SHAFT_ENGINE", "main")
+        pipe_env = {"TERM": "xterm", "COLUMNS": "80", "LANG": "C.UTF-8"}
+        with unittest.mock.patch.dict(os.environ, pipe_env, clear=True):
+            reporter = BOOTSTRAP.InstallReporter(stream=pipe, clock=lambda: 1.0, environ=pipe_env)
+            reporter.announce(Path("/project"), "ShaftHQ/SHAFT_ENGINE", "main")
         pipe_out = pipe.getvalue()
         self.assertIn("Project", pipe_out)
         self.assertIn("Source", pipe_out)
         self.assertIn("ShaftHQ/SHAFT_ENGINE@main", pipe_out)
         self.assertNotIn("Install root:", pipe_out)
         self.assertNotIn("\x1b", pipe_out)
+        dumb = io.StringIO()
+        dumb_env = {"TERM": "dumb", "COLUMNS": "80", "LANG": "C.UTF-8"}
+        with unittest.mock.patch.dict(os.environ, dumb_env, clear=True):
+            reporter = BOOTSTRAP.InstallReporter(stream=dumb, clock=lambda: 1.0, environ=dumb_env)
+            reporter.announce(Path("/project"), "ShaftHQ/SHAFT_ENGINE", "main")
+        self.assertEqual(
+            "[ChaosEngine 0.4.20261115.5] ShaftHQ/SHAFT_ENGINE@main\n",
+            dumb.getvalue(),
+        )
 
         stream = Tty()
         environment = {key: value for key, value in os.environ.items() if key != "NO_COLOR"}
@@ -153,7 +166,7 @@ class InstallerUxTests(unittest.TestCase):
                 "COLORTERM",
             }
         }
-        environment.update({"TERM": "xterm", "COLUMNS": "20"})
+        environment.update({"TERM": "xterm", "COLUMNS": "100"})
         with unittest.mock.patch.dict(os.environ, environment, clear=True), unittest.mock.patch.object(
             BOOTSTRAP.InstallReporter, "_enable_windows_vt", return_value=True
         ), unittest.mock.patch.object(BOOTSTRAP.threading.Thread, "start", lambda self: None):
@@ -161,6 +174,7 @@ class InstallerUxTests(unittest.TestCase):
             reporter.announce(Path("/very/long/project/path"), "owner/very-long-repo", "main")
             reporter.close()
         live = stream.getvalue()
+        self.assertIn("Project", live)
         self.assertIn("\x1b[2m", live)
         self.assertIn("\x1b[0m", live)
         self.assertNotIn("38;2;", live)
@@ -229,12 +243,12 @@ class InstallerUxTests(unittest.TestCase):
                 continue
             self.assertLessEqual(len(line), 38, line)
 
-    def test_narrow_width_uses_brand_narrow(self):
+    def test_narrow_width_is_one_identity_line(self):
         lines = BOOTSTRAP.brand_lines(width=27, color=False, unicode=False)
-        self.assertEqual(list(BOOTSTRAP.BRAND_NARROW), lines)
-        self.assertIn("C|*|E", "\n".join(lines))
-        self.assertNotIn("Ǝ", "\n".join(lines))
-        self.assertNotIn("/", lines[0])
+        self.assertEqual(1, len(lines))
+        self.assertTrue(lines[0].startswith("[ChaosEngine"))
+        self.assertLessEqual(len(lines[0]), 27)
+        self.assertNotIn("C|*|E", lines[0])
         self.assertNotEqual(
             BOOTSTRAP.brand_lines(width=27, color=False, unicode=False),
             BOOTSTRAP.brand_lines(width=28, color=False, unicode=False),
@@ -251,41 +265,72 @@ class InstallerUxTests(unittest.TestCase):
             if key not in {"CHAOS_ENGINE_BRAND_SHOWN", "NO_COLOR"}
         }
         environment.update({"TERM": "xterm", "COLUMNS": "20", "NO_COLOR": "1"})
-        with unittest.mock.patch.dict(os.environ, environment, clear=True):
-            reporter = BOOTSTRAP.InstallReporter(stream=stream, clock=lambda: 1.0)
+        with unittest.mock.patch.dict(os.environ, environment, clear=True), unittest.mock.patch.object(
+            BOOTSTRAP.threading.Thread, "start", lambda self: None
+        ):
+            reporter = BOOTSTRAP.InstallReporter(stream=stream, clock=lambda: 1.0, environ=environment)
+            reporter.start("Resolve source", remaining=())
             reporter.close()
         output = stream.getvalue()
-        self.assertIn("C|*|E", output)
+        self.assertIn("[ChaosEngine", output)
+        self.assertNotIn("C|*|E", output)
         self.assertNotIn("Ǝ", output)
-        self.assertNotIn("/C|", output)
         self.assertIn("ChaosEngine", output)
 
-    def test_wide_brands_use_reversed_e_and_keep_red_core(self):
-        for unicode, bars, ends in (
-            (False, ("---+", "|", "---+", "|", "---+"), ("+", "|", "+", "|", "+")),
-            (True, ("───┐", "│", "───┤", "│", "───┘"), ("┐", "│", "┤", "│", "┘")),
-        ):
-            with self.subTest(unicode=unicode):
-                lines = BOOTSTRAP.brand_lines(width=80, color=False, unicode=unicode)
-                plain = "\n".join(lines)
-                colored = "\n".join(
-                    BOOTSTRAP.brand_lines(width=80, color=True, unicode=unicode, truecolor=True)
-                )
-                themed = "\n".join(BOOTSTRAP.brand_lines(width=80, color=True, unicode=unicode))
-                self.assertIn("ChaosEngine", plain)
-                self.assertEqual(
-                    [line.rindex(end) for line, end in zip(lines[:5], ends)],
-                    [lines[0].rindex(ends[0])] * 5,
-                )
-                for line, bar in zip(lines[:5], bars):
-                    self.assertIn(bar, line)
-                self.assertIn(BOOTSTRAP.CYBERNETIC_RED, colored)
-                self.assertNotIn("38;2;", themed)
-                self.assertIn("C|*|E", "\n".join(BOOTSTRAP.brand_lines(width=27, color=False)))
-                self.assertNotIn("Ǝ", "\n".join(BOOTSTRAP.brand_lines(width=27, color=False)))
-                plain_wide = "\n".join(lines[:5])
-                self.assertNotIn("/", plain_wide)
-                self.assertNotIn("╱", plain_wide)
+    def test_wide_brands_follow_the_svg_mark_and_keep_a_red_core(self):
+        # #135 replaced the hand-drawn C/E banner with a scan of symbol-primary.svg.
+        wide = BOOTSTRAP.brand_lines(width=120, color=False, unicode=True)
+        stacked = BOOTSTRAP.brand_lines(width=80, color=False, unicode=True)
+        narrow = BOOTSTRAP.brand_lines(
+            width=50,
+            color=False,
+            unicode=True,
+            repository="ShaftHQ/chaosengine-harness",
+            ref="main",
+            sha="0123456789abcdef0123456789abcdef01234567",
+        )
+        for index, (glyphs, _mask) in enumerate(BOOTSTRAP.BRAND_MARK_WIDE):
+            self.assertTrue(wide[index].startswith(glyphs), wide[index])
+        for index, (glyphs, _mask) in enumerate(BOOTSTRAP.BRAND_MARK_STACK):
+            self.assertEqual(glyphs, stacked[index])
+        self.assertEqual(1, len(narrow))
+        self.assertTrue(narrow[0].startswith("[ChaosEngine "))
+        self.assertLessEqual(len(narrow[0]), 50)
+        self.assertTrue(narrow[0].endswith("…"))
+        self.assertIn("ShaftHQ/", narrow[0])
+        full = BOOTSTRAP.brand_lines(
+            width=120,
+            color=False,
+            unicode=False,
+            repository="ShaftHQ/chaosengine-harness",
+            ref="main",
+            sha="0123456789abcdef0123456789abcdef01234567",
+        )
+        self.assertEqual(1, len(full))
+        self.assertIn("ShaftHQ/chaosengine-harness@main", full[0])
+        self.assertIn("(0123456789ab)", full[0])
+        self.assertNotIn("…", full[0])
+        colored = "\n".join(
+            BOOTSTRAP.brand_lines(width=120, color=True, unicode=True, truecolor=True)
+        )
+        ansi = "\n".join(BOOTSTRAP.brand_lines(width=120, color=True, unicode=True))
+        plain = "\n".join(wide)
+        self.assertIn("ChaosEngine", plain)
+        self.assertIn(BOOTSTRAP.CYBERNETIC_RED, colored)
+        self.assertNotIn("38;2;", ansi)
+        self.assertIn(BOOTSTRAP.ANSI_RED, ansi)
+        self.assertNotIn("\x1b[34m", colored)
+        self.assertNotIn("\x1b[36m", colored)
+        self.assertNotIn("\x1b", plain)
+        beside = BOOTSTRAP.brand_lines(
+            width=120,
+            color=False,
+            unicode=True,
+            header=["Project demo", "Source origin"],
+        )
+        gap = " " * BOOTSTRAP.mark_clear_space(BOOTSTRAP.BRAND_MARK_WIDE)
+        self.assertIn(gap + "Project demo", beside[1])
+        self.assertEqual(BOOTSTRAP.mark_clear_space(BOOTSTRAP.BRAND_MARK_WIDE), gap.count(" "))
 
     def test_download_progress_uses_measured_bytes_and_rolling_rate(self):
         class Tty(io.StringIO):
@@ -760,7 +805,7 @@ class InstallerUxTests(unittest.TestCase):
         self.assertEqual(result, json.loads(stdout.getvalue()))
         self.assertNotIn("transparent automation", stderr.getvalue())
         self.assertNotIn("AUTONOMOUS INSTALL", stderr.getvalue())
-        self.assertIn("ChaosEngine", stderr.getvalue())
+        self.assertNotIn("{", stderr.getvalue())
 
     def test_cli_tty_writes_full_result_and_trace_without_stdout_json(self):
         class Tty(io.StringIO):

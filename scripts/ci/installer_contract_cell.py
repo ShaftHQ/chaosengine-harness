@@ -548,6 +548,24 @@ def _user_cell(workspace: Path, project: Path, timeout: int, output: str) -> Non
         raise SystemExit("uninstall --scope user touched the project")
 
 
+def _recapture_saved(project: Path, saved: dict[str, bytes]) -> dict[str, bytes]:
+    """Bytes restore must match are the files just before replace.
+
+    An upgrade cell installs the pinned tag first. That install may merge
+    instruction files. Replace backs up that merged tree, so the round trip
+    compares to those bytes. A file the pin removed stays at the fixture
+    bytes and still fails the compare.
+    """
+    current: dict[str, bytes] = {}
+    for relative, data in saved.items():
+        path = project / relative
+        if path.is_file() and not path.is_symlink():
+            current[relative] = path.read_bytes()
+        else:
+            current[relative] = data
+    return current
+
+
 def _restore_round_trip(workspace: Path, project: Path, saved: dict[str, bytes], timeout: int) -> None:
     backups = project / ".chaos-engine-state" / "backups"
     stamps = sorted(path.name for path in backups.iterdir() if path.name.endswith("-replace"))
@@ -623,6 +641,8 @@ def main(argv: list[str] | None = None) -> int:
                     assert_output=False,
                 )
             _write_sentinel(project)
+            if saved and args.instructions_mode == "replace":
+                saved = _recapture_saved(project, saved)
             _upgrade(workspace, _commit(workspace, 60), project, budget, args.output, extra=extra)
             _assert_sentinel(project)
         else:

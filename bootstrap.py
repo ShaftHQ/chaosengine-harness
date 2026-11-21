@@ -164,26 +164,6 @@ TRANSIENT_SSL_MARKERS = (
     "CONNECTION RESET BY PEER",
 )
 LOCAL_CLONE_ENV = "CHAOS_ENGINE_LOCAL_CLONE"
-BRAND_ASCII = (
-    "  ,-----.    |       ---+",
-    "  |          |          |",
-    "  |  *       |       ---+",
-    "  |          |          |",
-    "  `-----'    |       ---+",
-    "         ChaosEngine",
-)
-BRAND_UNICODE = (
-    "  █▀▀▀▀▀▄    │       ───┐",
-    "  █          │          │",
-    "  █   ◆      │       ───┤",
-    "  █          │          │",
-    "  █▄▄▄▄▄▀    │       ───┘",
-    "          ChaosEngine",
-)
-BRAND_NARROW = (
-    "  C|*|E",
-    "  ChaosEngine",
-)
 TRACE_LIMIT = 12 if (
     os.environ.get("CI")
     or os.environ.get("CHAOS_ENGINE_QUIET") == "1"
@@ -671,8 +651,25 @@ def color_level(environ=None, *, enabled: bool) -> str:
     return "16"
 
 
-# Cybernetic Red #FF3B4D. The mark's core only, and only on a truecolor terminal.
+# >>> generated: brand_mark
+# Scan of assets/brand/symbol-primary.svg. Regenerate: python3 scripts/ci/render_brand_mark.py
+BRAND_MARK_WIDE = (
+    (' ▗▄▄███████▗▄▄▄▄', '                '),
+    ('███▛▀▘ ▄▄▄▛████▀', '       ccc      '),
+    ('███▙▄▖ ▝▀▀▟████▄', '       ccc      '),
+    (' ▝▀▀███████▝▀▀▀▀', '                '),
+)
+BRAND_MARK_STACK = (
+    ('▄▄▟██████▙▄▄', '            '),
+    ('██▌  ▐█████ ', '     ccc    '),
+    ('▀▀▜████████▀', '            '),
+)
+# <<< generated: brand_mark
+
+# Cybernetic Red #FF3B4D. Truecolor paints only the mark core with this RGB.
+# 16-color and 256-color use ANSI red. Armour stays the terminal foreground.
 CYBERNETIC_RED = "\x1b[38;2;255;59;77m"
+ANSI_RED = "\x1b[31m"
 _COLOR_ROLES = {"ok": "32", "warn": "33", "fail": "31", "accent": "36"}
 
 
@@ -701,10 +698,46 @@ def paint(value: str, role: str, *, color: bool, intensity: bool = False) -> str
 
 
 def paint_core(glyph: str, *, truecolor: bool) -> str:
-    """Colour the mark's core. Armor and every other glyph stay unpainted."""
+    """Colour one core glyph. Armour stays unpainted. 16-color uses ``paint_mark_lines``."""
     if not truecolor:
         return glyph
     return f"{CYBERNETIC_RED}{glyph}\x1b[0m"
+
+
+def mark_clear_space(rows: tuple) -> int:
+    """Clear space equals the core's cell width."""
+    indexes = [index for _glyphs, mask in rows for index, bit in enumerate(mask) if bit == "c"]
+    if not indexes:
+        return 1
+    return max(indexes) - min(indexes) + 1
+
+
+def paint_mark_lines(rows: tuple, *, level: str) -> list[str]:
+    """Paint core runs. ``level`` is ``truecolor``, ``16``, or ``none``.
+
+    256-color uses ANSI red, the same as 16-color. Armour is not painted.
+    """
+    painted: list[str] = []
+    for glyphs, mask in rows:
+        if level == "none" or "c" not in mask:
+            painted.append(glyphs)
+            continue
+        parts: list[str] = []
+        index = 0
+        while index < len(glyphs):
+            if mask[index] != "c":
+                parts.append(glyphs[index])
+                index += 1
+                continue
+            end = index + 1
+            while end < len(mask) and mask[end] == "c":
+                end += 1
+            span = glyphs[index:end]
+            color = CYBERNETIC_RED if level == "truecolor" else ANSI_RED
+            parts.append(f"{color}{span}\x1b[0m")
+            index = end
+        painted.append("".join(parts))
+    return painted
 
 
 def cursor_enabled(*, tty: bool, environ=None, vt_ok: bool = True) -> bool:
@@ -1554,9 +1587,32 @@ def product_version() -> str:
 
 
 def brand_lockup() -> str:
-    """One lockup line. Armor stays the terminal default; the core is colored separately."""
+    """Plain-text wordmark. The symbol is the scanned mark, not this line."""
     version = product_version()
     return f"ChaosEngine  chaosengine-harness {version}".rstrip()
+
+
+def identity_line(*, version: str, repository: str = "", ref: str = "", sha: str = "") -> str:
+    """One line for ASCII, ``TERM=dumb``, and terminals under 60 columns."""
+    text = f"[ChaosEngine {version}]".rstrip()
+    if repository and ref:
+        text += f" {repository}@{ref}"
+    elif repository:
+        text += f" {repository}"
+    if sha:
+        text += f" ({sha[:12]})"
+    return text
+
+
+def _fit_visible(line: str, width: int, *, unicode: bool) -> str:
+    visible = strip_controls(line)
+    if len(visible) <= width:
+        return line
+    if "\x1b[" in line:
+        line = visible
+    suffix = "…" if unicode else "..."
+    keep = max(0, width - len(suffix))
+    return line[:keep] + suffix
 
 
 def brand_lines(
@@ -1566,28 +1622,52 @@ def brand_lines(
     unicode: bool = False,
     lockup: bool = True,
     truecolor: bool = False,
+    repository: str = "",
+    ref: str = "",
+    sha: str = "",
+    header: list[str] | None = None,
+    show_mark: bool = True,
 ) -> list[str]:
-    if width < 28:
-        templates = BRAND_NARROW
-        glyph = "*"
-    elif unicode and width >= 48:
-        templates = BRAND_UNICODE
-        glyph = "◆"
-    else:
-        templates = BRAND_ASCII
-        glyph = "*"
-    core = paint_core(glyph, truecolor=bool(color and truecolor))
-    painted = []
-    for template in templates:
-        line = template.replace(glyph, core, 1) if glyph in template else template
-        painted.append(line)
-    label = brand_lockup()
-    if lockup and label and len(label) <= width and (not painted or painted[-1] != label):
-        if painted and painted[-1].strip() == "ChaosEngine":
-            painted[-1] = label
-        else:
-            painted.append(label)
-    return painted
+    """Symbol from the generated scan. ``lockup`` is accepted and unused.
+
+    At 84 columns or more the 4-row mark sits beside the header. From 60 to 83
+    the 3-row mark is stacked above it. The gap between the mark and the header
+    is the core width.
+    """
+    del lockup
+    version = product_version()
+    if not show_mark:
+        rows = list(header or [])
+        if not rows:
+            rows = [f"ChaosEngine {version}".rstrip()]
+        return [_fit_visible(row, width, unicode=unicode) for row in rows]
+    if not unicode or width < 60:
+        line = identity_line(version=version, repository=repository, ref=ref, sha=sha)
+        return [_fit_visible(line, width, unicode=unicode)]
+    level = "truecolor" if color and truecolor else "16" if color else "none"
+    table = BRAND_MARK_WIDE if width >= 84 else BRAND_MARK_STACK
+    mark = paint_mark_lines(table, level=level)
+    mark_width = len(table[0][0])
+    word = f"ChaosEngine {version}".rstrip()
+    rights = [word]
+    if header:
+        rights.extend(header)
+    clear = mark_clear_space(table)
+    if width >= 84 and mark_width + clear < width:
+        gap = " " * clear
+        budget = width - mark_width - clear
+        padded = list(mark)
+        while len(padded) < len(rights):
+            padded.append(" " * mark_width)
+        while len(rights) < len(padded):
+            rights.append("")
+        lines = []
+        for left, right in zip(padded, rights):
+            shown = _fit_visible(right, budget, unicode=True) if right else ""
+            lines.append(left + (gap + shown if shown else ""))
+        return lines
+    lines = [*mark, word, *(header or [])]
+    return [_fit_visible(line, width, unicode=True) for line in lines]
 
 
 def _component_blocks_health(value: object) -> bool:
@@ -1780,20 +1860,7 @@ class InstallReporter:
         self.commit_label: str | None = None
         self.commit_full: str | None = None
         self._commit_logged = False
-        if (
-            self._env.get("CHAOS_ENGINE_BRAND_SHOWN") != "1"
-            and self.mode != "quiet"
-        ):
-            lines = brand_lines(
-                width=self._width(),
-                color=self._color,
-                unicode=self._tty and self._unicode,
-                lockup=self._tty,
-                truecolor=self._caps.color == "truecolor",
-            )
-            for line in lines:
-                self.stream.write(line + "\n")
-            self.stream.flush()
+        self._log_header_sent = False
 
     def _stderr_is_tty(self) -> bool:
         if self._env.get("TERM") == "dumb":
@@ -1816,9 +1883,7 @@ class InstallReporter:
             with self._lock:
                 self._render_locked()
         else:
-            self.stream.write(self._aligned_live_row("Project", self.project_root) + "\n")
-            self.stream.write(self._aligned_live_row("Source", self.source_label) + "\n")
-            self.stream.flush()
+            self._emit_log_header()
 
     def trace(self, message: str) -> None:
         with self._lock:
@@ -1911,6 +1976,8 @@ class InstallReporter:
             self.detail = detail
             if self._env.get("CHAOS_ENGINE_QUIET") == "1":
                 return
+            if not self._tty:
+                self._emit_log_header()
             if self._tty:
                 self._render_locked()
                 if self._thread is None:
@@ -2112,6 +2179,16 @@ class InstallReporter:
             self.stream.flush()
             self._commit_logged = True
 
+    def _emit_log_header(self) -> None:
+        if self._log_header_sent or self._tty or self.mode == "quiet":
+            return
+        if self._env.get("CHAOS_ENGINE_QUIET") == "1":
+            return
+        for line in self._brand_header():
+            self.stream.write(line + "\n")
+        self.stream.flush()
+        self._log_header_sent = True
+
     def _header_lines(self) -> list[str]:
         lines: list[str] = []
         if self.project_root:
@@ -2121,6 +2198,27 @@ class InstallReporter:
         if self.commit_label:
             lines.append(self._aligned_live_row("Commit", strip_controls(self.commit_label)))
         return lines
+
+    def _brand_header(self) -> list[str]:
+        repository = ref = ""
+        label = self.source_label or ""
+        if "@" in label:
+            repository, ref = label.rsplit("@", 1)
+        elif label:
+            repository = label
+        wide = self._unicode and self._env.get("TERM") != "dumb" and self._width() >= 60
+        return brand_lines(
+            width=self._width(),
+            color=self._color,
+            unicode=self._unicode and self._env.get("TERM") != "dumb",
+            lockup=self._tty,
+            truecolor=self._caps.color == "truecolor",
+            repository=repository,
+            ref=ref,
+            sha=self.commit_full or "",
+            header=self._header_lines() if wide else None,
+            show_mark=self._env.get("CHAOS_ENGINE_BRAND_SHOWN") != "1",
+        )
 
     def _style(self, value: str, role: str) -> str:
         return paint(value, role, color=self._color, intensity=self._intensity)
@@ -2185,7 +2283,7 @@ class InstallReporter:
         empty = status_glyph("pending", unicode=self._unicode)
         name_width = max((len(item) for item in operations), default=0)
         lines = [""]
-        header = self._header_lines()
+        header = self._brand_header()
         if header:
             lines.extend(header)
             lines.append("")

@@ -70,6 +70,7 @@ jobs:
             shellcheck -s sh install.sh
           fi
           python3 scripts/ci/sync_ce_ui.py --check
+          python3 scripts/ci/render_brand_mark.py --check
 
       - name: Markdown relative links
         run: |

@@ -670,6 +670,19 @@ class WorkflowContractTest(unittest.TestCase):
                 cell._upgrade(source, "d" * 40, project, 30, "json")
         self.assertIn("json stdout is not one document", str(caught.exception))
 
+    def test_upgrade_replace_recaptures_bytes_after_the_pinned_install(self):
+        cell = self._cell()
+        text = CELL.read_text(encoding="utf-8")
+        recapture = text.index("_recapture_saved(project, saved)")
+        self.assertLess(recapture, text.index("_upgrade(", recapture))
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            (project / "AGENTS.md").write_bytes(b"User rule\nmerged\n")
+            current = cell._recapture_saved(project, {"AGENTS.md": b"User rule\n"})
+            self.assertEqual(b"User rule\nmerged\n", current["AGENTS.md"])
+            missing = cell._recapture_saved(project, {"gone.md": b"keep\n"})
+            self.assertEqual(b"keep\n", missing["gone.md"])
+
     def test_a_failed_fetch_is_retried_once(self):
         cell = self._cell()
         calls = {"n": 0}

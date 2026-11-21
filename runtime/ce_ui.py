@@ -88,8 +88,25 @@ def color_level(environ=None, *, enabled: bool) -> str:
     return "16"
 
 
-# Cybernetic Red #FF3B4D. The mark's core only, and only on a truecolor terminal.
+# >>> generated: brand_mark
+# Scan of assets/brand/symbol-primary.svg. Regenerate: python3 scripts/ci/render_brand_mark.py
+BRAND_MARK_WIDE = (
+    (' ▗▄▄███████▗▄▄▄▄', '                '),
+    ('███▛▀▘ ▄▄▄▛████▀', '       ccc      '),
+    ('███▙▄▖ ▝▀▀▟████▄', '       ccc      '),
+    (' ▝▀▀███████▝▀▀▀▀', '                '),
+)
+BRAND_MARK_STACK = (
+    ('▄▄▟██████▙▄▄', '            '),
+    ('██▌  ▐█████ ', '     ccc    '),
+    ('▀▀▜████████▀', '            '),
+)
+# <<< generated: brand_mark
+
+# Cybernetic Red #FF3B4D. Truecolor paints only the mark core with this RGB.
+# 16-color and 256-color use ANSI red. Armour stays the terminal foreground.
 CYBERNETIC_RED = "\x1b[38;2;255;59;77m"
+ANSI_RED = "\x1b[31m"
 _COLOR_ROLES = {"ok": "32", "warn": "33", "fail": "31", "accent": "36"}
 
 
@@ -118,10 +135,46 @@ def paint(value: str, role: str, *, color: bool, intensity: bool = False) -> str
 
 
 def paint_core(glyph: str, *, truecolor: bool) -> str:
-    """Colour the mark's core. Armor and every other glyph stay unpainted."""
+    """Colour one core glyph. Armour stays unpainted. 16-color uses ``paint_mark_lines``."""
     if not truecolor:
         return glyph
     return f"{CYBERNETIC_RED}{glyph}\x1b[0m"
+
+
+def mark_clear_space(rows: tuple) -> int:
+    """Clear space equals the core's cell width."""
+    indexes = [index for _glyphs, mask in rows for index, bit in enumerate(mask) if bit == "c"]
+    if not indexes:
+        return 1
+    return max(indexes) - min(indexes) + 1
+
+
+def paint_mark_lines(rows: tuple, *, level: str) -> list[str]:
+    """Paint core runs. ``level`` is ``truecolor``, ``16``, or ``none``.
+
+    256-color uses ANSI red, the same as 16-color. Armour is not painted.
+    """
+    painted: list[str] = []
+    for glyphs, mask in rows:
+        if level == "none" or "c" not in mask:
+            painted.append(glyphs)
+            continue
+        parts: list[str] = []
+        index = 0
+        while index < len(glyphs):
+            if mask[index] != "c":
+                parts.append(glyphs[index])
+                index += 1
+                continue
+            end = index + 1
+            while end < len(mask) and mask[end] == "c":
+                end += 1
+            span = glyphs[index:end]
+            color = CYBERNETIC_RED if level == "truecolor" else ANSI_RED
+            parts.append(f"{color}{span}\x1b[0m")
+            index = end
+        painted.append("".join(parts))
+    return painted
 
 
 def cursor_enabled(*, tty: bool, environ=None, vt_ok: bool = True) -> bool:

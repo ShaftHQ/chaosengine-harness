@@ -335,16 +335,17 @@ def test_version_pin_hex_does_not_use_the_network():
 
 def test_banner_source_link_and_no_color_spinner(monkeypatch):
     boot = _boot()
-    marks = "\n".join(boot.BRAND_ASCII + boot.BRAND_UNICODE + boot.BRAND_NARROW)
+    marks = "\n".join(glyphs for glyphs, _mask in boot.BRAND_MARK_WIDE + boot.BRAND_MARK_STACK)
     assert "Ǝ" not in marks
-    assert "C|*|E" in boot.BRAND_NARROW[0]
-    assert len(boot.BRAND_UNICODE) <= 12
+    assert len(boot.BRAND_MARK_WIDE) == 4
+    assert len(boot.BRAND_MARK_STACK) == 3
     assert boot.CYBERNETIC_RED in "\n".join(
-        boot.brand_lines(color=True, unicode=True, truecolor=True)
+        boot.brand_lines(width=120, color=True, unicode=True, truecolor=True)
     )
-    assert "38;2;" not in "\n".join(boot.brand_lines(color=True, unicode=True))
-    plain = "\n".join(boot.brand_lines(color=False, unicode=False))
+    assert "38;2;" not in "\n".join(boot.brand_lines(width=120, color=True, unicode=True))
+    plain = "\n".join(boot.brand_lines(width=80, color=False, unicode=False))
     assert "\x1b" not in plain
+    assert plain.startswith("[ChaosEngine ")
     version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
     assert "chaosengine-harness" in boot.brand_lockup()
     assert version in boot.brand_lockup()

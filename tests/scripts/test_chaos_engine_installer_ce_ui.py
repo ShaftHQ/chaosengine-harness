@@ -229,6 +229,22 @@ class CeUiTests(unittest.TestCase):
         self.assertIn("# <<< generated: ce_ui", bootstrap)
         self.assertEqual(1, bootstrap.count("def redact("))
         self.assertEqual("[path]", INSTALL.ce_ui.redact("/tmp/secret-token"))
+        self.assertEqual(0, subprocess.run(
+            [sys.executable, str(ROOT / "scripts" / "ci" / "render_brand_mark.py"), "--check"],
+            cwd=ROOT,
+            check=False,
+        ).returncode)
+        self.assertTrue(SYNC.matches())
+        joined = "\n".join(glyphs for glyphs, _mask in UI.BRAND_MARK_WIDE + UI.BRAND_MARK_STACK)
+        self.assertNotIn("\x1b[34m", joined)
+        self.assertNotIn("\x1b[36m", joined)
+        for glyphs, mask in UI.BRAND_MARK_WIDE:
+            self.assertEqual(len(glyphs), len(mask))
+            painted = UI.paint_mark_lines(((glyphs, mask),), level="truecolor")[0]
+            plain = painted.replace(UI.CYBERNETIC_RED, "").replace("\x1b[0m", "")
+            self.assertEqual(glyphs, plain)
+            if "c" in mask:
+                self.assertIn(UI.CYBERNETIC_RED, painted)
 
     def test_no_color_tty_frame_has_cursor_and_no_sgr(self):
         stream = _Tty()
@@ -277,8 +293,10 @@ class CeUiTests(unittest.TestCase):
         self.assertRegex(text, r"\x1b\[\d+F")
         plain = "\n".join(BOOTSTRAP.brand_lines(width=80, color=True, unicode=True))
         self.assertNotIn("38;2;", plain)
-        core = "\n".join(BOOTSTRAP.brand_lines(width=80, color=True, unicode=True, truecolor=True))
-        self.assertEqual(1, core.count("38;2;"))
+        self.assertIn(BOOTSTRAP.ANSI_RED, plain)
+        core = "\n".join(BOOTSTRAP.brand_lines(width=120, color=True, unicode=True, truecolor=True))
+        self.assertIn(BOOTSTRAP.CYBERNETIC_RED, core)
+        self.assertGreaterEqual(core.count("38;2;"), 1)
 
     def test_color_log_and_wizard_dim_labels(self):
         stream = io.StringIO()
