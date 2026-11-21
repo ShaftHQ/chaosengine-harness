@@ -35,8 +35,7 @@
 [K
 [K
 [K
-[7F  [2mProject   [0m <project>
-  [2mSource    [0m ShaftHQ/chaosengine-harness@main
+[7F[ChaosEngine 0.4.20261115.5] ShaftHQ/chaosengine-harness@main
 
   [+] Resolve source   00:02
   [x] Download source  failed

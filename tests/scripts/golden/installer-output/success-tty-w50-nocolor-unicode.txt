@@ -31,9 +31,7 @@
 [K
 [K
 [K
-[5F  [2mProject   [0m <project>
-  [2mSource    [0m ShaftHQ/chaosengine-harness@main
-  [2mCommit    [0m 0123456789ab…
+[5F[ChaosEngine 0.4.20261115.5] ShaftHQ/chaosengine-…
 
   [✓] Resolve source   00:02
   [✓] Download source  00:02

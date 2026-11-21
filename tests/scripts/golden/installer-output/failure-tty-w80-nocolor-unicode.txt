@@ -65,7 +65,11 @@ ChaosEngine 0.4.20261115.5[K
 [K
 [K
 [K
-[12F  [2mProject   [0m <project>
+[12F▄▄▟██████▙▄▄
+██▌  ▐█████ 
+▀▀▜████████▀
+ChaosEngine 0.4.20261115.5
+  [2mProject   [0m <project>
   [2mSource    [0m ShaftHQ/chaosengine-harness@main
 
   [✓] Resolve source   00:02

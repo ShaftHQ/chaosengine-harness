@@ -2406,6 +2406,43 @@ class InstallerVisualLanguage6325Tests(unittest.TestCase):
         self.assertEqual({"claude": {"status": "healthy"}}, receipt["clients"])
         self.assertTrue(receipt["trace"].endswith(".chaos-engine-state/install-trace.json"))
 
+    def test_tty_success_keeps_the_mark_on_the_final_frame(self):
+        """#135: close() wipes the live region, and the finished frame draws the mark again."""
+        stream = _Tty()
+        environment = self._clean_env(NO_COLOR="1", COLUMNS="120", TERM="xterm")
+        project = Path("/tmp/ce135-final")
+        project.mkdir(parents=True, exist_ok=True)
+        version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+        with unittest.mock.patch.dict(os.environ, environment, clear=True), \
+                unittest.mock.patch.object(BOOTSTRAP.threading.Thread, "start", lambda self: None), \
+                unittest.mock.patch.object(
+                    BOOTSTRAP,
+                    "detect_install_hosts",
+                    return_value=[("grok", "Grok", True)],
+                ):
+            reporter = BOOTSTRAP.InstallReporter(
+                stream=stream, clock=lambda: 1.0, environ=environment
+            )
+            reporter.announce(project, "ShaftHQ/chaosengine-harness", "main")
+            reporter.start("Resolve source", remaining=())
+            reporter.success(
+                project,
+                {
+                    "commit": "a" * 40,
+                    "status": "healthy",
+                    "components": {"core": {"status": "healthy"}},
+                },
+                {"grok": {"status": "healthy"}},
+                repository="ShaftHQ/chaosengine-harness",
+            )
+        final = re.split(r"\x1b\[\d+F", stream.getvalue())[-1]
+        plain = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", final)
+        glyph = BOOTSTRAP.BRAND_MARK_WIDE[0][0]
+        self.assertTrue(plain.lstrip("\n").startswith(glyph), plain[:240])
+        self.assertIn(version, plain)
+        self.assertIn("Project", plain)
+        self.assertIn("Installed in", plain)
+
     def test_codex_hook_trust_is_one_action_line(self):
         """#133: a host that still needs /hooks trust gets one action line and its doc link."""
         detected = [

@@ -2463,7 +2463,7 @@ class InstallReporter:
         )
         self.summary_printed = True
         if self._tty:
-            block = self._header_lines()
+            block = self._brand_header()
             if block:
                 block.append("")
             frames = SPINNER_UNICODE if self._unicode else SPINNER_ASCII
@@ -2496,7 +2496,7 @@ class InstallReporter:
         """Reprint the checklist on a TTY, then the failure panel. Log mode appends."""
         self.summary_printed = True
         if self._tty and self.mode not in {"quiet", "json"}:
-            block = self._header_lines()
+            block = self._brand_header()
             if block:
                 block.append("")
             frames = SPINNER_UNICODE if self._unicode else SPINNER_ASCII
