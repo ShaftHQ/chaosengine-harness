@@ -31,6 +31,15 @@ fail() {
   exit 1
 }
 
+# set -e exits the shell before fail() when a bare command returns non-zero.
+run_or_stage0() {
+  "$@" || {
+    status=$?
+    note_stage0
+    exit "$status"
+  }
+}
+
 valid_repository() {
   lowered=$(printf '%s\n' "$1" | tr '[:upper:]' '[:lower:]')
   case "$lowered" in
@@ -390,8 +399,16 @@ fi
 # #7766: provision Python 3.11+ before the download/lifecycle prompt.
 managed_uv=
 if [ -z "$python" ]; then
-  system=$(uname -s)
-  machine=$(uname -m)
+  system=$(uname -s) || {
+    status=$?
+    note_stage0
+    exit "$status"
+  }
+  machine=$(uname -m) || {
+    status=$?
+    note_stage0
+    exit "$status"
+  }
   case "$system:$machine" in
     Linux:x86_64) uv_target=x86_64-unknown-linux-gnu; uv_sha=a7fbaff2b9a271d85c1bdb540941090fd1ce011797b4abeb48e4dcd39c2471d5 ;;
     Linux:aarch64|Linux:arm64) uv_target=aarch64-unknown-linux-gnu; uv_sha=0797542018e541a9288855df555c8077eed06f7a47d206362030480e8ecc9f3d ;;
@@ -402,15 +419,23 @@ if [ -z "$python" ]; then
   uv_archive="$work/uv.tar.gz"
   fetch "$uv_archive" "https://github.com/astral-sh/uv/releases/download/0.13.9/uv-${uv_target}.tar.gz"
   if command -v sha256sum >/dev/null 2>&1; then
-    actual=$(sha256sum "$uv_archive" | cut -d' ' -f1)
+    actual=$(sha256sum "$uv_archive" | cut -d' ' -f1) || {
+      status=$?
+      note_stage0
+      exit "$status"
+    }
   else
-    actual=$(shasum -a 256 "$uv_archive" | cut -d' ' -f1)
+    actual=$(shasum -a 256 "$uv_archive" | cut -d' ' -f1) || {
+      status=$?
+      note_stage0
+      exit "$status"
+    }
   fi
   [ "$actual" = "$uv_sha" ] || fail "uv download checksum verification failed"
-  tar -xzf "$uv_archive" -C "$work"
+  run_or_stage0 tar -xzf "$uv_archive" -C "$work"
   managed_uv="$work/uv-${uv_target}/uv"
   [ -x "$managed_uv" ] || fail "uv archive is missing its executable"
-  export UV_PYTHON_INSTALL_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/chaos-engine/python"
+  run_or_stage0 export UV_PYTHON_INSTALL_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/chaos-engine/python"
   # set -e exits before fail() when uv itself returns non-zero.
   "$managed_uv" python install 3.14 --no-progress || {
     status=$?
@@ -425,12 +450,16 @@ if [ -z "$python" ]; then
   }
   [ -n "$interp" ] || fail "uv-managed Python was installed but not found"
   shim_dir="${XDG_DATA_HOME:-$HOME/.local/share}/chaos-engine/bin"
-  mkdir -p "$shim_dir"
-  ln -sfn "$interp" "$shim_dir/python3"
-  ln -sfn "$interp" "$shim_dir/python"
-  export PATH="$shim_dir:$PATH"
-  mkdir -p "${project}/.chaos-engine-state"
-  printf '%s\n' "$interp" > "${project}/.chaos-engine-state/hook-python"
+  run_or_stage0 mkdir -p "$shim_dir"
+  run_or_stage0 ln -sfn "$interp" "$shim_dir/python3"
+  run_or_stage0 ln -sfn "$interp" "$shim_dir/python"
+  run_or_stage0 export PATH="$shim_dir:$PATH"
+  run_or_stage0 mkdir -p "${project}/.chaos-engine-state"
+  printf '%s\n' "$interp" > "${project}/.chaos-engine-state/hook-python" || {
+    status=$?
+    note_stage0
+    exit "$status"
+  }
 fi
 if [ -n "$interactive" ]; then
   if [ "${CI:-}" = "1" ] || [ -n "$yes_flag" ]; then

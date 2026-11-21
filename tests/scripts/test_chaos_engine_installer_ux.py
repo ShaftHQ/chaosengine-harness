@@ -66,13 +66,16 @@ class InstallerUxTests(unittest.TestCase):
         stream = Tty()
         environment = {
             key: value for key, value in os.environ.items()
-            if key not in {"NO_COLOR", "CI", "GITHUB_ACTIONS"}
+            if key not in {
+                "NO_COLOR", "CI", "GITHUB_ACTIONS", "CHAOS_ENGINE_JSON",
+                "CHAOS_ENGINE_QUIET", "CHAOS_ENGINE_COLOR",
+            }
         }
         environment["TERM"] = "xterm"
         with unittest.mock.patch.dict(os.environ, environment, clear=True), unittest.mock.patch.object(
             BOOTSTRAP.InstallReporter, "_enable_windows_vt", return_value=True
         ):
-            reporter = BOOTSTRAP.InstallReporter(stream=stream, clock=lambda: 1.0)
+            reporter = BOOTSTRAP.InstallReporter(stream=stream, clock=lambda: 1.0, environ=environment)
             try:
                 reporter.start(
                     "Download source", remaining=("Install core",),
@@ -138,13 +141,16 @@ class InstallerUxTests(unittest.TestCase):
         environment = {
             key: value
             for key, value in os.environ.items()
-            if key not in {"NO_COLOR", "FORCE_COLOR", "CI", "GITHUB_ACTIONS"}
+            if key not in {
+                "NO_COLOR", "FORCE_COLOR", "CI", "GITHUB_ACTIONS",
+                "CHAOS_ENGINE_JSON", "CHAOS_ENGINE_QUIET", "CHAOS_ENGINE_COLOR",
+            }
         }
         environment.update({"TERM": "xterm", "COLUMNS": "20"})
         with unittest.mock.patch.dict(os.environ, environment, clear=True), unittest.mock.patch.object(
             BOOTSTRAP.InstallReporter, "_enable_windows_vt", return_value=True
         ), unittest.mock.patch.object(BOOTSTRAP.threading.Thread, "start", lambda self: None):
-            reporter = BOOTSTRAP.InstallReporter(stream=stream, clock=lambda: 1.0)
+            reporter = BOOTSTRAP.InstallReporter(stream=stream, clock=lambda: 1.0, environ=environment)
             reporter.announce(Path("/very/long/project/path"), "owner/very-long-repo", "main")
             reporter.close()
         live = stream.getvalue()
@@ -166,11 +172,13 @@ class InstallerUxTests(unittest.TestCase):
         stream = Tty()
         environment = {
             key: value for key, value in os.environ.items()
-            if key not in {"CI", "GITHUB_ACTIONS"}
+            if key not in {
+                "CI", "GITHUB_ACTIONS", "CHAOS_ENGINE_JSON", "CHAOS_ENGINE_QUIET",
+            }
         }
         environment.update({"TERM": "xterm", "NO_COLOR": "1"})
         with unittest.mock.patch.dict(os.environ, environment, clear=True):
-            reporter = BOOTSTRAP.InstallReporter(stream=stream)
+            reporter = BOOTSTRAP.InstallReporter(stream=stream, environ=environment)
             try:
                 reporter.start("Verify installation")
                 deadline = time.monotonic() + 5
@@ -554,13 +562,16 @@ class InstallerUxTests(unittest.TestCase):
         stream = Tty()
         environment = {
             key: value for key, value in os.environ.items()
-            if key not in {"NO_COLOR", "CI", "GITHUB_ACTIONS"}
+            if key not in {
+                "NO_COLOR", "CI", "GITHUB_ACTIONS", "CHAOS_ENGINE_JSON",
+                "CHAOS_ENGINE_QUIET", "CHAOS_ENGINE_COLOR",
+            }
         }
         environment["TERM"] = "xterm"
         with unittest.mock.patch.dict(os.environ, environment, clear=True), unittest.mock.patch.object(
             BOOTSTRAP.InstallReporter, "_enable_windows_vt", return_value=True
         ), unittest.mock.patch.object(BOOTSTRAP.threading.Thread, "start", lambda self: None):
-            reporter = BOOTSTRAP.InstallReporter(stream=stream)
+            reporter = BOOTSTRAP.InstallReporter(stream=stream, environ=environment)
             reporter.success(
                 Path("/project"),
                 {"commit": "b" * 40, "status": "healthy", "components": {}},
@@ -2017,7 +2028,8 @@ class InstallerVisualLanguage6325Tests(unittest.TestCase):
             key: value for key, value in os.environ.items()
             if key not in {
                 "NO_COLOR", "CHAOS_ENGINE_ASCII", "CHAOS_ENGINE_VERBOSE", "CI",
-                "GITHUB_ACTIONS", "CHAOS_ENGINE_BRAND_SHOWN",
+                "GITHUB_ACTIONS", "CHAOS_ENGINE_BRAND_SHOWN", "CHAOS_ENGINE_JSON",
+                "CHAOS_ENGINE_QUIET", "CHAOS_ENGINE_COLOR", "FORCE_COLOR",
             }
         }
         environment["TERM"] = "xterm-256color"
@@ -2052,9 +2064,10 @@ class InstallerVisualLanguage6325Tests(unittest.TestCase):
 
     def test_ascii_env_forces_ascii_checklist_on_utf8_tty(self):
         stream = _Tty()
-        with unittest.mock.patch.dict(os.environ, self._clean_env(CHAOS_ENGINE_ASCII="1", NO_COLOR="1"), clear=True), \
+        environment = self._clean_env(CHAOS_ENGINE_ASCII="1", NO_COLOR="1")
+        with unittest.mock.patch.dict(os.environ, environment, clear=True), \
                 unittest.mock.patch.object(BOOTSTRAP.threading.Thread, "start", lambda self: None):
-            reporter = BOOTSTRAP.InstallReporter(stream=stream, clock=lambda: 1.0)
+            reporter = BOOTSTRAP.InstallReporter(stream=stream, clock=lambda: 1.0, environ=environment)
             reporter.start("Resolve source", remaining=("Download source",))
             reporter.complete("Resolve source", remaining=("Download source",))
             reporter.close()
@@ -2129,9 +2142,10 @@ class InstallerVisualLanguage6325Tests(unittest.TestCase):
     def test_tty_spinner_advances_and_ascii_uses_plain_frames(self):
         # NO_COLOR still redraws. Colour stays off. ASCII frames advance without SGR.
         stream = _Tty()
-        with unittest.mock.patch.dict(os.environ, self._clean_env(NO_COLOR="1", CHAOS_ENGINE_ASCII="1"), clear=True), \
+        environment = self._clean_env(NO_COLOR="1", CHAOS_ENGINE_ASCII="1")
+        with unittest.mock.patch.dict(os.environ, environment, clear=True), \
                 unittest.mock.patch.object(BOOTSTRAP.threading.Thread, "start", lambda self: None):
-            reporter = BOOTSTRAP.InstallReporter(stream=stream, clock=lambda: 1.0)
+            reporter = BOOTSTRAP.InstallReporter(stream=stream, clock=lambda: 1.0, environ=environment)
             reporter.start("Download source", remaining=("Install core",))
             first = [line for line in stream.getvalue().splitlines() if "running" in line][-1]
             reporter._frame += 1
@@ -2144,9 +2158,10 @@ class InstallerVisualLanguage6325Tests(unittest.TestCase):
         self.assertNotRegex(stream.getvalue(), r"\x1b\[[0-9;]*m")
         self.assertNotIn("⠋", stream.getvalue())
         colored = _Tty()
-        with unittest.mock.patch.dict(os.environ, self._clean_env(), clear=True), \
+        colored_env = self._clean_env()
+        with unittest.mock.patch.dict(os.environ, colored_env, clear=True), \
                 unittest.mock.patch.object(BOOTSTRAP.threading.Thread, "start", lambda self: None):
-            reporter = BOOTSTRAP.InstallReporter(stream=colored, clock=lambda: 1.0)
+            reporter = BOOTSTRAP.InstallReporter(stream=colored, clock=lambda: 1.0, environ=colored_env)
             reporter.start("Download source", remaining=("Install core",))
             first = [line for line in colored.getvalue().splitlines() if "running" in line][-1]
             reporter._frame += 1
@@ -2158,9 +2173,10 @@ class InstallerVisualLanguage6325Tests(unittest.TestCase):
 
     def test_tty_checklist_aligns_durations_in_one_column(self):
         stream = _Tty()
-        with unittest.mock.patch.dict(os.environ, self._clean_env(NO_COLOR="1"), clear=True), \
+        environment = self._clean_env(NO_COLOR="1")
+        with unittest.mock.patch.dict(os.environ, environment, clear=True), \
                 unittest.mock.patch.object(BOOTSTRAP.threading.Thread, "start", lambda self: None):
-            reporter = BOOTSTRAP.InstallReporter(stream=stream, clock=lambda: 1.0)
+            reporter = BOOTSTRAP.InstallReporter(stream=stream, clock=lambda: 1.0, environ=environment)
             reporter.start("Resolve source", remaining=("Provision dependencies",))
             reporter.complete("Resolve source", remaining=("Provision dependencies",))
             reporter.start("Provision dependencies", remaining=())
@@ -2238,9 +2254,10 @@ class InstallerVisualLanguage6325Tests(unittest.TestCase):
             reporter.fail()
         self.assertIn("[1/2] FAIL  Provision dependencies", pipe.getvalue())
         tty = _Tty()
-        with unittest.mock.patch.dict(os.environ, self._clean_env(NO_COLOR="1", CHAOS_ENGINE_ASCII="1"), clear=True), \
+        environment = self._clean_env(NO_COLOR="1", CHAOS_ENGINE_ASCII="1")
+        with unittest.mock.patch.dict(os.environ, environment, clear=True), \
                 unittest.mock.patch.object(BOOTSTRAP.threading.Thread, "start", lambda self: None):
-            reporter = BOOTSTRAP.InstallReporter(stream=tty, clock=lambda: 1.0)
+            reporter = BOOTSTRAP.InstallReporter(stream=tty, clock=lambda: 1.0, environ=environment)
             reporter.start("Provision dependencies", remaining=("Verify installation",))
             reporter.fail()
             reporter.close()

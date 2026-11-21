@@ -1674,9 +1674,10 @@ def safe_command_trace(command: list[str] | tuple[str, ...]) -> str:
 class InstallReporter:
     """Dependency-free installer status renderer; UX always goes to stderr."""
 
-    def __init__(self, *, stream=None, clock=time.monotonic):
+    def __init__(self, *, stream=None, clock=time.monotonic, environ=None):
         """Initialize reporting against the supplied output stream and clock."""
         self.stream = sys.stderr if stream is None else stream
+        self._env = os.environ if environ is None else environ
         self.clock = clock
         self.started = clock()
         self.completed_operations: list[str] = []
@@ -1700,8 +1701,8 @@ class InstallReporter:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._lines = 0
-        self._caps = detect_capabilities(self.stream, vt=self._enable_windows_vt)
-        self.mode = select_mode(tty=self._caps.tty)
+        self._caps = detect_capabilities(self.stream, self._env, vt=self._enable_windows_vt)
+        self.mode = select_mode(tty=self._caps.tty, environ=self._env)
         self._tty = self.mode == "tty"
         # Auto colour follows tty mode. always and FORCE_COLOR also paint a pipe.
         # A failed Windows VT enable stays in _caps.color. JSON stays plain.
@@ -1709,12 +1710,12 @@ class InstallReporter:
         self._color = (
             self.mode != "json"
             and self._caps.color != "none"
-            and (self._tty or terminal_color_enabled(tty=False))
+            and (self._tty or terminal_color_enabled(tty=False, environ=self._env))
         )
         self.cursor = self._tty and self._caps.cursor
         self._unicode = self._caps.unicode
         self._hyperlinks = self._tty and self._caps.hyperlinks
-        self._verbose = verbose_enabled()
+        self._verbose = verbose_enabled(self._env)
         self._frame = 0
         self._last_heartbeat: float | None = None
         self.failed_operation: str | None = None
@@ -1722,7 +1723,7 @@ class InstallReporter:
         self.commit_full: str | None = None
         self._commit_logged = False
         if (
-            os.environ.get("CHAOS_ENGINE_BRAND_SHOWN") != "1"
+            self._env.get("CHAOS_ENGINE_BRAND_SHOWN") != "1"
             and self.mode != "quiet"
         ):
             lines = brand_lines(
@@ -1736,7 +1737,7 @@ class InstallReporter:
             self.stream.flush()
 
     def _stderr_is_tty(self) -> bool:
-        if os.environ.get("TERM") == "dumb":
+        if self._env.get("TERM") == "dumb":
             return False
         isatty = getattr(self.stream, "isatty", None)
         if callable(isatty):
@@ -1750,7 +1751,7 @@ class InstallReporter:
         self.project_root = str(Path(project).resolve())
         self.trace_path = install_trace_path(Path(project).resolve())
         self.source_label = f"{repository}@{branch}"
-        if os.environ.get("CHAOS_ENGINE_QUIET") == "1":
+        if self._env.get("CHAOS_ENGINE_QUIET") == "1":
             return
         if self._tty:
             with self._lock:
@@ -1768,7 +1769,7 @@ class InstallReporter:
         with self._lock:
             self.traces.append((self.clock() - self.started, message))
             self.trace_count += 1
-            if os.environ.get("CHAOS_ENGINE_QUIET") == "1":
+            if self._env.get("CHAOS_ENGINE_QUIET") == "1":
                 return
             if self._tty:
                 self._render_locked()
@@ -1858,7 +1859,7 @@ class InstallReporter:
                 self._in_flight.append(operation)
             self._current_started = now
             self.detail = detail
-            if os.environ.get("CHAOS_ENGINE_QUIET") == "1":
+            if self._env.get("CHAOS_ENGINE_QUIET") == "1":
                 return
             if self._tty:
                 self._render_locked()
@@ -1885,7 +1886,7 @@ class InstallReporter:
             self.trace_count += 1
             self.remaining_operations = remaining
             self.detail = None
-            if os.environ.get("CHAOS_ENGINE_QUIET") == "1":
+            if self._env.get("CHAOS_ENGINE_QUIET") == "1":
                 return
             if self._tty:
                 self._render_locked()
@@ -1913,7 +1914,7 @@ class InstallReporter:
             self.history.append((self.clock() - self.started, "FAIL", operation, 0.0))
             self.traces.append((self.clock() - self.started, f"FAIL {operation}"))
             self.trace_count += 1
-            if os.environ.get("CHAOS_ENGINE_QUIET") == "1":
+            if self._env.get("CHAOS_ENGINE_QUIET") == "1":
                 self.stream.write(f"FAIL  {operation}\n")
                 self.stream.flush()
                 return
@@ -1936,7 +1937,7 @@ class InstallReporter:
                 self._render_locked()
             elif (
                 self._download_total is not None
-                and os.environ.get("CHAOS_ENGINE_QUIET") != "1"
+                and self._env.get("CHAOS_ENGINE_QUIET") != "1"
             ):
                 # A pipe has no live frame. One line, not a tick per chunk (#67).
                 self.stream.write(
@@ -2045,7 +2046,7 @@ class InstallReporter:
         if not isinstance(commit, str) or len(commit) != 40:
             return
         self._remember_commit(commit)
-        if os.environ.get("CHAOS_ENGINE_QUIET") == "1" or self.mode == "quiet":
+        if self._env.get("CHAOS_ENGINE_QUIET") == "1" or self.mode == "quiet":
             return
         if self._tty:
             with self._lock:
@@ -2102,7 +2103,7 @@ class InstallReporter:
         return rows[:2]
 
     def _render_locked(self) -> None:
-        if os.environ.get("CHAOS_ENGINE_QUIET") == "1" or self.mode == "quiet":
+        if self._env.get("CHAOS_ENGINE_QUIET") == "1" or self.mode == "quiet":
             return
         operations = self._operations()
         now = self.clock()
@@ -2223,7 +2224,7 @@ class InstallReporter:
         if commit is not None and not self.commit_label:
             self._remember_commit(commit)
         self.close()
-        if os.environ.get("CHAOS_ENGINE_QUIET") == "1" or self.mode == "quiet":
+        if self._env.get("CHAOS_ENGINE_QUIET") == "1" or self.mode == "quiet":
             return
         report = format_install_report(
             project=project,

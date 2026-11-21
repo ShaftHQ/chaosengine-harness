@@ -446,6 +446,92 @@ class Stage0ShellTests(unittest.TestCase):
         self.assertEqual(1, completed.stderr.count("Installing ChaosEngine into"))
         self.assertEqual(1, completed.stderr.count("Download:"))
 
+    def test_no_python_tool_failure_prints_stage0_once(self):
+        """tar, mkdir, and ln must not die under set -e before the stage-0 lines."""
+        targets = {
+            ("Linux", "x86_64"): "x86_64-unknown-linux-gnu",
+            ("Linux", "aarch64"): "aarch64-unknown-linux-gnu",
+            ("Linux", "arm64"): "aarch64-unknown-linux-gnu",
+            ("Darwin", "x86_64"): "x86_64-apple-darwin",
+            ("Darwin", "arm64"): "aarch64-apple-darwin",
+        }
+        target = targets.get((os.uname().sysname, os.uname().machine))
+        if target is None:
+            self.skipTest("this platform has no uv archive in install.sh")
+        cases = (
+            ("tar", "#!/bin/sh\necho 'tar:' >&2\nexit 3\n", 3),
+            ("mkdir", "#!/bin/sh\necho 'mkdir:' >&2\nexit 5\n", 5),
+            ("ln", "#!/bin/sh\necho 'ln:' >&2\nexit 6\n", 6),
+        )
+        uv_body = (
+            "#!/bin/sh\n"
+            "if [ \"$2\" = install ]; then exit 0; fi\n"
+            "if [ \"$2\" = find ]; then printf '%s\\n' /opt/ce-python; exit 0; fi\n"
+            "echo unexpected >&2\nexit 9\n"
+        )
+        for tool, body, status in cases:
+            with self.subTest(tool=tool):
+                with tempfile.TemporaryDirectory() as temporary:
+                    root = Path(temporary)
+                    payload = root / "payload" / f"uv-{target}"
+                    payload.mkdir(parents=True)
+                    uv = payload / "uv"
+                    uv.write_text(uv_body, encoding="utf-8")
+                    uv.chmod(0o755)
+                    archive = root / "uv.tar.gz"
+                    subprocess.run(
+                        ["tar", "-czf", str(archive), "-C", str(root / "payload"), f"uv-{target}"],
+                        check=True,
+                    )
+                    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+                    needle = f"uv_target={target}; uv_sha="
+                    script_text = (ROOT / "install.sh").read_text(encoding="utf-8")
+                    self.assertIn(needle, script_text)
+                    rewritten = []
+                    for line in script_text.splitlines(keepends=True):
+                        if needle in line:
+                            line = line.split("uv_sha=", 1)[0] + f"uv_sha={digest} ;;\n"
+                        rewritten.append(line)
+                    script = self._script(root)
+                    script.write_text("".join(rewritten), encoding="utf-8")
+                    bindir = root / "bin"
+                    bindir.mkdir()
+                    curl = bindir / "curl"
+                    curl.write_text(
+                        "#!/bin/sh\n"
+                        "out=\n"
+                        "while [ $# -gt 0 ]; do\n"
+                        "  if [ \"$1\" = -o ]; then out=$2; shift 2; continue; fi\n"
+                        "  shift\n"
+                        "done\n"
+                        f"cp {archive} \"$out\"\n",
+                        encoding="utf-8",
+                    )
+                    curl.chmod(0o755)
+                    stub = bindir / tool
+                    stub.write_text(body, encoding="utf-8")
+                    stub.chmod(0o755)
+                    for name in ("python3", "python", "py"):
+                        py = bindir / name
+                        py.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+                        py.chmod(0o755)
+                    env = os.environ.copy()
+                    env["PATH"] = str(bindir) + os.pathsep + env.get("PATH", "")
+                    env["HOME"] = str(root / "home")
+                    env.pop("XDG_DATA_HOME", None)
+                    completed = subprocess.run(
+                        ["sh", str(script)],
+                        cwd=root,
+                        env=env,
+                        capture_output=True,
+                        text=True,
+                        timeout=30,
+                        check=False,
+                    )
+                self.assertEqual(status, completed.returncode, completed.stderr)
+                self.assertEqual(1, completed.stderr.count("Installing ChaosEngine into"))
+                self.assertEqual(1, completed.stderr.count("Download:"))
+
 
 class MavenCaptureTests(unittest.TestCase):
     def test_package_stdout_stays_off_the_parent_stdout(self):
