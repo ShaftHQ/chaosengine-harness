@@ -5331,6 +5331,15 @@ def normalize_bundle_options(
     return options
 
 
+def _bundle_flags_set(args: argparse.Namespace) -> bool:
+    """True when a resolved component flag differs from the built-in default."""
+    for name in (*DEFAULT_BUNDLE_COMPONENTS, *OPT_IN_BUNDLE_COMPONENTS):
+        attr = name.replace("-", "_")
+        if getattr(args, f"without_{attr}", False) or getattr(args, f"with_{attr}", False):
+            return True
+    return False
+
+
 def bundle_from_install_args(args: argparse.Namespace) -> dict[str, bool]:
     """Resolve install CLI flags. Explicit CLI wins over a stored file."""
     raw: dict[str, object] = {}
@@ -8335,14 +8344,14 @@ def _annotate_install_contract(project: Path, result: object) -> object:
 
 def _run_guided_upgrade(args: argparse.Namespace) -> dict[str, object]:
     project = Path(args.project)
-    if getattr(args, "instructions_mode", None) or getattr(args, "scope", None):
-        _apply_install_config(args)
-        replaced = _instruction_replace(args)
-        if replaced == "dry-run":
-            return {"status": "dry-run"}
-        if getattr(args, "_user_scope", False):
-            user = _install_user_scope(args)
-            return {"status": "installed", "root": str(project), "userLayer": user.get("status")}
+    _apply_install_config(args)
+    replaced = _instruction_replace(args)
+    if replaced == "dry-run":
+        return {"status": "dry-run"}
+    if getattr(args, "_user_scope", False):
+        user = _install_user_scope(args)
+        return {"status": "installed", "root": str(project), "userLayer": user.get("status")}
+    if _bundle_flags_set(args):
         write_bundle_options(project, bundle_from_install_args(args))
     source, commit = _guided_pin(args)
     target = _publish_guided_overlay(project, source, commit, _read_guided_tool(project))

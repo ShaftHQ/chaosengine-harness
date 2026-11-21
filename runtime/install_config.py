@@ -410,12 +410,6 @@ def resolve_config(
         if row.kind == "path" and isinstance(env_value, str) and env_value.strip():
             env_value = str(Path(os.path.expandvars(os.path.expanduser(env_value))))
         put(row.key, env_value, f"env:{row.env[0]}", merge=row.merge)
-        cli_value = _cli_value(row, args)
-        if cli_value is not None and cli_value != env_value and not row.merge:
-            raise ConfigError(
-                "CE_CONFIG_INVALID",
-                f"{row.key} flag and {row.env[0]} disagree",
-            )
 
     for row in CATALOG:
         cli_value = _cli_value(row, args)

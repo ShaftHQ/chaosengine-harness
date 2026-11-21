@@ -106,8 +106,8 @@ class FlagParityTests(unittest.TestCase):
             INSTALL.write_bundle_options(project, {"mempalace": True})
             args = argparse.Namespace(
                 project=project,
-                instructions_mode="merge",
-                scope="project",
+                instructions_mode=None,
+                scope=None,
                 source=ROOT,
                 commit="a" * 40,
                 dry_run=False,
@@ -173,9 +173,49 @@ class PrecedenceTests(unittest.TestCase):
             )
             self.assertEqual(flagged.values["hosts.enabled"], ("cursor",))
             self.assertEqual(flagged.sources["hosts.enabled"], "cli")
-            with self.assertRaises(CONFIG.ConfigError) as raised:
-                CONFIG.resolve_config(project, args=args, environ=environ)
-            self.assertEqual(raised.exception.code, "CE_CONFIG_INVALID")
+            both = CONFIG.resolve_config(project, args=args, environ=environ)
+            self.assertEqual(both.values["hosts.enabled"], ("cursor",))
+            self.assertEqual(both.sources["hosts.enabled"], "cli")
+
+    def test_copied_bootstrap_flag_beats_env(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            target = root / "bootstrap.py"
+            target.write_bytes((ROOT / "bootstrap.py").read_bytes())
+            copied = load(target, "copied_bootstrap_flag_beats_env")
+            project = root / "project"
+            project.mkdir()
+            args = copied.parser().parse_args(
+                [
+                    "--repository",
+                    "ShaftHQ/chaosengine-harness",
+                    "--project",
+                    str(project),
+                    "--hosts",
+                    "cursor",
+                ]
+            )
+            previous = sys.modules.get("ce_install_config")
+            for name in (
+                "ce_user_paths",
+                "ce_install_options",
+                "ce_install_config",
+                "runtime.user_paths",
+                "runtime.install_options",
+            ):
+                sys.modules.pop(name, None)
+            _options, config = copied._load_install_catalog()
+            self.assertIsNot(config, previous)
+            resolved = config.resolve_config(
+                project,
+                args=args,
+                environ={
+                    "CHAOS_ENGINE_HOST": "gemini",
+                    "CHAOS_ENGINE_CONFIG_HOME": str(root / "absent"),
+                },
+            )
+        self.assertEqual(resolved.values["hosts.enabled"], ("cursor",))
+        self.assertEqual(resolved.sources["hosts.enabled"], "cli")
 
     def test_replace_from_a_file_is_refused(self):
         with tempfile.TemporaryDirectory() as temporary:

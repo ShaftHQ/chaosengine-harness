@@ -160,6 +160,54 @@ class BootstrapScopeModeTests(unittest.TestCase):
             self.assertFalse(download.called)
             self.assertFalse((project / ".chaos-engine-state").exists())
 
+    def test_replace_on_a_tty_reaches_the_confirmation_prompt(self):
+        module = load()
+        import runtime.instruction_mode as instruction_mode
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project = root / "project"
+            project.mkdir()
+            (project / "AGENTS.md").write_text("User rule\n", encoding="utf-8")
+            home = root / "home"
+            data = root / "data"
+            home.mkdir()
+            data.mkdir()
+            stderr = io.StringIO()
+            stdout = io.StringIO()
+            stdin = io.StringIO()
+            stdin.isatty = lambda: True
+            download = mock.Mock(side_effect=_fake_download)
+            argv = [
+                "--project",
+                str(project),
+                "--repository",
+                "Example/Project",
+                "--mode",
+                "replace",
+                "--skip-tools",
+            ]
+            with _isolated(home, data):
+                with (
+                    mock.patch.object(module, "resolve_latest", return_value=(COMMIT, "main")),
+                    mock.patch.object(module, "download_source", download),
+                    mock.patch.object(module, "_prepare_shaft_addons", return_value=None),
+                    mock.patch.object(module.sys, "argv", ["bootstrap.py", *argv]),
+                    mock.patch.object(module.sys, "stdout", stdout),
+                    mock.patch.object(module.sys, "stderr", stderr),
+                    mock.patch.object(module.sys, "stdin", stdin),
+                    mock.patch.object(instruction_mode.os, "isatty", return_value=True),
+                    mock.patch("builtins.input", return_value="no"),
+                ):
+                    with self.assertRaises(SystemExit) as raised:
+                        module.main()
+            self.assertEqual(2, raised.exception.code)
+            self.assertIn("Type replace to continue.", stdout.getvalue())
+            self.assertIn("CE_MODE_REPLACE_NEEDS_YES", stderr.getvalue())
+            self.assertTrue(download.called)
+            self.assertEqual("User rule\n", (project / "AGENTS.md").read_text(encoding="utf-8"))
+            self.assertFalse((project / ".chaos-engine-state").exists())
+
     def test_env_replace_is_honored(self):
         module = load()
         with tempfile.TemporaryDirectory() as temporary:
