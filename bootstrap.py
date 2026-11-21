@@ -1703,7 +1703,14 @@ class InstallReporter:
         self._caps = detect_capabilities(self.stream, vt=self._enable_windows_vt)
         self.mode = select_mode(tty=self._caps.tty)
         self._tty = self.mode == "tty"
-        self._color = self._tty and self._caps.color != "none"
+        # Auto colour follows tty mode. always and FORCE_COLOR also paint a pipe.
+        # A failed Windows VT enable stays in _caps.color. JSON stays plain.
+        # Cursor stays on a TTY, including when colour is off.
+        self._color = (
+            self.mode != "json"
+            and self._caps.color != "none"
+            and (self._tty or terminal_color_enabled(tty=False))
+        )
         self.cursor = self._tty and self._caps.cursor
         self._unicode = self._caps.unicode
         self._hyperlinks = self._tty and self._caps.hyperlinks
@@ -1888,7 +1895,7 @@ class InstallReporter:
 
     @property
     def color_enabled(self) -> bool:
-        """Whether this reporter paints ANSI color (TTY, NO_COLOR unset, VT ready)."""
+        """Whether this reporter paints ANSI color. Cursor is a separate TTY decision."""
         return self._color
 
     def enable_verbose(self) -> None:

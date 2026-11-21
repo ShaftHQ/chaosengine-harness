@@ -145,9 +145,6 @@ for argument in "$@"; do
   fi
   if [ -n "$pending" ]; then
     forwarded_flags="$forwarded_flags $pending $argument"
-    case "$pending" in
-      --version) version_pin=$argument ;;
-    esac
     pending=
     continue
   fi
@@ -313,7 +310,7 @@ fixture_url() {
 }
 
 if command -v curl >/dev/null 2>&1; then
-  fetch() {
+  _fetch_bytes() {
     if [ -n "${CHAOS_ENGINE_FIXTURE_ORIGIN:-}" ]; then
       curl -fsSL --retry 3 --retry-delay 2 -o "$1" "$2"
     else
@@ -321,12 +318,21 @@ if command -v curl >/dev/null 2>&1; then
     fi
   }
 elif command -v wget >/dev/null 2>&1; then
-  fetch() {
+  _fetch_bytes() {
     wget -q -O "$1" "$2"
   }
 else
   fail "curl or wget is required to download the ChaosEngine bootstrap. Install curl, then rerun the one-liner."
 fi
+
+# set -e exits before fail() when curl or wget returns non-zero.
+fetch() {
+  _fetch_bytes "$1" "$2" || {
+    status=$?
+    note_stage0
+    exit "$status"
+  }
+}
 
 source_record=$(resolve_source "${1:-}")
 repository=$(printf '%s\n' "$source_record" | cut -d'|' -f1)
@@ -405,7 +411,12 @@ if [ -z "$python" ]; then
   managed_uv="$work/uv-${uv_target}/uv"
   [ -x "$managed_uv" ] || fail "uv archive is missing its executable"
   export UV_PYTHON_INSTALL_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/chaos-engine/python"
-  "$managed_uv" python install 3.14 --no-progress
+  # set -e exits before fail() when uv itself returns non-zero.
+  "$managed_uv" python install 3.14 --no-progress || {
+    status=$?
+    note_stage0
+    exit "$status"
+  }
   interp=$("$managed_uv" python find 3.14)
   [ -n "$interp" ] || fail "uv-managed Python was installed but not found"
   shim_dir="${XDG_DATA_HOME:-$HOME/.local/share}/chaos-engine/bin"
@@ -434,7 +445,7 @@ fi
 script_path=$(printf '%s' "$0" | sed 's#\\#/#g')
 case "$script_path" in
   */install.sh|install.sh)
-    script_dir=$(CDPATH= cd -- "$(dirname -- "$script_path")" && pwd)
+    script_dir=$(CDPATH='' cd -- "$(dirname -- "$script_path")" && pwd)
     if [ -f "$script_dir/bootstrap.py" ] && is_chaos_engine_source_tree "$script_dir"; then
       cp "$script_dir/bootstrap.py" "$bootstrap"
     else

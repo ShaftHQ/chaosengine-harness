@@ -170,7 +170,16 @@ def _assert_output(output: str, completed: subprocess.CompletedProcess[str]) -> 
     raise SystemExit(f"unknown output: {output}")
 
 
-def _install(source: Path, commit: str, project: Path, timeout: int, output: str) -> None:
+def _install(
+    source: Path,
+    commit: str,
+    project: Path,
+    timeout: int,
+    output: str,
+    *,
+    assert_output: bool = True,
+) -> None:
+    """Pass ``--json`` only to this checkout. The pinned tag rejects that flag."""
     argv = [
         sys.executable,
         str(source / "install.py"),
@@ -182,17 +191,19 @@ def _install(source: Path, commit: str, project: Path, timeout: int, output: str
         "--commit",
         commit,
     ]
-    if output == "json":
+    if assert_output and output == "json":
         argv.append("--json")
     completed = _run(argv, cwd=project, timeout=timeout)
-    _assert_output(output, completed)
+    if assert_output:
+        _assert_output(output, completed)
 
 
-def _upgrade(source: Path, commit: str, project: Path, timeout: int) -> None:
+def _upgrade(source: Path, commit: str, project: Path, timeout: int, output: str) -> None:
     # The installed copy is the previous pin. The upgrade under test is this
     # checkout's install.py. The old pin cannot read the current capability policy.
+    # Upgrade already prints one JSON object. It has no --json flag.
     installer = source / "install.py"
-    _run(
+    completed = _run(
         [
             sys.executable,
             str(installer),
@@ -207,6 +218,7 @@ def _upgrade(source: Path, commit: str, project: Path, timeout: int) -> None:
         cwd=project,
         timeout=timeout,
     )
+    _assert_output(output, completed)
 
 
 def _doctor(project: Path, timeout: int) -> None:
@@ -324,16 +336,23 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 pinned = root / "pinned-source"
                 _clone_tag(pinned, budget)
-                _install(pinned, _commit(pinned, 60), project, budget, args.output)
+                _install(
+                    pinned,
+                    _commit(pinned, 60),
+                    project,
+                    budget,
+                    args.output,
+                    assert_output=False,
+                )
             _write_sentinel(project)
-            _upgrade(workspace, _commit(workspace, 60), project, budget)
+            _upgrade(workspace, _commit(workspace, 60), project, budget, args.output)
             _assert_sentinel(project)
         else:
             _install(workspace, _commit(workspace, 60), project, budget, args.output)
         _doctor(project, budget)
         _smoke(project, min(budget, 180))
         if args.mode == "upgrade":
-            _upgrade(workspace, _commit(workspace, 60), project, budget)
+            _upgrade(workspace, _commit(workspace, 60), project, budget, args.output)
             _assert_sentinel(project)
         else:
             _install(workspace, _commit(workspace, 60), project, budget, args.output)

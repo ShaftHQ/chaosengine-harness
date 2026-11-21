@@ -620,6 +620,34 @@ class WorkflowContractTest(unittest.TestCase):
         spec.loader.exec_module(module)
         return module
 
+    def test_json_factor_skips_the_pinned_installer_and_checks_this_checkout(self):
+        cell = self._cell()
+        calls: list[list[str]] = []
+
+        def run(argv, **_kwargs):
+            calls.append(list(argv))
+            return subprocess.CompletedProcess(argv, 0, '{"status":"installed"}\n', "")
+
+        source = Path("/tmp/ce-contract-source")
+        project = Path("/tmp/ce-contract-project")
+        with mock.patch.object(cell, "_run", side_effect=run):
+            cell._install(source, "a" * 40, project, 30, "json", assert_output=False)
+            cell._install(source, "b" * 40, project, 30, "json")
+            cell._upgrade(source, "c" * 40, project, 30, "json")
+        self.assertNotIn("--json", calls[0])
+        self.assertIn("install", calls[0])
+        self.assertIn("--json", calls[1])
+        self.assertIn("upgrade", calls[2])
+        self.assertNotIn("--json", calls[2])
+
+        def dirty(argv, **_kwargs):
+            return subprocess.CompletedProcess(argv, 0, "[INFO] BUILD SUCCESS\n", "")
+
+        with mock.patch.object(cell, "_run", side_effect=dirty):
+            with self.assertRaises(SystemExit) as caught:
+                cell._upgrade(source, "d" * 40, project, 30, "json")
+        self.assertIn("json stdout is not one document", str(caught.exception))
+
     def test_a_failed_fetch_is_retried_once(self):
         cell = self._cell()
         calls = {"n": 0}

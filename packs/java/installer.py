@@ -75,6 +75,8 @@ __all__ = (
     "_jdk_home_from_host_probes",
     "_validate_standard_jdk_home",
     "preflight_maven_tools_jdk",
+    "_relay_captured_streams",
+    "_run_captured_build",
     "_build_and_publish_maven_tools",
     "maven_tools_install_version",
     "ensure_maven_tools",
@@ -778,6 +780,27 @@ def _maven_tools_build_java(hosts, specification, *, opener, reporter, confirmer
     return java
 
 
+def _relay_captured_streams(completed) -> None:
+    """Keep a child's stdout off the installer JSON document."""
+    if completed is None:
+        return
+    for chunk in (getattr(completed, "stdout", None), getattr(completed, "stderr", None)):
+        if not chunk:
+            continue
+        text = chunk if isinstance(chunk, str) else bytes(chunk).decode("utf-8", "replace")
+        sys.stderr.write(text if text.endswith("\n") else text + "\n")
+    sys.stderr.flush()
+
+
+def _run_captured_build(runner, argv, **kwargs):
+    """Capture a Maven build. Success is echoed to stderr for the contract log."""
+    kwargs["capture_output"] = True
+    kwargs["text"] = True
+    completed = runner(argv, **kwargs)
+    _relay_captured_streams(completed)
+    return completed
+
+
 def _build_and_publish_maven_tools(
     hosts, runner, java: Path, version: str, tag: str, *, confirmer, reporter,
     specification: dict[str, object] | None = None,
@@ -834,7 +857,8 @@ def _build_and_publish_maven_tools(
         # Upstream tests are skipped: they are upstream CI's job, and a crashing
         # upstream test (#6339) must not block installing a tagged release.
         try:
-            runner(
+            _run_captured_build(
+                runner,
                 [str(maven_cli), "-B", "clean", "package", "-Pci", "-DskipTests"],
                 cwd=source,
                 env=environment,

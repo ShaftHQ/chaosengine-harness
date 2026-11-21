@@ -7,6 +7,8 @@ import importlib.util
 import io
 import json
 import os
+import subprocess
+import sys
 import tempfile
 import unittest
 import unittest.mock
@@ -238,6 +240,173 @@ class CeUiTests(unittest.TestCase):
         text = stream.getvalue()
         self.assertRegex(text, r"\x1b\[\d+F")
         self.assertNotRegex(text, r"\x1b\[[0-9;]*m")
+
+    def test_forced_color_paints_a_pipe_and_skips_the_cursor(self):
+        cases = (
+            {"CHAOS_ENGINE_COLOR": "always"},
+            {"FORCE_COLOR": "1"},
+            {"FORCE_COLOR": "1", "CHAOS_ENGINE_COLOR": "always"},
+        )
+        for extra in cases:
+            stream = io.StringIO()
+            env = {"TERM": "xterm-256color", "COLUMNS": "80", "PATH": "/usr/bin", "HOME": "/tmp"}
+            env.update(extra)
+            with self.subTest(extra=extra), unittest.mock.patch.dict(os.environ, env, clear=True), \
+                    unittest.mock.patch.object(BOOTSTRAP.threading.Thread, "start", lambda self: None):
+                reporter = BOOTSTRAP.InstallReporter(stream=stream, clock=lambda: 1.0)
+                reporter.start("Resolve source", remaining=())
+                reporter.complete("Resolve source", remaining=())
+                text = stream.getvalue()
+                self.assertTrue(reporter._color)
+                self.assertFalse(reporter.cursor)
+                self.assertRegex(text, r"\x1b\[[0-9;]*m")
+                self.assertNotRegex(text, r"\x1b\[\d+F")
+                self.assertNotIn("\x1b]8;;", text)
+
+    def test_json_and_no_color_stay_plain_on_a_pipe(self):
+        cases = (
+            {"CHAOS_ENGINE_JSON": "1", "CHAOS_ENGINE_COLOR": "always", "FORCE_COLOR": "1"},
+            {"NO_COLOR": "1", "FORCE_COLOR": "1", "CHAOS_ENGINE_COLOR": "always"},
+            {"CHAOS_ENGINE_COLOR": "never", "FORCE_COLOR": "1"},
+        )
+        for extra in cases:
+            stream = io.StringIO()
+            env = {"TERM": "xterm-256color", "COLUMNS": "80", "PATH": "/usr/bin", "HOME": "/tmp"}
+            env.update(extra)
+            with self.subTest(extra=extra), unittest.mock.patch.dict(os.environ, env, clear=True), \
+                    unittest.mock.patch.object(BOOTSTRAP.threading.Thread, "start", lambda self: None):
+                reporter = BOOTSTRAP.InstallReporter(stream=stream, clock=lambda: 1.0)
+                reporter.start("Resolve source", remaining=())
+                reporter.complete("Resolve source", remaining=())
+                text = stream.getvalue()
+                self.assertFalse(reporter._color)
+                self.assertFalse(reporter.cursor)
+                self.assertNotRegex(text, r"\x1b\[[0-9;]*m")
+                self.assertNotRegex(text, r"\x1b\[\d+F")
+
+
+class Stage0ShellTests(unittest.TestCase):
+    def _script(self, directory: Path) -> Path:
+        target = directory / "install.sh"
+        target.write_text((ROOT / "install.sh").read_text(encoding="utf-8"), encoding="utf-8")
+        target.chmod(0o755)
+        return target
+
+    def _curl(self, directory: Path, body: str) -> dict[str, str]:
+        binary = directory / "bin"
+        binary.mkdir()
+        curl = binary / "curl"
+        curl.write_text(body, encoding="utf-8")
+        curl.chmod(0o755)
+        env = os.environ.copy()
+        env["PATH"] = str(binary) + os.pathsep + env.get("PATH", "")
+        return env
+
+    def test_failed_download_prints_installing_and_download_once(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            script = self._script(root)
+            env = self._curl(
+                root,
+                "#!/bin/sh\necho 'curl: (7) Failed to connect' >&2\nexit 7\n",
+            )
+            completed = subprocess.run(
+                ["sh", str(script)],
+                cwd=root,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+        self.assertEqual(7, completed.returncode)
+        self.assertEqual(1, completed.stderr.count("Installing ChaosEngine into"))
+        self.assertEqual(1, completed.stderr.count("Download:"))
+        self.assertIn("bootstrap.py", completed.stderr)
+
+    def test_verbose_download_failure_does_not_print_the_preamble_twice(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            script = self._script(root)
+            env = self._curl(
+                root,
+                "#!/bin/sh\necho 'curl: (7) Failed to connect' >&2\nexit 7\n",
+            )
+            completed = subprocess.run(
+                ["sh", str(script), "--verbose"],
+                cwd=root,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+        self.assertEqual(7, completed.returncode)
+        self.assertEqual(1, completed.stderr.count("Installing ChaosEngine into"))
+        self.assertEqual(1, completed.stderr.count("Download:"))
+
+    def test_quiet_success_omits_the_stage0_preamble(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            script = self._script(root)
+            env = self._curl(
+                root,
+                "#!/bin/sh\n"
+                "out=\n"
+                "while [ $# -gt 0 ]; do\n"
+                "  if [ \"$1\" = \"-o\" ]; then out=$2; shift 2; continue; fi\n"
+                "  shift\n"
+                "done\n"
+                "printf '%s\\n' 'raise SystemExit(0)' > \"$out\"\n",
+            )
+            completed = subprocess.run(
+                ["sh", str(script)],
+                cwd=root,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        self.assertNotIn("Installing ChaosEngine into", completed.stderr)
+        self.assertNotIn("Download:", completed.stderr)
+
+
+class MavenCaptureTests(unittest.TestCase):
+    def test_package_stdout_stays_off_the_parent_stdout(self):
+        pack = load("ce_java_pack_131", ROOT / "packs" / "java" / "installer.py")
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            pack._run_captured_build(
+                subprocess.run,
+                [
+                    sys.executable,
+                    "-c",
+                    "import sys; sys.stdout.write('[INFO] BUILD SUCCESS\\n'); sys.stderr.write('mvn-err\\n')",
+                ],
+                check=True,
+                timeout=30,
+            )
+        self.assertEqual("", stdout.getvalue())
+        self.assertIn("[INFO] BUILD SUCCESS", stderr.getvalue())
+        self.assertIn("mvn-err", stderr.getvalue())
+
+    def test_package_failure_keeps_stdout_on_the_exception(self):
+        pack = load("ce_java_pack_131", ROOT / "packs" / "java" / "installer.py")
+        with self.assertRaises(subprocess.CalledProcessError) as caught:
+            pack._run_captured_build(
+                subprocess.run,
+                [
+                    sys.executable,
+                    "-c",
+                    "import sys; sys.stdout.write('[INFO] FAIL\\n'); sys.exit(3)",
+                ],
+                check=True,
+                timeout=30,
+            )
+        self.assertIn("[INFO] FAIL", caught.exception.stdout or "")
 
 
 class SubprocessHelperTests(unittest.TestCase):
