@@ -72,6 +72,7 @@ class InstallerUxTests(unittest.TestCase):
             }
         }
         environment["TERM"] = "xterm"
+        environment["COLORTERM"] = "truecolor"
         with unittest.mock.patch.dict(os.environ, environment, clear=True), unittest.mock.patch.object(
             BOOTSTRAP.InstallReporter, "_enable_windows_vt", return_value=True
         ):
@@ -86,6 +87,10 @@ class InstallerUxTests(unittest.TestCase):
                 self.assertNotIn("AUTONOMOUS INSTALL", output)
                 self.assertIn("ChaosEngine", output)
                 self.assertIn("\x1b[38;2;255;59;77m", output)
+                running = next(line for line in output.splitlines() if "running" in line)
+                self.assertNotIn("38;2;", running)
+                self.assertIn("\x1b[36m", running)
+                self.assertNotIn("\x1b[34m", output)
                 self.assertIn("[", output)
                 self.assertIn("Download source", output)
                 self.assertIn("running", output)
@@ -144,6 +149,7 @@ class InstallerUxTests(unittest.TestCase):
             if key not in {
                 "NO_COLOR", "FORCE_COLOR", "CI", "GITHUB_ACTIONS",
                 "CHAOS_ENGINE_JSON", "CHAOS_ENGINE_QUIET", "CHAOS_ENGINE_COLOR",
+                "COLORTERM",
             }
         }
         environment.update({"TERM": "xterm", "COLUMNS": "20"})
@@ -154,10 +160,13 @@ class InstallerUxTests(unittest.TestCase):
             reporter.announce(Path("/very/long/project/path"), "owner/very-long-repo", "main")
             reporter.close()
         live = stream.getvalue()
+        self.assertIn("\x1b[2m", live)
         self.assertIn("\x1b[0m", live)
-        self.assertNotEqual(live.rstrip().endswith(BOOTSTRAP.ION_BLUE[:-1]), True)
-        dangling = live.count(BOOTSTRAP.ION_BLUE) - live.count("\x1b[0m")
-        self.assertLessEqual(dangling, 0)
+        self.assertNotIn("38;2;", live)
+        self.assertNotIn("\x1b[34m", live)
+        self.assertFalse(live.rstrip().endswith("\x1b[2m"))
+        codes = re.findall(r"\x1b\[([0-9;]*)m", live)
+        self.assertEqual(codes.count("0"), len(codes) - codes.count("0"))
 
         pipe = io.StringIO()
         reporter = BOOTSTRAP.InstallReporter(stream=pipe, clock=lambda: 1.0)
@@ -258,7 +267,10 @@ class InstallerUxTests(unittest.TestCase):
             with self.subTest(unicode=unicode):
                 lines = BOOTSTRAP.brand_lines(width=80, color=False, unicode=unicode)
                 plain = "\n".join(lines)
-                colored = "\n".join(BOOTSTRAP.brand_lines(width=80, color=True, unicode=unicode))
+                colored = "\n".join(
+                    BOOTSTRAP.brand_lines(width=80, color=True, unicode=unicode, truecolor=True)
+                )
+                themed = "\n".join(BOOTSTRAP.brand_lines(width=80, color=True, unicode=unicode))
                 self.assertIn("ChaosEngine", plain)
                 self.assertEqual(
                     [line.rindex(end) for line, end in zip(lines[:5], ends)],
@@ -267,6 +279,7 @@ class InstallerUxTests(unittest.TestCase):
                 for line, bar in zip(lines[:5], bars):
                     self.assertIn(bar, line)
                 self.assertIn(BOOTSTRAP.CYBERNETIC_RED, colored)
+                self.assertNotIn("38;2;", themed)
                 self.assertIn("C|*|E", "\n".join(BOOTSTRAP.brand_lines(width=27, color=False)))
                 self.assertNotIn("Ǝ", "\n".join(BOOTSTRAP.brand_lines(width=27, color=False)))
                 plain_wide = "\n".join(lines[:5])
@@ -564,7 +577,7 @@ class InstallerUxTests(unittest.TestCase):
             key: value for key, value in os.environ.items()
             if key not in {
                 "NO_COLOR", "CI", "GITHUB_ACTIONS", "CHAOS_ENGINE_JSON",
-                "CHAOS_ENGINE_QUIET", "CHAOS_ENGINE_COLOR",
+                "CHAOS_ENGINE_QUIET", "CHAOS_ENGINE_COLOR", "COLORTERM",
             }
         }
         environment["TERM"] = "xterm"
@@ -580,8 +593,9 @@ class InstallerUxTests(unittest.TestCase):
             )
         output = stream.getvalue()
         self.assertIn("\x1b[32mInstallation Successful!\x1b[0m", output)
-        self.assertIn(BOOTSTRAP.ION_BLUE, output)
-        self.assertIn("To get started:", output)
+        self.assertIn("\x1b[2mTo get started:\x1b[0m", output)
+        self.assertNotIn("38;2;", output)
+        self.assertNotIn("\x1b[34m", output)
         self.assertNotIn("\r", output)
 
     def test_core_and_provision_are_sequential_not_both_running(self):
@@ -2140,7 +2154,7 @@ class InstallerVisualLanguage6325Tests(unittest.TestCase):
         self.assertIn("--verbose", wrapper)
 
     def test_tty_spinner_advances_and_ascii_uses_plain_frames(self):
-        # NO_COLOR still redraws. Colour stays off. ASCII frames advance without SGR.
+        # NO_COLOR still redraws. Colour stays off. Dim may remain. ASCII frames do not.
         stream = _Tty()
         environment = self._clean_env(NO_COLOR="1", CHAOS_ENGINE_ASCII="1")
         with unittest.mock.patch.dict(os.environ, environment, clear=True), \
@@ -2154,8 +2168,11 @@ class InstallerVisualLanguage6325Tests(unittest.TestCase):
             reporter.close()
         self.assertIn(f"[{BOOTSTRAP.SPINNER_ASCII[0]}]", first)
         self.assertIn(f"[{BOOTSTRAP.SPINNER_ASCII[1]}]", second)
+        self.assertNotRegex(first, r"\x1b\[[0-9;]*m")
+        self.assertNotRegex(second, r"\x1b\[[0-9;]*m")
         self.assertRegex(stream.getvalue(), r"\x1b\[\d+F")
-        self.assertNotRegex(stream.getvalue(), r"\x1b\[[0-9;]*m")
+        self.assertIn("\x1b[2m", stream.getvalue())
+        self.assertNotRegex(stream.getvalue(), r"\x1b\[(?!0m|1m|2m|22m)[0-9;]*m")
         self.assertNotIn("⠋", stream.getvalue())
         colored = _Tty()
         colored_env = self._clean_env()

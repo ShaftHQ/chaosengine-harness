@@ -339,7 +339,10 @@ def test_banner_source_link_and_no_color_spinner(monkeypatch):
     assert "Ǝ" not in marks
     assert "C|*|E" in boot.BRAND_NARROW[0]
     assert len(boot.BRAND_UNICODE) <= 12
-    assert boot.CYBERNETIC_RED in "\n".join(boot.brand_lines(color=True, unicode=True))
+    assert boot.CYBERNETIC_RED in "\n".join(
+        boot.brand_lines(color=True, unicode=True, truecolor=True)
+    )
+    assert "38;2;" not in "\n".join(boot.brand_lines(color=True, unicode=True))
     plain = "\n".join(boot.brand_lines(color=False, unicode=False))
     assert "\x1b" not in plain
     version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()

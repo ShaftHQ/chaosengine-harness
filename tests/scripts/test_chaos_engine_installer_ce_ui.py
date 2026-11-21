@@ -240,7 +240,45 @@ class CeUiTests(unittest.TestCase):
             reporter.close()
         text = stream.getvalue()
         self.assertRegex(text, r"\x1b\[\d+F")
-        self.assertNotRegex(text, r"\x1b\[[0-9;]*m")
+        self.assertNotRegex(text, r"\x1b\[(?!0m|1m|2m|22m)[0-9;]*m")
+
+    def test_palette_uses_terminal_colours_and_keeps_dim_under_no_color(self):
+        """#132 / AC-02: no fixed-RGB text, no blue, dim survives NO_COLOR."""
+        sources = {
+            "ce_ui": (ROOT / "runtime" / "ce_ui.py").read_text(encoding="utf-8"),
+            "bootstrap": (ROOT / "bootstrap.py").read_text(encoding="utf-8"),
+        }
+        for name, source in sources.items():
+            self.assertNotIn("\\x1b[34m", source, name)
+            self.assertNotIn("48;2;", source, name)
+            start = 0
+            while True:
+                index = source.find("38;2;", start)
+                if index < 0:
+                    break
+                window = source[max(0, index - 80) : index + 40]
+                self.assertIn("CYBERNETIC_RED", window, name)
+                start = index + 5
+        stream = _Tty()
+        env = {"TERM": "xterm", "NO_COLOR": "1", "COLUMNS": "80", "FORCE_COLOR": "1"}
+        with unittest.mock.patch.dict(os.environ, env, clear=True), unittest.mock.patch.object(
+            BOOTSTRAP.threading.Thread, "start", lambda self: None
+        ):
+            reporter = BOOTSTRAP.InstallReporter(stream=stream, clock=lambda: 1.0, environ=env)
+            reporter.announce(Path("/project"), "owner/repo", "main")
+            reporter.start("Download source", remaining=("Install core",))
+            reporter.close()
+        text = stream.getvalue()
+        self.assertIn("\x1b[2m", text)
+        self.assertIn("Project", text)
+        self.assertNotIn("38;2;", text)
+        self.assertNotIn("\x1b[34m", text)
+        self.assertNotRegex(text, r"\x1b\[(?!0m|1m|2m|22m)[0-9;]*m")
+        self.assertRegex(text, r"\x1b\[\d+F")
+        plain = "\n".join(BOOTSTRAP.brand_lines(width=80, color=True, unicode=True))
+        self.assertNotIn("38;2;", plain)
+        core = "\n".join(BOOTSTRAP.brand_lines(width=80, color=True, unicode=True, truecolor=True))
+        self.assertEqual(1, core.count("38;2;"))
 
     def test_forced_color_paints_a_pipe_and_skips_the_cursor(self):
         cases = (
