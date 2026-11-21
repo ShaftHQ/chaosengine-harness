@@ -339,11 +339,14 @@ class RollbackTruth6338Test(unittest.TestCase):
                     "CE-INSTALL-FAILED", error, "Example/Project", project=project
                 )
             text = stderr.getvalue()
+            report = (project / ".chaos-engine-state" / "failure-report.txt").read_text(
+                encoding="utf-8"
+            )
             self.assertIn("Installation failed", text)
-            # L94: rollback detail lives in the prefilled issue URL, not stderr prose.
-            self.assertIn("Rolled+back", text)
-            self.assertIn(NEW_COMMIT[:12], text)
-            self.assertIn(OLD_COMMIT[:12], text)
+            # Rollback detail lives in the prefilled issue URL stored on the report.
+            self.assertIn("Rolled+back", report)
+            self.assertIn(NEW_COMMIT[:12], report)
+            self.assertIn(OLD_COMMIT[:12], report)
 
     def test_status_and_doctor_name_the_installed_commit_and_the_rollback(self):
         with tempfile.TemporaryDirectory() as temporary:
