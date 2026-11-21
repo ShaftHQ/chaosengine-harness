@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import importlib.util
 import io
 import json
@@ -371,6 +372,79 @@ class Stage0ShellTests(unittest.TestCase):
         self.assertEqual(0, completed.returncode, completed.stderr)
         self.assertNotIn("Installing ChaosEngine into", completed.stderr)
         self.assertNotIn("Download:", completed.stderr)
+
+    def test_uv_python_find_failure_prints_stage0_once(self):
+        targets = {
+            ("Linux", "x86_64"): "x86_64-unknown-linux-gnu",
+            ("Linux", "aarch64"): "aarch64-unknown-linux-gnu",
+            ("Linux", "arm64"): "aarch64-unknown-linux-gnu",
+            ("Darwin", "x86_64"): "x86_64-apple-darwin",
+            ("Darwin", "arm64"): "aarch64-apple-darwin",
+        }
+        target = targets.get((os.uname().sysname, os.uname().machine))
+        if target is None:
+            self.skipTest("this platform has no uv archive in install.sh")
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            payload = root / "payload" / f"uv-{target}"
+            payload.mkdir(parents=True)
+            uv = payload / "uv"
+            uv.write_text(
+                "#!/bin/sh\n"
+                "if [ \"$2\" = install ]; then exit 0; fi\n"
+                "echo find-failed >&2\n"
+                "exit 4\n",
+                encoding="utf-8",
+            )
+            uv.chmod(0o755)
+            archive = root / "uv.tar.gz"
+            subprocess.run(
+                ["tar", "-czf", str(archive), "-C", str(root / "payload"), f"uv-{target}"],
+                check=True,
+            )
+            digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+            needle = f"uv_target={target}; uv_sha="
+            script_text = (ROOT / "install.sh").read_text(encoding="utf-8")
+            self.assertIn(needle, script_text)
+            rewritten = []
+            for line in script_text.splitlines(keepends=True):
+                if needle in line:
+                    line = line.split("uv_sha=", 1)[0] + f"uv_sha={digest} ;;\n"
+                rewritten.append(line)
+            script = self._script(root)
+            script.write_text("".join(rewritten), encoding="utf-8")
+            bindir = root / "bin"
+            bindir.mkdir()
+            curl = bindir / "curl"
+            curl.write_text(
+                "#!/bin/sh\n"
+                "out=\n"
+                "while [ $# -gt 0 ]; do\n"
+                "  if [ \"$1\" = -o ]; then out=$2; shift 2; continue; fi\n"
+                "  shift\n"
+                "done\n"
+                f"cp {archive} \"$out\"\n",
+                encoding="utf-8",
+            )
+            curl.chmod(0o755)
+            for name in ("python3", "python", "py"):
+                stub = bindir / name
+                stub.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+                stub.chmod(0o755)
+            env = os.environ.copy()
+            env["PATH"] = str(bindir) + os.pathsep + env.get("PATH", "")
+            completed = subprocess.run(
+                ["sh", str(script)],
+                cwd=root,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+        self.assertEqual(4, completed.returncode, completed.stderr)
+        self.assertEqual(1, completed.stderr.count("Installing ChaosEngine into"))
+        self.assertEqual(1, completed.stderr.count("Download:"))
 
 
 class MavenCaptureTests(unittest.TestCase):

@@ -417,7 +417,12 @@ if [ -z "$python" ]; then
     note_stage0
     exit "$status"
   }
-  interp=$("$managed_uv" python find 3.14)
+  # A failing command substitution exits under set -e before fail().
+  interp=$("$managed_uv" python find 3.14) || {
+    status=$?
+    note_stage0
+    exit "$status"
+  }
   [ -n "$interp" ] || fail "uv-managed Python was installed but not found"
   shim_dir="${XDG_DATA_HOME:-$HOME/.local/share}/chaos-engine/bin"
   mkdir -p "$shim_dir"
