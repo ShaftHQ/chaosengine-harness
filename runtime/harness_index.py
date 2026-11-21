@@ -270,6 +270,8 @@ def render_catalog(index: dict) -> str:
         lines.append(
             f"| {entry['name']} | {_cell(entry['description'])} | `{target}` | [{entry['kind']}](../{target}) |"
         )
+    lines.append("")
+    lines.append("Lean and Agile coverage: [lean-agile](lean-agile.md).")
     return "\n".join(lines) + "\n"
 
 

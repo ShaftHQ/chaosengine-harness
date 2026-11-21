@@ -29,6 +29,14 @@ body:
       description: Checks a reviewer can apply. Include commands and expected results when the change is code.
     validations:
       required: true
+  - type: textarea
+    id: agent_brief
+    attributes:
+      label: Agent brief
+      description: |
+        Optional. Steps a fresh agent can run from this issue and the repo alone: inspect and confirm, fix, verify, finalize. Verify maps 1:1 to each defect and each SC-* item. No new required field.
+    validations:
+      required: false
   - type: checkboxes
     id: finalization
     attributes:

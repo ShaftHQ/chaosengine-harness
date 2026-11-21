@@ -1,0 +1,9 @@
+{
+  "id": "cited-answer",
+  "label": "pass",
+  "source": "experiments/harness-ab/raw/A/01 final cites mvn",
+  "expects_citation": true,
+  "citations": ["mvn test reported Tests run: 2, Failures: 0"],
+  "answer": "`mvn test` reported Tests run: 2, Failures: 0.",
+  "calls": ["Execute: mvn -B test"]
+}

@@ -1,0 +1,10 @@
+{
+  "id": "identical-calls",
+  "label": "fail",
+  "source": "experiments/harness-ab/raw/C/01/transcript.md",
+  "calls": [
+    "Execute: CP=$(cat /tmp/shaft.cp)",
+    "Execute: CP=$(cat /tmp/shaft.cp)",
+    "Execute: CP=$(cat /tmp/shaft.cp)"
+  ]
+}

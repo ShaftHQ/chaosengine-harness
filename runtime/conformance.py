@@ -530,6 +530,39 @@ def _urlopen_fetch(url: str) -> tuple[int, bytes]:
         raise ConnectionError(str(exc.reason)) from exc
 
 
+_CITED_TOKEN = re.compile(r"`([^`\n]+)`|\[[^\]]+\]\(([^)]+)\)")
+
+
+def check_stale_generated_paths(tree: Path, relatives: list[str]) -> list[str]:
+    """Every concrete path cited by a generated file must exist in the tree.
+
+    Globs and bare tools are not paths. A missing cited file is ``stale-path``.
+    """
+    root = Path(tree)
+    errors: list[str] = []
+    for relative in relatives:
+        path = root / relative
+        if not path.is_file():
+            errors.append(f"stale-path: {relative} missing")
+            continue
+        text = path.read_text(encoding="utf-8")
+        for match in _CITED_TOKEN.finditer(text):
+            raw = match.group(1) or match.group(2) or ""
+            for token in raw.split():
+                cleaned = token.strip("`\"'").rstrip(".,)")
+                if not cleaned or cleaned.startswith(("http://", "https://", "-", "*")):
+                    continue
+                if any(ch in cleaned for ch in "*?[]"):
+                    continue
+                if "/" not in cleaned and not cleaned.endswith((".py", ".md", ".sh", ".java", ".yml")):
+                    continue
+                if cleaned.startswith("../"):
+                    continue
+                if not (root / cleaned).exists():
+                    errors.append(f"stale-path: {cleaned}")
+    return errors
+
+
 def main(argv: list[str] | None = None) -> int:
     """Opt-in docs drift fetch. Exit 0 only when every pin passes."""
     args = list(sys.argv[1:] if argv is None else argv)

@@ -39,8 +39,12 @@ def build(
     review_budget: dict | None = None,
     review_rounds_used: int | None = None,
     follow_ups: list | None = None,
+    waste: dict | None = None,
+    wip: dict | None = None,
+    pr_size: int | str | None = None,
+    cycle_time_seconds: int | str | None = None,
 ) -> dict:
-    """Allow-listed handoff object. Token totals are not a field."""
+    """Allow-listed handoff object. Waste fields are digests, not transcripts."""
     complete = coverage == "complete"
     receipt = {
         "schemaVersion": SCHEMA_VERSION,
@@ -66,7 +70,42 @@ def build(
         receipt["reviewRoundsUsed"] = review_rounds_used
     if follow_ups is not None:
         receipt["followUps"] = list(follow_ups)
+    receipt["waste"] = _digest_waste(waste)
+    receipt["wip"] = _digest_wip(wip)
+    receipt["prSize"] = _digest_number(pr_size)
+    receipt["cycleTimeSeconds"] = _digest_number(cycle_time_seconds)
     return receipt
+
+
+def _digest_number(value: object) -> int | str:
+    if value is None or value == "unmeasured":
+        return "unmeasured"
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError("digest fields are non-negative ints or unmeasured")
+    return value
+
+
+def _digest_waste(waste: dict | None) -> dict:
+    body = waste if isinstance(waste, dict) else {}
+    return {
+        "tokenWaste": _digest_number(body.get("tokenWaste", body.get("token_waste"))),
+        "contextWaste": _digest_number(body.get("contextWaste", body.get("context_waste"))),
+        "reworkWaste": _digest_number(body.get("reworkWaste", body.get("rework_waste"))),
+        "source": (
+            str(body.get("source"))
+            if body.get("source") in {"unmeasured", "digest", "fixture"}
+            else "unmeasured"
+        ),
+    }
+
+
+def _digest_wip(wip: dict | None) -> dict:
+    body = wip if isinstance(wip, dict) else {}
+    return {
+        "items": _digest_number(body.get("items")),
+        "branches": _digest_number(body.get("branches")),
+        "openPrs": _digest_number(body.get("openPrs", body.get("open_prs"))),
+    }
 
 
 def from_step(

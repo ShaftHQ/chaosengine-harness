@@ -87,7 +87,7 @@ Work the queue to the end without waiting for "proceed": after each step or
 delivery, start the next queued item (KEEP-ALIVE). A turn that ends while CI
 runs must leave a wake (a PR-scoped CI listener) whose prompt resumes the
 queue; a host whose scheduled runs cannot create listeners hands that to the
-parent. While waiting on review, pull the next independent own row.
+parent. While waiting on review, pull the next independent own row. The only waiver that lifts the fail-closed cap of one doing item, one feature branch or worktree per stream, and the open-PR deny is `owner-2026-11-22-all-open-issues-one-pr`.
 
 ## Session cap (Grok Bot default)
 

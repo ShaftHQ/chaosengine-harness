@@ -20,9 +20,24 @@ Adopter templates may keep their own headings (Describe the Bug, Problem
 Statement, and so on). Spec Kit sections are additive.
 
 Hygiene rewrites must specialize User Story / `FR-*` / `SC-*` from the issue's
-own acceptance via `rewrite_body_spec_kit`. Do not stamp
-`Deliver the stated acceptance` (or identical FR/SC boilerplate) onto unrelated
-issues. Trackers may keep a campaign-level story. Closed issues need no rewrite.
+own acceptance via `rewrite_body_spec_kit` in ShaftHQ/SHAFT_ENGINE. That module
+is not in this repository. Do not stamp `Deliver the stated acceptance` (or
+identical FR/SC boilerplate) onto unrelated issues. Trackers may keep a
+campaign-level story. Closed issues need no rewrite.
+
+## Dual-audience spec
+
+One document, two layers. The top is a human TL;DR of at most 5 lines. The
+lower half is an agent brief of at most 150 lines, in this order: inspect and
+confirm, fix per defect, verify, finalize. Use
+[spec-template.md](spec-template.md). Do not replace the spec with a bare prompt.
+
+Evidence is inventoried before any cause. Each cause is labelled `hypothesis`
+or `confirmed: <SHA permalink or repro>`. A bare `file:line` is not a permalink.
+Verify maps 1:1 to every D-item and every SC-* item, and no verify line is
+orphaned. Name existing gates, interrupt and cleanup, environment cases, and
+one regression proof per defect. Research detail is linked from
+`docs/research/<date>-<slug>/`, not copied into the brief.
 
 ## Clarification
 
