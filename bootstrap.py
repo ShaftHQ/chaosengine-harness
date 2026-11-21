@@ -1803,12 +1803,8 @@ class InstallReporter:
             with self._lock:
                 self._render_locked()
         else:
-            self.stream.write(
-                self._truncate(_align_report("Project", self.project_root)) + "\n"
-            )
-            self.stream.write(
-                self._truncate(_align_report("Source", self.source_label)) + "\n"
-            )
+            self.stream.write(self._aligned_live_row("Project", self.project_root) + "\n")
+            self.stream.write(self._aligned_live_row("Source", self.source_label) + "\n")
             self.stream.flush()
 
     def trace(self, message: str) -> None:
@@ -2097,7 +2093,7 @@ class InstallReporter:
             with self._lock:
                 self._render_locked()
         elif not self._commit_logged:
-            self.stream.write(self._truncate(_align_report("Commit", self.commit_label or "")) + "\n")
+            self.stream.write(self._aligned_live_row("Commit", self.commit_label or "") + "\n")
             self.stream.flush()
             self._commit_logged = True
 
@@ -2322,7 +2318,7 @@ class InstallReporter:
             if block:
                 self.stream.write("\n".join(block) + "\n")
         elif self.commit_label and not self._commit_logged:
-            self.stream.write(self._truncate(_align_report("Commit", self.commit_label)) + "\n")
+            self.stream.write(self._aligned_live_row("Commit", self.commit_label) + "\n")
             self._commit_logged = True
         self.stream.write(report)
         self.stream.flush()
@@ -2932,10 +2928,13 @@ def run_first_run_wizard(
     unicode = stream_supports_unicode(output)
     found_glyph = status_glyph("ok", unicode=unicode)
     missing_glyph = status_glyph("pending", unicode=unicode)
+    caps = detect_capabilities(output)
+    color_on = caps.color != "none"
+    intensity = color_on or bool(caps.tty and caps.cursor)
     output.write("ChaosEngine first-run wizard\n")
-    output.write(_align_report("Project", str(project)) + "\n")
-    output.write(_align_report("Source", repository) + "\n")
-    output.write("\n  1. What gets installed\n")
+    output.write(_align_report("Project", str(project), color=color_on, intensity=intensity) + "\n")
+    output.write(_align_report("Source", repository, color=color_on, intensity=intensity) + "\n")
+    output.write("\n  " + paint("1. What gets installed", "dim", color=color_on, intensity=intensity) + "\n")
     output.write(
         "     The portable ChaosEngine core, lifecycle hooks, Memory, MemPalace,\n"
         "     Graphify CLI, five host adapters, and the Caveman + Ponytail companion\n"
@@ -2943,7 +2942,7 @@ def run_first_run_wizard(
     )
     if with_maven_tools:
         output.write("     Maven Tools MCP will also be installed for this project.\n")
-    output.write("\n  2. Hosts\n")
+    output.write("\n  " + paint("2. Hosts", "dim", color=color_on, intensity=intensity) + "\n")
     if present:
         output.write("     Detected host CLIs: " + ", ".join(present) + "\n")
     else:
@@ -2956,11 +2955,19 @@ def run_first_run_wizard(
     for _host_id, label, found in hosts:
         glyph = found_glyph if found else missing_glyph
         status = "on PATH" if found else "not on PATH"
-        output.write(f"       {glyph} {label:<16} {status}\n")
-    output.write("\n  3. Next after install\n")
+        role = "ok" if found else "dim"
+        output.write(
+            f"       {paint(glyph, role, color=color_on, intensity=intensity)} "
+            f"{label:<16} {paint(status, role, color=color_on, intensity=intensity)}\n"
+        )
+    output.write("\n  " + paint("3. Next after install", "dim", color=color_on, intensity=intensity) + "\n")
     for host_id, label, found in hosts:
         glyph = found_glyph if found else missing_glyph
-        output.write(f"     {glyph} {label}: {HOST_NEXT_ACTIONS[host_id]}\n")
+        role = "ok" if found else "dim"
+        output.write(
+            f"     {paint(glyph, role, color=color_on, intensity=intensity)} "
+            f"{label}: {HOST_NEXT_ACTIONS[host_id]}\n"
+        )
     if resolved_hosts:
         selected: tuple[str, ...] | None = tuple(resolved_hosts)
     elif ask_clients:
