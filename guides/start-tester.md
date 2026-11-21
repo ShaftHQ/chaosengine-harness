@@ -12,6 +12,8 @@ You do not need Java, a SHAFT checkout, or a production source tree. A story and
 
 `sdlc_flows.test_plan_gate`, `sdlc_flows.intent_match`, and `sdlc_flows.story_flow` are the mechanical gates. Judgement stays in the review.
 
+Before any case is drafted, `sdlc_flows.thin_brief_gate` requires the request, how the feature works, and the code under test. A title alone is refused and the missing sources are named. A case already in the tree is not copied, and a human-edited test file is not overwritten unless the owner named that file. A gap draft still needs an executable check, or steps plus an expected result.
+
 ## Review floor
 
 One adversarial review is mandatory. Two when the artefact is a public contract, irreversible, or outbound. Skipping that floor is not waived by a green job.

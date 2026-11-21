@@ -63,3 +63,5 @@ routes are reached through `local-runtimes`; roles through their adapters.
 | Complexity gate | Use when a hot-spot dispatch change must treat a static-analysis Complexity ACTION_REQUIRED as a unit failure. | `references/complexity-gate.md` | [route](../references/complexity-gate.md) |
 | Durable jobs | Use when work runs longer than a few minutes and must survive the agent session being killed, with no duplicate workers. | `references/durable-jobs.md` | [route](../references/durable-jobs.md) |
 | Docs follow the change | Use when a change alters a command, flag, default, or other reader-facing contract, including work already done in the session. | `references/docs-follow-change.md` | [route](../references/docs-follow-change.md) |
+
+Lean and Agile coverage: [lean-agile](lean-agile.md).

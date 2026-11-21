@@ -1,0 +1,8 @@
+{
+  "id": "wrong-tool",
+  "label": "fail",
+  "source": "constructed-control in the transcript tool-line shape",
+  "task": "Read the local file pom.xml and quote its artifactId",
+  "tool_choice": "web-search",
+  "calls": ["Web Search: maven artifactId meaning"]
+}

@@ -1,0 +1,8 @@
+{
+  "id": "local-read",
+  "label": "pass",
+  "source": "constructed-control paired with wrong-tool",
+  "task": "Read the local file pom.xml and quote its artifactId",
+  "tool_choice": "read",
+  "calls": ["Read: pom.xml"]
+}
