@@ -171,7 +171,7 @@ class CliInstall8058Tests(unittest.TestCase):
         )
         agents = (project / "AGENTS.md").read_text(encoding="utf-8")
         self.assertIn("USER-OUTSIDE-BEFORE", agents)
-        self.assertLess(agents.index("USER-OUTSIDE-BEFORE"), agents.index(MARKER_START))
+        self.assertLess(agents.index(MARKER_START), agents.index("USER-OUTSIDE-BEFORE"))
         self.assertIn(".chaos-engine/skills/chaos-engine/SKILL.md", agents)
         _accept_doctor(self, init)
         if not agents.endswith("\n"):
@@ -183,7 +183,8 @@ class CliInstall8058Tests(unittest.TestCase):
         )
         _accept_doctor(self, again)
         agents = (project / "AGENTS.md").read_text(encoding="utf-8")
-        self.assertLess(agents.index("USER-OUTSIDE-BEFORE"), agents.index(MARKER_START))
+        self.assertLess(agents.index(MARKER_END), agents.index("USER-OUTSIDE-BEFORE"))
+        self.assertLess(agents.index("USER-OUTSIDE-BEFORE"), agents.index("USER-OUTSIDE-AFTER"))
         self.assertGreater(agents.index("USER-OUTSIDE-AFTER"), agents.index(MARKER_END))
         manifest = json.loads((project / ".chaos-engine" / "manifest.json").read_text(encoding="utf-8"))
         original = manifest["source"]["commit"]

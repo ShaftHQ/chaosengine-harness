@@ -6,6 +6,7 @@ import json
 import os
 import stat
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -139,8 +140,37 @@ class UserLayerTests(unittest.TestCase):
                 )
                 shim = Path(json.loads((root / "data" / "user-receipt.json").read_text(encoding="utf-8"))["shim"])
             shim.chmod(shim.stat().st_mode | stat.S_IEXEC)
-            completed = subprocess.run([str(shim), "doctor"], cwd=project, capture_output=True, text=True, check=False)
-            self.assertEqual(0, completed.returncode)
+            self.assertEqual(shim.name, "chaosengine-harness.cmd" if os.name == "nt" else "chaosengine-harness")
+            if os.name == "nt":
+                argv = ["cmd", "/d", "/c", "call", str(shim), "doctor"]
+            else:
+                argv = [str(shim), "doctor"]
+            completed = subprocess.run(argv, cwd=project, capture_output=True, text=True, check=False)
+            self.assertEqual(0, completed.returncode, completed.stderr)
+            self.assertIn("SENTINEL", completed.stdout)
+
+    def test_windows_shim_script_prefers_the_project_install(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project = root / "project"
+            overlay = project / ".chaos-engine"
+            overlay.mkdir(parents=True)
+            (overlay / "install.py").write_text("print('SENTINEL')\n", encoding="utf-8")
+            script = root / "bin" / "chaosengine-harness.py"
+            script.parent.mkdir()
+            script.write_text(LAYER._windows_shim_py(), encoding="utf-8")
+            (root / "user-receipt.json").write_text(
+                json.dumps({"commit": "f" * 40}),
+                encoding="utf-8",
+            )
+            completed = subprocess.run(
+                [sys.executable, str(script), "doctor"],
+                cwd=project,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(0, completed.returncode, completed.stderr)
             self.assertIn("SENTINEL", completed.stdout)
 
     def test_user_guard_blocks_without_a_project_and_defers_with_one(self):

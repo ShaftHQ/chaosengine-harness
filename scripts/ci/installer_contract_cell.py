@@ -522,7 +522,11 @@ def _user_cell(workspace: Path, project: Path, timeout: int, output: str) -> Non
     (overlay / "install.py").write_text("print('SENTINEL')\n", encoding="utf-8")
     shim = Path(receipt["shim"])
     shim.chmod(shim.stat().st_mode | 0o755)
-    completed = _run([str(shim), "doctor"], cwd=project, timeout=timeout)
+    if os.name == "nt":
+        argv = ["cmd", "/d", "/c", "call", str(shim), "doctor"]
+    else:
+        argv = [str(shim), "doctor"]
+    completed = _run(argv, cwd=project, timeout=timeout)
     if "SENTINEL" not in completed.stdout:
         raise SystemExit("shim did not exec the project installer")
     _run(

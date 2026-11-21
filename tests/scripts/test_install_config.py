@@ -5,12 +5,14 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import io
+import json
 import os
 import sys
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
@@ -91,6 +93,48 @@ class FlagParityTests(unittest.TestCase):
                 ["--repository", "ShaftHQ/chaosengine-harness", "--without-icm-architect"]
             )
         self.assertTrue(args.without_icm_architect)
+
+    def test_upgrade_persists_a_configured_component_opt_out(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project = root / "project"
+            project.mkdir()
+            (project / ".chaos-engine.toml").write_text(
+                "schema = 1\n[components]\nmempalace = false\n",
+                encoding="utf-8",
+            )
+            INSTALL.write_bundle_options(project, {"mempalace": True})
+            args = argparse.Namespace(
+                project=project,
+                instructions_mode="merge",
+                scope="project",
+                source=ROOT,
+                commit="a" * 40,
+                dry_run=False,
+                no_input=True,
+                consumer=False,
+                allow_dirty=False,
+                force_replace_source_tree=False,
+                include_local=False,
+                config_path=None,
+                user_hosts=None,
+                no_user_hooks=False,
+            )
+            isolated = os.environ.copy()
+            isolated["CHAOS_ENGINE_CONFIG_HOME"] = str(root / "config")
+            with (
+                mock.patch.dict(os.environ, isolated, clear=True),
+                mock.patch.object(INSTALL, "_publish_guided_overlay", return_value=project / ".chaos-engine"),
+                mock.patch.object(INSTALL, "_contract_blockers", return_value=[]),
+                mock.patch.object(INSTALL, "_rebind_contract_drift"),
+                mock.patch.object(INSTALL, "_strip_retired_mcp"),
+            ):
+                result = INSTALL._run_guided_upgrade(args)
+            self.assertEqual("installed", result["status"])
+            document = json.loads(
+                (project / ".chaos-engine-state" / "bundle-options.json").read_text(encoding="utf-8")
+            )
+            self.assertIs(False, document["enabled"]["mempalace"])
 
 
 class PrecedenceTests(unittest.TestCase):

@@ -176,9 +176,41 @@ def _write_launcher(data: Path) -> Path:
     return launch
 
 
+def _windows_shim_py() -> str:
+    """Standalone walker. A project ``.chaos-engine/install.py`` wins over the payload."""
+    return (
+        "import json, os, subprocess, sys\n"
+        "from pathlib import Path\n"
+        "root = Path(__file__).resolve().parents[1]\n"
+        "directory = Path.cwd()\n"
+        "while True:\n"
+        "    candidate = directory / '.chaos-engine' / 'install.py'\n"
+        "    if candidate.is_file():\n"
+        "        raise SystemExit(subprocess.call([sys.executable, str(candidate), *sys.argv[1:]]))\n"
+        "    if directory.parent == directory:\n"
+        "        break\n"
+        "    directory = directory.parent\n"
+        "receipt = json.loads((root / 'user-receipt.json').read_text(encoding='utf-8'))\n"
+        "target = root / 'payload' / receipt['commit'] / 'install.py'\n"
+        "raise SystemExit(subprocess.call([sys.executable, str(target), *sys.argv[1:]]))\n"
+    )
+
+
 def _write_shim(data: Path) -> Path:
-    destination = data / "bin" / "chaosengine-harness"
-    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination_dir = data / "bin"
+    destination_dir.mkdir(parents=True, exist_ok=True)
+    if os.name == "nt":
+        script = destination_dir / "chaosengine-harness.py"
+        body = _windows_shim_py()
+        if not script.is_file() or script.read_text(encoding="utf-8") != body:
+            script.write_text(body, encoding="utf-8")
+        destination = destination_dir / "chaosengine-harness.cmd"
+        interpreter = str(Path(sys.executable))
+        text = f'@echo off\r\n"{interpreter}" "%~dp0chaosengine-harness.py" %*\r\nexit /b %ERRORLEVEL%\r\n'
+        if not destination.is_file() or destination.read_text(encoding="utf-8") != text:
+            destination.write_text(text, encoding="utf-8")
+        return destination
+    destination = destination_dir / "chaosengine-harness"
     text = """#!/bin/sh
 set -eu
 ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)

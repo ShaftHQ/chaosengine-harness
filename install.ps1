@@ -16,9 +16,9 @@ param(
     [switch]$WithoutCaveman,
     [switch]$WithoutIcmArchitect,
     [string]$Config,
-    [ValidateSet("project", "user", "both")][string]$Scope,
-    [ValidateSet("merge", "replace")][string]$Mode,
-    [ValidateSet("top", "bottom")][string]$InstructionsPlacement,
+    [string]$Scope,
+    [string]$Mode,
+    [string]$InstructionsPlacement,
     [string]$UserHosts,
     [switch]$IncludeLocal,
     [switch]$AllowDirty,
@@ -52,6 +52,17 @@ $ErrorActionPreference = "Stop"
 # empty, and empty is not in the set. A normal -File invocation never hit that.
 if (-not [string]::IsNullOrWhiteSpace($Color) -and $Color -notin @("auto", "always", "never")) {
     throw "Invalid -Color value '$Color'. Use auto, always, or never."
+}
+# ValidateSet on these breaks `Get-Content install.ps1 | iex`: an unset value is
+# empty, and empty is not in the set. A normal -File invocation never hit that.
+if (-not [string]::IsNullOrWhiteSpace($Scope) -and $Scope -notin @("project", "user", "both")) {
+    throw "Invalid -Scope value '$Scope'. Use project, user, or both."
+}
+if (-not [string]::IsNullOrWhiteSpace($Mode) -and $Mode -notin @("merge", "replace")) {
+    throw "Invalid -Mode value '$Mode'. Use merge or replace."
+}
+if (-not [string]::IsNullOrWhiteSpace($InstructionsPlacement) -and $InstructionsPlacement -notin @("top", "bottom")) {
+    throw "Invalid -InstructionsPlacement value '$InstructionsPlacement'. Use top or bottom."
 }
 $script:ChaosEngineInvocationLine = [string]$MyInvocation.Line
 

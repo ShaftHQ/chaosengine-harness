@@ -8343,6 +8343,7 @@ def _run_guided_upgrade(args: argparse.Namespace) -> dict[str, object]:
         if getattr(args, "_user_scope", False):
             user = _install_user_scope(args)
             return {"status": "installed", "root": str(project), "userLayer": user.get("status")}
+        write_bundle_options(project, bundle_from_install_args(args))
     source, commit = _guided_pin(args)
     target = _publish_guided_overlay(project, source, commit, _read_guided_tool(project))
     with contextlib.suppress(OSError):
