@@ -1,0 +1,99 @@
+  █▀▀▀▀▀▄    │       ───┐
+  █          │          │
+  █   [38;2;255;59;77m◆[0m      │       ───┤
+  █          │          │
+  █▄▄▄▄▄▀    │       ───┘
+ChaosEngine  chaosengine-harness 0.4.20261115.5
+[K
+  [38;2;47;125;255mProject   [0m <project>[K
+  [38;2;47;125;255mSource    [0m ShaftHQ/chaosengine-harness@main[K
+[K
+[2m  Trace (last 0 of 0; full log: /tmp/ce-golden-pro[0m[K
+[2m  ject/.chaos-engine-state/install-trace.json)[0m[K
+[38;2;47;125;255m  Status[0m[K
+[38;2;47;125;255m  0/0 · Elapsed 00:01[0m[K
+[8F[K
+  [38;2;47;125;255mProject   [0m <project>[K
+  [38;2;47;125;255mSource    [0m ShaftHQ/chaosengine-harness@main[K
+[K
+[38;2;47;125;255m  [⠋] Resolve source   running[0m[K
+[2m  [·] Download source[0m[K
+[2m  [·] Install core[0m[K
+[2m  Trace (last 0 of 0; full log: /tmp/ce-golden-pro[0m[K
+[2m  ject/.chaos-engine-state/install-trace.json)[0m[K
+[38;2;47;125;255m  Status[0m[K
+[38;2;47;125;255m  0/3 · Elapsed 00:03[0m[K
+[11F[K
+  [38;2;47;125;255mProject   [0m <project>[K
+  [38;2;47;125;255mSource    [0m ShaftHQ/chaosengine-harness@main[K
+[K
+[32m  [✓] Resolve source   00:02[0m[K
+[2m  [·] Download source[0m[K
+[2m  [·] Install core[0m[K
+[2m  Trace (last 1 of 1; full log: /tmp/ce-golden-pro[0m[K
+[2m  ject/.chaos-engine-state/install-trace.json)[0m[K
+  [+00:04] PASS Resolve source (00:02)[K
+[38;2;47;125;255m  Status[0m[K
+[38;2;47;125;255m  1/3 · Elapsed 00:05[0m[K
+[12F[K
+  [38;2;47;125;255mProject   [0m <project>[K
+  [38;2;47;125;255mSource    [0m ShaftHQ/chaosengine-harness@main[K
+[K
+[32m  [✓] Resolve source   00:02[0m[K
+[38;2;47;125;255m  [⠋] Download source  running[0m[K
+[2m  [·] Install core[0m[K
+[2m  Trace (last 1 of 1; full log: /tmp/ce-golden-pro[0m[K
+[2m  ject/.chaos-engine-state/install-trace.json)[0m[K
+  [+00:04] PASS Resolve source (00:02)[K
+[38;2;47;125;255m  Status[0m[K
+[38;2;47;125;255m  1/3 · Elapsed 00:07[0m[K
+[12F[K
+  [38;2;47;125;255mProject   [0m <project>[K
+  [38;2;47;125;255mSource    [0m ShaftHQ/chaosengine-harness@main[K
+[K
+[32m  [✓] Resolve source   00:02[0m[K
+[32m  [✓] Download source  00:02[0m[K
+[2m  Trace (last 2 of 2; full log: /tmp/ce-golden-pro[0m[K
+[2m  ject/.chaos-engine-state/install-trace.json)[0m[K
+  [+00:04] PASS Resolve source (00:02)[K
+  [+00:08] PASS Download source (00:02)[K
+[38;2;47;125;255m  Status[0m[K
+[38;2;47;125;255m  2/2 · Elapsed 00:09[0m[K
+
+
+  [32m✓[0m [32mInstallation Successful![0m  (00:10)
+  [38;2;47;125;255m────────────────────────────────────[0m
+
+  [38;2;47;125;255mProject   [0m <project>
+  [38;2;47;125;255mSource    [0m ShaftHQ/chaosengine-harness@main
+  [38;2;47;125;255mCommit    [0m 0123456789ab…
+  [38;2;47;125;255mDoctor    [0m ✓ healthy  1/1 components
+  [38;2;47;125;255mHosts     [0m grok
+
+First-session brief:
+  [38;2;47;125;255mTo get started:[0m
+    1. Open one activated host (grok) in this project.
+    2. Ask the agent to load / use the `chaos-engine` skill.
+    3. Run a small sample task (for example: ask doctor status, or a one-file reversible edit).
+
+Host onboarding cards:
+  [38;2;47;125;255mHosts[0m
+    Claude Code      [2mnot on PATH   [0m marketplace/plugin
+      how: Install registers a path-unique local marketplace and installs the `chaos-engine` (+ companions) plugins at project scope. Restart Claude Code, then ask it to use the chaos-engine skill.
+      gap: Requires the `claude` CLI on PATH for automatic marketplace activation.
+    Codex            [2mnot on PATH   [0m marketplace/plugin
+    Grok             [32mactivated     [0m file/hook
+    Gemini           [2mnot on PATH   [0m file/hook
+    GitHub Copilot   [2mnot on PATH   [0m file/hook
+
+  [38;2;47;125;255mGuide     [0m ]8;;https://shafthq.github.io/docs/agentic/chaos-engine\https://shafthq.github.io/docs/agentic/chaos-engine]8;;\
+  [38;2;47;125;255mReceipt   [0m [2mResolved commit: 0123456789abcdef0123456789abcdef01234567[0m
+             [2mDoctor: healthy (1/1 components healthy)[0m
+             [2mClients: grok[0m
+             [2mFull install trace: <project>/.chaos-engine-state/install-trace.json[0m
+  Landed: portable core (`.chaos-engine/`), lifecycle hooks, five host adapters,
+    Caveman + Ponytail companions, self-improve skill, Memory / MemPalace / Graphify store tooling.
+  Untracked: generated indexes, caches, receipts, and runtimes
+    (`.chaos-engine-runtime*`, dependency/host receipts, `graphify-out`, local tool caches).
+    Canonical adapters and config stay trackable.
+

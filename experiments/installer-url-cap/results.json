@@ -1,0 +1,229 @@
+{
+  "clients": {
+    "anonymous": {
+      "client": "curl -4, redirects not followed",
+      "controlStatus": 302,
+      "exactBoundary": 6973,
+      "failureLengths": [
+        6973
+      ],
+      "measured": true,
+      "samples": [
+        {
+          "length": 4096,
+          "status": 302
+        },
+        {
+          "length": 4352,
+          "status": 302
+        },
+        {
+          "length": 4608,
+          "status": 302
+        },
+        {
+          "length": 4864,
+          "status": 302
+        },
+        {
+          "length": 5120,
+          "status": 302
+        },
+        {
+          "length": 5376,
+          "status": 302
+        },
+        {
+          "length": 5632,
+          "status": 302
+        },
+        {
+          "length": 5888,
+          "status": 302
+        },
+        {
+          "length": 6144,
+          "status": 302
+        },
+        {
+          "length": 6400,
+          "status": 302
+        },
+        {
+          "length": 6656,
+          "status": 302
+        },
+        {
+          "length": 6912,
+          "status": 302
+        },
+        {
+          "length": 7168,
+          "status": 500
+        },
+        {
+          "length": 7040,
+          "refined": true,
+          "status": 500
+        },
+        {
+          "length": 6976,
+          "refined": true,
+          "status": 500
+        },
+        {
+          "length": 6944,
+          "refined": true,
+          "status": 302
+        },
+        {
+          "length": 6960,
+          "refined": true,
+          "status": 302
+        },
+        {
+          "length": 6968,
+          "refined": true,
+          "status": 302
+        },
+        {
+          "length": 6972,
+          "refined": true,
+          "status": 302
+        },
+        {
+          "length": 6974,
+          "refined": true,
+          "status": 500
+        },
+        {
+          "length": 6973,
+          "refined": true,
+          "status": 500
+        },
+        {
+          "length": 6971,
+          "refined": true,
+          "repeats": 3,
+          "status": 302
+        },
+        {
+          "length": 6971,
+          "refined": true,
+          "repeats": 3,
+          "status": 302
+        },
+        {
+          "length": 6971,
+          "refined": true,
+          "repeats": 3,
+          "status": 302
+        },
+        {
+          "length": 6972,
+          "refined": true,
+          "repeats": 3,
+          "status": 302
+        },
+        {
+          "length": 6972,
+          "refined": true,
+          "repeats": 3,
+          "status": 302
+        },
+        {
+          "length": 6972,
+          "refined": true,
+          "repeats": 3,
+          "status": 302
+        },
+        {
+          "length": 6973,
+          "refined": true,
+          "repeats": 3,
+          "status": 500
+        },
+        {
+          "length": 6973,
+          "refined": true,
+          "repeats": 3,
+          "status": 500
+        },
+        {
+          "length": 6973,
+          "refined": true,
+          "repeats": 3,
+          "status": 302
+        },
+        {
+          "length": 6972,
+          "refined": true,
+          "repeats": 3,
+          "status": 302
+        },
+        {
+          "length": 6972,
+          "refined": true,
+          "repeats": 3,
+          "status": 302
+        },
+        {
+          "length": 6972,
+          "refined": true,
+          "repeats": 3,
+          "status": 302
+        },
+        {
+          "length": 7936,
+          "note": "414-check",
+          "status": 500
+        },
+        {
+          "length": 8192,
+          "note": "414-check",
+          "status": 414
+        }
+      ]
+    },
+    "signed-in-browser": {
+      "measured": false,
+      "reason": "no signed-in browser session in this environment"
+    }
+  },
+  "decision": {
+    "boundary": 6973,
+    "cap80": 5578,
+    "chosen": 5578,
+    "reason": "lowered to 80% of the lowest boundary (6973)"
+  },
+  "probe": {
+    "end": 16384,
+    "start": 4096,
+    "step": 256
+  },
+  "productCapUnchanged": 7800,
+  "ratios": [
+    {
+      "label": "short",
+      "ratio": 1.6758,
+      "rawChars": 697,
+      "underCurrentCap": true,
+      "urlChars": 1168
+    },
+    {
+      "label": "trace-4k",
+      "ratio": 1.2567,
+      "rawChars": 4593,
+      "underCurrentCap": true,
+      "urlChars": 5772
+    },
+    {
+      "label": "trace-50k",
+      "ratio": 0.0924,
+      "rawChars": 50497,
+      "underCurrentCap": true,
+      "urlChars": 4667
+    }
+  ],
+  "repository": "ShaftHQ/chaosengine-harness"
+}
