@@ -4851,11 +4851,16 @@ def lifecycle_event_names(host: str) -> tuple[str, ...]:
     """Events a generated lifecycle document registers.
 
     Codex has no official PostToolUseFailure. Failure stays on PostToolUse.
+    Codex and Grok also register PreCompact and PostCompact: both pages list
+    them, and the guard already emits the compact locator.
     """
     if host == "claude":
         return CLAUDE_HOOK_EVENTS
+    compact = ("PreCompact", "PostCompact")
     if host == "codex":
-        return tuple(event for event in REQUIRED_HOOK_EVENTS if event != "PostToolUseFailure")
+        return tuple(event for event in REQUIRED_HOOK_EVENTS if event != "PostToolUseFailure") + compact
+    if host == "grok":
+        return REQUIRED_HOOK_EVENTS + compact
     return REQUIRED_HOOK_EVENTS
 
 

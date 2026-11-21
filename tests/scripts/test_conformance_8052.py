@@ -287,7 +287,22 @@ class ConformanceTests(unittest.TestCase):
         codex = next(pin for pin in pins if pin["host"] == "codex")
         self.assertNotIn("PostToolUseFailure", codex["native_events"])
         self.assertNotIn("PostToolUseFailure", registry["codex"])
-        self.assertIn("PostToolUseFailure is not an official Codex event", codex["recorded_excerpt"])
+        self.assertIn("PostToolUseFailure is not an official Codex event", codex["blocks"])
+        self.assertIn("PreCompact", registry["codex"])
+        self.assertIn("PostCompact", registry["grok"])
+        self.assertNotIn("session_start", registry["grok"])
+
+    def test_checker_fails_when_a_registered_name_is_missing_from_the_pin(self):
+        fixture = self.conformance.load_fixture()
+        pins = json.loads(json.dumps(fixture["hook_events"]))
+        registry = self.conformance.production_hook_registry()
+        host = "codex"
+        missing = "PreCompact"
+        self.assertIn(missing, registry[host])
+        pin = next(item for item in pins if item["host"] == host)
+        pin["native_events"] = [event for event in pin["native_events"] if event != missing]
+        errors = self.conformance.check_hook_event_registry(registry, pins)
+        self.assertTrue(any(host in item and missing in item and pin["url"] in item for item in errors))
 
     def test_unknown_event_and_unpinned_alias_name_the_pin(self):
         fixture = self.conformance.load_fixture()

@@ -82,6 +82,32 @@ Legend: P = parity (outcome available), A = adapter-shaped equivalent, G = gap (
 
 
 
+## Official hook docs read 2026-11-22
+
+Pins in `evals/host-doc-conformance.json` follow the pages below. A missing official event is registered only when `LIFECYCLE_EVENTS` already handles it and the adapter already renders that payload. Provider-only events that need new policy stay in the pin and are not stripped for consistency.
+
+| Host | Doc read 2026-11-22 | Registered this pass | Recorded, not registered |
+| --- | --- | --- | --- |
+| Claude Code | https://code.claude.com/docs/en/hooks | none; guard events were already registered once | Setup, InstructionsLoaded, UserPromptExpansion, MessageDisplay, PostToolBatch, PermissionDenied, Notification, TaskCreated, TaskCompleted, TeammateIdle, ConfigChange, CwdChanged, DirectoryAdded, FileChanged, WorktreeCreate, WorktreeRemove, PreModelSwitch, PostModelSwitch, PermissionRequest, StopFailure, Elicitation, ElicitationResult |
+| Codex | https://developers.openai.com/codex/hooks | PreCompact, PostCompact | PermissionRequest, PreModelRequest, PostModelRequest, Interrupt. PostToolUseFailure is not on the page. |
+| Grok | https://docs.x.ai/build/features/hooks | PreCompact, PostCompact | PermissionDenied, StopFailure, Notification |
+| Gemini CLI | https://geminicli.com/docs/hooks | none | BeforeModel, AfterModel, BeforeToolSelection, Notification |
+
+The previous Grok URL `https://docs.x.ai/docs/guides/grok-build/hooks` returned HTTP 404. The live page lists PascalCase only. Snake_case `GROK_HOOK_EVENT` values stay convenience spellings, not a second command. That page says exit code 2 denies and every other failure is fail-open. `HostCapability.process_exit2_honored` stays false until a live probe.
+
+Codex says the same command in two files for one event can run twice. This tree writes Codex hooks only in `.codex/hooks.json`. `plugins/chaos-engine/hooks/hooks.json` stays an empty `hooks` object, and `.codex/config.toml` has no `[hooks]` table. No second ChaosEngine command was registered for one host event, so none was removed. Grok also reads `.claude/settings.json` and `.cursor/hooks.json`. That fan-out is the host, not a second copy of the Grok command.
+
+## Guard runs measured (#108, #123)
+
+No dedupe ships from these counts. `CE_HOOK_TRACE` stays off unless set, and one call writes one line. Do not register Stop a second time, and do not drop the second Stop in `launch.py`. A repository rooted under `/tmp` is not project-trusted, so Grok loads no project hooks there.
+
+| Host | Version | OS | Event | Runs | Reason |
+| --- | --- | --- | --- | --- | --- |
+| Grok | 1.0.92 | not recorded | Stop | 2 | Session `01a1fbcc-68a1-7ff3-8f60-d3b1bb2c8846`, `hook_count=1`, two `CE_HOOK_TRACE` lines. One project Stop command. Host double dispatch, not an install defect. |
+| Cursor | not measured | not measured | not measured | not-measured | `cursor-agent` still requires login. This session posted no trace count. |
+| Copilot | not measured | not measured | not measured | not-measured | No scripted Copilot count in this session. |
+| JetBrains | not measured | not measured | not measured | not-measured | No JetBrains plugin run in this session. |
+
 ## Official self-heal
 
 Doctor runs each required third party's **official install command** (or CE vendor rematerialize for Caveman/Ponytail) before agentic handoff. Inventory and heal wiring live in [`official_self_heal.py`](../runtime/official_self_heal.py) + `chaos-engine/INSTALL.md` (repo-only). Opt-out `--without-*` stays off. Parent epic:.
