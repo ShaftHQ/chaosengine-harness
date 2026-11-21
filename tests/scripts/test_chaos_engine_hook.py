@@ -1132,9 +1132,30 @@ process.stderr.write(result.stderr || '');
                 },
                 environment,
             )
+            paid = self.run_hook(
+                {
+                    "hook_event_name": "Stop",
+                    "session_id": "portable-repeated-stop",
+                    "stop_hook_active": True,
+                    "last_assistant_message": (
+                        "what happened: recorded\n"
+                        "why it happened: recorded\n"
+                        "continue doing: recorded\n"
+                        "stop doing: recorded\n"
+                        "start doing: recorded\n"
+                        "next action: nothing actionable\n"
+                        "## Enhancements\n"
+                        "nothing actionable"
+                    ),
+                },
+                environment,
+            )
 
-        self.assertEqual(0, repeated.returncode)
-        self.assertNotEqual("block", json.loads(repeated.stdout).get("decision"))
+        self.assertEqual(2, repeated.returncode)
+        self.assertEqual("block", json.loads(repeated.stdout).get("decision"))
+        self.assertIn("Terminal reflection required", repeated.stdout)
+        self.assertNotEqual("block", json.loads(paid.stdout or "{}").get("decision"))
+        self.assertNotIn("Terminal reflection required", paid.stdout)
 
     def test_portable_retry_blocks_an_untracked_retrospective(self):
         labels = (
@@ -1187,10 +1208,11 @@ process.stderr.write(result.stderr || '');
                 },
                 env,
             )
-        for result in (blocked, accepted):
-            self.assertNotEqual("block", json.loads(result.stdout).get("decision"))
-            self.assertNotIn("Terminal reflection required", result.stdout)
-            self.assertNotIn("configured upstream repository", result.stdout)
+        self.assertEqual("block", json.loads(blocked.stdout).get("decision"))
+        self.assertIn("Terminal reflection required", blocked.stdout)
+        self.assertIn("configured upstream repository", blocked.stdout)
+        self.assertNotEqual("block", json.loads(accepted.stdout or "{}").get("decision"))
+        self.assertNotIn("Terminal reflection required", accepted.stdout)
 
     def test_portable_subagent_stop_never_inherits_root_learning_session(self):
         with tempfile.TemporaryDirectory() as temporary:
