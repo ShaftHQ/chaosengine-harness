@@ -10,7 +10,12 @@
       "gold_route": "history",
       "implicit": true,
       "expect": "One palace, one graph",
-      "gold": [{"path": "runtime/corpus_split.py", "line": 1}]
+      "gold": [
+        {
+          "path": "runtime/corpus_split.py",
+          "line": 1
+        }
+      ]
     },
     {
       "id": "h2",
@@ -19,7 +24,12 @@
       "gold_route": "history",
       "implicit": true,
       "expect": "injects no Memory",
-      "gold": [{"path": "references/retrieve-first.md", "line": 75}]
+      "gold": [
+        {
+          "path": "references/retrieve-first.md",
+          "line": 77
+        }
+      ]
     },
     {
       "id": "h3",
@@ -28,7 +38,12 @@
       "gold_route": "history",
       "implicit": true,
       "expect": "settles a disagreement",
-      "gold": [{"path": "references/retrieve-first.md", "line": 66}]
+      "gold": [
+        {
+          "path": "references/retrieve-first.md",
+          "line": 66
+        }
+      ]
     },
     {
       "id": "h4",
@@ -37,7 +52,12 @@
       "gold_route": "history",
       "implicit": true,
       "expect": "never let an index outrank",
-      "gold": [{"path": "references/retrieve-first.md", "line": 67}]
+      "gold": [
+        {
+          "path": "references/retrieve-first.md",
+          "line": 67
+        }
+      ]
     },
     {
       "id": "h5",
@@ -46,7 +66,12 @@
       "gold_route": "history",
       "implicit": true,
       "expect": "What happened around this before",
-      "gold": [{"path": "references/retrieve-first.md", "line": 62}]
+      "gold": [
+        {
+          "path": "references/retrieve-first.md",
+          "line": 62
+        }
+      ]
     },
     {
       "id": "h6",
@@ -55,7 +80,12 @@
       "gold_route": "history",
       "implicit": false,
       "expect": "sqlite_exact",
-      "gold": [{"path": "runtime/stores.py", "line": 29}]
+      "gold": [
+        {
+          "path": "runtime/stores.py",
+          "line": 29
+        }
+      ]
     },
     {
       "id": "g1",
@@ -64,7 +94,12 @@
       "gold_route": "gotcha",
       "implicit": true,
       "expect": "whole-store context pack",
-      "gold": [{"path": "references/retrieve-first.md", "line": 79}]
+      "gold": [
+        {
+          "path": "references/retrieve-first.md",
+          "line": 81
+        }
+      ]
     },
     {
       "id": "g2",
@@ -73,7 +108,12 @@
       "gold_route": "gotcha",
       "implicit": true,
       "expect": "do not turn it into a recovery essay",
-      "gold": [{"path": "references/retrieve-first.md", "line": 50}]
+      "gold": [
+        {
+          "path": "references/retrieve-first.md",
+          "line": 50
+        }
+      ]
     },
     {
       "id": "g3",
@@ -82,7 +122,12 @@
       "gold_route": "gotcha",
       "implicit": true,
       "expect": "backend-mismatch is recorded once",
-      "gold": [{"path": "references/retrieve-first.md", "line": 49}]
+      "gold": [
+        {
+          "path": "references/retrieve-first.md",
+          "line": 49
+        }
+      ]
     },
     {
       "id": "g4",
@@ -91,7 +136,12 @@
       "gold_route": "gotcha",
       "implicit": true,
       "expect": "cheap read does not wait",
-      "gold": [{"path": "references/retrieve-first.md", "line": 48}]
+      "gold": [
+        {
+          "path": "references/retrieve-first.md",
+          "line": 48
+        }
+      ]
     },
     {
       "id": "c1",
@@ -100,7 +150,12 @@
       "gold_route": "no-rare-token",
       "implicit": true,
       "expect": "measure thrice",
-      "gold": [{"path": "identity.md", "line": 15}]
+      "gold": [
+        {
+          "path": "identity.md",
+          "line": 15
+        }
+      ]
     },
     {
       "id": "c2",
@@ -109,7 +164,12 @@
       "gold_route": "no-rare-token",
       "implicit": true,
       "expect": "two failed attempts",
-      "gold": [{"path": "identity.md", "line": 17}]
+      "gold": [
+        {
+          "path": "identity.md",
+          "line": 17
+        }
+      ]
     },
     {
       "id": "c3",
@@ -118,7 +178,12 @@
       "gold_route": "no-rare-token",
       "implicit": true,
       "expect": "never weaken",
-      "gold": [{"path": "identity.md", "line": 26}]
+      "gold": [
+        {
+          "path": "identity.md",
+          "line": 26
+        }
+      ]
     },
     {
       "id": "c4",
@@ -127,7 +192,12 @@
       "gold_route": "no-rare-token",
       "implicit": true,
       "expect": "respect WIP limits",
-      "gold": [{"path": "identity.md", "line": 21}]
+      "gold": [
+        {
+          "path": "identity.md",
+          "line": 21
+        }
+      ]
     },
     {
       "id": "c5",
@@ -136,7 +206,12 @@
       "gold_route": "no-rare-token",
       "implicit": true,
       "expect": "What does the code do right now",
-      "gold": [{"path": "references/retrieve-first.md", "line": 64}]
+      "gold": [
+        {
+          "path": "references/retrieve-first.md",
+          "line": 64
+        }
+      ]
     },
     {
       "id": "c6",
@@ -145,7 +220,12 @@
       "gold_route": "no-rare-token",
       "implicit": true,
       "expect": "Industry-standard output",
-      "gold": [{"path": "identity.md", "line": 25}]
+      "gold": [
+        {
+          "path": "identity.md",
+          "line": 25
+        }
+      ]
     },
     {
       "id": "s1",
@@ -154,7 +234,12 @@
       "gold_route": "symbol-impact",
       "implicit": false,
       "expect": "def inject_graphify_arguments",
-      "gold": [{"path": "runtime/stores.py", "line": 449}]
+      "gold": [
+        {
+          "path": "runtime/stores.py",
+          "line": 449
+        }
+      ]
     },
     {
       "id": "s2",
@@ -163,7 +248,12 @@
       "gold_route": "symbol-impact",
       "implicit": false,
       "expect": "GRAPHIFY_GRAPH_COMMANDS",
-      "gold": [{"path": "runtime/stores.py", "line": 35}]
+      "gold": [
+        {
+          "path": "runtime/stores.py",
+          "line": 35
+        }
+      ]
     },
     {
       "id": "s3",
@@ -172,7 +262,12 @@
       "gold_route": "symbol-impact",
       "implicit": false,
       "expect": "def read_wing",
-      "gold": [{"path": "runtime/stores.py", "line": 737}]
+      "gold": [
+        {
+          "path": "runtime/stores.py",
+          "line": 737
+        }
+      ]
     },
     {
       "id": "s4",
@@ -181,7 +276,12 @@
       "gold_route": "two-symbols",
       "implicit": false,
       "expect": "is_rare(token)",
-      "gold": [{"path": "runtime/corpus_split.py", "line": 110}]
+      "gold": [
+        {
+          "path": "runtime/corpus_split.py",
+          "line": 110
+        }
+      ]
     },
     {
       "id": "s5",
@@ -190,7 +290,12 @@
       "gold_route": "explain-symbol",
       "implicit": false,
       "expect": "def store_budget_bytes",
-      "gold": [{"path": "runtime/harness_mindset.py", "line": 197}]
+      "gold": [
+        {
+          "path": "runtime/harness_mindset.py",
+          "line": 197
+        }
+      ]
     },
     {
       "id": "s6",
@@ -199,7 +304,12 @@
       "gold_route": "symbol-impact",
       "implicit": false,
       "expect": "def run_rg",
-      "gold": [{"path": "runtime/harness_mindset.py", "line": 185}]
+      "gold": [
+        {
+          "path": "runtime/harness_mindset.py",
+          "line": 185
+        }
+      ]
     },
     {
       "id": "s7",
@@ -208,7 +318,12 @@
       "gold_route": "symbol-impact",
       "implicit": false,
       "expect": "def drop_semantic_misses",
-      "gold": [{"path": "runtime/corpus_split.py", "line": 124}]
+      "gold": [
+        {
+          "path": "runtime/corpus_split.py",
+          "line": 124
+        }
+      ]
     },
     {
       "id": "s8",
@@ -217,7 +332,12 @@
       "gold_route": "explain-symbol",
       "implicit": false,
       "expect": "def direct_graphify_outcome",
-      "gold": [{"path": "runtime/corpus_split.py", "line": 476}]
+      "gold": [
+        {
+          "path": "runtime/corpus_split.py",
+          "line": 476
+        }
+      ]
     },
     {
       "id": "s9",
@@ -226,7 +346,12 @@
       "gold_route": "two-symbols",
       "implicit": false,
       "expect": "GRAPHIFY_GRAPH_COMMANDS",
-      "gold": [{"path": "runtime/stores.py", "line": 451}]
+      "gold": [
+        {
+          "path": "runtime/stores.py",
+          "line": 451
+        }
+      ]
     },
     {
       "id": "e1",
@@ -235,7 +360,12 @@
       "gold_route": "exact-string",
       "implicit": false,
       "expect": "STORE_BUDGET_BYTES",
-      "gold": [{"path": "runtime/harness_mindset.py", "line": 26}]
+      "gold": [
+        {
+          "path": "runtime/harness_mindset.py",
+          "line": 26
+        }
+      ]
     }
   ]
 }

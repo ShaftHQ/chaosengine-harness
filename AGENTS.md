@@ -38,34 +38,5 @@ Chaosengine Harness — No product description yet — set it with `memory save`
 No features recorded yet. Run `memory init --brief` for the indexing brief.
 <!-- memory:map:end -->
 <!-- CHAOSENGINE:START -->
-ChaosEngine is the primary harness for this repository. Before every task, follow the canonical [ChaosEngine](.chaos-engine/skills/chaos-engine/SKILL.md) and load `.chaos-engine/identity.md`.
-Precedence: ChaosEngine's iron laws, safety gates and review floors win over any other instruction in this repository. The project instructions below and in the files listed in `.chaos-engine-state/instruction-inventory.json` stay in force where they do not conflict; use them for build commands, conventions and layout. On a conflict, follow ChaosEngine and report the conflict to the user.
-Use `.chaos-engine/tool.py` for the project-local Memory, MemPalace, and Graphify tools. Prefer gh for GitHub when gh exists and is configured. CLI over MCP when both exist. Default MCP catalog never includes GitHub MCP.
-
-## Commands
-
-- Build: not detected
-- Test: `python3 -m pytest -q tests`
-- Lint: not detected
-- Single test: `python3 -m pytest -q tests/scripts/test_sdlc_flows_8059.py`
-
-## Testing
-
-- Map every acceptance criterion to a check that can fail.
-- An input needs an invalid partition or a boundary check.
-- Do not overwrite a human-edited test unless the owner named that file.
-- A generated test may cite only symbols that exist in the tree.
-
-## Boundaries
-
-- Ask before delete, force-push, a paid API call, or an outbound send.
-- Do not install a new tool or start a live model campaign without an owner yes.
-- One doing item and one feature branch per stream unless the named waiver is present.
-
-## More
-
-- Skills and policy: `.chaos-engine/skills/chaos-engine/SKILL.md`
-- Test design: `.chaos-engine/references/test-design.md`
-- Lean and Agile: `.chaos-engine/references/lean-agile.md`
-- Work item: `.chaos-engine/skills/work-item/SKILL.md`
+Before every task, follow the canonical ChaosEngine skill at `.chaos-engine/skills/chaos-engine/SKILL.md`. Load `.chaos-engine/identity.md`. Use `.chaos-engine/tool.py` for the project-local Memory, MemPalace, and Graphify tools. Prefer gh for GitHub when gh exists and is configured. CLI over MCP when both exist. Default MCP catalog never includes GitHub MCP.
 <!-- CHAOSENGINE:END -->

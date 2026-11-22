@@ -111,4 +111,4 @@ Companions at task start via `tool.py entry` ([bot entry](../../references/bot-e
 
 ## Catalog
 
-On demand: [catalog](../../references/catalog.md), [harness map](../../references/harness-map.md), [router contract](../../references/router-contract.md). Lean and Agile: [lean-agile](../../references/lean-agile.md).
+On demand: [catalog](../../references/catalog.md), [harness map](../../references/harness-map.md), [router contract](../../references/router-contract.md).
