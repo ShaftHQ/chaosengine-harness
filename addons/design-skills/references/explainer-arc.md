@@ -66,8 +66,9 @@ D08/D20 delivery checks.
 3. Tag each D01 storyboard scene with `beat`; attach claims to proof beats.
 4. Pick the measurement links (tagged URLs) and write the goals.
 5. When the picture must move with word timings, load
-   [D24](word-timed-explainer.md) after narration lock. D21 still owns the
-   arc. D24 is opt-in and does not render the 30 s pilot.
+   [D24](word-timed-explainer.md) after narration lock. Cheap first: 2–4
+   look frames and an approved board before parallel shots. The voice is
+   the clock. D21 still owns the arc. D24 does not render the 30 s pilot.
 
 ## Verify
 

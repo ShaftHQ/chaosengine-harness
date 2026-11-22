@@ -41,8 +41,8 @@ pipeline, D08 motion tokens, D17 voice production, or the D21 arc.
 4. Rebuild the one canvas from that file. Change a line by replacing its
    take, re-timing that line, and rebuilding so only that cue moves.
 5. Lay out 16:9 and 9:16 as two compositions. Caption from the same words.
-6. Run `wordtiming` and `wordcue`, then a measured pass on frames that were
-   actually rendered. Do not treat this card as that render.
+6. Run `wordtiming`, `wordcue`, and `wordreview`, then a measured pass on
+   frames that were actually rendered. Do not treat this card as that render.
 
 ## Verify
 
@@ -58,6 +58,15 @@ pipeline, D08 motion tokens, D17 voice production, or the D21 arc.
   the pinned whisper.cpp binary. A draft may omit that binary and may name
   a scratch take. The gate reads the timing file. It does not run a model
   and it does not call a second ASR stack.
+- `design_qc.py wordreview timings.json` exits 0 only when every line is at
+  most 3.5 words/s, the log reports wpm against 140–160, each `cue_at` is
+  within 3 frames or 150 ms of its spoken word, every `cues` name is still
+  spoken, `16:9` and `9:16` are laid out (not cropped) with overflow and
+  overlap false, the hero box sits inside both frames or `hero_waiver` says
+  why there is no hero, and `score_payoff` has the voice louder than the
+  score (`vo_db` > `score_db`) or `score_waiver` says why. Missing numbers
+  fail closed. A `retake` block (`index`, `before` lines) fails when that
+  line's cue did not follow the new word time or any other line moved.
 - The manifest names the shipped voice and states that the scratch take was
   not shipped. The line `take` is that name.
 - 16:9 and 9:16 frames, when a render exists, show their own layout, not a
