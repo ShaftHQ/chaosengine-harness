@@ -2311,6 +2311,15 @@ def _foreign_repository_relative(project: Path, source: str) -> str | None:
 
 def _prunable_source(project: Path, source: str, patterns: list[re.Pattern[str]]) -> bool:
     """True when a drawer source under ``project`` is deleted or now excluded."""
+    text = str(source).replace("\\", "/")
+    marker = "/store-snapshot/"
+    if marker in text:
+        relative = text.split(marker, 1)[1]
+        if not relative or any(part == ".." for part in Path(relative).parts):
+            return False
+        if not (project / relative).exists():
+            return True
+        return any(pattern.match(relative) for pattern in patterns)
     try:
         relative = Path(source).resolve().relative_to(project).as_posix()
     except (ValueError, OSError):

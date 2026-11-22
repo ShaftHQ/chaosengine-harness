@@ -301,6 +301,37 @@ class RetrieveRouterTest(unittest.TestCase):
                 hits = self.retrieve.fts_source_hits(database, "skill", root)
             self.assertEqual(["a/SKILL.md", "b/SKILL.md"], hits)
 
+    def test_fts_drops_paths_outside_the_repository(self):
+        import sqlite3
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            database = root / "sqlite_exact.sqlite3"
+            connection = sqlite3.connect(database)
+            connection.execute(
+                "create table documents (id integer primary key, collection_id integer, metadata_json text)"
+            )
+            connection.execute("create virtual table docs_fts using fts5(doc_id, document)")
+            snapshot = root / ".git" / "chaos-engine" / "store-snapshot" / "runtime" / "stores.py"
+            rows = (
+                (1, str(snapshot)),
+                (2, "/other/checkout/not-here.py"),
+            )
+            for doc_id, source in rows:
+                connection.execute(
+                    "insert into documents (id, collection_id, metadata_json) values (?, 1, ?)",
+                    (doc_id, json.dumps({"source_file": source})),
+                )
+                connection.execute(
+                    "insert into docs_fts (doc_id, document) values (?, ?)",
+                    (str(doc_id), "stores refresh"),
+                )
+            connection.commit()
+            connection.close()
+            hits = self.retrieve.fts_source_hits(database, "stores", root)
+        self.assertEqual(["runtime/stores.py"], hits)
+
     def test_natural_language_uses_docs_instead_of_no_rare_token(self):
         import tempfile
 

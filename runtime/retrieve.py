@@ -1632,6 +1632,36 @@ def _retrieve_env(project: Path) -> dict[str, str]:
     return env
 
 
+def _repository_source(source: str, anchor: Path) -> str | None:
+    """Repo-relative path. A store-snapshot or other checkout maps back; a stranger path does not."""
+    raw = str(source or "").replace("\\", "/").strip()
+    marker = "/store-snapshot/"
+    if marker in raw:
+        raw = raw.split(marker, 1)[1]
+    if not raw or any(part == ".." for part in Path(raw).parts):
+        return None
+    while raw.startswith("./"):
+        raw = raw[2:]
+    path = Path(raw)
+    if not path.is_absolute():
+        return raw or None
+    try:
+        return path.resolve().relative_to(anchor.resolve()).as_posix()
+    except (ValueError, OSError):
+        stores = _load_stores()
+        if stores is None:
+            return None
+        try:
+            relative = stores.repository_relative(str(path), stores.registered_roots(anchor))
+        except (OSError, RuntimeError, ValueError, TypeError):
+            return None
+        if not isinstance(relative, str) or not relative or relative.startswith(".git/"):
+            return None
+        if "/store-snapshot/" in relative.replace("\\", "/"):
+            return None
+        return relative
+
+
 def fts_source_hits(database: Path, query: str, root: Path) -> list[str]:
     """Repo-relative source paths from the palace FTS index. Missing index is a miss."""
     uri = f"{Path(database).resolve().as_uri()}?mode=ro"
@@ -1653,13 +1683,7 @@ def fts_source_hits(database: Path, query: str, root: Path) -> list[str]:
         found: list[str] = []
         anchor = root.resolve()
         for (source,) in rows:
-            text = str(source or "").replace("\\", "/")
-            if not text:
-                continue
-            try:
-                relative = Path(text).resolve().relative_to(anchor).as_posix()
-            except ValueError:
-                relative = text[2:] if text.startswith("./") else text.lstrip("/")
+            relative = _repository_source(str(source or ""), anchor)
             if relative and relative not in found:
                 found.append(relative)
         return found

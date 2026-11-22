@@ -1697,6 +1697,11 @@ _HARNESS_EXCLUDES = (
 )
 
 
+def mine_harness_excludes() -> tuple[str, ...]:
+    """Product-mine gitignore lines, including the nine host trees."""
+    return (*_HARNESS_EXCLUDES, *HOST_EXCLUDE_PREFIXES)
+
+
 def _corpus_split():
     import importlib.util
 
@@ -1773,7 +1778,7 @@ def _mine_full_tree(snapshot: Path, invoke, mine: list[str]) -> None:
     body = bytearray(original or b"")
     if body and not body.endswith(b"\n"):
         body += b"\n"
-    body += ("\n".join(_HARNESS_EXCLUDES) + "\n").encode("utf-8")
+    body += ("\n".join(mine_harness_excludes()) + "\n").encode("utf-8")
     try:
         ignore.write_bytes(body)
         _run(invoke, mine, snapshot)

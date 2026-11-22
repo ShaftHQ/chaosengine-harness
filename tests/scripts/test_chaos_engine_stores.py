@@ -1171,6 +1171,19 @@ class StoreHardeningTest(unittest.TestCase):
             (".agents/", ".claude/", ".codex/", ".cursor/", ".gemini/", ".github/hooks/", ".grok/", ".opencode/", "plugins/"),
             self.stores.HOST_EXCLUDE_PREFIXES,
         )
+        mined = self.stores.mine_harness_excludes()
+        for prefix in self.stores.HOST_EXCLUDE_PREFIXES:
+            self.assertIn(prefix, mined)
+
+    def test_snapshot_source_is_judged_as_the_repository_file(self):
+        dependencies = load_split_module("dependencies")
+        project = self.tmp / "proj"
+        project.mkdir()
+        (project / "keep.py").write_text("x\n", encoding="utf-8")
+        snapshot = project / ".git" / "chaos-engine" / "store-snapshot"
+        self.assertFalse(dependencies._prunable_source(project, str(snapshot / "keep.py"), []))
+        self.assertTrue(dependencies._prunable_source(project, str(snapshot / "gone.md"), []))
+        self.assertFalse(dependencies._prunable_source(project, "/elsewhere/outside.py", []))
 
     def test_harness_class_ignores_identifier_case(self):
         split = load_split()
