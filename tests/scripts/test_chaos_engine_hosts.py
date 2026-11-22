@@ -4923,6 +4923,36 @@ class ChaosEngineHostsTest(unittest.TestCase):
                 },
             )
 
+    def test_upgrade_uninstall_removes_previous_receipt_blobs(self):
+        module = load(HOSTS, "chaos_engine_hosts_upgrade_uninstall")
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary) / "consumer"
+            project.joinpath(".chaos-engine/skills/chaos-engine").mkdir(parents=True)
+            project.joinpath(".chaos-engine/skills/chaos-engine/SKILL.md").write_text("# C\n")
+            project.joinpath("AGENTS.md").write_bytes(b"user instructions\r\n")
+            project.joinpath(".mcp.json").write_text(
+                json.dumps({"mcpServers": {"other": {"command": "other"}}}) + "\n",
+                encoding="utf-8",
+            )
+            before_directories = {
+                path.relative_to(project).as_posix()
+                for path in project.rglob("*")
+                if path.is_dir()
+            }
+
+            module.install(project, core_commit="1" * 40)
+            module.install(project, core_commit="2" * 40)
+            module.uninstall(project)
+
+            self.assertEqual(
+                before_directories,
+                {
+                    path.relative_to(project).as_posix()
+                    for path in project.rglob("*")
+                    if path.is_dir()
+                },
+            )
+
     def test_live_memory_events_and_mempalace_config_survive_verify_and_uninstall(self):
         module = load(HOSTS, "chaos_engine_hosts_live_persistent_data")
         with tempfile.TemporaryDirectory() as temporary:

@@ -1094,6 +1094,43 @@ class AntigravitySupportTests(unittest.TestCase):
             self.assertFalse(scratch.exists())
             self.assertTrue(fresh.exists())
 
+    def test_session_scratch_prune_unlinks_a_symlink_without_removing_its_target(self):
+        mindset = _load("ce_agy_mindset_symlink", ROOT / "runtime" / "harness_mindset.py")
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            target = project / "live-target"
+            target.mkdir()
+            (target / "keep.txt").write_text("keep\n", encoding="utf-8")
+            link = project / ".chaos-engine-state" / "session-scratch" / "linked"
+            link.parent.mkdir(parents=True)
+            link.symlink_to(target, target_is_directory=True)
+            now = time.time()
+            old = now - (8 * 24 * 60 * 60)
+            os.utime(target, (old, old))
+            os.utime(target / "keep.txt", (old, old))
+            os.utime(link, (old, old), follow_symlinks=False)
+            result = mindset.prune_orphaned_host_entries(project, now=now)
+            self.assertIn("linked", result["removed"])
+            self.assertFalse(link.is_symlink())
+            self.assertTrue((target / "keep.txt").is_file())
+            self.assertEqual("keep\n", (target / "keep.txt").read_text(encoding="utf-8"))
+
+    def test_session_scratch_prune_keeps_a_directory_with_a_fresh_file(self):
+        mindset = _load("ce_agy_mindset_fresh", ROOT / "runtime" / "harness_mindset.py")
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            session = project / ".chaos-engine-state" / "session-scratch" / "active"
+            session.mkdir(parents=True)
+            note = session / "notes.jsonl"
+            note.write_text("{}\n", encoding="utf-8")
+            now = time.time()
+            old = now - (8 * 24 * 60 * 60)
+            os.utime(session, (old, old))
+            os.utime(note, (now, now))
+            result = mindset.prune_orphaned_host_entries(project, now=now)
+            self.assertNotIn("active", result["removed"])
+            self.assertEqual("{}\n", note.read_text(encoding="utf-8"))
+
     def test_core_commit_drift_is_reported_when_version_matches(self):
         with tempfile.TemporaryDirectory() as temporary:
             project = Path(temporary)
@@ -1117,6 +1154,26 @@ class AntigravitySupportTests(unittest.TestCase):
                 encoding="utf-8",
             )
             self.assertEqual("", self.install._core_commit_drift_detail(project, overlay))
+
+    def test_core_commit_drift_ignores_unrelated_consumer_version(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            overlay = project / ".chaos-engine"
+            overlay.mkdir()
+            (overlay / "VERSION").write_text("0.4.20261115.5\n", encoding="utf-8")
+            (overlay / "manifest.json").write_text(
+                json.dumps({"schemaVersion": 1, "source": {"commit": "a" * 40, "kind": "git"}}),
+                encoding="utf-8",
+            )
+            (project / "VERSION").write_text("2.5.0\n", encoding="utf-8")
+            (project / ".chaos-engine-hosts.json").write_text(
+                json.dumps({"schemaVersion": 1, "phase": "installed", "coreCommit": "b" * 40}),
+                encoding="utf-8",
+            )
+            detail = self.install._core_commit_drift_detail(project, overlay)
+            self.assertIn("coreCommit drift while VERSION matches", detail)
+            self.assertIn("a" * 40, detail)
+            self.assertIn("b" * 40, detail)
 
 
 if __name__ == "__main__":

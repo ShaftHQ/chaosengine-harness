@@ -9093,9 +9093,11 @@ def _pack_version_exception(project: Path, core: str) -> str:
 
 
 def _core_commit_drift_detail(project: Path, overlay: Path) -> str:
-    """Name manifest vs receipt commit drift when VERSION text still matches.
+    """Name manifest vs receipt commit drift when the source pin VERSION matches.
 
-    Empty when the commits match, VERSION text differs, or either file is absent.
+    Empty when the commits match, or when a ChaosEngine source pin VERSION
+    exists and differs from the overlay VERSION. A consumer ``project/VERSION``
+    is not the source pin.
     """
     try:
         manifest = json.loads((overlay / "manifest.json").read_text(encoding="utf-8"))
@@ -9111,10 +9113,15 @@ def _core_commit_drift_detail(project: Path, overlay: Path) -> str:
         return ""
     try:
         installed = (overlay / "VERSION").read_text(encoding="utf-8").strip()
-        intended = (project / "VERSION").read_text(encoding="utf-8").strip()
     except OSError:
         installed = ""
-        intended = ""
+    pin = _source_pin_version(project)
+    intended = ""
+    if pin is not None:
+        try:
+            intended = pin.read_text(encoding="utf-8").strip()
+        except OSError:
+            intended = ""
     if installed and intended and installed != intended:
         return ""
     return (

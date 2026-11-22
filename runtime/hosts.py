@@ -8666,6 +8666,38 @@ def cancel_uninstall(
         move_anchor(project, anchor, ACTIVE_ANCHOR_PREFIX)
 
 
+def _walk_receipt_blob_refs(node: object, refs: list[str], depth: int = 0) -> None:
+    """Collect backup blob paths, including base64 ``rollbackPreviousReceipt`` bodies."""
+    if depth > 8:
+        return
+    if isinstance(node, dict):
+        digest = node.get("sha256")
+        blob = node.get("blob")
+        if (
+            isinstance(digest, str)
+            and isinstance(blob, str)
+            and re.fullmatch(r"[0-9a-f]{64}", digest)
+            and blob == f".chaos-engine-state/backups/{digest}"
+            and set(node) <= {"sha256", "blob"}
+        ):
+            refs.append(blob)
+        previous = node.get(ROLLBACK_PREVIOUS_RECEIPT)
+        if isinstance(previous, str) and previous:
+            try:
+                nested = json.loads(base64.b64decode(previous, validate=True).decode("utf-8"))
+            except (ValueError, UnicodeDecodeError, json.JSONDecodeError):
+                nested = None
+            if nested is not None:
+                _walk_receipt_blob_refs(nested, refs, depth + 1)
+        for key, value in node.items():
+            if key == ROLLBACK_PREVIOUS_RECEIPT:
+                continue
+            _walk_receipt_blob_refs(value, refs, depth + 1)
+    elif isinstance(node, list):
+        for item in node:
+            _walk_receipt_blob_refs(item, refs, depth + 1)
+
+
 def _remove_uninstalled_receipt_blobs(project: Path, raw: bytes) -> None:
     """Delete blob files named by the on-disk receipt, then empty backup dirs."""
     refs: list[str] = []
@@ -8673,23 +8705,8 @@ def _remove_uninstalled_receipt_blobs(project: Path, raw: bytes) -> None:
         parsed: object = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError):
         parsed = None
-    stack: list[object] = [parsed]
-    while stack:
-        node = stack.pop()
-        if isinstance(node, dict):
-            digest = node.get("sha256")
-            blob = node.get("blob")
-            if (
-                isinstance(digest, str)
-                and isinstance(blob, str)
-                and re.fullmatch(r"[0-9a-f]{64}", digest)
-                and blob == f".chaos-engine-state/backups/{digest}"
-                and set(node) <= {"sha256", "blob"}
-            ):
-                refs.append(blob)
-            stack.extend(node.values())
-        elif isinstance(node, list):
-            stack.extend(node)
+    if parsed is not None:
+        _walk_receipt_blob_refs(parsed, refs)
     for relative in dict.fromkeys(refs):
         path = project / relative
         if path.is_file() and not is_link_or_reparse(path):
