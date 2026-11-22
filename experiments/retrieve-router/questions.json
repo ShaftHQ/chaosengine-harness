@@ -1,7 +1,7 @@
 {
   "version": 2,
   "frozen": "2026-11-22",
-  "frozen_questions_sha256": "4c90c7e18e2a2033e7d8cecf5437bfa6c9024311d4738c3deeb5f94f72a5fbc1",
+  "frozen_questions_sha256": "31aa03ffa6aca69e83bf55bd12681afaa1887f32ee045dd5e3741b5d97f62e31",
   "note": "Frozen before the measured run. Each gold path:line was checked in this tree. implicit is corpus_split rare-token overlap via question_rare_tokens. Questions with no rare tokens are the K2 implicit-clue slice.",
   "questions": [
     {
@@ -294,7 +294,7 @@
       "gold": [
         {
           "path": "runtime/harness_mindset.py",
-          "line": 198
+          "line": 199
         }
       ]
     },
@@ -308,7 +308,7 @@
       "gold": [
         {
           "path": "runtime/harness_mindset.py",
-          "line": 186
+          "line": 187
         }
       ]
     },
@@ -364,7 +364,7 @@
       "gold": [
         {
           "path": "runtime/harness_mindset.py",
-          "line": 27
+          "line": 28
         }
       ]
     },
@@ -476,7 +476,7 @@
       "gold": [
         {
           "path": "runtime/harness_mindset.py",
-          "line": 269
+          "line": 270
         }
       ]
     },
