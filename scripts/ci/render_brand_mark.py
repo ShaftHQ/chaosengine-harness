@@ -20,8 +20,10 @@ SVG = ROOT / "assets" / "brand" / "symbol-primary.svg"
 TARGET = ROOT / "runtime" / "ce_ui.py"
 START = "# >>> generated: brand_mark\n"
 END = "# <<< generated: brand_mark\n"
-WIDE = (4, 16)
-STACK = (3, 12)
+# Rows, columns. Cell aspect is 1:2, so screen ratio is cols / (rows * 2).
+# Wide 13/16 = 0.8125 and stack 8/10 = 0.80 stay within 10% of the SVG ink.
+WIDE = (8, 13)
+STACK = (5, 8)
 SAMPLES = 3
 
 # UL=1, UR=2, LL=4, LR=8. One code point per occupied 2x2 cell.
@@ -144,48 +146,55 @@ def ink_box(layers: list[tuple[str, list[list[tuple[float, float]]]]]) -> tuple[
     return min(xs), min(ys), max(xs), max(ys)
 
 
-def _subpixel(
-    layers: list[tuple[str, list[list[tuple[float, float]]]]],
-    left: float,
-    top: float,
-    width: float,
-    height: float,
-    px: int,
-    py: int,
-    px_w: int,
-    px_h: int,
-) -> str:
-    hits = {"core": 0, "armour": 0}
-    for sy in range(SAMPLES):
-        for sx in range(SAMPLES):
-            x = left + (px + (sx + 0.5) / SAMPLES) * width / px_w
-            y = top + (py + (sy + 0.5) / SAMPLES) * height / px_h
-            kind = ""
-            for layer_kind, subpaths in layers:
-                if covered(subpaths, x, y):
-                    kind = layer_kind
-            if kind:
-                hits[kind] += 1
-    if hits["core"] > hits["armour"]:
-        return "c"
-    if hits["armour"]:
-        return "a"
-    if hits["core"]:
-        return "c"
-    return " "
-
-
 def raster(layers: list[tuple[str, list]], rows: int, cols: int) -> tuple[tuple[str, str], ...]:
-    """Return ``(glyphs, core mask)`` rows. Mask ``c`` is the red core."""
+    """Letterbox the ink into ``cols`` by ``rows`` cells. A cell is 1 wide and 2 tall."""
     left, top, right, bottom = ink_box(layers)
-    width = right - left
-    height = bottom - top
+    ink_w = right - left
+    ink_h = bottom - top
+    if ink_w <= 0 or ink_h <= 0:
+        raise SystemExit("symbol ink box is empty")
+    box_w = float(cols)
+    box_h = float(rows * 2)
+    scale = min(box_w / ink_w, box_h / ink_h)
+    drawn_w = ink_w * scale
+    drawn_h = ink_h * scale
+    pad_x = (box_w - drawn_w) / 2.0
+    pad_y = (box_h - drawn_h) / 2.0
     px_w = cols * 2
     px_h = rows * 2
-    pixels = [
-        [_subpixel(layers, left, top, width, height, px, py, px_w, px_h) for px in range(px_w)]
-        for py in range(px_h)
-    ]
+    x_step = box_w / px_w
+    y_step = box_h / px_h
+
+    def paint(px: int, py: int) -> str:
+        hits = {"core": 0, "armour": 0}
+        for sy in range(SAMPLES):
+            for sx in range(SAMPLES):
+                sx_box = (px + (sx + 0.5) / SAMPLES) * x_step
+                sy_box = (py + (sy + 0.5) / SAMPLES) * y_step
+                if (
+                    sx_box < pad_x
+                    or sy_box < pad_y
+                    or sx_box >= pad_x + drawn_w
+                    or sy_box >= pad_y + drawn_h
+                ):
+                    continue
+                x = left + (sx_box - pad_x) / scale
+                y = top + (sy_box - pad_y) / scale
+                kind = ""
+                for layer_kind, subpaths in layers:
+                    if covered(subpaths, x, y):
+                        kind = layer_kind
+                if kind:
+                    hits[kind] += 1
+        if hits["core"] > hits["armour"]:
+            return "c"
+        if hits["armour"]:
+            return "a"
+        if hits["core"]:
+            return "c"
+        return " "
+
+    pixels = [[paint(px, py) for px in range(px_w)] for py in range(px_h)]
     table = []
     for row in range(rows):
         glyphs = []
@@ -269,6 +278,14 @@ def build() -> tuple[str, tuple, tuple]:
     assert_samples(layers)
     wide = raster(layers, *WIDE)
     stack = raster(layers, *STACK)
+    left, top, right, bottom = ink_box(layers)
+    ink = (right - left) / (bottom - top)
+    for rows, cols in (WIDE, STACK):
+        ratio = cols / (rows * 2)
+        if abs(ratio - ink) / ink > 0.10:
+            raise SystemExit(
+                f"mark {rows}x{cols} aspect {ratio:.3f} is more than 10% from the symbol {ink:.3f}"
+            )
     return render_text(wide, stack), wide, stack
 
 

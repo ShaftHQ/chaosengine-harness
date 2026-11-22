@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import atexit
 import base64
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -19,6 +20,7 @@ import socket
 import fnmatch
 import re
 import shlex
+import signal
 import runpy
 import shutil
 import ssl
@@ -654,15 +656,21 @@ def color_level(environ=None, *, enabled: bool) -> str:
 # >>> generated: brand_mark
 # Scan of assets/brand/symbol-primary.svg. Regenerate: python3 scripts/ci/render_brand_mark.py
 BRAND_MARK_WIDE = (
-    (' ▗▄▄███████▗▄▄▄▄', '                '),
-    ('███▛▀▘ ▄▄▄▛████▀', '       ccc      '),
-    ('███▙▄▖ ▝▀▀▟████▄', '       ccc      '),
-    (' ▝▀▀███████▝▀▀▀▀', '                '),
+    ('   ▄▄▄▄▄█    ', '             '),
+    (' ▄███████▐██▄', '             '),
+    ('███▛▘   █▟▜██', '             '),
+    ('███   ██▞███ ', '      ccc    '),
+    ('███   ▀▀▚███ ', '      ccc    '),
+    ('███▙▖   █▚▄▄▄', '             '),
+    (' ▀███████▐██▛', '             '),
+    ('   ▀▀▀▀▀█    ', '             '),
 )
 BRAND_MARK_STACK = (
-    ('▄▄▟██████▙▄▄', '            '),
-    ('██▌  ▐█████ ', '     ccc    '),
-    ('▀▀▜████████▀', '            '),
+    (' ▄▄▄▄▙▄▖', '        '),
+    ('██▛▀▀███', '        '),
+    ('██ ▐█▜█▌', '   cc   '),
+    ('██▙▄▄███', '        '),
+    (' ▀▀▀▀▛▀▘', '        '),
 )
 # <<< generated: brand_mark
 
@@ -753,6 +761,9 @@ def cursor_enabled(*, tty: bool, environ=None, vt_ok: bool = True) -> bool:
 def unicode_enabled(stream, environ=None) -> bool:
     environ = _environ(environ)
     if environ.get("CHAOS_ENGINE_ASCII") == "1":
+        return False
+    locale = environ.get("LC_ALL") or environ.get("LANG") or ""
+    if locale in {"C", "POSIX"}:
         return False
     encoding = getattr(stream, "encoding", None) or "utf-8"
     try:
@@ -1640,8 +1651,8 @@ def brand_lines(
 ) -> list[str]:
     """Symbol from the generated scan. ``lockup`` is accepted and unused.
 
-    At 84 columns or more the 4-row mark sits beside the header. From 60 to 83
-    the 3-row mark is stacked above it. The gap between the mark and the header
+    At 84 columns or more the 8-row mark sits beside the header. From 60 to 83
+    the 5-row mark is stacked above it. The gap between the mark and the header
     is the core width.
     """
     del lockup
@@ -1813,6 +1824,147 @@ def safe_command_trace(command: list[str] | tuple[str, ...]) -> str:
     return " ".join(shlex.quote(item) for item in redacted)
 
 
+_ANSI_VISIBLE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][\s\S]*?(?:\x07|\x1b\\)")
+_LIVE_REPORTERS: list["InstallReporter"] = []
+_LIVE_SIGNALS: dict[int, object] = {}
+_LIVE_EXCEPTHOOK = None
+_LIVE_HOOKS = False
+_RAIL_INDENT = "      "
+
+
+def fit_visible_cells(text: str, width: int, *, unicode: bool) -> str:
+    """Truncate to ``width`` visible cells. ANSI sequences do not count."""
+    if width <= 0:
+        return ""
+    plain = _ANSI_VISIBLE.sub("", text)
+    if len(plain) <= width:
+        return text
+    suffix = "…" if unicode else "..."
+    if len(suffix) > width:
+        return suffix[:width]
+    return plain[: width - len(suffix)] + suffix
+
+
+def _shutdown_live_reporters() -> None:
+    for reporter in reversed(_LIVE_REPORTERS):
+        reporter._remove_stderr_proxy()
+        reporter._restore_cursor()
+
+
+def _disarm_live_hooks() -> None:
+    global _LIVE_EXCEPTHOOK, _LIVE_HOOKS
+    if not _LIVE_HOOKS:
+        return
+    if _LIVE_EXCEPTHOOK is not None:
+        sys.excepthook = _LIVE_EXCEPTHOOK
+        _LIVE_EXCEPTHOOK = None
+    for signum, previous in list(_LIVE_SIGNALS.items()):
+        try:
+            signal.signal(signum, previous)
+        except (ValueError, OSError):
+            pass
+    _LIVE_SIGNALS.clear()
+    try:
+        atexit.unregister(_shutdown_live_reporters)
+    except (ValueError, TypeError):
+        pass
+    _LIVE_HOOKS = False
+
+
+def _on_live_exception(exc_type, exc, tb) -> None:
+    if exc_type is KeyboardInterrupt:
+        _shutdown_live_reporters()
+    hook = _LIVE_EXCEPTHOOK
+    if hook is not None:
+        hook(exc_type, exc, tb)
+
+
+def _on_live_signal(signum: int, frame) -> None:
+    _shutdown_live_reporters()
+    previous = _LIVE_SIGNALS.get(signum, signal.SIG_DFL)
+    _disarm_live_hooks()
+    if callable(previous) and previous not in {signal.SIG_DFL, signal.SIG_IGN}:
+        previous(signum, frame)
+        return
+    if signum == signal.SIGINT:
+        raise KeyboardInterrupt
+    signal.signal(signum, signal.SIG_DFL)
+    os.kill(os.getpid(), signum)
+
+
+def _arm_live_reporter(reporter: "InstallReporter") -> None:
+    global _LIVE_EXCEPTHOOK, _LIVE_HOOKS
+    if reporter not in _LIVE_REPORTERS:
+        _LIVE_REPORTERS.append(reporter)
+    if _LIVE_HOOKS:
+        return
+    _LIVE_HOOKS = True
+    _LIVE_EXCEPTHOOK = sys.excepthook
+    sys.excepthook = _on_live_exception
+    atexit.register(_shutdown_live_reporters)
+    if threading.current_thread() is not threading.main_thread():
+        return
+    for signum in (signal.SIGINT, signal.SIGTERM):
+        try:
+            _LIVE_SIGNALS[signum] = signal.getsignal(signum)
+            signal.signal(signum, _on_live_signal)
+        except (ValueError, OSError):
+            pass
+
+
+def _release_live_reporter(reporter: "InstallReporter") -> None:
+    if reporter in _LIVE_REPORTERS:
+        _LIVE_REPORTERS.remove(reporter)
+    if not _LIVE_REPORTERS:
+        _disarm_live_hooks()
+
+
+class _StderrProxy:
+    """Line-buffered stderr stand-in. One note, then the frame is drawn again."""
+
+    def __init__(self, reporter: "InstallReporter", original) -> None:
+        self._reporter = reporter
+        self._original = original
+        self._pending = ""
+
+    def write(self, data) -> int:
+        if self._reporter._in_note:
+            return self._original.write(data)
+        text = data if isinstance(data, str) else str(data)
+        self._pending += text
+        while "\n" in self._pending:
+            line, self._pending = self._pending.split("\n", 1)
+            if line.strip():
+                self._reporter.note(line)
+        return len(text)
+
+    def flush(self) -> None:
+        if self._pending.strip() and not self._reporter._in_note:
+            line = self._pending
+            self._pending = ""
+            self._reporter.note(line)
+        flush = getattr(self._original, "flush", None)
+        if callable(flush):
+            flush()
+
+    def isatty(self) -> bool:
+        fn = getattr(self._original, "isatty", None)
+        try:
+            return bool(fn()) if callable(fn) else False
+        except (OSError, ValueError):
+            return False
+
+    @property
+    def encoding(self):
+        return getattr(self._original, "encoding", None) or "utf-8"
+
+    def fileno(self):
+        fn = getattr(self._original, "fileno", None)
+        if callable(fn):
+            return fn()
+        raise OSError("stderr has no fileno")
+
+
 class InstallReporter:
     """Dependency-free installer status renderer; UX always goes to stderr."""
 
@@ -1839,10 +1991,13 @@ class InstallReporter:
         self._downloaded = 0
         self._download_samples = deque(maxlen=30)
         self.detail: str | None = None
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._lines = 0
+        self._cursor_hidden = False
+        self._stderr_proxy: _StderrProxy | None = None
+        self._in_note = False
         self._caps = detect_capabilities(self.stream, self._env, vt=self._enable_windows_vt)
         self.mode = select_mode(tty=self._caps.tty, environ=self._env)
         self._tty = self.mode == "tty"
@@ -1889,7 +2044,7 @@ class InstallReporter:
         self.source_label = f"{repository}@{branch}"
         if self._env.get("CHAOS_ENGINE_QUIET") == "1":
             return
-        if self._tty:
+        if self.cursor:
             with self._lock:
                 self._render_locked()
         else:
@@ -1901,7 +2056,7 @@ class InstallReporter:
             self.trace_count += 1
             if self._env.get("CHAOS_ENGINE_QUIET") == "1":
                 return
-            if self._tty:
+            if self.cursor:
                 self._render_locked()
             elif self._verbose:
                 self.stream.write(self._truncate(f"  {message}") + "\n")
@@ -1986,9 +2141,9 @@ class InstallReporter:
             self.detail = detail
             if self._env.get("CHAOS_ENGINE_QUIET") == "1":
                 return
-            if not self._tty:
+            if not self.cursor:
                 self._emit_log_header()
-            if self._tty:
+            if self.cursor:
                 self._render_locked()
                 if self._thread is None:
                     self._thread = threading.Thread(
@@ -1999,12 +2154,13 @@ class InstallReporter:
     def complete(self, operation: str, *, remaining: tuple[str, ...] = ()) -> None:
         with self._lock:
             now = self.clock()
+            already = operation in self.completed_operations
             if self.current_operation == operation:
                 self._pause_current(now)
                 self.current_operation = None
             if operation in self._in_flight:
                 self._in_flight.remove(operation)
-            if operation not in self.completed_operations:
+            if not already:
                 self.completed_operations.append(operation)
             self._completed_elapsed[operation] = self._elapsed_as_current.get(operation, 0.0)
             duration = self._completed_elapsed[operation]
@@ -2015,9 +2171,9 @@ class InstallReporter:
             self.detail = None
             if self._env.get("CHAOS_ENGINE_QUIET") == "1":
                 return
-            if self._tty:
+            if self.cursor:
                 self._render_locked()
-            else:
+            elif not already:
                 self.stream.write(
                     f"{self._step_label(operation)}{self._style('DONE', 'ok')}  {operation}\n"
                 )
@@ -2049,7 +2205,7 @@ class InstallReporter:
                 self.stream.write(f"FAIL  {operation}\n")
                 self.stream.flush()
                 return
-            if self._tty:
+            if self.cursor:
                 self._render_locked()
             else:
                 self.stream.write(
@@ -2066,7 +2222,7 @@ class InstallReporter:
             self._download_samples.append((now, 0))
             if detail:
                 self.detail = detail
-            if self._tty:
+            if self.cursor:
                 self._render_locked()
             elif (
                 self._download_total is not None
@@ -2095,14 +2251,14 @@ class InstallReporter:
                 and now - self._download_samples[0][0] > 8.0
             ):
                 self._download_samples.popleft()
-            if self._tty:
+            if self.cursor:
                 self._render_locked()
 
     def _ticker(self) -> None:
         while not self._stop.wait(1.0):
             with self._lock:
                 self._frame += 1
-                if self._tty:
+                if self.cursor:
                     self._render_locked()
                 else:
                     self._heartbeat_locked()
@@ -2181,7 +2337,7 @@ class InstallReporter:
         self._remember_commit(commit)
         if self._env.get("CHAOS_ENGINE_QUIET") == "1" or self.mode == "quiet":
             return
-        if self._tty:
+        if self.cursor:
             with self._lock:
                 self._render_locked()
         elif not self._commit_logged:
@@ -2190,7 +2346,7 @@ class InstallReporter:
             self._commit_logged = True
 
     def _emit_log_header(self) -> None:
-        if self._log_header_sent or self._tty or self.mode == "quiet":
+        if self._log_header_sent or self.cursor or self.mode == "quiet":
             return
         if self._env.get("CHAOS_ENGINE_QUIET") == "1":
             return
@@ -2233,32 +2389,40 @@ class InstallReporter:
     def _style(self, value: str, role: str) -> str:
         return paint(value, role, color=self._color, intensity=self._intensity)
 
+    def _badge(self, glyph: str) -> str:
+        """Three cells: brackets around one status cell, for every spinner frame."""
+        cell = glyph[:1] if glyph else " "
+        return f"[{cell}]"
+
     def _checklist_row(self, item: str, *, name_width: int, active: str, check: str, empty: str) -> str:
         if item in self.completed_operations:
-            mark = f"[{check}]"
+            mark = self._badge(check)
             duration = self._duration(self._completed_elapsed.get(item, 0.0))
             plain = self._truncate(f"  {mark} {item:<{name_width}}  {duration}")
             return plain.replace(mark, self._style(mark, "ok"), 1)
         if item == self.failed_operation:
-            failed = status_glyph("fail", unicode=self._unicode)
-            mark = f"[{failed}]"
+            mark = self._badge(status_glyph("fail", unicode=self._unicode))
             plain = self._truncate(f"  {mark} {item:<{name_width}}  failed")
             painted = plain.replace(mark, self._style(mark, "fail"), 1)
             if painted.endswith("failed"):
                 painted = painted[:-6] + self._style("failed", "fail")
             return painted
         if item == self.current_operation or item in self._in_flight:
-            mark = f"[{active}]"
+            mark = self._badge(active)
             plain = self._truncate(f"  {mark} {item:<{name_width}}  running")
             painted = plain.replace(mark, self._style(mark, "accent"), 1)
             if painted.endswith("running"):
                 painted = painted[:-7] + self._style("running", "accent")
             return painted
-        return self._style(self._truncate(f"  [{empty}] {item}"), "dim")
+        return self._style(self._truncate(f"  {self._badge(empty)} {item}"), "dim")
+
+    def _rail_prefix(self) -> str:
+        branch = "└─ " if self._unicode else "+- "
+        return _RAIL_INDENT + branch
 
     def _rail_lines(self, now: float, elapsed: float) -> list[str]:
         """At most two detail lines under the running step. No Trace or Status row."""
-        prefix = "└─ " if self._unicode else "+- "
+        prefix = self._rail_prefix()
         operations = self._operations()
         done = sum(1 for item in operations if item in self.completed_operations)
         total = len(operations)
@@ -2280,6 +2444,60 @@ class InstallReporter:
         if len(rows) < 2:
             rows.append(self._truncate(prefix + separator.join(metrics)))
         return rows[:2]
+
+    def _hide_cursor(self) -> None:
+        if self._cursor_hidden or not self.cursor:
+            return
+        self.stream.write("\x1b[?25l")
+        self._cursor_hidden = True
+        _arm_live_reporter(self)
+
+    def _restore_cursor(self) -> None:
+        if not self._cursor_hidden:
+            return
+        self._cursor_hidden = False
+        try:
+            self.stream.write("\x1b[?25h")
+            self.stream.flush()
+        except (OSError, ValueError):
+            return
+
+    def _install_stderr_proxy(self) -> None:
+        if self._stderr_proxy is not None or sys.stderr is not self.stream:
+            return
+        proxy = _StderrProxy(self, self.stream)
+        self._stderr_proxy = proxy
+        sys.stderr = proxy
+
+    def _remove_stderr_proxy(self) -> None:
+        proxy = self._stderr_proxy
+        if proxy is None:
+            return
+        if sys.stderr is proxy:
+            sys.stderr = proxy._original
+        self._stderr_proxy = None
+
+    def note(self, text: str) -> None:
+        """One stray stderr line above the live frame. Log mode appends it once."""
+        if self.mode in {"quiet", "json"}:
+            return
+        message = " ".join(str(text).split())
+        if not message:
+            return
+        with self._lock:
+            if not self.cursor or self._lines <= 0:
+                self.stream.write(message + "\n")
+                self.stream.flush()
+                return
+            self._in_note = True
+            try:
+                self.stream.write(f"\x1b[{self._lines}F\x1b[J")
+                self._lines = 0
+                shown = fit_visible_cells(message, max(1, self._width() - 1), unicode=self._unicode)
+                self.stream.write(shown + "\n")
+                self._render_locked()
+            finally:
+                self._in_note = False
 
     def _render_locked(self) -> None:
         if self._env.get("CHAOS_ENGINE_QUIET") == "1" or self.mode == "quiet":
@@ -2307,11 +2525,16 @@ class InstallReporter:
                     lines.append(cause_line)
             elif item == self.current_operation:
                 lines.extend(self._rail_lines(now, elapsed))
+        budget = max(1, self._width() - 1)
+        lines = [fit_visible_cells(line, budget, unicode=self._unicode) for line in lines]
+        self._hide_cursor()
         if self.cursor and self._lines:
             self.stream.write(f"\x1b[{self._lines}F")
         suffix = "\x1b[K" if self.cursor else ""
-        rendered = "\n".join(line + suffix for line in lines) + "\n"
-        self.stream.write(rendered)
+        self.stream.write("\n".join(line + suffix for line in lines) + "\n")
+        if self.cursor:
+            self.stream.write("\x1b[J")
+            self._install_stderr_proxy()
         self.stream.flush()
         self._lines = len(lines)
 
@@ -2462,7 +2685,7 @@ class InstallReporter:
             show_receipt_lines=self.mode != "tty",
         )
         self.summary_printed = True
-        if self._tty:
+        if self.cursor:
             block = self._brand_header()
             if block:
                 block.append("")
@@ -2487,7 +2710,7 @@ class InstallReporter:
     def _cause_line(self) -> str | None:
         if not self.failure_cause:
             return None
-        prefix = "└─ " if self._unicode else "+- "
+        prefix = self._rail_prefix()
         cause = strip_controls(self.failure_cause)
         shown = prefix + cause
         return shown if line_may_exceed_width(cause) else self._truncate(shown)
@@ -2495,7 +2718,7 @@ class InstallReporter:
     def show_failure_panel(self, panel: str) -> None:
         """Reprint the checklist on a TTY, then the failure panel. Log mode appends."""
         self.summary_printed = True
-        if self._tty and self.mode not in {"quiet", "json"}:
+        if self.cursor and self.mode not in {"quiet", "json"}:
             block = self._brand_header()
             if block:
                 block.append("")
@@ -2530,11 +2753,14 @@ class InstallReporter:
         ):
             thread.join(timeout=1.5)
         self._thread = None
-        if self.cursor and self._lines:
-            count = self._lines
-            self.stream.write(f"\x1b[{count}F" + ("\x1b[K\n" * count) + f"\x1b[{count}F")
-            self.stream.flush()
-        self._lines = 0
+        with self._lock:
+            if self.cursor and self._lines:
+                self.stream.write(f"\x1b[{self._lines}F\x1b[J")
+                self.stream.flush()
+            self._lines = 0
+            self._restore_cursor()
+            self._remove_stderr_proxy()
+            _release_live_reporter(self)
 
 
 
@@ -4252,7 +4478,7 @@ def _store_cache_bytes(root: Path, name: str, content: bytes) -> None:
             try:
                 temporary.unlink()
             except OSError:
-                return
+                pass
 
 
 def store_git_blob(sha: str, content: bytes) -> None:
@@ -5901,13 +6127,6 @@ def _run_core_install(
     )
     source_url = source_tree_url(repository, commit, root_layout=root_layout)
     reporter.detail = source_url
-    if os.environ.get("CHAOS_ENGINE_QUIET") != "1":
-        version = product_version()
-        print(
-            f"{repository} {version} {commit} -> {project}",
-            file=sys.stderr,
-        )
-        print(source_url, file=sys.stderr)
     if os.environ.get("CHAOS_ENGINE_DRY_RUN") == "1":
         raise DryRunDone(list(getattr(download_source, "last_actions", [])), commit)
     # Remote manifest sync already refuses before download. A local-clone
@@ -6750,6 +6969,16 @@ def next_fix_hint(code: str, error: BaseException, prefix: str | None) -> str:
     """Return exactly one actionable fix-next for every failure (#6325)."""
     cause = one_line_cause(error).casefold()
     rerun = "then rerun the same install one-liner."
+    if (
+        _certificate_verify_failed(error)
+        or "certificate_verify_failed" in cause
+        or "ssl certificate verification failed" in cause
+    ):
+        return (
+            "SSL certificate verification failed — on macOS python.org builds run "
+            '"/Applications/Python 3.x/Install Certificates.command", or set SSL_CERT_FILE, '
+            + rerun
+        )
     if _still_unpacking_account_timeout(error):
         return (
             "the command exceeded its budget while work was still in progress; "
