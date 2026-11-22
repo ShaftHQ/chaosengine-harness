@@ -163,6 +163,22 @@ Environment committer variables override `git -c user.*`.
 When the intent is the commits after a revision, use `git format-patch <rev>..HEAD`.
 `git format-patch -N <rev>` writes the N commits that end at that revision, not the N commits after it.
 
+## Closing keywords
+
+GitHub closes an issue when a default-branch commit message or a merge
+message contains one of these words immediately before an issue number:
+`close`, `closes`, `closed`, `fix`, `fixes`, `fixed`, `resolve`,
+`resolves`, or `resolved`. A negation does not protect the issue. The match
+still fires when the sentence denies the action, because the word still
+sits immediately before the number.
+
+Name the issue without those words beside the number. The safe example is:
+issue #160 stays open.
+
+An unsafe example puts one of those words immediately before the number,
+including inside a denial. Keep that example as this prose. Do not write
+the word next to the number.
+
 ## Adoption
 
 The core card, kanban Definition of Done, router contract, and delegation
