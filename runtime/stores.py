@@ -399,7 +399,7 @@ def palace_records_source(cwd: Path, relative: str) -> bool:
     roots = registered_roots(cwd)
     wanted = Path(relative).as_posix()
     try:
-        connection = sqlite3.connect(f"file:{database.as_posix()}?mode=ro", uri=True)
+        connection = sqlite3.connect(sqlite_ro_uri(database), uri=True)
     except sqlite3.Error:
         return False
     try:
@@ -612,7 +612,7 @@ def project_content_revision(cwd: Path) -> str:
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = sorted(
             name for name in dirnames
-            if name not in _FINGERPRINT_SKIP and not name.startswith(".")
+            if name not in _FINGERPRINT_SKIP and name != "plugins" and not name.startswith(".")
         )
         relative_dir = Path(dirpath).resolve().relative_to(root)
         if any(part in _FINGERPRINT_SKIP for part in relative_dir.parts):
@@ -673,7 +673,7 @@ def graphify_doctor_row(cwd: Path) -> dict[str, str] | None:
     if not is_git_work_tree(cwd):
         # #7487: fingerprint-stale → repair. Never-indexed keeps #7303 warning detail.
         fix = (
-            "python3 .chaos-engine/install.py repair --project . --component graphify"
+            f"{python_cli()} .chaos-engine/install.py repair --project . --component graphify"
         )
         if "non-git fingerprint" in message:
             return {"status": "degraded", "detail": message, "fixNext": fix}
@@ -689,7 +689,7 @@ def graphify_doctor_row(cwd: Path) -> dict[str, str] | None:
             "detail": "waiting for the first commit - Graphify indexes a revision",
             "fixNext": (
                 "commit once (git add -A && git commit -m init), then "
-                "python3 .chaos-engine/install.py repair --project . --component graphify"
+                f"{python_cli()} .chaos-engine/install.py repair --project . --component graphify"
             ),
         }
     if _readable_tip_lag(message, graph_out):
@@ -698,13 +698,13 @@ def graphify_doctor_row(cwd: Path) -> dict[str, str] | None:
         return {
             "status": "sync-advisory",
             "detail": message,
-            "fixNext": "python3 .chaos-engine/tool.py stores refresh --if-stale",
+            "fixNext": f"{python_cli()} .chaos-engine/tool.py stores refresh --if-stale",
         }
     return {
         "status": "degraded",
         "detail": message,
         "fixNext": (
-            "python3 .chaos-engine/install.py repair --project . --component graphify"
+            f"{python_cli()} .chaos-engine/install.py repair --project . --component graphify"
         ),
     }
 
@@ -860,7 +860,7 @@ def corrupt_palace_gate(palace: Path) -> dict[str, str] | None:
         "detail": CORRUPT_PALACE_DETAIL,
         "quickCheck": detail,
         "quarantine": quarantine,
-        "fixNext": "python3 .chaos-engine/tool.py stores refresh",
+        "fixNext": f"{python_cli()} .chaos-engine/tool.py stores refresh",
     }
 
 
@@ -985,10 +985,8 @@ def palace_drawer_count(palace: Path) -> int | None:
     database = palace / "sqlite_exact.sqlite3"
     if not database.is_file():
         return None
-    import sqlite3
-
     try:
-        connection = sqlite3.connect(f"file:{database.as_posix()}?mode=ro", uri=True)
+        connection = sqlite3.connect(sqlite_ro_uri(database), uri=True)
         try:
             row = connection.execute("select count(*) from documents").fetchone()
         finally:
@@ -998,9 +996,16 @@ def palace_drawer_count(palace: Path) -> int | None:
     return int(row[0]) if row else 0
 
 
-def palace_indexed_revision(palace: Path) -> str | None:
-    """Revision recorded after a palace mine, or None when the stamp is absent."""
-    path = palace / GENERIC_MARKER
+def palace_marker_path(palace: Path) -> Path:
+    """Source revision lives beside the palace so the palace directory stays healthy."""
+    return palace.parent / PALACE_SOURCE_SIDECAR
+
+
+def palace_documentation_path(palace: Path) -> Path:
+    return palace.parent / PALACE_DOCS_SIDECAR
+
+
+def _read_indexed_revision(path: Path) -> str | None:
     if not path.is_file():
         return None
     try:
@@ -1017,20 +1022,46 @@ def palace_indexed_revision(palace: Path) -> str | None:
     return revision
 
 
+def palace_indexed_revision(palace: Path) -> str | None:
+    """Revision recorded after a palace mine, or None when the stamp is absent.
+
+    A legacy stamp inside the palace is copied beside it and then removed.
+    """
+    sidecar = palace_marker_path(palace)
+    legacy = palace / GENERIC_MARKER
+    revision = _read_indexed_revision(sidecar)
+    if revision:
+        legacy.unlink(missing_ok=True)
+        return revision
+    revision = _read_indexed_revision(legacy)
+    if revision is None:
+        return None
+    try:
+        sidecar.parent.mkdir(parents=True, exist_ok=True)
+        if not sidecar.is_file():
+            sidecar.write_bytes(legacy.read_bytes())
+        legacy.unlink(missing_ok=True)
+    except OSError:
+        return revision
+    return revision
+
+
 def write_palace_marker(palace: Path, revision: str) -> Path:
-    """Bind the shared palace to the revision that was mined."""
+    """Bind the shared palace to the revision that was mined. Sidecar, not inside."""
     palace.mkdir(parents=True, exist_ok=True)
-    marker = palace / GENERIC_MARKER
+    marker = palace_marker_path(palace)
+    marker.parent.mkdir(parents=True, exist_ok=True)
     temporary = marker.with_suffix(marker.suffix + ".tmp")
     temporary.write_text(
         json.dumps(
             {"schema_version": 1, "indexed_revision": revision},
-            indent=2,
+            separators=(",", ":"),
         )
         + "\n",
         encoding="utf-8",
     )
     temporary.replace(marker)
+    (palace / GENERIC_MARKER).unlink(missing_ok=True)
     return marker
 
 
@@ -1269,6 +1300,8 @@ def merge_documentation_graph(graph_json: Path, indexed: dict) -> dict:
         nodes = []
     if not isinstance(edges, list):
         edges = []
+    nodes = [node for node in nodes if not str(node.get("id", "")).startswith("docs:")]
+    edges = [edge for edge in edges if not str(edge.get("source", "")).startswith("docs:")]
     for page in indexed.get("pages") or []:
         if not isinstance(page, dict):
             continue
@@ -1312,11 +1345,30 @@ def merge_documentation_graph(graph_json: Path, indexed: dict) -> dict:
     return graph
 
 
+def _is_palace_directory(directory: Path) -> bool:
+    if directory.name == "mempalace":
+        return True
+    return (directory / "sqlite_exact.sqlite3").is_file()
+
+
 def write_documentation_filing(directory: Path, indexed: dict) -> Path:
-    """Record the pages a documentation mine files, including .mdx."""
-    directory.mkdir(parents=True, exist_ok=True)
-    destination = directory / "documentation-pages.json"
-    destination.write_text(json.dumps(indexed, indent=2) + "\n", encoding="utf-8")
+    """Record the pages a documentation mine files, including .mdx.
+
+    Palace pages sit beside the palace. Graphify-out keeps its own filing.
+    """
+    legacy = directory / "documentation-pages.json"
+    if _is_palace_directory(directory):
+        destination = palace_documentation_path(directory)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if legacy.is_file():
+            legacy.unlink()
+    else:
+        directory.mkdir(parents=True, exist_ok=True)
+        destination = legacy
+    destination.write_text(
+        json.dumps(indexed, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
     return destination
 
 
@@ -1419,53 +1471,64 @@ def _refresh_graphify(
     revision: str,
     invoke: Runner,
 ) -> None:
-    """Extract Graphify into the shared graphify-out for one detached snapshot."""
+    """Extract Graphify into the shared graphify-out for one detached snapshot.
+
+    Stage beside the target so the extract and the publish stay on one filesystem.
+    ``scratch`` remains the caller's cleanup directory and is not the extract out dir.
+    """
+    del scratch
     graphify = _store_tool("graphify")
-    staging = scratch / "graph-out"
-    produced = staging / "graphify-out"
-    incremental = _seed_incremental_graph(snapshot, resolve_graph_out(cwd), produced, revision)
-    print(
-        f"stores: graphify {'incremental' if incremental else 'full'} extract",
-        file=sys.stderr,
-        flush=True,
-    )
-    _run(
-        invoke,
-        _store_argv(
-            graphify,
-            [
-                "extract",
-                str(snapshot),
-                "--code-only",
-                "--no-cluster",
-                "--out",
-                str(staging),
-            ],
-        ),
-        snapshot,
-    )
-    produced = staging / "graphify-out"
-    if not (produced / "graph.json").is_file() or not (produced / "manifest.json").is_file():
-        raise RuntimeError("graphify extract did not write graph.json and manifest.json")
-    _apply_documentation_index(snapshot, produced / "graph.json", produced)
     target = resolve_graph_out(cwd)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    backup = target.with_name(target.name + ".replacing")
-    if backup.exists():
-        shutil.rmtree(backup)
-    if target.exists():
-        target.rename(backup)
+    staging = target.parent / ".graphify-staging"
+    if staging.exists():
+        shutil.rmtree(staging)
+    staging.mkdir(parents=True, exist_ok=True)
+    produced = staging / "graphify-out"
     try:
-        shutil.move(str(produced), str(target))
-        write_marker(target, store_revision(cwd))
-    except (OSError, RuntimeError):
-        if target.exists():
-            shutil.rmtree(target, ignore_errors=True)
+        incremental = _seed_incremental_graph(snapshot, target, produced, revision)
+        print(
+            f"stores: graphify {'incremental' if incremental else 'full'} extract",
+            file=sys.stderr,
+            flush=True,
+        )
+        _run(
+            invoke,
+            _store_argv(
+                graphify,
+                [
+                    "extract",
+                    str(snapshot),
+                    "--code-only",
+                    "--no-cluster",
+                    "--out",
+                    str(staging),
+                ],
+            ),
+            snapshot,
+        )
+        produced = staging / "graphify-out"
+        if not (produced / "graph.json").is_file() or not (produced / "manifest.json").is_file():
+            raise RuntimeError("graphify extract did not write graph.json and manifest.json")
+        _apply_documentation_index(snapshot, produced / "graph.json", produced)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        backup = target.with_name(target.name + ".replacing")
         if backup.exists():
-            backup.rename(target)
-        raise
-    if backup.exists():
-        shutil.rmtree(backup, ignore_errors=True)
+            shutil.rmtree(backup)
+        if target.exists():
+            target.rename(backup)
+        try:
+            shutil.move(str(produced), str(target))
+            write_marker(target, store_revision(cwd))
+        except (OSError, RuntimeError):
+            if target.exists():
+                shutil.rmtree(target, ignore_errors=True)
+            if backup.exists():
+                backup.rename(target)
+            raise
+        if backup.exists():
+            shutil.rmtree(backup, ignore_errors=True)
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
 
 
 def store_snapshot_path(common: Path) -> Path:
@@ -1525,7 +1588,16 @@ def incremental_mine_paths(snapshot: Path, previous: str | None, revision: str) 
         return []
     try:
         _git(snapshot, "merge-base", "--is-ancestor", previous, revision)
-        changed = _git(snapshot, "diff", "--name-only", "--diff-filter=AMR", previous, revision)
+        changed = _git(
+            snapshot,
+            "-c",
+            "core.quotepath=false",
+            "diff",
+            "--name-only",
+            "--diff-filter=AMR",
+            previous,
+            revision,
+        )
     except RuntimeError:
         return None
     return [line for line in changed.splitlines() if line.strip()]
@@ -1566,18 +1638,53 @@ def _mine_only(snapshot: Path, paths: list[str], invoke: Runner, mine: list[str]
             os.utime(ignore, ns=(stat.st_atime_ns, stat.st_mtime_ns))
 
 
+def _fs_path(value: object) -> Path:
+    """Real path. Path() follows os.name, so a POSIX host patched to nt builds WindowsPath."""
+    import pathlib
+
+    text = os.fspath(value) if isinstance(value, (str, pathlib.PurePath)) else str(value)
+    if os.name == "nt":
+        try:
+            pathlib.WindowsPath(text)
+        except NotImplementedError:
+            return pathlib.PosixPath(text)
+    return pathlib.Path(text)
+
+
+def _structural_mine_python(launcher: Path) -> Path | None:
+    """Sibling or uv-tool interpreter. Checked before the shebang, including Windows .exe."""
+    launcher = _fs_path(launcher)
+    package = launcher.parent.parent if launcher.parent.name in {"Scripts", "bin"} else launcher.parent
+    candidates = [
+        launcher.with_name("python.exe"),
+        launcher.with_name("python"),
+        package / "Scripts" / "python.exe",
+        package / "bin" / "python",
+        package / "Scripts" / "python",
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return None
+
+
 def fast_mine_prefix(mempalace: str) -> list[str]:
     """Run the mine through ``mempalace_fast_mine.py`` under MemPalace's interpreter (4.8x faster writes).
 
-    The interpreter comes from the ``mempalace`` launcher's shebang; without one, the plain CLI runs.
+    A structural interpreter (uv tool tree, including paths with spaces) wins over the shebang.
+    Without either, the plain CLI runs.
     """
-    shim = Path(__file__).resolve().with_name("mempalace_fast_mine.py")
+    shim = _fs_path(__file__).resolve().with_name("mempalace_fast_mine.py")
+    launcher = _fs_path(mempalace)
+    structural = _structural_mine_python(launcher)
+    if shim.is_file() and structural is not None:
+        return [str(structural), str(shim)]
     try:
-        first = Path(mempalace).read_text(encoding="utf-8", errors="ignore").splitlines()[0]
+        first = launcher.read_text(encoding="utf-8", errors="ignore").splitlines()[0]
     except (OSError, IndexError):
         return [mempalace]
     interpreter = first[2:].strip() if first.startswith("#!") else ""
-    if not shim.is_file() or not interpreter or " " in interpreter or not Path(interpreter).is_file():
+    if not shim.is_file() or not interpreter or not _fs_path(interpreter).is_file():
         return [mempalace]
     return [interpreter, str(shim)]
 
@@ -1648,7 +1755,13 @@ def _mine_with_collection(
 
 
 def _mine_full_tree(snapshot: Path, invoke, mine: list[str]) -> None:
-    """Mine product files on the drawers default, then harness files into their collection."""
+    """Mine product files on the drawers default, then harness files into their collection.
+
+    A non-git tree is one mine. Rewriting a live ``.gitignore`` is a git-only confine.
+    """
+    if not (snapshot / ".git").exists():
+        _run(invoke, mine, snapshot)
+        return
     split = _corpus_split()
     harness = [path for path in _snapshot_files(snapshot) if split.is_harness_path(path)]
     if not harness:
@@ -1678,6 +1791,7 @@ def _refresh_mempalace(
     invoke: Runner,
 ) -> None:
     """Mine the stable snapshot, drop deleted files, and stamp the revision."""
+    _prune_palace_drawers(cwd)
     mempalace = _store_tool("mempalace")
     palace = resolve_palace(cwd)
     prefix = fast_mine_prefix(mempalace)
@@ -1880,10 +1994,7 @@ def maybe_spawn_refresh(cwd: Path, *, popen: Callable[..., object] = subprocess.
     popen(  # nosec B603 - owned tool.py argv, no shell.
         [sys.executable, str(tool), "stores", "refresh", "--if-stale"],
         cwd=str(resolve_primary_root(cwd)),
-        start_new_session=True,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        stdin=subprocess.DEVNULL,
+        **refresh_spawn_kwargs(),
     )
     return "spawned"
 
@@ -1922,12 +2033,57 @@ def _registry_refresh_command() -> str:
     return f"{sys.executable} -c {json.dumps(script)} {registry}"
 
 
+def _xml_text(value: str) -> str:
+    return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def launchd_program(argv: list[str]) -> str:
+    """One plist ``<string>`` per argument. Spaces stay inside the element."""
+    return "\n".join(f"<string>{_xml_text(part)}</string>" for part in argv)
+
+
+def _quote_os_arg(part: str) -> str:
+    if part == "" or any(character in part for character in ' \t"'):
+        return '"' + part.replace('"', '\\"') + '"'
+    return part
+
+
+def systemd_unit(argv: list[str]) -> str:
+    """One unit description. Paths with spaces are quoted. Phrase kept for the timer."""
+    command = " ".join(_quote_os_arg(part) for part in argv)
+    return (
+        "[Unit]\n"
+        "Description=ChaosEngine stores refresh --if-stale\n"
+        "\n"
+        "[Service]\n"
+        "Type=oneshot\n"
+        f"ExecStart={command}\n"
+    )
+
+
+def windows_refresh_cmd(argv: list[str]) -> str:
+    quoted = " ".join(
+        '"' + part.replace('"', '""') + '"' if (" " in part or "\\" in part) else part
+        for part in argv
+    )
+    return "@echo off\r\nREM stores refresh --if-stale\r\n" + quoted + "\r\n"
+
+
+def windows_schedule_destination(root: Path) -> Path:
+    return Path(root) / "stores-refresh.cmd"
+
+
+def _schedule_argv() -> list[str]:
+    tool = Path(__file__).resolve().parents[1] / "tool.py"
+    return [sys.executable, str(tool), "stores", "refresh-registered"]
+
+
 def install_schedule(project: Path, *, home: Path | None = None) -> Path:
     """Write the user-level daily refresh timer. Does not start it."""
     root = (home or Path.home()).resolve()
     project = project.resolve()
     del project
-    command = _registry_refresh_command()
+    argv = _schedule_argv()
     if sys.platform == "darwin":
         destination = root / "Library/LaunchAgents/com.chaosengine.stores.refresh.plist"
         text = (
@@ -1937,33 +2093,25 @@ def install_schedule(project: Path, *, home: Path | None = None) -> Path:
             '<plist version="1.0"><dict>\n'
             "<key>Label</key><string>com.chaosengine.stores.refresh</string>\n"
             "<key>ProgramArguments</key><array>\n"
-            f"<string>{command}</string>\n"
+            f"{launchd_program(argv)}\n"
             "</array>\n"
             "<key>StartCalendarInterval</key><dict><key>Hour</key><integer>3</integer>"
             "<key>Minute</key><integer>15</integer></dict>\n"
             "</dict></plist>\n"
         )
     elif os.name == "nt":
-        destination = root / "AppData/Local/ChaosEngine/stores-refresh.cmd"
-        text = (
-            "@echo off\r\n"
-            "REM stores refresh --if-stale\r\n"
-            f"{command}\r\n"
-        )
+        if home is None:
+            from runtime.user_paths import data_dir
+
+            destination = windows_schedule_destination(data_dir())
+        else:
+            destination = root / "AppData/Local/ChaosEngine/stores-refresh.cmd"
+        text = windows_refresh_cmd(argv)
     else:
         destination = root / ".config/systemd/user/chaosengine-stores.timer"
         service = destination.with_name("chaosengine-stores.service")
         service.parent.mkdir(parents=True, exist_ok=True)
-        service.write_text(
-            "[Unit]\n"
-            "Description=ChaosEngine shared MemPalace and Graphify refresh\n"
-            "\n"
-            "[Service]\n"
-            "Type=oneshot\n"
-            "Description=ChaosEngine stores refresh --if-stale\n"
-            f"ExecStart={command}\n",
-            encoding="utf-8",
-        )
+        service.write_text(systemd_unit(argv), encoding="utf-8")
         text = (
             "[Unit]\n"
             "Description=Daily ChaosEngine store refresh\n"
@@ -2086,9 +2234,85 @@ def _ps_cpu_ticks(pid: int) -> int | None:
     return _tree_total(pid, parents, ticks) if pid in ticks else None
 
 
+def windows_spawn_flags() -> int:
+    """DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW."""
+    return 0x00000008 | 0x00000200 | 0x08000000
+
+
+def windows_stop_command(pid: int) -> list[str]:
+    return ["taskkill", "/F", "/T", "/PID", str(pid)]
+
+
+def refresh_spawn_kwargs() -> dict[str, object]:
+    """Detached refresh. Windows uses creation flags; POSIX keeps a new session."""
+    shared = {
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+        "stdin": subprocess.DEVNULL,
+    }
+    if os.name == "nt":
+        return {**shared, "creationflags": windows_spawn_flags()}
+    return {**shared, "start_new_session": True}
+
+
+def _windows_cpu_ticks(pid: int) -> int | None:
+    """Process CPU via GetProcessTimes. None off Windows or when the call fails."""
+    if os.name != "nt":
+        return None
+    try:
+        import ctypes
+        from ctypes import wintypes
+    except ImportError:
+        return None
+    try:
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        handle = kernel.OpenProcess(0x1000, False, int(pid))
+        if not handle:
+            return None
+        created, exited = wintypes.FILETIME(), wintypes.FILETIME()
+        kernel_time, user_time = wintypes.FILETIME(), wintypes.FILETIME()
+        ok = kernel.GetProcessTimes(
+            handle,
+            ctypes.byref(created),
+            ctypes.byref(exited),
+            ctypes.byref(kernel_time),
+            ctypes.byref(user_time),
+        )
+        kernel.CloseHandle(handle)
+        if not ok:
+            return None
+
+        def _hundred_ns(stamp: object) -> int:
+            return (int(stamp.dwHighDateTime) << 32) | int(stamp.dwLowDateTime)
+
+        return int((_hundred_ns(user_time) + _hundred_ns(kernel_time)) / 100_000)
+    except (AttributeError, OSError, ValueError):
+        return None
+
+
+def stop_process_tree(process: subprocess.Popen) -> None:
+    """Kill the child and its children. POSIX uses killpg; Windows uses taskkill /T."""
+    if os.name == "nt":
+        subprocess.run(  # nosec B603 - fixed taskkill argv, no shell.
+            windows_stop_command(process.pid),
+            check=False,
+            capture_output=True,
+        )
+        return
+    try:
+        import signal
+
+        os.killpg(process.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError, OSError):
+        try:
+            process.kill()
+        except OSError:
+            return
+
+
 def process_tree_cpu(pid: int) -> int | None:
-    """CPU ticks of a process tree: /proc, then psutil or ``ps``; None when unmeasurable."""
-    for probe in (_descendant_cpu_ticks, _psutil_cpu_ticks, _ps_cpu_ticks):
+    """CPU ticks of a process tree: /proc, psutil, Windows, then ``ps``."""
+    for probe in (_descendant_cpu_ticks, _psutil_cpu_ticks, _windows_cpu_ticks, _ps_cpu_ticks):
         ticks = probe(pid)
         if ticks is not None:
             return ticks
@@ -2115,6 +2339,8 @@ def run_until_stalled(
     wall_clock = kwargs.pop("wall_clock_seconds", None)
     if "stdin" not in kwargs:
         kwargs["stdin"] = subprocess.DEVNULL
+    if os.name != "nt" and "start_new_session" not in kwargs and "creationflags" not in kwargs:
+        kwargs["start_new_session"] = True
     check = kwargs.pop("check", False)
     text = bool(kwargs.pop("text", False) or kwargs.pop("universal_newlines", False))
     capture = kwargs.pop("capture_output", False)
@@ -2127,7 +2353,7 @@ def run_until_stalled(
         last_mark, last_progress = None, started
         while process.poll() is None:
             if wall_clock is not None and time.monotonic() - started >= float(wall_clock):
-                process.kill()
+                stop_process_tree(process)
                 process.wait()
                 raise subprocess.TimeoutExpired(args, float(wall_clock))
             time.sleep(_POLL_SECONDS)
@@ -2138,7 +2364,7 @@ def run_until_stalled(
             if mark != last_mark:
                 last_mark, last_progress = mark, time.monotonic()
             elif time.monotonic() - last_progress >= limit:
-                process.kill()
+                stop_process_tree(process)
                 process.wait()
                 raise subprocess.TimeoutExpired(args, window)
         out_file.seek(0)
@@ -2151,3 +2377,111 @@ def run_until_stalled(
     if check:
         completed.check_returncode()
     return completed
+
+
+def _project_relative(path: str, root: str) -> str:
+    """Repository-relative POSIX path. Drive letters compare case-insensitively."""
+    text = str(path or "").replace("\\", "/")
+    base = str(root or "").replace("\\", "/").rstrip("/")
+    if len(text) >= 2 and text[1] == ":":
+        text = text[0].casefold() + text[1:]
+    if len(base) >= 2 and base[1] == ":":
+        base = base[0].casefold() + base[1:]
+    prefix = base + "/"
+    if text.casefold().startswith(prefix.casefold()):
+        return text[len(prefix):]
+    return text
+
+
+def _prune_palace_drawers(cwd: Path) -> None:
+    """Drop deleted drawers with the SQLite prune, not a second full mine."""
+    import importlib.util
+
+    path = Path(__file__).resolve().with_name("dependencies.py")
+    spec = importlib.util.spec_from_file_location("chaos_engine_dependencies_prune", path)
+    if spec is None or spec.loader is None:
+        return
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    try:
+        module.prune_mempalace_drawers(cwd)
+    except (OSError, RuntimeError, sqlite3.Error):
+        return
+
+
+def ensure_knowledge_graph(palace: Path) -> Path:
+    """Project-local knowledge graph beside the palace drawers database."""
+    palace.mkdir(parents=True, exist_ok=True)
+    path = palace / "knowledge_graph.sqlite3"
+    connection = sqlite3.connect(path)
+    try:
+        connection.execute("create table if not exists nodes (id integer primary key)")
+        connection.commit()
+    finally:
+        connection.close()
+    return path
+
+
+def store_coverage(cwd: Path) -> dict[str, object]:
+    """Where the shared stores and the knowledge graph live for this checkout."""
+    palace = resolve_palace(cwd)
+    graph = resolve_graph_out(cwd)
+    return {
+        "mempalace": str(palace),
+        "graphify": str(graph),
+        "knowledgeGraph": str(palace / "knowledge_graph.sqlite3"),
+        "drawers": palace_drawer_count(palace),
+    }
+
+
+def _registered_refresh_roots() -> list[Path]:
+    root = _registry_dir()
+    found: list[Path] = []
+    if not root.is_dir():
+        return found
+    for path in sorted(root.glob("*.json")):
+        if path.name.endswith("-receipt.json"):
+            continue
+        try:
+            document = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        for item in document.get("roots") or []:
+            if isinstance(item, str) and item:
+                found.append(Path(item))
+    return found
+
+
+def refresh_registered() -> int:
+    """Refresh every registry root. The daily timer calls this once."""
+    for root in _registered_refresh_roots():
+        try:
+            refresh(root, if_stale=True)
+        except (OSError, RuntimeError):
+            continue
+    return 0
+
+
+PALACE_SOURCE_SIDECAR = "mempalace-source-revision.json"
+PALACE_DOCS_SIDECAR = "mempalace-documentation-pages.json"
+HOST_EXCLUDE_PREFIXES = (
+    ".agents/",
+    ".claude/",
+    ".codex/",
+    ".cursor/",
+    ".gemini/",
+    ".github/hooks/",
+    ".grok/",
+    ".opencode/",
+    "plugins/",
+)
+
+
+def python_cli() -> str:
+    """Interpreter token for repair text. Windows has no python3.exe on PATH."""
+    return "py -3" if os.name == "nt" else "python3"
+
+
+def sqlite_ro_uri(database: Path) -> str:
+    """Read-only SQLite URI. file: plus mode=ro, valid on Windows and POSIX."""
+    return f"{Path(database).resolve().as_uri()}?mode=ro"

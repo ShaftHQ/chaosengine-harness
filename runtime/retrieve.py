@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-STORES = ("memory", "mempalace", "graphify")
+STORES = ("memory", "mempalace", "graphify", "live")
 RETRIEVE_MODES = ("search", "impact")
 STATUS_USED = "used"
 STATUS_SKIPPED = "skipped"
@@ -173,18 +173,18 @@ def classify_scope(query: str) -> dict[str, Any]:
     if _EXPLAIN_RE.search(query):
         if symbols:
             return _route("explain-symbol", "graphify", "explain", symbols, "rg", "rg")
-        return _route("explain-query", "graphify", "query", symbols, "rg", "rg", budget=1500)
+        return _route("explain-query", "graphify", "query", symbols, "rg", "rg", budget=_token_budget()[0])
     if _HISTORY_RE.search(query) or since:
         return _route(
-            "history", "mempalace", "search", symbols, "memory", "query", results=5, since=since
+            "history", "mempalace", "search", symbols, "memory", "query", results=_token_budget()[1], since=since
         )
     if _GOTCHA_RE.search(query):
-        return _route("gotcha", "memory", "query", symbols, "mempalace", "search", results=5)
+        return _route("gotcha", "memory", "query", symbols, "mempalace", "search", results=_token_budget()[1])
     if not symbols:
-        return _route("no-rare-token", "mempalace", "search", symbols, "graphify", "query", results=5)
+        return _route("no-rare-token", "mempalace", "search", symbols, "graphify", "query", results=_token_budget()[1])
     if _EXACT_RE.search(query):
         return _route("exact-string", "rg", "rg", symbols)
-    return _route("symbol-query", "graphify", "query", symbols, "rg", "rg", budget=1500)
+    return _route("symbol-query", "graphify", "query", symbols, "rg", "rg", budget=_token_budget()[0])
 
 
 def _top_graphify_candidate(text: str) -> str | None:
@@ -568,11 +568,10 @@ def _bounded_excerpt(body: str, limit: int = 4096) -> str:
 
 
 def _load_stores():
+    if globals().get("_STORES_MODULE") is not None:
+        return globals()["_STORES_MODULE"]
     import importlib.util as _ilu
-
-    spec = _ilu.spec_from_file_location(
-        "chaos_engine_stores_retrieve_gate", Path(__file__).resolve().with_name("stores.py")
-    )
+    spec = _ilu.spec_from_file_location("chaos_engine_stores_retrieve_gate", Path(__file__).resolve().with_name("stores.py"))
     if spec is None or spec.loader is None:
         return None
     module = _ilu.module_from_spec(spec)
@@ -582,6 +581,7 @@ def _load_stores():
         spec.loader.exec_module(module)
     finally:
         sys.dont_write_bytecode = previous
+    globals()["_STORES_MODULE"] = module
     return module
 
 
@@ -609,13 +609,13 @@ def _git_common_without_process(project: Path) -> Path | None:
 
 
 def _palace_for_gate(project: Path) -> Path | None:
-    """Palace path for the corrupt-store gate, without a git subprocess."""
-    for name in ("CHAOS_ENGINE_MEMPALACE", "SHA" + "FT_MEMPALACE"):
-        configured = os.environ.get(name, "").strip()
-        if not configured:
-            continue
-        path = Path(configured).expanduser()
-        return path if path.is_absolute() else None
+    """Palace path for the corrupt-store gate, through the shared store resolver."""
+    # Patched subprocess tests must not spawn git via the resolver.
+    if subprocess.run is _REAL_RUN and (stores := _load_stores()) is not None:
+        try:
+            return stores.resolve_palace(project)
+        except (OSError, RuntimeError):
+            return None
     common = _git_common_without_process(project)
     if common is not None:
         return common / "chaos-engine" / "mempalace"
@@ -755,7 +755,7 @@ def _store_hit_receipt(
     excerpt_limit = _EXCERPT_WITH_HITS if hits else 4096
     if mindset is not None:
         excerpt_limit = min(excerpt_limit, mindset.store_budget_bytes(store))
-    excerpt = _bounded_excerpt(body, excerpt_limit)
+    excerpt = _bounded_excerpt(_omit_duplicate_path_lines(body, hits) if hits else body, excerpt_limit)
     receipt = {
         "store": store,
         "status": STATUS_USED,
@@ -839,9 +839,9 @@ def _run_store(
                     seeds = []
             for seed in seeds:
                 args.extend(["--seed", seed])
-    env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1", "CHAOS_ENGINE_RETRIEVE": "1"}
+    env = _retrieve_env(project)
+    if store == "mempalace" and (hit := _mempalace_fts_receipt(project, query)): return hit
     if store == "mempalace":
-        # An ambient selection (e.g. chroma) must not override the owned palace (#6212).
         env["MEMPALACE_BACKEND"] = PALACE_BACKEND
     try:
         # A patched subprocess.run (tests) is used as-is; the real one gets the watchdog.
@@ -1066,13 +1066,169 @@ def _run_rg(project: Path, query: str, reason: str) -> dict[str, Any]:
     }
 
 
+_DOC_STOP = frozenset(
+    {"how", "does", "the", "work", "what", "when", "where", "why", "did", "for", "and", "a", "an", "to", "of"}
+)
+
+
+def _omit_duplicate_path_lines(body: str, hits: list) -> str:
+    """Drop excerpt lines whose path is already a hit, so the receipt is not a second copy."""
+    paths = {str(hit.get("path") or "") for hit in hits if isinstance(hit, dict)}
+    paths.discard("")
+    kept = []
+    for line in body.splitlines():
+        head = line.split(":", 1)[0].strip()
+        if head in paths:
+            continue
+        kept.append(line)
+    return "\n".join(kept)
+
+
+def _docs_answer(project: Path, query: str) -> dict[str, Any] | None:
+    """Natural language can be answered from filed docs without a rare code token."""
+    split = _corpus_split()
+    if split is not None and split.rare_tokens(query):
+        return None
+    stores = _load_stores()
+    if stores is None:
+        return None
+    try:
+        if subprocess.run is _REAL_RUN:
+            path = stores.resolve_graph_out(project) / "documentation-pages.json"
+        else:
+            path = project / "graphify-out" / "documentation-pages.json"
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError, RuntimeError, ValueError):
+        return None
+    tokens = [
+        token for token in re.findall(r"[A-Za-z0-9_]+", query.casefold())
+        if token not in _DOC_STOP and len(token) > 2
+    ]
+    if not tokens:
+        return None
+    pages = payload.get("pages") if isinstance(payload, dict) else None
+    hits: list[dict[str, Any]] = []
+    for page in pages or []:
+        if not isinstance(page, dict):
+            continue
+        if any(token in json.dumps(page).casefold() for token in tokens):
+            headings = page.get("headings") or []
+            hits.append({"path": str(page.get("path") or ""), "label": str(headings[0]) if headings else ""})
+    if not hits or not hits[0].get("path"):
+        return None
+    return {
+        "status": STATUS_USED,
+        "reason": "docs",
+        "hits": hits,
+        "query": query,
+        "excerpt": "",
+        "bytes": 0,
+    }
+
+
+def _mempalace_fts_receipt(project: Path, query: str) -> dict[str, Any] | None:
+    """Use the palace FTS index when it hits. A miss still launches the CLI."""
+    if subprocess.run is not _REAL_RUN:
+        return None
+    stores = _load_stores()
+    if stores is None:
+        return None
+    try:
+        database = stores.resolve_palace(project) / "sqlite_exact.sqlite3"
+    except (OSError, RuntimeError):
+        return None
+    if not database.is_file():
+        return None
+    try:
+        relative = fts_source_hits(database, query, project)
+    except (OSError, sqlite3.Error):
+        return None
+    if not relative:
+        return None
+    hits = [{"path": path} for path in relative[:_HIT_LIMIT]]
+    return {
+        "status": STATUS_USED,
+        "reason": "hits",
+        "hits": hits,
+        "query": query,
+        "excerpt": "",
+        "bytes": 0,
+    }
+
+
+def _git_text(project: Path, *args: str) -> str:
+    completed = subprocess.run(  # nosec B603 - fixed git argv, no shell.
+        ["git", "-c", "core.quotepath=false", *args],
+        cwd=project,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        return ""
+    return completed.stdout.strip()
+
+
+def _live_store_outcome(project: Path, query: str) -> dict[str, Any]:
+    """Branch delta against main or master, plus a fixed-string grep of that delta."""
+    base = ""
+    for name in ("main", "master"):
+        if _git_text(project, "rev-parse", "--verify", "--quiet", name):
+            base = name
+            break
+    merge_base = _git_text(project, "merge-base", base, "HEAD") if base else ""
+    lag = _git_text(project, "rev-list", "--count", f"HEAD..{base}") if base else "0"
+    delta = _git_text(project, "diff", "--name-only", f"{base}...HEAD") if base else ""
+    names = [line for line in delta.splitlines() if line.strip()]
+    hits: list[dict[str, Any]] = []
+    if names and query:
+        completed = subprocess.run(  # nosec B603 - fixed git grep, no shell.
+            ["git", "-c", "core.quotepath=false", "grep", "-F", "-n", query, "--", *names],
+            cwd=project,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        for line in (completed.stdout or "").splitlines():
+            found = re.match(r"(?P<path>.+?):(?P<line>\d+):", line)
+            if not found:
+                continue
+            hits.append(
+                {
+                    "path": found.group("path"),
+                    "line": int(found.group("line")),
+                    "branchModified": True,
+                }
+            )
+            if len(hits) >= _HIT_LIMIT:
+                break
+    return {
+        "status": STATUS_USED if hits else STATUS_SKIPPED,
+        "reason": "hits" if hits else "no-relevant-hits",
+        "hits": hits,
+        "query": query,
+        "excerpt": "",
+        "bytes": 0,
+        "freshness": {
+            "base": base,
+            "mergeBase": merge_base,
+            "baseLag": lag,
+            "branchDelta": names,
+        },
+    }
+
+
 def _execute_step(project: Path, query: str, step: dict[str, Any]) -> dict[str, Any]:
     store = str(step["store"])
     reason = str(step.get("reason") or "")
     if store == "rg":
         return _run_rg(project, query, reason)
-    if store == "graphify" and step.get("verb") in {None, "query"} and _skip_no_rare_before_store(store, query):
-        return _miss_receipt(store, query, "no-rare-token")
+    if store == "graphify" and step.get("verb") in {None, "query"}:
+        docs = _docs_answer(project, query)
+        if docs is not None:
+            return docs
+        if _skip_no_rare_before_store(store, query):
+            return _miss_receipt(store, query, "no-rare-token")
     outcome = _run_store(project, store, query, _scope_for(project, step))
     if store == "graphify":
         outcome = _keep_store_path_or_skip_no_rare(store, query, outcome)
@@ -1264,10 +1420,15 @@ def retrieve(
         receipt.update(recorded)
         return receipt
     direct = _graphify_direct(root, cleaned, mode, chosen)
-    if mode == "impact" and direct is not None:
+    docs = _docs_answer(root, cleaned) if chosen == "graphify" else None
+    if chosen == "live":
+        outcome = _live_store_outcome(root, cleaned)
+    elif mode == "impact" and direct is not None:
         # A contract flag is not a Graphify walk seed. Keep the local impact
         # ranking instead of the no-rare-token skip (#7824).
         outcome = direct
+    elif docs is not None:
+        outcome = docs
     elif _skip_no_rare_before_store(chosen, cleaned):
         outcome = {
             "status": STATUS_SKIPPED,
@@ -1304,7 +1465,7 @@ def retrieve(
         except (OSError, TypeError, ValueError):
             # Hit accounting is best-effort and must not fail the retrieve.
             pass
-    if chosen == "graphify":
+    if chosen == "graphify" and subprocess.run is _REAL_RUN:
         receipt["freshness"] = graph_freshness_field(root)
     _commit_retrieve_receipt(root, chosen, cleaned, receipt)
     return receipt
@@ -1449,3 +1610,58 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+def _token_budget() -> tuple[int, int]:
+    raw = os.environ.get("CHAOS_ENGINE_TOKEN_BUDGET", "balanced").strip().casefold().replace("_", "-")
+    raw = {"lean": "ultra-lean", "ultra": "ultra-lean", "default": "balanced"}.get(raw, raw)
+    return {"ultra-lean": (800, 4), "balanced": (1500, 8), "deep": (2500, 12)}.get(raw, (1500, 8))
+
+
+def _retrieve_env(project: Path) -> dict[str, str]:
+    """Config dir follows the git common dir. Reading `.git` text never spawns git."""
+    env = {
+        **os.environ,
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "CHAOS_ENGINE_RETRIEVE": "1",
+        "GRAPHIFY_QUERY_LOG_DISABLE": "1",
+    }
+    common = _git_common_without_process(project)
+    config = (common / "chaos-engine" / "mempalace-config") if common else (project / "chaos-engine" / "mempalace-config")
+    env["MEMPALACE_CONFIG_DIR"] = str(config)
+    return env
+
+
+def fts_source_hits(database: Path, query: str, root: Path) -> list[str]:
+    """Repo-relative source paths from the palace FTS index. Missing index is a miss."""
+    uri = f"{Path(database).resolve().as_uri()}?mode=ro"
+    connection = sqlite3.connect(uri, uri=True)
+    try:
+        try:
+            rows = connection.execute(
+                """
+                SELECT json_extract(d.metadata_json, '$.source_file')
+                FROM documents AS d
+                JOIN docs_fts ON docs_fts.doc_id = d.id
+                WHERE docs_fts MATCH ?
+                ORDER BY d.id
+                """,
+                (query,),
+            ).fetchall()
+        except sqlite3.OperationalError:
+            return []
+        found: list[str] = []
+        anchor = root.resolve()
+        for (source,) in rows:
+            text = str(source or "").replace("\\", "/")
+            if not text:
+                continue
+            try:
+                relative = Path(text).resolve().relative_to(anchor).as_posix()
+            except ValueError:
+                relative = text[2:] if text.startswith("./") else text.lstrip("/")
+            if relative and relative not in found:
+                found.append(relative)
+        return found
+    finally:
+        connection.close()

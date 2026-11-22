@@ -76,7 +76,7 @@ def write_wake_pack(
 def session_start_locator(project: Path | None = None) -> str:
     """Locator only — never inject wake pack prose into SessionStart."""
     if read_wake_pack(project) is None:
-        return "Wake pack: absent (owner may curate .chaos-engine-state/wake-pack.md)."
+        return ""
     return "Wake pack: .chaos-engine-state/wake-pack.md (owner-curated; no prose dump)."
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -241,7 +242,7 @@ class RetrieveRouterTest(unittest.TestCase):
         self.assertIn("--wing", search)
         self.assertEqual("harness", search[search.index("--wing") + 1])
         self.assertIn("--results", search)
-        self.assertEqual("5", search[search.index("--results") + 1])
+        self.assertEqual("8", search[search.index("--results") + 1])
 
         calls.clear()
 
@@ -254,6 +255,135 @@ class RetrieveRouterTest(unittest.TestCase):
         self.assertIn("query", query)
         self.assertIn("--budget", query)
         self.assertEqual("1500", query[query.index("--budget") + 1])
+
+    def test_budget_modes_scale_graphify_and_mempalace(self):
+        cases = {
+            "ultra-lean": (800, 4),
+            "balanced": (1500, 8),
+            "deep": (2500, 12),
+        }
+        for mode, (budget, results) in cases.items():
+            with mock.patch.dict(os.environ, {"CHAOS_ENGINE_TOKEN_BUDGET": mode}):
+                explain = self.retrieve.classify_scope("explain the module")
+                history = self.retrieve.classify_scope("why did we decide the palace layout")
+            self.assertEqual(budget, explain.get("budget"), mode)
+            self.assertEqual(results, history.get("results"), mode)
+
+    def test_fts_returns_duplicate_basenames_without_the_cli(self):
+        import sqlite3
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            database = root / "sqlite_exact.sqlite3"
+            connection = sqlite3.connect(database)
+            connection.execute(
+                "create table documents (id integer primary key, collection_id integer, metadata_json text)"
+            )
+            connection.execute(
+                "create virtual table docs_fts using fts5(doc_id, document)"
+            )
+            for doc_id, source in (
+                (1, str(root / "a" / "SKILL.md")),
+                (2, str(root / "b" / "SKILL.md")),
+            ):
+                connection.execute(
+                    "insert into documents (id, collection_id, metadata_json) values (?, 1, ?)",
+                    (doc_id, json.dumps({"source_file": source})),
+                )
+                connection.execute(
+                    "insert into docs_fts (doc_id, document) values (?, ?)",
+                    (str(doc_id), "shared skill text"),
+                )
+            connection.commit()
+            connection.close()
+            with mock.patch.object(self.retrieve.subprocess, "run", side_effect=AssertionError("cli")):
+                hits = self.retrieve.fts_source_hits(database, "skill", root)
+            self.assertEqual(["a/SKILL.md", "b/SKILL.md"], hits)
+
+    def test_natural_language_uses_docs_instead_of_no_rare_token(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            (project / "chaos-engine").mkdir()
+            (project / "chaos-engine" / "tool.py").write_text("# tool\n", encoding="utf-8")
+            graph = project / "graphify-out"
+            graph.mkdir()
+            (graph / "documentation-pages.json").write_text(
+                json.dumps({"pages": [{"path": "guides/overview.md", "text": "the palace stores shared memory", "headings": ["Palace"]}]}),
+                encoding="utf-8",
+            )
+            with mock.patch.object(self.retrieve.subprocess, "run", side_effect=AssertionError("cli")):
+                receipt = self.retrieve.retrieve("how does the palace work", project=project, store="graphify")
+        self.assertNotEqual("no-rare-token", receipt.get("reason"))
+        self.assertEqual("used", receipt["status"])
+        self.assertTrue(receipt["hits"])
+
+    def test_hit_receipt_drops_duplicate_paths(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            (project / "runtime").mkdir()
+            paths = [f"runtime/f{index}.py" for index in range(6)]
+            for path in paths:
+                (project / path).write_text("def item():\n    return 1\n", encoding="utf-8")
+            body = "\n".join(f"{path}:1:def item" for path in paths)
+            duplicate = body + "\n" + body
+            completed = mock.Mock(returncode=0, stdout=duplicate, stderr="")
+            receipt = self.retrieve._store_hit_receipt(project, "memory", "def item", completed, False)
+        self.assertTrue(receipt["hits"])
+        self.assertLessEqual(receipt["bytes"] * 2, len(duplicate.encode("utf-8")))
+
+    def test_live_store_reports_freshness_and_delta(self):
+        import subprocess
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            (project / "chaos-engine").mkdir()
+            (project / "chaos-engine" / "tool.py").write_text("# tool\n", encoding="utf-8")
+            subprocess.run(["git", "init", "-b", "main"], cwd=project, check=True, capture_output=True)
+            subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=project, check=True)
+            subprocess.run(["git", "config", "user.name", "t"], cwd=project, check=True)
+            (project / "base.py").write_text("base\n", encoding="utf-8")
+            subprocess.run(["git", "add", "base.py"], cwd=project, check=True)
+            subprocess.run(["git", "commit", "-m", "base"], cwd=project, check=True, capture_output=True)
+            subprocess.run(["git", "checkout", "-b", "feature"], cwd=project, check=True, capture_output=True)
+            (project / "café.py").write_text("token palace\n", encoding="utf-8")
+            subprocess.run(["git", "add", "café.py"], cwd=project, check=True)
+            subprocess.run(["git", "commit", "-m", "cafe"], cwd=project, check=True, capture_output=True)
+            receipt = self.retrieve.retrieve("palace", project=project, store="live", account=False)
+        self.assertEqual("used", receipt["status"])
+        freshness = receipt["freshness"]
+        self.assertEqual("main", freshness["base"])
+        self.assertIn("mergeBase", freshness)
+        self.assertIn("baseLag", freshness)
+        self.assertIn("café.py", freshness["branchDelta"])
+        self.assertTrue(any(hit.get("branchModified") for hit in receipt["hits"]))
+
+    def test_retrieve_sets_mempalace_config_and_disables_graphify_log(self):
+        project = _project()
+        seen = {}
+
+        def responder(args, **kwargs):
+            seen.update(kwargs.get("env") or {})
+            return mock.Mock(returncode=0, stdout="No results found\n", stderr="")
+
+        with (
+            mock.patch.object(self.retrieve.subprocess, "run", side_effect=responder),
+            mock.patch.object(self.retrieve, "_tool_py", return_value=project / "chaos-engine" / "tool.py"),
+            mock.patch.object(self.retrieve, "_record_store_outcome"),
+        ):
+            self.retrieve.retrieve("why did we decide the palace layout", project=project, store="mempalace")
+        self.assertEqual("1", seen.get("GRAPHIFY_QUERY_LOG_DISABLE"))
+        self.assertTrue(str(seen.get("MEMPALACE_CONFIG_DIR", "")).endswith("chaos-engine/mempalace-config"))
+
+    def test_stores_module_is_cached(self):
+        first = self.retrieve._load_stores()
+        second = self.retrieve._load_stores()
+        self.assertIs(first, second)
 
     def test_dry_run_records_route_reason(self):
         receipt = self.retrieve.retrieve("has this constraint bitten us", dry_run=True)

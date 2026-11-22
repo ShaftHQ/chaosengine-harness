@@ -40,12 +40,32 @@ UV_TOOL_INSTALL_ATTEMPTS = 5
 UV_TOOL_INSTALL_RETRY_SLEEP_S = 0.5
 
 
+def python_cli() -> str:
+    return "py -3" if os.name == "nt" else "python3"
+
+
+def uv_tools_dir_for(system: str, env: dict[str, str], home: Path) -> Path:
+    """uv tool root. Windows uses APPDATA; POSIX uses ~/.local/share."""
+    if system == "nt":
+        appdata = env.get("APPDATA") or str(Path(home) / "AppData" / "Roaming")
+        return Path(appdata) / "uv" / "tools"
+    return Path(home) / ".local" / "share" / "uv" / "tools"
+
+
+def uv_tool_executable(tools: Path, package: str, name: str, system: str | None = None) -> Path:
+    """Launcher inside a uv tool tree. Windows is Scripts/<name>.exe."""
+    system = system or os.name
+    if system == "nt":
+        return Path(tools) / package / "Scripts" / f"{name}.exe"
+    return Path(tools) / package / "bin" / name
+
+
 def default_uv_tools_dir() -> Path:
     """Shared account uv tools directory (concurrent bots race here)."""
     override = os.environ.get("UV_TOOL_DIR")
     if override:
         return Path(override).expanduser()
-    return Path.home() / ".local/share/uv/tools"
+    return uv_tools_dir_for(os.name, dict(os.environ), Path.home())
 
 
 @contextmanager
@@ -189,7 +209,7 @@ def _load_schema3_tools() -> dict[str, dict[str, object]]:
     try:
         raw = path.read_text(encoding="utf-8")
     except FileNotFoundError as error:
-        cli = "py -3" if os.name == "nt" else "python3"
+        cli = python_cli()
         raise ValueError(
             "ChaosEngine dependency specification is missing "
             "(wiped or incomplete `.chaos-engine` runtime). fix-next: run the "
@@ -244,6 +264,17 @@ ACCOUNT_COMMAND_TIMEOUT_SECONDS = 900
 MEMPALACE_MINE_MODE_ENV = "CHAOS_ENGINE_MEMPALACE_MINE"
 # Installer-owned paths the project palace must never mine (#6540). Mining the
 # installed harness copies cost ~150 s per install and crowded retrieval.
+HOST_EXCLUDE_PREFIXES = (
+    ".agents/",
+    ".claude/",
+    ".codex/",
+    ".cursor/",
+    ".gemini/",
+    ".github/hooks/",
+    ".grok/",
+    ".opencode/",
+    "plugins/",
+)
 MEMPALACE_OWNED_EXCLUDES = (
     "mempalace.yaml",
     ".memory/**",
@@ -729,7 +760,7 @@ def dangling_ce_uv_tool_shims(
             else:
                 # Rare non-link occupant with a CE launcher name: only treat as
                 # stale when the uv tools package tree for that launcher is gone.
-                expected = tools / package / "bin" / name
+                expected = uv_tool_executable(tools, package, name)
                 missing = not expected.is_file()
             if missing:
                 found.append(name)
@@ -4751,7 +4782,7 @@ def probe_active(
 
 def dependency_heal_fix_next() -> str:
     """Actionable restore path when the dependency receipt/pointer is missing (#5586)."""
-    cli = "py -3" if os.name == "nt" else "python3"
+    cli = python_cli()
     return (
         f"run the ChaosEngine install one-liner from INSTALL.md "
         f"(or `{cli} chaos-engine/bootstrap.py` / `{cli} .chaos-engine/install.py install` "
