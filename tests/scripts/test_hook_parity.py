@@ -372,6 +372,18 @@ class RetrieveGateTests(unittest.TestCase):
                 self.assertIsNone(
                     self.justification.session_retrieve_gap(project, session), command
                 )
+            echoed = "echo graphify query hooks"
+            session = "keep-echo"
+            self.justification._mark_session(project, session, owe=True)
+            self.justification.file_read_block_reason(
+                project=project,
+                event_name="PreToolUse",
+                tool_name="Bash",
+                tool_input={"command": echoed},
+                commands=(echoed,),
+                session_id=session,
+            )
+            self.assertIsNotNone(self.justification.session_retrieve_gap(project, session), echoed)
             for command in ("graphify diagnose", "graphify cluster-only"):
                 session = "keep-" + command.split()[1]
                 self.justification._mark_session(project, session, owe=True)

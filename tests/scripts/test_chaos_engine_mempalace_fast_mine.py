@@ -8,6 +8,7 @@ import stat
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -79,6 +80,35 @@ class FastMineTest(unittest.TestCase):
     def test_source_index_does_not_require_a_supported_version(self) -> None:
         self.shim.ensure_source_file_index(self.db.cursor())
         self.assertEqual(1, self.db.execute(
+            "SELECT count(*) FROM sqlite_master WHERE name = 'chaos_engine_idx_source_file'").fetchone()[0])
+
+    def test_retired_shim_still_creates_the_source_index_on_connect(self) -> None:
+        """3.12 deletes by rowid, so install must arm the index on _connect."""
+        import types
+
+        db = self.db
+
+        class Collection:
+            def _connect(self, palace_path, create=False, *, read_only=False):
+                return db
+
+            def _replace_fts(self, cur, collection_id, doc_id, document):
+                cur.execute("DELETE FROM docs_fts WHERE rowid = ?", (1,))
+
+        self.assertTrue(self.shim.upstream_deletes_by_rowid(Collection._replace_fts))
+        backend = types.SimpleNamespace(sqlite_exact=types.SimpleNamespace(SQLiteExactCollection=Collection))
+        package = types.SimpleNamespace(__version__="3.12.0")
+        with unittest.mock.patch.dict(
+            sys.modules,
+            {
+                "mempalace": package,
+                "mempalace.backends": backend,
+                "mempalace.backends.sqlite_exact": backend.sqlite_exact,
+            },
+        ):
+            self.shim.install()
+        Collection()._connect("palace")
+        self.assertEqual(1, db.execute(
             "SELECT count(*) FROM sqlite_master WHERE name = 'chaos_engine_idx_source_file'").fetchone()[0])
 
     def test_stores_and_roots_are_cached_per_process(self) -> None:

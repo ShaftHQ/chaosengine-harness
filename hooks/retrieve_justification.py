@@ -1493,6 +1493,8 @@ def _retrieve_attempt(segment: str) -> bool:
 
 def _bounded_graph_read(segment: str) -> bool:
     """Graphify query, explain, affected, path, or god-nodes. Not diagnose."""
+    if not _is_store_segment(segment):
+        return False
     folded = [item.casefold() for item in _tokens(segment)]
     if "graphify" not in folded:
         return False

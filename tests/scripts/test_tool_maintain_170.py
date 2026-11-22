@@ -76,7 +76,7 @@ class EntryRefreshTest(unittest.TestCase):
             with redirect_stdout(stdout):
                 code = tool._dispatch_core(ROOT, "entry", [])
         self.assertEqual(0, code)
-        self.assertTrue(seen)
+        self.assertEqual([ROOT], seen)
 
 
 class ToolSearchTest(unittest.TestCase):

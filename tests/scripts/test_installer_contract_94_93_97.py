@@ -378,17 +378,26 @@ class EscalatingDoctorContractTest(unittest.TestCase):
                     upgraded = self._upgrade_without_rebind(installer, project)
             self.assertEqual("installed", installed.get("status"))
             self.assertNotIn("escalatingRows", installed)
-            self.assertEqual("installed", upgraded.get("status"))
-            self.assertNotIn("escalatingRows", upgraded)
-            for command, payload in (("install", installed), ("upgrade", upgraded)):
+            # Install stays installed when doctor cannot run. Upgrade fails closed.
+            self.assertEqual("needs-repair", upgraded.get("status"))
+            self.assertEqual("needs-repair", upgraded.get("failure"))
+            self.assertEqual([], upgraded.get("components"))
+            for command, payload, expected in (
+                ("install", installed, 0),
+                ("upgrade", upgraded, 1),
+            ):
                 stdout, stderr = io.StringIO(), io.StringIO()
                 with redirect_stdout(stdout), redirect_stderr(stderr):
                     code = installer._emit_result(
                         SimpleNamespace(command=command, json=False), payload
                     )
-                self.assertEqual(0, code)
-                self.assertNotIn("needs-repair", stdout.getvalue())
-                self.assertNotIn("needs-repair", stderr.getvalue())
+                self.assertEqual(expected, code, command)
+                if command == "install":
+                    self.assertNotIn("needs-repair", stdout.getvalue())
+                    self.assertNotIn("needs-repair", stderr.getvalue())
+                else:
+                    self.assertEqual("needs-repair\n", stdout.getvalue())
+                    self.assertNotIn("needs-repair:", stderr.getvalue())
 
     def _upgrade_without_rebind(self, installer, project: Path):
         args = SimpleNamespace(project=project, source=None, commit=COMMIT)

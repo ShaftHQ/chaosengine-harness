@@ -456,6 +456,12 @@ def distribution_catalog(source: Path) -> dict[str, dict[str, object]]:
         # Each pack keeps its own identity out of the portable payload.
         tokens = [*default["forbiddenTokens"], *portable_forbidden]
         merged[DEFAULT_DISTRIBUTION] = {**default, "forbiddenTokens": list(dict.fromkeys(tokens))}
+    # Packs and add-on manifests still request id "repository" after the
+    # duplicate distributions.json document was removed. Alias the final
+    # portable policy. Do not copy a second document or a personal token.
+    portable = merged.get("portable")
+    if isinstance(portable, dict):
+        merged.setdefault("repository", dict(portable))
     return merged
 
 

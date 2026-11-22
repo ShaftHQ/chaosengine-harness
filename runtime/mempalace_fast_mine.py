@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -45,6 +46,32 @@ def _ensure_map(cur) -> None:
 def ensure_source_file_index(cur) -> None:
     """Create the source_file index even when MemPalace itself is left unpatched."""
     cur.execute(SOURCE_FILE_INDEX)
+
+
+def arm_source_file_index(collection) -> bool:
+    """Create the source_file index on the next write connection.
+
+    MemPalace 3.12 deletes FTS rows by rowid, so ``install`` does not wrap
+    ``_replace_fts``. The index still has to exist for ``file_already_mined``.
+    """
+    original = getattr(collection, "_connect", None)
+    if not callable(original) or getattr(original, "chaos_engine_source_index", False):
+        return False
+
+    def _connect(self, *args, **kwargs):
+        handle = original(self, *args, **kwargs)
+        if kwargs.get("read_only"):
+            return handle
+        conn = handle[0] if isinstance(handle, tuple) else handle
+        try:
+            ensure_source_file_index(conn.cursor())
+        except (AttributeError, OSError, sqlite3.Error, TypeError):
+            return handle
+        return handle
+
+    _connect.chaos_engine_source_index = True
+    collection._connect = _connect
+    return True
 
 
 def replace_fts(original):
@@ -211,11 +238,13 @@ def install() -> bool:
     except ImportError:
         return aliased
     collection = getattr(sqlite_exact, "SQLiteExactCollection", None)
+    if collection is not None:
+        arm_source_file_index(collection)
     original = getattr(collection, "_replace_fts", None)
     if getattr(mempalace, "__version__", None) not in SUPPORTED_VERSIONS or original is None:
-        # The source_file index is still created when a caller opens a cursor.
         return aliased
     if upstream_deletes_by_rowid(original):
+        # Rowid deletes stay upstream. The index is armed on _connect above.
         return aliased
     collection._replace_fts = replace_fts(original)
     return True

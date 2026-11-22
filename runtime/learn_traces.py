@@ -581,8 +581,15 @@ def score_markdown_transcript(text: str) -> dict[str, object]:
     for index in tool_indexes:
         size = len(sections[index][1].strip("\n").encode("utf-8"))
         tool_bytes += size
-        if index < len(sections) - 1:
-            intermediate_bytes += size
+        # Intermediate only when another tool section follows before the next
+        # user turn. A final assistant section after the last tools block is
+        # not another tool result.
+        for kind, _body in sections[index + 1 :]:
+            if kind == "User":
+                break
+            if kind == "Tools":
+                intermediate_bytes += size
+                break
     tool_count = len(tool_indexes)
     return {
         "tool_sections": tool_count,

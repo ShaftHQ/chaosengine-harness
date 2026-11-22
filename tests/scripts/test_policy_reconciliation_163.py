@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -141,10 +142,17 @@ def test_c9_overlay_sync_compares_core_commit():
     assert "chaos-engine/references/" not in card
 
 
-def test_always_loaded_budget_matches_the_measured_sum_and_ceiling():
+def test_always_loaded_budget_matches_the_measured_sum_and_ceiling(tmp_path: Path):
+    # A populated store registry says "ready" and is 32 bytes shorter than a
+    # clean runner. Isolate the measurement so CI and a workstation match.
+    isolated = os.environ.copy()
+    isolated["CHAOS_ENGINE_MEMPALACE"] = str(tmp_path / "no-palace")
+    isolated["CHAOS_ENGINE_GRAPHIFY_OUT"] = str(tmp_path / "no-graph")
+    isolated["CHAOS_ENGINE_STORE_REGISTRY"] = str(tmp_path / "no-registry")
     entry = subprocess.check_output(
         ["python3", "tool.py", "entry", "--full"],
         cwd=ROOT,
+        env=isolated,
     )
     bot = (ROOT / "references/bot-entry.md").read_bytes()
     agents = (ROOT / "AGENTS.md").read_bytes()

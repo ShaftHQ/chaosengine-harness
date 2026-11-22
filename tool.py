@@ -968,7 +968,12 @@ def _dispatch_core(installed_root: Path, tool: str, arguments: list[str]) -> int
             stores = _load_stores(installed_root)
             spawn = stores.get("maybe_spawn_refresh")
             if callable(spawn):
-                spawn(installed_root.resolve().parent)
+                # An installed copy lives in <project>/.chaos-engine or chaos-engine.
+                # A source checkout's tool.py is the project root itself.
+                project = installed_root.resolve()
+                if project.name in {".chaos-engine", "chaos-engine"}:
+                    project = project.parent
+                spawn(project)
         except (OSError, RuntimeError, ValueError, TypeError):
             pass
         phrase = " ".join(arg for arg in arguments if arg != "--full")
