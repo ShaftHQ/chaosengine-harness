@@ -571,6 +571,12 @@ class ActivationTests(unittest.TestCase):
             self.assertIsNone(seen["codex"])
             self.assertEqual(("claude",), self.install.read_completion_targets(project))
 
+    def test_load_source_controller_ignores_installed_controller_stub(self):
+        """#171: source hosts.py loads by path even when the installed loader is stubbed."""
+        with mock.patch.object(self.install, "load_installed_controller", return_value=object()):
+            paths = self.install.load_source_controller("hosts").managed_paths()
+        self.assertIn(".agents/hooks.json", paths)
+
     def test_doctor_summary_names_completion_targets(self):
         plain = self.install.format_health_report({"status": "healthy", "commit": "a" * 40})
         report = self.install.with_completion_target_line(plain, ["grok", "cursor"])

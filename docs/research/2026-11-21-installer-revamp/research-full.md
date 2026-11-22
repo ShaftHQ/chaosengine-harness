@@ -10,7 +10,7 @@ This single Markdown document provides both the empirical UX audit and cross-OS 
 
 ### Audit of Captured Installer Screenshots
 
-Examining both captured Linux terminal screenshots (mohab@TheMohie-ROG-Zephyrus-G14-GA401QM-GA401QM inside /media/mohab/Data/chaosengine-harness) shows that install.sh, bootstrap.py, and install.py each print uncoordinated headers and summaries across the same run. Because of the resulting vertical sprawl, even a maximized 1080p terminal window cannot display both the initial banner and the final Next: checklist without scrolling.
+Examining both captured Linux terminal screenshots (<user>@<host> inside /media/mohab/Data/chaosengine-harness) shows that install.sh, bootstrap.py, and install.py each print uncoordinated headers and summaries across the same run. Because of the resulting vertical sprawl, even a maximized 1080p terminal window cannot display both the initial banner and the final Next: checklist without scrolling.
 
 | **UX Defect Category** | **Observed Evidence in Screenshots** | **User Experience Impact** |
 |----|----|----|

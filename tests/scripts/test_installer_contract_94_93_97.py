@@ -16,7 +16,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -310,6 +310,100 @@ class EscalatingDoctorContractTest(unittest.TestCase):
         self.assertEqual(0, code)
         self.assertEqual("installed", result.get("status"))
         self.assertNotIn("needs-repair", stdout)
+
+    def test_needs_repair_names_each_escalating_row_on_stderr(self):
+        installer = _installer()
+        components = {
+            "hosts": {
+                "status": "recovery-required",
+                "taskImpact": "required",
+                "detail": "host receipt drifted",
+            },
+            "policy-overlay": {"status": "healthy", "taskImpact": "required"},
+            "graphify": {"status": "recovery-required"},
+            "mempalace": {
+                "status": "recovery-required",
+                "taskImpact": "advisory",
+                "detail": "palace sqlite missing",
+            },
+        }
+        document = {
+            "status": "recovery-required",
+            "hosts": {"status": "healthy", "taskImpact": "required"},
+            "components": components,
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            with mock.patch.object(installer, "_doctor_result", return_value=document):
+                result = installer._annotate_install_contract(
+                    project, {"status": "installed", "root": str(project)}
+                )
+        self.assertEqual(["hosts", "graphify", "mempalace"], result["components"])
+        self.assertTrue(all(isinstance(name, str) for name in result["components"]))
+        self.assertEqual(
+            ["hosts", "graphify", "mempalace"],
+            [row["name"] for row in result["escalatingRows"]],
+        )
+        self.assertEqual("host receipt drifted", result["escalatingRows"][0]["detail"])
+        self.assertEqual("advisory", result["escalatingRows"][2]["taskImpact"])
+        args = SimpleNamespace(command="install", json=False)
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            code = installer._emit_result(args, result)
+        self.assertEqual(1, code)
+        self.assertEqual("needs-repair\n", stdout.getvalue())
+        self.assertEqual(
+            "needs-repair: hosts (recovery-required, impact=required): host receipt drifted\n"
+            "needs-repair: graphify (recovery-required, impact=unknown): \n"
+            "needs-repair: mempalace (recovery-required, impact=advisory): palace sqlite missing\n",
+            stderr.getvalue(),
+        )
+        upgrade_args = SimpleNamespace(command="upgrade", json=False)
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            upgrade_code = installer._emit_result(upgrade_args, result)
+        self.assertEqual(1, upgrade_code)
+        self.assertEqual("needs-repair\n", stdout.getvalue())
+        self.assertIn("needs-repair: mempalace (recovery-required, impact=advisory): palace sqlite missing", stderr.getvalue())
+
+    def test_doctor_errors_keep_install_and_upgrade_installed(self):
+        installer = _installer()
+        for error in (ValueError("doctor unavailable"), OSError("doctor unavailable")):
+            with tempfile.TemporaryDirectory() as temporary:
+                project = Path(temporary)
+                with mock.patch.object(installer, "_doctor_result", side_effect=error):
+                    installed = installer._annotate_install_contract(
+                        project, {"status": "installed", "root": str(project)}
+                    )
+                    upgraded = self._upgrade_without_rebind(installer, project)
+            self.assertEqual("installed", installed.get("status"))
+            self.assertNotIn("escalatingRows", installed)
+            self.assertEqual("installed", upgraded.get("status"))
+            self.assertNotIn("escalatingRows", upgraded)
+            for command, payload in (("install", installed), ("upgrade", upgraded)):
+                stdout, stderr = io.StringIO(), io.StringIO()
+                with redirect_stdout(stdout), redirect_stderr(stderr):
+                    code = installer._emit_result(
+                        SimpleNamespace(command=command, json=False), payload
+                    )
+                self.assertEqual(0, code)
+                self.assertNotIn("needs-repair", stdout.getvalue())
+                self.assertNotIn("needs-repair", stderr.getvalue())
+
+    def _upgrade_without_rebind(self, installer, project: Path):
+        args = SimpleNamespace(project=project, source=None, commit=COMMIT)
+        with (
+            mock.patch.object(installer, "_guided_pin", return_value=(ROOT, COMMIT)),
+            mock.patch.object(
+                installer, "_publish_guided_overlay", return_value=project / ".chaos-engine"
+            ),
+            mock.patch.object(installer, "_strip_retired_mcp"),
+            mock.patch.object(installer, "_apply_install_config"),
+            mock.patch.object(installer, "_instruction_replace", return_value=None),
+            mock.patch.object(installer, "_bundle_flags_set", return_value=False),
+            mock.patch.object(installer, "_rebind_contract_drift"),
+        ):
+            return installer._run_guided_upgrade(args)
 
 
 class VersionPinTest(unittest.TestCase):

@@ -126,6 +126,7 @@ RETRIEVE_GATE_COMPONENTS = frozenset({"graphify"})
 GRAPHIFY_IGNORE_DEFAULTS = (
     ".chaos-engine/", ".chaos-engine-runtime/", ".chaos-engine-state/", "plugins/",
     ".claude/", ".codex/", ".gemini/", ".grok/", ".agents/", ".memory/", "graphify-out/",
+    ".cursor/", ".github/hooks/", ".opencode/",
 )
 CAPABILITY_COMPONENTS = {
     "core", "skills", "playbooks", "hooks", "plugins", "roles", "mcps",
@@ -4320,7 +4321,9 @@ def load_installed_controller(installed_root: Path, name: str):
 
 
 def load_source_controller(name: str):
-    return load_installed_controller(Path(__file__).resolve().parent, name)
+    """Load a sibling runtime module from this source tree, not an installed overlay."""
+    path = runtime_module(Path(__file__).resolve().parent, f"{name}.py")
+    return types.SimpleNamespace(**runpy.run_path(str(path)))
 
 
 @contextmanager
@@ -4546,23 +4549,48 @@ RECEIPT_SHIM_TARGETS = {
 }
 
 
-def initialize_account_project_palace(project: Path, controller, host_controller) -> bool:
-    """#6236: account mode initializes the project palace doctor and MCP use.
+def _resolved_palace(project: Path) -> Path | None:
+    """Active palace from source ``stores.resolve_palace``, or None if it cannot be resolved."""
+    try:
+        palace = load_source_controller("stores").resolve_palace(project)
+        return Path(palace).resolve()
+    except (OSError, RuntimeError, ValueError, AttributeError, TypeError, ImportError, SyntaxError, KeyError):
+        return None
 
-    Account `mempalace init` writes the repository's shared palace. Inside Git
-    that is not `.chaos-engine-state/mempalace`, so without this the project
-    palace stays uninitialized and doctor reports `mempalace-state` forever.
-    When both paths are the same, the account flow already owns it.
+
+def _central_palace_active(project: Path) -> bool:
+    """True when a resolved palace already exists outside the checkout state directory.
+
+    Documentation pages and the source revision stay beside that palace
+    (``palace.parent / mempalace-documentation-pages.json`` and
+    ``palace.parent / mempalace-source-revision.json``). ``stores.py`` writes them.
     """
-    project_palace = (project / ".chaos-engine-state/mempalace").resolve()
-    resolve = getattr(controller, "mempalace_project_palace", None)
-    if callable(resolve):
-        try:
-            if Path(resolve(project)).resolve() == project_palace:
-                return False
-        except (OSError, RuntimeError, ValueError, KeyError):
-            # The account palace is unresolvable: initialize the project palace anyway.
-            pass
+    resolved = _resolved_palace(project)
+    if resolved is None or not resolved.exists():
+        return False
+    local = Path(project).resolve() / ".chaos-engine-state" / "mempalace"
+    return resolved != local
+
+
+def initialize_account_project_palace(project: Path, controller, host_controller) -> bool:
+    """#6236: create the checkout palace only when no central palace is active.
+
+    Account ``mempalace init`` writes ``stores.resolve_palace``. When that path
+    is the checkout palace, the account flow already owns it. When a different
+    palace exists, do not create ``.chaos-engine-state/mempalace``. If stores
+    cannot resolve, fall back to the account controller.
+    """
+    local = (project / ".chaos-engine-state/mempalace").resolve()
+    resolved = _resolved_palace(project)
+    if resolved is None:
+        resolve = getattr(controller, "mempalace_project_palace", None)
+        if callable(resolve):
+            try:
+                resolved = Path(resolve(project)).resolve()
+            except (OSError, RuntimeError, ValueError, KeyError):
+                resolved = None
+    if resolved == local or _central_palace_active(project):
+        return False
     host_controller.initialize_mempalace_runtime(project)
     return True
 
@@ -4782,14 +4810,9 @@ def apply_install_host_completion(
 
 
 def _restore_receipt_owned_shim_files(project: Path) -> None:
-    """Completion unwire deletes shim files. A host receipt that owns the same path must keep its after image.
-
-    Load hosts.py by path. ``load_source_controller`` goes through
-    ``load_installed_controller``, which install tests replace with a stub.
-    """
+    """Completion unwire deletes shim files. A host receipt that owns the same path must keep its after image."""
     try:
-        path = runtime_module(Path(__file__).resolve().parent, "hosts.py")
-        hosts = types.SimpleNamespace(**runpy.run_path(str(path)))
+        hosts = load_source_controller("hosts")
         managed = hosts.managed_paths()
     except (OSError, ValueError, AttributeError, TypeError, ImportError):
         return
@@ -5165,7 +5188,11 @@ def install_with_dependencies(  # noqa: MC0001 - owned resources share one compe
             consumer = _consumer_mode_module()
             if consumer is not None and consumer.enabled(project):
                 consumer.write_exclude(project, host_controller.managed_paths())
-            if not account_mode and bundle.get("mempalace", True):
+            if (
+                not account_mode
+                and bundle.get("mempalace", True)
+                and not _central_palace_active(project)
+            ):
                 host_controller.initialize_mempalace_runtime(project)
             if candidate is not None:
                 try:
@@ -7703,11 +7730,12 @@ def _repair_dependency_component(
                     host_controller, "TEMURIN_REPAIR_HINT", "repair --component tools"
                 )
         if name == "mempalace":
-            # #6236: repair must create a missing or uninitialized palace.
-            try:
-                host_controller.initialize_mempalace_runtime(project)
-            except ValueError as error:
-                payload["palaceError"] = str(error)
+            # #6236: repair creates a missing checkout palace, never a second one.
+            if not _central_palace_active(project):
+                try:
+                    host_controller.initialize_mempalace_runtime(project)
+                except ValueError as error:
+                    payload["palaceError"] = str(error)
             payload["palace"] = str(
                 host_controller.mempalace_runtime_status(project).get("status") or "unknown"
             )
@@ -8345,41 +8373,63 @@ def _run_guided_init(args: argparse.Namespace) -> dict[str, object]:
 _CONTRACT_RECOVERY = ("hosts", "policy-overlay", "graphify", "mempalace")
 
 
-def _contract_recovery_names(document: dict) -> list[str]:
-    """Contract rows that escalate overall doctor, not only status recovery-required."""
+class _EscalatingNames(list):
+    """Backward-compatible component names plus the rows those names came from."""
+
+    escalating_rows: list[dict[str, object]]
+
+    def __init__(self, rows: list[dict[str, object]]) -> None:
+        super().__init__(str(row["name"]) for row in rows)
+        self.escalating_rows = rows
+
+
+def _escalating_contract_rows(document: dict) -> list[dict[str, object]]:
+    """Escalating contract component dicts, each carrying its component name."""
     if not isinstance(document, dict):
         return []
     components = document.get("components")
     if not isinstance(components, dict):
         components = {}
-    names: list[str] = []
+    rows: list[dict[str, object]] = []
     hosts = document.get("hosts")
     host_row = components.get("hosts")
-    if (isinstance(hosts, dict) and component_escalates_overall(hosts)) or (
-        isinstance(host_row, dict) and component_escalates_overall(host_row)
-    ):
-        names.append("hosts")
+    chosen = None
+    if isinstance(host_row, dict) and component_escalates_overall(host_row):
+        chosen = host_row
+    elif isinstance(hosts, dict) and component_escalates_overall(hosts):
+        chosen = hosts
+    if chosen is not None:
+        rows.append({**chosen, "name": "hosts"})
     for key in _CONTRACT_RECOVERY[1:]:
         row = components.get(key)
         if isinstance(row, dict) and component_escalates_overall(row):
-            names.append(key)
-    return names
+            rows.append({**row, "name": key})
+    return rows
+
+
+def _contract_recovery_names(document: dict) -> list[str]:
+    """Contract rows that escalate overall doctor, not only status recovery-required."""
+    return [str(row["name"]) for row in _escalating_contract_rows(document)]
 
 
 def _needs_repair_payload(base: dict[str, object], names: list[str]) -> dict[str, object]:
     merged = dict(base)
     merged["status"] = "needs-repair"
     merged["failure"] = "needs-repair"
-    merged["components"] = names
+    merged["components"] = [str(name) for name in names]
+    rows = getattr(names, "escalating_rows", None)
+    if isinstance(rows, list):
+        merged["escalatingRows"] = rows
     return merged
 
 
 def _contract_blockers(project: Path) -> list[str] | None:
     """Escalating contract names. None when doctor itself cannot run."""
     try:
-        return _contract_recovery_names(_doctor_result(project))
+        document = _doctor_result(project)
     except (OSError, RuntimeError, ValueError):
         return None
+    return _EscalatingNames(_escalating_contract_rows(document))
 
 
 def _rebind_contract_drift(project: Path) -> None:
@@ -8402,7 +8452,7 @@ def _annotate_install_contract(project: Path, result: object) -> object:
 
     A doctor exception stays installed. A fresh project raises ValueError when
     the plugin manifest is missing, and that install is still complete. Upgrade
-    and verify fail closed when doctor cannot run.
+    stays installed when doctor cannot run. Verify fails closed.
     """
     if not isinstance(result, dict) or result.get("status") != "installed":
         return result
@@ -8433,11 +8483,9 @@ def _run_guided_upgrade(args: argparse.Namespace) -> dict[str, object]:
         user = _install_user_scope(args)
         payload["userLayer"] = user.get("status")
     names = _contract_blockers(project)
-    if names is None:
-        return _needs_repair_payload(payload, [])
-    if names:
-        return _needs_repair_payload(payload, names)
-    return payload
+    if not names:
+        return payload
+    return _needs_repair_payload(payload, names)
 
 
 def _doctor_python_cli() -> str:
@@ -9070,7 +9118,9 @@ def _attach_l84_l92_doctor_findings(
 
 def _mempalace_sqlite_missing_finding(project: Path) -> dict[str, object] | None:
     """L84: palace directory present without sqlite_exact.sqlite3 is a doctor FAIL."""
-    palace = project / ".chaos-engine-state" / "mempalace"
+    palace = _resolved_palace(project) if _central_palace_active(project) else None
+    if palace is None:
+        palace = project / ".chaos-engine-state" / "mempalace"
     if not palace.is_dir():
         return None
     if (palace / "sqlite_exact.sqlite3").is_file():
@@ -9228,9 +9278,9 @@ def _mempalace_empty_finding(
     if not isinstance(index, dict) or index.get("status") == "running":
         return None
     try:
-        stores = _load_stores_module()
-        count = stores["palace_drawer_count"](stores["resolve_palace"](project))
-    except (OSError, ImportError, KeyError, RuntimeError, SyntaxError, ValueError):
+        stores = load_source_controller("stores")
+        count = stores.palace_drawer_count(stores.resolve_palace(project))
+    except (OSError, ImportError, KeyError, RuntimeError, SyntaxError, ValueError, AttributeError, TypeError):
         return None
     if count != 0:
         return None
@@ -9746,6 +9796,12 @@ def format_health_report(document: dict[str, object], *, kind: str | None = None
     instructions_row = document.get("instructions_merge")
     if isinstance(instructions_row, dict) and instructions_row.get("status"):
         lines.append(f"instructions-merge: {instructions_row['status']}")
+        for conflict in instructions_row.get("items") or []:
+            if not isinstance(conflict, dict):
+                continue
+            lines.append(
+                f"  {conflict['id']} {conflict['path']}: {conflict['rule']} -> {conflict['fix']}"
+            )
     last_install = document.get("lastInstall")
     if isinstance(last_install, dict) and last_install.get("status") == "rolled-back":
         requested = str(last_install.get("requestedCommit") or "")[:12] or "unknown"
@@ -10751,6 +10807,15 @@ def _emit_result(args, result) -> int:
     ):
         drifted = result.get("drifted") or []
         if args.command != "verify" or not drifted:
+            for row in result.get("escalatingRows") or []:
+                if not isinstance(row, dict):
+                    continue
+                print(
+                    "needs-repair: "
+                    f"{row['name']} ({row['status']}, impact={row.get('taskImpact', 'unknown')}): "
+                    f"{row.get('detail', '')}",
+                    file=sys.stderr,
+                )
             print("needs-repair")
             return 1
     if args.command == "verify" and isinstance(result, dict):
