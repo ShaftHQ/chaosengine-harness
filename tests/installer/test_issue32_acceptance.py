@@ -337,8 +337,8 @@ def test_banner_source_link_and_no_color_spinner(monkeypatch):
     boot = _boot()
     marks = "\n".join(glyphs for glyphs, _mask in boot.BRAND_MARK_WIDE + boot.BRAND_MARK_STACK)
     assert "Ǝ" not in marks
-    assert len(boot.BRAND_MARK_WIDE) == 4
-    assert len(boot.BRAND_MARK_STACK) == 3
+    assert len(boot.BRAND_MARK_WIDE) == 8
+    assert len(boot.BRAND_MARK_STACK) == 5
     assert boot.CYBERNETIC_RED in "\n".join(
         boot.brand_lines(width=120, color=True, unicode=True, truecolor=True)
     )

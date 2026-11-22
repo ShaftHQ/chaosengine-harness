@@ -91,15 +91,21 @@ def color_level(environ=None, *, enabled: bool) -> str:
 # >>> generated: brand_mark
 # Scan of assets/brand/symbol-primary.svg. Regenerate: python3 scripts/ci/render_brand_mark.py
 BRAND_MARK_WIDE = (
-    (' ▗▄▄███████▗▄▄▄▄', '                '),
-    ('███▛▀▘ ▄▄▄▛████▀', '       ccc      '),
-    ('███▙▄▖ ▝▀▀▟████▄', '       ccc      '),
-    (' ▝▀▀███████▝▀▀▀▀', '                '),
+    ('   ▄▄▄▄▄█    ', '             '),
+    (' ▄███████▐██▄', '             '),
+    ('███▛▘   █▟▜██', '             '),
+    ('███   ██▞███ ', '      ccc    '),
+    ('███   ▀▀▚███ ', '      ccc    '),
+    ('███▙▖   █▚▄▄▄', '             '),
+    (' ▀███████▐██▛', '             '),
+    ('   ▀▀▀▀▀█    ', '             '),
 )
 BRAND_MARK_STACK = (
-    ('▄▄▟██████▙▄▄', '            '),
-    ('██▌  ▐█████ ', '     ccc    '),
-    ('▀▀▜████████▀', '            '),
+    (' ▄▄▄▄▙▄▖', '        '),
+    ('██▛▀▀███', '        '),
+    ('██ ▐█▜█▌', '   cc   '),
+    ('██▙▄▄███', '        '),
+    (' ▀▀▀▀▛▀▘', '        '),
 )
 # <<< generated: brand_mark
 
@@ -190,6 +196,9 @@ def cursor_enabled(*, tty: bool, environ=None, vt_ok: bool = True) -> bool:
 def unicode_enabled(stream, environ=None) -> bool:
     environ = _environ(environ)
     if environ.get("CHAOS_ENGINE_ASCII") == "1":
+        return False
+    locale = environ.get("LC_ALL") or environ.get("LANG") or ""
+    if locale in {"C", "POSIX"}:
         return False
     encoding = getattr(stream, "encoding", None) or "utf-8"
     try:

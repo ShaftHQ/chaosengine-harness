@@ -2437,6 +2437,7 @@ class InstallerVisualLanguage6325Tests(unittest.TestCase):
             )
         final = re.split(r"\x1b\[\d+F", stream.getvalue())[-1]
         plain = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", final)
+        plain = re.sub(r"\x1b\[\?[0-9;]*[hl]", "", plain)
         glyph = BOOTSTRAP.BRAND_MARK_WIDE[0][0]
         self.assertTrue(plain.lstrip("\n").startswith(glyph), plain[:240])
         self.assertIn(version, plain)
