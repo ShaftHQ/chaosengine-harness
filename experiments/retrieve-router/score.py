@@ -20,6 +20,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[2]
 QUESTIONS = Path(__file__).with_name("questions.json")
 OUT = Path(__file__).with_name("last-score.json")
+REPORT = Path(__file__).with_name("REPORT.md")
 STOP = frozenset(
     "the a an of to and or for with from that this what when why where who how does did has have been into about must never not".split()
 )
@@ -146,7 +147,17 @@ def _p95(samples: list[float]) -> float:
     return ordered[index]
 
 
-def _scale(retrieve_module, project: Path) -> dict:
+def _ask(query: str, project: Path, mode: str):
+    """retrieve_py is the explicit-store path. router_v2 is classify_scope."""
+    if mode == "retrieve_py":
+        chosen = RETRIEVE.pick_store(query)
+        return RETRIEVE.retrieve(query, project=project, store=chosen, account=False)
+    if mode != "router_v2":
+        raise ValueError(mode)
+    return RETRIEVE.retrieve(query, project=project, account=False)
+
+
+def _scale(retrieve_module, project: Path, mode: str) -> dict:
     """N, 4N, 16N padded store bodies. Bytes must not grow with N."""
     base = 8
     report: dict[str, dict] = {}
@@ -177,12 +188,12 @@ def _scale(retrieve_module, project: Path) -> dict:
                     mock.patch.object(retrieve_module, "_tool_py", return_value=project / "chaos-engine" / "tool.py"),
                     mock.patch.object(retrieve_module, "_record_store_outcome"),
                 ):
-                    receipt = retrieve_module.retrieve(query, project=project)
+                    receipt = _ask(query, project, mode)
                 samples.append(time.perf_counter() - started)
                 sizes.append(int(receipt.get("bytes") or 0))
             size = sizes[-1]
             if previous is not None and size > previous:
-                raise SystemExit(f"bytes grew with N for {store}: {previous} -> {size}")
+                raise SystemExit(f"bytes grew with N for {store} {mode}: {previous} -> {size}")
             previous = size
             report[store][factor] = {
                 "items": count,
@@ -194,69 +205,154 @@ def _scale(retrieve_module, project: Path) -> dict:
     return report
 
 
-def main() -> int:
+def _no_rare(question: dict) -> bool:
+    return not RETRIEVE.question_rare_tokens(question["question"])
+
+
+def evaluate() -> dict:
+    """Score the frozen file. Does not rewrite it."""
     payload = json.loads(QUESTIONS.read_text(encoding="utf-8"))
     questions = payload["questions"]
     project = _project()
     (project / "runtime").mkdir(exist_ok=True)
     (project / "runtime" / "stores.py").write_text("PALACE_BACKEND = \"sqlite_exact\"\n", encoding="utf-8")
+    no_recall = _mean([recall_at_5(question, []) for question in questions])
+    oracle_recall = _mean([recall_at_5(question, question["gold"]) for question in questions])
+    implicit_ids = [question["id"] for question in questions if _no_rare(question)]
+    arms: dict[str, dict] = {}
     calls: list[list[str]] = []
-    router_recalls: list[float] = []
-    implicit_recalls: list[float] = []
-    no_recalls: list[float] = []
-    oracle_recalls: list[float] = []
-    routed = 0
-    implicit_count = 0
     with (
         mock.patch.object(RETRIEVE.subprocess, "run", side_effect=_fake_run(calls)),
         mock.patch.object(RETRIEVE, "_tool_py", return_value=project / "chaos-engine" / "tool.py"),
         mock.patch.object(RETRIEVE, "_record_store_outcome"),
     ):
-        for question in questions:
-            gold_text = (ROOT / question["gold"][0]["path"]).read_text(encoding="utf-8").splitlines()[
-                question["gold"][0]["line"] - 1
-            ]
-            clue = RETRIEVE.implicit_clue(question["question"], f"{question['gold'][0]['path']} {gold_text}")
-            if clue:
-                implicit_count += 1
-            receipt = RETRIEVE.retrieve(question["question"], project=project)
-            hits = receipt.get("hits") if isinstance(receipt.get("hits"), list) else []
-            score = recall_at_5(question, hits)
-            router_recalls.append(score)
-            if clue:
-                implicit_recalls.append(score)
-            no_recalls.append(recall_at_5(question, []))
-            oracle_recalls.append(recall_at_5(question, question["gold"]))
-            if receipt.get("route", {}).get("reason") == question["gold_route"]:
-                routed += 1
-    router_recall = _mean(router_recalls)
-    no_recall = _mean(no_recalls)
-    oracle_recall = _mean(oracle_recalls)
-    gap = None
-    if oracle_recall != no_recall:
-        gap = (router_recall - no_recall) / (oracle_recall - no_recall)
-    implicit_recall = _mean(implicit_recalls)
-    gap_points = (router_recall - implicit_recall) * 100
-    scale = _scale(RETRIEVE, project)
-    result = {
+        for mode in ("retrieve_py", "router_v2"):
+            recalls: list[float] = []
+            implicit_recalls: list[float] = []
+            routed = 0
+            for question in questions:
+                receipt = _ask(question["question"], project, mode)
+                hits = receipt.get("hits") if isinstance(receipt.get("hits"), list) else []
+                score = recall_at_5(question, hits)
+                recalls.append(score)
+                if question["id"] in implicit_ids:
+                    implicit_recalls.append(score)
+                if mode == "router_v2" and receipt.get("route", {}).get("reason") == question["gold_route"]:
+                    routed += 1
+            recall = _mean(recalls)
+            implicit_recall = _mean(implicit_recalls)
+            gap = None if oracle_recall == no_recall else (recall - no_recall) / (oracle_recall - no_recall)
+            points = (recall - implicit_recall) * 100
+            arm = {
+                "recall_at_5": recall,
+                "implicit_recall_at_5": implicit_recall,
+                "gap_closed": gap,
+                "implicit_gap_points": points,
+                "k2_follow_up": points >= 15,
+            }
+            if mode == "router_v2":
+                arm["routing_accuracy"] = routed / len(questions) if questions else 0.0
+            arms[mode] = arm
+    for mode, arm in arms.items():
+        arm["scale"] = _scale(RETRIEVE, project, mode)
+    v2 = arms["router_v2"]
+    return {
         "label": "fixture backends, not live stores",
         "questions": len(questions),
-        "implicit_questions": implicit_count,
+        "implicit_questions": len(implicit_ids),
         "p7": "not run",
         "recall_at_5": {
             "no_retrieve": no_recall,
             "oracle": oracle_recall,
-            "router": router_recall,
-            "implicit": implicit_recall,
+            "router": v2["recall_at_5"],
+            "implicit": v2["implicit_recall_at_5"],
         },
-        "gap_closed": gap,
-        "routing_accuracy": routed / len(questions) if questions else 0.0,
-        "implicit_gap_points": gap_points,
-        "k2_follow_up": gap_points >= 15,
-        "scale": scale,
+        "gap_closed": v2["gap_closed"],
+        "routing_accuracy": v2["routing_accuracy"],
+        "implicit_gap_points": v2["implicit_gap_points"],
+        "k2_follow_up": v2["k2_follow_up"],
+        "arms": arms,
+        "scale": v2["scale"],
         "store_calls": len(calls),
     }
+
+
+def _report(result: dict) -> str:
+    recall = result["recall_at_5"]
+    lines = [
+        "# Retrieve router eval",
+        "",
+        "Label: fixture backends, not live stores. P7 (the #45 model rig) was not run. No live Graphify or MemPalace process was scored. `retrieve_py` is `retrieve(query, store=pick_store(query))`. `router_v2` is `classify_scope` through `retrieve(query)` with no store. No second router was added.",
+        "",
+        f"Frozen set: `experiments/retrieve-router/questions.json` ({result['questions']} questions, sha256 `{json.loads(QUESTIONS.read_text(encoding='utf-8'))['frozen_questions_sha256']}`). The scorer does not rewrite that file.",
+        "",
+        "## K1",
+        "",
+        "| Arm | recall@5 | gap closed |",
+        "| --- | --- | --- |",
+        f"| no-retrieve | {recall['no_retrieve']} | |",
+    ]
+    for name in ("retrieve_py", "router_v2"):
+        arm = result["arms"][name]
+        lines.append(f"| {name} | {arm['recall_at_5']} | {arm['gap_closed']} |")
+    lines.append(f"| oracle | {recall['oracle']} | |")
+    lines.extend(["", "Gap closed is `(arm - no-retrieve) / (oracle - no-retrieve)`.", ""])
+    lines.append("## K2")
+    lines.append("")
+    lines.append(
+        f"Implicit-clue slice: {result['implicit_questions']} questions whose `question_rare_tokens` list is empty. recall@5 is reported separately. A follow-up is required only when that slice is at least 15 points below the arm's overall recall@5."
+    )
+    lines.append("")
+    lines.append("| Arm | implicit recall@5 | points below overall | follow-up |")
+    lines.append("| --- | --- | --- | --- |")
+    for name in ("retrieve_py", "router_v2"):
+        arm = result["arms"][name]
+        lines.append(
+            f"| {name} | {arm['implicit_recall_at_5']} | {arm['implicit_gap_points']} | {arm['k2_follow_up']} |"
+        )
+    v2 = result["arms"]["router_v2"]
+    lines.extend(
+        [
+            "",
+            f"router_v2 routing accuracy against the frozen labels: {v2['routing_accuracy']}. The labels were written to the same first-match table the classifier implements. This is agreement with those labels, not a second human labeling.",
+            "",
+            "## K3",
+            "",
+            "Synthetic padded MemPalace and Memory bodies at N=8, 4N=32, and 16N=128. Bytes are the receipt `bytes` field. They stay inside the 800-byte cap and do not grow with N.",
+            "",
+            "| Arm | Store | N bytes | 4N bytes | 16N bytes | N p95 s | 4N p95 s | 16N p95 s |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- |",
+        ]
+    )
+    for name in ("retrieve_py", "router_v2"):
+        for store in ("memory", "mempalace"):
+            scale = result["arms"][name]["scale"][store]
+            lines.append(
+                "| {name} | {store} | {n} | {four} | {sixteen} | {pn} | {p4} | {p16} |".format(
+                    name=name,
+                    store=store,
+                    n=scale["N"]["bytes"],
+                    four=scale["4N"]["bytes"],
+                    sixteen=scale["16N"]["bytes"],
+                    pn=scale["N"]["p95_seconds"],
+                    p4=scale["4N"]["p95_seconds"],
+                    p16=scale["16N"]["p95_seconds"],
+                )
+            )
+    lines.extend(
+        [
+            "",
+            "p95 is the in-process timer around `retrieve()`, 21 samples. Latency is not required to be flat.",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def main() -> int:
+    result = evaluate()
     OUT.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    REPORT.write_text(_report(result), encoding="utf-8")
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0
 

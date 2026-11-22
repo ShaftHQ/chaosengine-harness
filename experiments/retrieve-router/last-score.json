@@ -1,16 +1,129 @@
 {
-  "gap_closed": 0.23076923076923078,
-  "implicit_gap_points": 9.743589743589745,
-  "implicit_questions": 15,
+  "arms": {
+    "retrieve_py": {
+      "gap_closed": 0.21666666666666667,
+      "implicit_gap_points": 8.508771929824563,
+      "implicit_recall_at_5": 0.13157894736842105,
+      "k2_follow_up": false,
+      "recall_at_5": 0.21666666666666667,
+      "scale": {
+        "memory": {
+          "16N": {
+            "bytes": 800,
+            "bytes_max": 800,
+            "items": 128,
+            "p95_seconds": 0.005136947002029046,
+            "within_budget": true
+          },
+          "4N": {
+            "bytes": 800,
+            "bytes_max": 800,
+            "items": 32,
+            "p95_seconds": 0.004576982988510281,
+            "within_budget": true
+          },
+          "N": {
+            "bytes": 800,
+            "bytes_max": 800,
+            "items": 8,
+            "p95_seconds": 0.004910721996566281,
+            "within_budget": true
+          }
+        },
+        "mempalace": {
+          "16N": {
+            "bytes": 800,
+            "bytes_max": 800,
+            "items": 128,
+            "p95_seconds": 0.007627954997587949,
+            "within_budget": true
+          },
+          "4N": {
+            "bytes": 800,
+            "bytes_max": 800,
+            "items": 32,
+            "p95_seconds": 0.008523259981302544,
+            "within_budget": true
+          },
+          "N": {
+            "bytes": 800,
+            "bytes_max": 800,
+            "items": 8,
+            "p95_seconds": 0.007036221999442205,
+            "within_budget": true
+          }
+        }
+      }
+    },
+    "router_v2": {
+      "gap_closed": 0.26666666666666666,
+      "implicit_gap_points": 5.614035087719299,
+      "implicit_recall_at_5": 0.21052631578947367,
+      "k2_follow_up": false,
+      "recall_at_5": 0.26666666666666666,
+      "routing_accuracy": 1.0,
+      "scale": {
+        "memory": {
+          "16N": {
+            "bytes": 800,
+            "bytes_max": 800,
+            "items": 128,
+            "p95_seconds": 0.0054288860119413584,
+            "within_budget": true
+          },
+          "4N": {
+            "bytes": 800,
+            "bytes_max": 800,
+            "items": 32,
+            "p95_seconds": 0.005773936019977555,
+            "within_budget": true
+          },
+          "N": {
+            "bytes": 800,
+            "bytes_max": 800,
+            "items": 8,
+            "p95_seconds": 0.005788512993603945,
+            "within_budget": true
+          }
+        },
+        "mempalace": {
+          "16N": {
+            "bytes": 800,
+            "bytes_max": 800,
+            "items": 128,
+            "p95_seconds": 0.009491070988588035,
+            "within_budget": true
+          },
+          "4N": {
+            "bytes": 800,
+            "bytes_max": 800,
+            "items": 32,
+            "p95_seconds": 0.009164807008346543,
+            "within_budget": true
+          },
+          "N": {
+            "bytes": 800,
+            "bytes_max": 800,
+            "items": 8,
+            "p95_seconds": 0.009198850981192663,
+            "within_budget": true
+          }
+        }
+      }
+    }
+  },
+  "gap_closed": 0.26666666666666666,
+  "implicit_gap_points": 5.614035087719299,
+  "implicit_questions": 38,
   "k2_follow_up": false,
   "label": "fixture backends, not live stores",
   "p7": "not run",
-  "questions": 26,
+  "questions": 60,
   "recall_at_5": {
-    "implicit": 0.13333333333333333,
+    "implicit": 0.21052631578947367,
     "no_retrieve": 0.0,
     "oracle": 1.0,
-    "router": 0.23076923076923078
+    "router": 0.26666666666666666
   },
   "routing_accuracy": 1.0,
   "scale": {
@@ -19,21 +132,21 @@
         "bytes": 800,
         "bytes_max": 800,
         "items": 128,
-        "p95_seconds": 0.007177873980253935,
+        "p95_seconds": 0.0054288860119413584,
         "within_budget": true
       },
       "4N": {
         "bytes": 800,
         "bytes_max": 800,
         "items": 32,
-        "p95_seconds": 0.006942359003005549,
+        "p95_seconds": 0.005773936019977555,
         "within_budget": true
       },
       "N": {
         "bytes": 800,
         "bytes_max": 800,
         "items": 8,
-        "p95_seconds": 0.006755687994882464,
+        "p95_seconds": 0.005788512993603945,
         "within_budget": true
       }
     },
@@ -42,24 +155,24 @@
         "bytes": 800,
         "bytes_max": 800,
         "items": 128,
-        "p95_seconds": 0.03487272097845562,
+        "p95_seconds": 0.009491070988588035,
         "within_budget": true
       },
       "4N": {
         "bytes": 800,
         "bytes_max": 800,
         "items": 32,
-        "p95_seconds": 0.032923097984166816,
+        "p95_seconds": 0.009164807008346543,
         "within_budget": true
       },
       "N": {
         "bytes": 800,
         "bytes_max": 800,
         "items": 8,
-        "p95_seconds": 0.03402915201149881,
+        "p95_seconds": 0.009198850981192663,
         "within_budget": true
       }
     }
   },
-  "store_calls": 76
+  "store_calls": 476
 }

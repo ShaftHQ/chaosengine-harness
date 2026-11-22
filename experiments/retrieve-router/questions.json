@@ -1,7 +1,8 @@
 {
-  "version": 1,
+  "version": 2,
   "frozen": "2026-11-22",
-  "note": "Honest gold path:line set. Not the 60-question target. Implicit means corpus_split.rare_tokens(question) shares nothing with rare_tokens(path + line).",
+  "frozen_questions_sha256": "2bddae46ff4c05312bf28bfad7cb4443ca220664378d90e76ef68101db5106ef",
+  "note": "Frozen before the measured run. Each gold path:line was checked in this tree. implicit is corpus_split rare-token overlap via question_rare_tokens. Questions with no rare tokens are the K2 implicit-clue slice.",
   "questions": [
     {
       "id": "h1",
@@ -364,6 +365,482 @@
         {
           "path": "runtime/harness_mindset.py",
           "line": 26
+        }
+      ]
+    },
+    {
+      "id": "s10",
+      "kind": "structural",
+      "question": "who calls project_root",
+      "gold_route": "symbol-impact",
+      "implicit": false,
+      "expect": "def project_root",
+      "gold": [
+        {
+          "path": "runtime/retrieve.py",
+          "line": 77
+        }
+      ]
+    },
+    {
+      "id": "s11",
+      "kind": "structural",
+      "question": "who calls pick_store",
+      "gold_route": "symbol-impact",
+      "implicit": false,
+      "expect": "def pick_store",
+      "gold": [
+        {
+          "path": "runtime/retrieve.py",
+          "line": 87
+        }
+      ]
+    },
+    {
+      "id": "s12",
+      "kind": "structural",
+      "question": "who calls classify_scope",
+      "gold_route": "symbol-impact",
+      "implicit": false,
+      "expect": "def classify_scope",
+      "gold": [
+        {
+          "path": "runtime/retrieve.py",
+          "line": 164
+        }
+      ]
+    },
+    {
+      "id": "s13",
+      "kind": "structural",
+      "question": "impact of reciprocal_rank_fusion",
+      "gold_route": "symbol-impact",
+      "implicit": false,
+      "expect": "def reciprocal_rank_fusion",
+      "gold": [
+        {
+          "path": "runtime/retrieve.py",
+          "line": 236
+        }
+      ]
+    },
+    {
+      "id": "s14",
+      "kind": "structural",
+      "question": "what depends on is_rare",
+      "gold_route": "symbol-impact",
+      "implicit": false,
+      "expect": "def is_rare",
+      "gold": [
+        {
+          "path": "runtime/corpus_split.py",
+          "line": 97
+        }
+      ]
+    },
+    {
+      "id": "s15",
+      "kind": "structural",
+      "question": "who calls drop_path_section_misses",
+      "gold_route": "symbol-impact",
+      "implicit": false,
+      "expect": "def drop_path_section_misses",
+      "gold": [
+        {
+          "path": "runtime/corpus_split.py",
+          "line": 136
+        }
+      ]
+    },
+    {
+      "id": "s16",
+      "kind": "structural",
+      "question": "explain implicit_clue",
+      "gold_route": "explain-symbol",
+      "implicit": false,
+      "expect": "def implicit_clue",
+      "gold": [
+        {
+          "path": "runtime/retrieve.py",
+          "line": 158
+        }
+      ]
+    },
+    {
+      "id": "s17",
+      "kind": "structural",
+      "question": "who calls record_retrieve_usage",
+      "gold_route": "symbol-impact",
+      "implicit": false,
+      "expect": "def record_retrieve_usage",
+      "gold": [
+        {
+          "path": "runtime/harness_mindset.py",
+          "line": 268
+        }
+      ]
+    },
+    {
+      "id": "s18",
+      "kind": "structural",
+      "question": "impact of graph_freshness_field",
+      "gold_route": "symbol-impact",
+      "implicit": false,
+      "expect": "def graph_freshness_field",
+      "gold": [
+        {
+          "path": "runtime/retrieve.py",
+          "line": 950
+        }
+      ]
+    },
+    {
+      "id": "s19",
+      "kind": "structural",
+      "question": "explain question_rare_tokens",
+      "gold_route": "explain-symbol",
+      "implicit": false,
+      "expect": "def question_rare_tokens",
+      "gold": [
+        {
+          "path": "runtime/retrieve.py",
+          "line": 149
+        }
+      ]
+    },
+    {
+      "id": "s20",
+      "kind": "structural",
+      "question": "who calls apply_path_predicate",
+      "gold_route": "symbol-impact",
+      "implicit": false,
+      "expect": "def apply_path_predicate",
+      "gold": [
+        {
+          "path": "runtime/corpus_split.py",
+          "line": 168
+        }
+      ]
+    },
+    {
+      "id": "g5",
+      "kind": "gotcha",
+      "question": "has this constraint bitten us about padding confidence",
+      "gold_route": "gotcha",
+      "implicit": true,
+      "expect": "never pad confidence",
+      "gold": [
+        {
+          "path": "identity.md",
+          "line": 10
+        }
+      ]
+    },
+    {
+      "id": "g6",
+      "kind": "gotcha",
+      "question": "has this gotcha bitten us about hiding a material fact",
+      "gold_route": "gotcha",
+      "implicit": true,
+      "expect": "do not lie",
+      "gold": [
+        {
+          "path": "identity.md",
+          "line": 8
+        }
+      ]
+    },
+    {
+      "id": "g7",
+      "kind": "gotcha",
+      "question": "has this constraint bitten us about preferring inference",
+      "gold_route": "gotcha",
+      "implicit": true,
+      "expect": "Prefer evidence over inference",
+      "gold": [
+        {
+          "path": "identity.md",
+          "line": 9
+        }
+      ]
+    },
+    {
+      "id": "g8",
+      "kind": "gotcha",
+      "question": "has this gotcha bitten us about jumping to a conclusion",
+      "gold_route": "gotcha",
+      "implicit": true,
+      "expect": "never jump to conclusions",
+      "gold": [
+        {
+          "path": "identity.md",
+          "line": 16
+        }
+      ]
+    },
+    {
+      "id": "g9",
+      "kind": "gotcha",
+      "question": "has this constraint bitten us about an in tree copy",
+      "gold_route": "gotcha",
+      "implicit": true,
+      "expect": "in-tree copy",
+      "gold": [
+        {
+          "path": "identity.md",
+          "line": 27
+        }
+      ]
+    },
+    {
+      "id": "g10",
+      "kind": "gotcha",
+      "question": "has this gotcha bitten us about a force merge",
+      "gold_route": "gotcha",
+      "implicit": true,
+      "expect": "never force-merge",
+      "gold": [
+        {
+          "path": "identity.md",
+          "line": 28
+        }
+      ]
+    },
+    {
+      "id": "h7",
+      "kind": "history",
+      "question": "why does depth come from triage not from reflex",
+      "gold_route": "history",
+      "implicit": true,
+      "expect": "## Depth comes from triage",
+      "gold": [
+        {
+          "path": "references/retrieve-first.md",
+          "line": 17
+        }
+      ]
+    },
+    {
+      "id": "h8",
+      "kind": "history",
+      "question": "why check premises before the first edit",
+      "gold_route": "history",
+      "implicit": true,
+      "expect": "before the first edit",
+      "gold": [
+        {
+          "path": "identity.md",
+          "line": 16
+        }
+      ]
+    },
+    {
+      "id": "h9",
+      "kind": "history",
+      "question": "when do truth changes need owner review",
+      "gold_route": "history",
+      "implicit": true,
+      "expect": "Truth changes need explicit owner review",
+      "gold": [
+        {
+          "path": "identity.md",
+          "line": 31
+        }
+      ]
+    },
+    {
+      "id": "h10",
+      "kind": "history",
+      "question": "why is a missing overlay a hard failure",
+      "gold_route": "history",
+      "implicit": true,
+      "expect": "are hard failures",
+      "gold": [
+        {
+          "path": "references/retrieve-first.md",
+          "line": 37
+        }
+      ]
+    },
+    {
+      "id": "h11",
+      "kind": "history",
+      "question": "why must a broad search owe one retrieve",
+      "gold_route": "history",
+      "implicit": true,
+      "expect": "owes one retrieve",
+      "gold": [
+        {
+          "path": "references/retrieve-first.md",
+          "line": 31
+        }
+      ]
+    },
+    {
+      "id": "h12",
+      "kind": "history",
+      "question": "why does one citation ledger record every host",
+      "gold_route": "history",
+      "implicit": true,
+      "expect": "citation ledger",
+      "gold": [
+        {
+          "path": "references/retrieve-first.md",
+          "line": 45
+        }
+      ]
+    },
+    {
+      "id": "h13",
+      "kind": "history",
+      "question": "why skip a retrieve for harness files",
+      "gold_route": "history",
+      "implicit": true,
+      "expect": "Skip it for harness files",
+      "gold": [
+        {
+          "path": "references/retrieve-first.md",
+          "line": 32
+        }
+      ]
+    },
+    {
+      "id": "h14",
+      "kind": "history",
+      "question": "why read the cited line range",
+      "gold_route": "history",
+      "implicit": true,
+      "expect": "Read the cited line",
+      "gold": [
+        {
+          "path": "references/retrieve-first.md",
+          "line": 54
+        }
+      ]
+    },
+    {
+      "id": "h15",
+      "kind": "history",
+      "question": "why does your own plan rank below the file",
+      "gold_route": "history",
+      "implicit": true,
+      "expect": "Your own plan ranks below",
+      "gold": [
+        {
+          "path": "references/retrieve-first.md",
+          "line": 68
+        }
+      ]
+    },
+    {
+      "id": "c7",
+      "kind": "conceptual",
+      "question": "what do we say if uncertain",
+      "gold_route": "no-rare-token",
+      "implicit": true,
+      "expect": "say so plainly",
+      "gold": [
+        {
+          "path": "identity.md",
+          "line": 10
+        }
+      ]
+    },
+    {
+      "id": "c8",
+      "kind": "conceptual",
+      "question": "what does the peer rule say about a request",
+      "gold_route": "no-rare-token",
+      "implicit": true,
+      "expect": "makes no sense",
+      "gold": [
+        {
+          "path": "identity.md",
+          "line": 18
+        }
+      ]
+    },
+    {
+      "id": "c9",
+      "kind": "conceptual",
+      "question": "what does eliminate waste forbid",
+      "gold_route": "no-rare-token",
+      "implicit": true,
+      "expect": "Eliminate waste",
+      "gold": [
+        {
+          "path": "identity.md",
+          "line": 22
+        }
+      ]
+    },
+    {
+      "id": "c10",
+      "kind": "conceptual",
+      "question": "what must end fixed or filed",
+      "gold_route": "no-rare-token",
+      "implicit": true,
+      "expect": "fixed or filed",
+      "gold": [
+        {
+          "path": "identity.md",
+          "line": 23
+        }
+      ]
+    },
+    {
+      "id": "c11",
+      "kind": "conceptual",
+      "question": "what size of change is required",
+      "gold_route": "no-rare-token",
+      "implicit": true,
+      "expect": "Smallest correct change",
+      "gold": [
+        {
+          "path": "identity.md",
+          "line": 24
+        }
+      ]
+    },
+    {
+      "id": "c12",
+      "kind": "conceptual",
+      "question": "what is the continuous improvement rule",
+      "gold_route": "no-rare-token",
+      "implicit": true,
+      "expect": "always be learning",
+      "gold": [
+        {
+          "path": "identity.md",
+          "line": 29
+        }
+      ]
+    },
+    {
+      "id": "c13",
+      "kind": "conceptual",
+      "question": "what answers a call or depend question",
+      "gold_route": "no-rare-token",
+      "implicit": true,
+      "expect": "What calls or depends on this",
+      "gold": [
+        {
+          "path": "references/retrieve-first.md",
+          "line": 63
+        }
+      ]
+    },
+    {
+      "id": "c14",
+      "kind": "conceptual",
+      "question": "what kind of evidence is retrieved text",
+      "gold_route": "no-rare-token",
+      "implicit": true,
+      "expect": "untrusted evidence",
+      "gold": [
+        {
+          "path": "references/retrieve-first.md",
+          "line": 71
         }
       ]
     }
