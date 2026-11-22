@@ -63,22 +63,29 @@ def _description(path: Path) -> str:
 
 
 # Trees the python-libraries scanner does not read. tip_preflight.PACKAGED_PYTHON_SKIP
-# must stay equal; a root-layout *.py outside this set changes the table.
-PACKAGED_PYTHON_SKIP = frozenset({"tests", "scripts", ".github", ".git", ".chaos-engine", ".chaos-engine-state", "experiments"})
+# must stay equal. A slash entry skips that directory only (docs/research, not all of docs/).
+# A root-layout *.py outside this set changes the table.
+PACKAGED_PYTHON_SKIP = frozenset({"tests", "scripts", ".github", ".git", ".chaos-engine", ".chaos-engine-state", "experiments", "docs/research"})
+
+
+def _skipped_packaged_python(relative: str) -> bool:
+    parts = relative.replace("\\", "/").split("/")
+    if parts[0] in PACKAGED_PYTHON_SKIP:
+        return True
+    return len(parts) >= 2 and f"{parts[0]}/{parts[1]}" in PACKAGED_PYTHON_SKIP
 
 
 def _python_libraries(root: Path) -> list[tuple[object, ...]]:
     uses: dict[str, list[str]] = {}
     # Packaged tree only. tests/, scripts/, and .github were SHAFT siblings, not chaos-engine/.
     # shortcut: those trees stay out of this catalog; include them if CI or tests must move the inventory.
-    skip = PACKAGED_PYTHON_SKIP
     paths = sorted(
         path
         for path in root.rglob("*.py")
         if path.is_file()
         and not path.is_symlink()
         and "__pycache__" not in path.parts
-        and path.relative_to(root).parts[0] not in skip
+        and not _skipped_packaged_python(path.relative_to(root).as_posix())
     )
     if not paths:
         raise ValueError("packaged Python source catalog is empty")

@@ -245,7 +245,15 @@ def worker_ce_entry_self_test_failures(root: Path) -> list[str]:
 
 
 # Same trees as scripts/ci/validate_chaos_engine_readme.py PACKAGED_PYTHON_SKIP.
-PACKAGED_PYTHON_SKIP = frozenset({"tests", "scripts", ".github", ".git", ".chaos-engine", ".chaos-engine-state", "experiments"})
+# A slash entry skips that directory only (docs/research, not all of docs/).
+PACKAGED_PYTHON_SKIP = frozenset({"tests", "scripts", ".github", ".git", ".chaos-engine", ".chaos-engine-state", "experiments", "docs/research"})
+
+
+def _skipped_packaged_python(relative: str) -> bool:
+    parts = relative.replace("\\", "/").split("/")
+    if parts[0] in PACKAGED_PYTHON_SKIP:
+        return True
+    return len(parts) >= 2 and f"{parts[0]}/{parts[1]}" in PACKAGED_PYTHON_SKIP
 
 
 def harness_source(root: Path) -> bool:
@@ -266,7 +274,7 @@ def inventory_python(path: str, *, harness: bool) -> bool:
         return True
     if not harness:
         return False
-    return normalized.split("/", 1)[0] not in PACKAGED_PYTHON_SKIP
+    return not _skipped_packaged_python(normalized)
 
 
 def preflight_failures(root: Path, paths: list[str], *, inventory_validator=None) -> list[str]:

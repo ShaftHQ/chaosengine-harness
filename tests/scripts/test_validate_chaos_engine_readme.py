@@ -183,6 +183,50 @@ class ChaosEngineReadmeInventoryTest(unittest.TestCase):
 
             self.assertTrue(any("Mermaid syntax" in error for error in validate(root)))
 
+    def test_docs_research_python_is_not_a_runtime_stdlib_row(self):
+        """docs/research/*.py is not runtime inventory. runtime/ and hooks/ still move it.
+
+        A packaged .py directly under docs/, outside docs/research/, stays counted.
+        """
+        table = inventory_sections(ROOT)["python-libraries"]
+        self.assertNotIn("docs/research/", table)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy_repo(root)
+            research = root / "docs/research/acceptance-repro/extra.py"
+            research.parent.mkdir(parents=True)
+            research.write_text("import graphlib\n", encoding="utf-8")
+            research_errors = validate(root)
+            self.assertFalse(
+                any("python-libraries" in error for error in research_errors),
+                research_errors,
+            )
+            researched = inventory_sections(root)["python-libraries"]
+            self.assertNotIn("docs/research/", researched)
+            self.assertNotIn("| graphlib |", researched)
+
+            outside = root / "docs/packaged_outside_research.py"
+            outside.write_text("import graphlib\n", encoding="utf-8")
+            outside_errors = validate(root)
+            self.assertTrue(
+                any("python-libraries" in error for error in outside_errors),
+                outside_errors,
+            )
+            outside.unlink()
+
+            for relative in (
+                "runtime/acceptance_new_import.py",
+                "hooks/acceptance_new_import.py",
+            ):
+                planted = root / relative
+                planted.write_text("import graphlib\n", encoding="utf-8")
+                planted_errors = validate(root)
+                self.assertTrue(
+                    any("python-libraries" in error for error in planted_errors),
+                    (relative, planted_errors),
+                )
+                planted.unlink()
+
 
 if __name__ == "__main__":
     unittest.main()
