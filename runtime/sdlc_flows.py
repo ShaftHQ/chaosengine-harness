@@ -6,6 +6,8 @@ met, stays in the adversarial review.
 
 from __future__ import annotations
 
+import re
+
 UNTESTABLE_CRITERIA = frozenset({"make it nice"})
 
 ROLE_GATES = {
@@ -25,8 +27,21 @@ ROLE_GATES = {
         "executable-checks",
         "plan-review",
         "intent-match-review",
+        "test_completion",
+        "incident",
     ),
 }
+
+FLOW_STAGES = (
+    "ready",
+    "intent-match",
+    "test_completion",
+    "incident",
+)
+
+
+def flow_stages() -> tuple[str, ...]:
+    return FLOW_STAGES
 
 
 def role_gates(role: str) -> tuple[str, ...]:
@@ -382,9 +397,20 @@ def traceability_matrix(criteria, checks, results=None) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _risk_level(risk: dict) -> int | None:
+    likelihood = risk.get("likelihood")
+    impact = risk.get("impact")
+    if isinstance(likelihood, bool) or isinstance(impact, bool):
+        return None
+    if isinstance(likelihood, int) and isinstance(impact, int):
+        return likelihood * impact
+    return None
+
+
 def risk_register_gate(risks) -> dict:
     """A high-impact risk with no test is an owner decision."""
     missing = []
+    levels = []
     for risk in risks or []:
         if not isinstance(risk, dict):
             continue
@@ -394,8 +420,149 @@ def risk_register_gate(risks) -> dict:
         )
         if high and _blank(risk.get("test")):
             missing.append(str(risk.get("id") or risk.get("name") or "risk"))
+        level = _risk_level(risk)
+        if level is not None:
+            levels.append({"id": str(risk.get("id") or risk.get("name") or "risk"), "level": level})
     return {
         "ok": not missing,
         "reasons": ["owner-decision-high-impact-untested"] if missing else [],
         "missing": missing,
+        "levels": levels,
     }
+
+
+ISO_25010 = (
+    "functional suitability",
+    "performance efficiency",
+    "compatibility",
+    "interaction capability",
+    "reliability",
+    "security",
+    "maintainability",
+    "flexibility",
+    "safety",
+)
+ISO_25059 = (
+    "functional correctness",
+    "robustness under input shift",
+    "controllability of the output",
+    "transparency of the decision",
+)
+_ISO_REQUIRED = {
+    "plan": ("test item", "scope"),
+    "design spec": ("feature set", "approach"),
+    "case spec": ("identifier", "expected result"),
+    "incident report": ("summary", "severity"),
+}
+_ISO_ALIAS = {
+    "plan": "plan",
+    "test plan": "plan",
+    "design": "design spec",
+    "design spec": "design spec",
+    "case": "case spec",
+    "case spec": "case spec",
+    "completion": "completion report",
+    "completion report": "completion report",
+    "incident": "incident report",
+    "incident report": "incident report",
+}
+_TRACE_ROW = re.compile(r"^\|[^|]+\|[^|]+\|[^|]+\|\s*$", re.M)
+ORACLE_TYPES = frozenset({"specified", "derived", "metamorphic", "differential", "human"})
+_DIFF_PATH = re.compile(r"^diff --git a/(.+?) b/(.+)$", re.M)
+
+
+def quality_checklist() -> dict:
+    """Names only. Not a quotation of ISO/IEC 25010 or 25059."""
+    return {"25010": ISO_25010, "25059": ISO_25059}
+
+
+def iso_29119_template(kind: str, text: str) -> dict:
+    """Check an ISO/IEC/IEEE 29119-3 style template. Completion needs a trace row."""
+    name = _ISO_ALIAS.get(" ".join((kind or "").casefold().split()))
+    if name is None:
+        return {"ok": False, "reasons": ["unknown-template"]}
+    body = text or ""
+    folded = body.casefold()
+    reasons: list[str] = []
+    if name == "completion report":
+        for word in ("requirement", "check", "result"):
+            if word not in folded:
+                reasons.append(f"missing-{word}")
+        if _TRACE_ROW.search(body) is None:
+            reasons.append("missing-requirement-check-result-trace")
+    else:
+        for phrase in _ISO_REQUIRED[name]:
+            if phrase not in folded:
+                reasons.append("missing-" + phrase.replace(" ", "-"))
+    return {"ok": not reasons, "reasons": reasons}
+
+
+def risk_controls(risk: dict) -> dict:
+    """Likelihood times impact. Level 8 or more needs techniques and a mutation target."""
+    row = risk if isinstance(risk, dict) else {}
+    level = _risk_level(row)
+    techniques = [str(item) for item in (row.get("techniques") or []) if str(item).strip()]
+    mutation = str(row.get("mutation_target") or "").strip()
+    reasons: list[str] = []
+    if level is not None and level >= 8 and not techniques:
+        reasons.append("missing-techniques")
+    if level is not None and level >= 8 and not mutation:
+        reasons.append("missing-mutation-target")
+    return {
+        "ok": not reasons,
+        "reasons": reasons,
+        "level": level,
+        "techniques": techniques,
+        "mutation_target": mutation,
+    }
+
+
+def _testish(path: str) -> bool:
+    name = path.replace("\\", "/")
+    lowered = name.casefold()
+    return (
+        "/test" in f"/{lowered}"
+        or lowered.startswith("test")
+        or "test_" in lowered
+        or lowered.endswith("test.java")
+        or lowered.endswith("tests.java")
+    )
+
+
+def oracle_gate(diff_text: str, checks) -> dict:
+    """A changed test in the diff needs one of the five oracle types."""
+    changed = []
+    for match in _DIFF_PATH.finditer(diff_text or ""):
+        path = match.group(2)
+        if _testish(path) and path not in changed:
+            changed.append(path)
+    if not changed:
+        return {"ok": True, "reasons": [], "missing": [], "oracles": sorted(ORACLE_TYPES)}
+    declared: dict[str, str] = {}
+    unknown: list[str] = []
+    for check in checks or []:
+        if not isinstance(check, dict):
+            continue
+        path = str(check.get("path") or check.get("file") or "")
+        oracle = str(check.get("oracle") or "").strip().casefold()
+        if not path:
+            continue
+        if oracle not in ORACLE_TYPES:
+            unknown.append(path)
+            continue
+        declared[path] = oracle
+    missing = [path for path in changed if path not in declared]
+    reasons: list[str] = []
+    if missing:
+        reasons.append("missing-oracle-type")
+    if unknown:
+        reasons.append("unknown-oracle-type")
+    return {"ok": not reasons, "reasons": reasons, "missing": missing, "oracles": sorted(ORACLE_TYPES)}
+
+
+def rerun_flake(results) -> dict:
+    """Three identical results are stable. Fewer than three, or a mismatch, is flake."""
+    shown = list(results or [])
+    if len(shown) < 3 or len({str(item) for item in shown[:3]}) != 1:
+        return {"ok": False, "flake": True, "reasons": ["rerun-to-flake"], "runs": len(shown)}
+    return {"ok": True, "flake": False, "reasons": [], "runs": len(shown)}

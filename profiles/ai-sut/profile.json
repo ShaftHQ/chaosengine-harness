@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "ai-sut",
+  "onDemand": true,
+  "install": false,
+  "entrypoint": "README.md",
+  "standards": [
+    "ISO/IEC TR 29119-11",
+    "ISO/IEC TS 42119-2",
+    "ISTQB CT-AI v2.0"
+  ]
+}

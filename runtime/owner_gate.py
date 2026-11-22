@@ -65,6 +65,55 @@ def _recorded_blocker(state_path: Path) -> str:
     return str(payload.get("blocker") or "")
 
 
+def record_unverifiable_gate(state_path: Path, *, issue_id: str, reason: str) -> dict[str, object]:
+    """Record `blocking: unverifiable` once for an issue. Does not fabricate sign-off."""
+    path = Path(state_path)
+    issue = str(issue_id).strip().lstrip("#")
+    why = " ".join(str(reason or "").split())
+    if not issue or not why:
+        return {
+            "blocking": "",
+            "record": False,
+            "ask": "",
+            "sign_off": False,
+            "poll": False,
+        }
+    key = f"{issue}\n{why}"
+    prior = ""
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, UnicodeError):
+        payload = None
+    if isinstance(payload, dict):
+        prior = str(payload.get("key") or "")
+    same = prior == key
+    if not same:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(
+                {
+                    "blocking": "blocking: unverifiable",
+                    "issue": issue,
+                    "reason": why,
+                    "key": key,
+                    "sign_off": False,
+                },
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+    return {
+        "blocking": "blocking: unverifiable",
+        "record": not same,
+        "issue": issue,
+        "reason": why,
+        "ask": "",
+        "sign_off": False,
+        "poll": False,
+    }
+
+
 def apply_owner_gate(
     state_path: Path,
     *,

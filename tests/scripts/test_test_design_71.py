@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import importlib.util
+import json
 import sys
 from pathlib import Path
 
@@ -10,6 +12,7 @@ sys.path.insert(0, str(ROOT / "runtime"))
 
 import conformance  # noqa: E402
 import hosts  # noqa: E402
+import review_packet  # noqa: E402
 import sdlc_flows  # noqa: E402
 
 TECHNIQUES = (
@@ -125,3 +128,114 @@ def test_stale_generated_path_names_a_missing_file(tmp_path: Path):
     errors = conformance.check_stale_generated_paths(tmp_path, ["AGENTS.md"])
     assert errors == ["stale-path: tests/missing.py"]
     assert conformance.check_stale_generated_paths(tmp_path, ["nope.md"]) == ["stale-path: nope.md missing"]
+
+
+def test_completion_and_incident_stages_and_29119_trace():
+    stages = sdlc_flows.flow_stages()
+    assert "test_completion" in stages
+    assert "incident" in stages
+    assert "test_completion" in sdlc_flows.role_gates("tester")
+    assert "incident" in sdlc_flows.role_gates("tester")
+    refused = sdlc_flows.iso_29119_template("completion report", "summary only")
+    assert refused["ok"] is False
+    assert "missing-requirement-check-result-trace" in refused["reasons"]
+    accepted = sdlc_flows.iso_29119_template(
+        "completion report",
+        "Requirement, check, and result.\n| FR-1 | check-1 | passed |\n",
+    )
+    assert accepted["ok"] is True
+    incident = sdlc_flows.iso_29119_template("incident report", "summary: boom\nseverity: high\n")
+    assert incident["ok"] is True
+    listed = sdlc_flows.quality_checklist()
+    assert "functional suitability" in listed["25010"]
+    assert "robustness under input shift" in listed["25059"]
+
+
+def test_risk_level_sets_technique_and_mutation_target():
+    raw = {"id": "R2", "likelihood": 3, "impact": 4, "test": "check-2"}
+    registered = sdlc_flows.risk_register_gate([raw])
+    assert registered["ok"] is True
+    assert registered["levels"] == [{"id": "R2", "level": 12}]
+    loose = sdlc_flows.risk_controls(raw)
+    assert loose["ok"] is False
+    assert "missing-techniques" in loose["reasons"]
+    assert "missing-mutation-target" in loose["reasons"]
+    tight = sdlc_flows.risk_controls({**raw, "techniques": ["boundary"], "mutation_target": "amount"})
+    assert tight["ok"] is True
+    assert tight["level"] == 12
+
+
+def test_diff_oracle_types_and_three_reruns():
+    diff = "diff --git a/tests/test_pay.py b/tests/test_pay.py\n"
+    missing = sdlc_flows.oracle_gate(diff, [])
+    assert missing["ok"] is False
+    assert missing["reasons"] == ["missing-oracle-type"]
+    unknown = sdlc_flows.oracle_gate(diff, [{"path": "tests/test_pay.py", "oracle": "guess"}])
+    assert "unknown-oracle-type" in unknown["reasons"]
+    for name in ("specified", "derived", "metamorphic", "differential", "human"):
+        assert name in sdlc_flows.ORACLE_TYPES
+        accepted = sdlc_flows.oracle_gate(diff, [{"path": "tests/test_pay.py", "oracle": name}])
+        assert accepted["ok"] is True
+    assert sdlc_flows.rerun_flake(["pass", "pass"])["reasons"] == ["rerun-to-flake"]
+    assert sdlc_flows.rerun_flake(["pass", "pass", "fail"])["flake"] is True
+    stable = sdlc_flows.rerun_flake(["pass", "pass", "pass"])
+    assert stable["ok"] is True
+    assert stable["flake"] is False
+
+
+def test_prompt_packet_has_six_parts_and_sampling_metadata():
+    partial = review_packet.lint_structured_prompt({"role": "tester"})
+    assert partial["ok"] is False
+    for name in review_packet.PROMPT_PARTS:
+        if name != "role":
+            assert f"missing-{name}" in partial["reasons"]
+    full = {name: name for name in review_packet.PROMPT_PARTS}
+    full.update({"model": "fixture", "version": "0", "sampling": {"temperature": 0}})
+    done = review_packet.lint_structured_prompt(full)
+    assert done["ok"] is True
+    assert done["metadata"] == {"model": "fixture", "version": "0", "sampling": {"temperature": 0}}
+    assert set(review_packet.PROMPT_PARTS) == {
+        "role",
+        "context",
+        "instruction",
+        "input_data",
+        "constraints",
+        "output_format",
+    }
+
+
+def test_ai_sut_profile_and_ct_genai_metrics():
+    profile = json.loads((ROOT / "profiles" / "ai-sut" / "profile.json").read_text(encoding="utf-8"))
+    readme = (ROOT / "profiles" / "ai-sut" / "README.md").read_text(encoding="utf-8")
+    assert profile["id"] == "ai-sut"
+    assert profile["onDemand"] is True
+    assert profile.get("install") is False
+    for name in ("29119-11", "42119-2", "CT-AI"):
+        assert name in readme
+    folded = readme.casefold()
+    for topic in ("metamorphic", "statistical", "bias", "robustness", "calibrated"):
+        assert topic in folded
+    specification = importlib.util.spec_from_file_location(
+        "harness_ab_score_71", ROOT / "experiments" / "harness-ab" / "score.py"
+    )
+    if specification is None or specification.loader is None:
+        raise RuntimeError("score.py")
+    score = importlib.util.module_from_spec(specification)
+    specification.loader.exec_module(score)
+    metrics = score.ct_genai_metrics(
+        requirements=[
+            {"id": "FR-1"},
+            {"id": "FR-2", "negative": True},
+            {"id": "FR-3", "boundary": True},
+        ],
+        checks=[
+            {"requirement_id": "FR-1"},
+            {"requirement_id": "FR-2"},
+            {"requirement_id": "FR-9", "hallucination": True},
+        ],
+        executions=[{"success": True}, {"success": False}],
+    )
+    assert metrics["requirement_recall"] == 2 / 3
+    assert metrics["negative_boundary_recall"] == 0.5
+    assert metrics["execution_success_rate"] == 0.5
+    assert metrics["hallucination_rate"] == 1 / 3

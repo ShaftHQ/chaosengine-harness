@@ -57,3 +57,9 @@ Use after the structured techniques, for mistakes history says this area makes.
 
 Name the guessed fault and the observation that would catch it.
 This does not replace a partition or a boundary on an input. It adds the case those techniques missed.
+
+## Oracle
+
+A changed test names one oracle: specified, derived, metamorphic, differential, or human.
+Three reruns that disagree are flake (`rerun-to-flake` in `runtime/sdlc_flows.py`).
+Completion reports keep a requirement, check, and result row.

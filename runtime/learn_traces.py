@@ -554,6 +554,88 @@ def _pressure_report(acc: dict[str, int], *, grok_tool_result_bytes: int, grok_t
     }
 
 
+_MARKDOWN_SECTION = re.compile(r"^## (User|Assistant|Tools)\s*$", re.M)
+
+
+def score_markdown_transcript(text: str) -> dict[str, object]:
+    """Zero-LLM share of chained tool sections and intermediate tool-result bytes."""
+    parts = _MARKDOWN_SECTION.split(text or "")
+    sections: list[tuple[str, str]] = []
+    if len(parts) > 1:
+        pairs = parts[1:]
+        for index in range(0, len(parts) - 1, 2):
+            if index + 1 >= len(pairs):
+                break
+            sections.append((str(pairs[index]), str(pairs[index + 1])))
+    tool_indexes = [index for index, (kind, _body) in enumerate(sections) if kind == "Tools"]
+    chained = 0
+    for index in tool_indexes:
+        for kind, _body in sections[index + 1 :]:
+            if kind == "User":
+                break
+            if kind == "Tools":
+                chained += 1
+                break
+    tool_bytes = 0
+    intermediate_bytes = 0
+    for index in tool_indexes:
+        size = len(sections[index][1].strip("\n").encode("utf-8"))
+        tool_bytes += size
+        if index < len(sections) - 1:
+            intermediate_bytes += size
+    tool_count = len(tool_indexes)
+    return {
+        "tool_sections": tool_count,
+        "chained_tool_sections": chained,
+        "tool_bytes": tool_bytes,
+        "intermediate_tool_bytes": intermediate_bytes,
+        "chained_tool_output_share": (chained / tool_count) if tool_count else None,
+        "intermediate_tool_result_share": (intermediate_bytes / tool_bytes) if tool_bytes else None,
+        "llm_calls": 0,
+    }
+
+
+def format_step0(report: dict[str, object]) -> str:
+    def num(value: object) -> str:
+        if isinstance(value, float):
+            return f"{value:.6f}"
+        return "unmeasured"
+
+    return (
+        "Zero-LLM step 0 over harness-ab transcripts. "
+        f"transcripts={report.get('transcripts')}. "
+        f"chained tool-output share={num(report.get('chained_tool_output_share'))}. "
+        f"intermediate tool-result share={num(report.get('intermediate_tool_result_share'))}. "
+        f"llm_calls={report.get('llm_calls')}.\n"
+    )
+
+
+def harness_ab_step0(root: Path) -> dict[str, object]:
+    """Score the frozen harness-ab markdown transcripts. No model call."""
+    folder = Path(root)
+    paths = sorted(path for path in folder.glob("*/*/transcript.md") if path.is_file())
+    chained = 0
+    tools = 0
+    intermediate = 0
+    total_bytes = 0
+    for path in paths:
+        scored = score_markdown_transcript(path.read_text(encoding="utf-8"))
+        chained += int(scored["chained_tool_sections"])
+        tools += int(scored["tool_sections"])
+        intermediate += int(scored["intermediate_tool_bytes"])
+        total_bytes += int(scored["tool_bytes"])
+    report: dict[str, object] = {
+        "transcripts": len(paths),
+        "llm_calls": 0,
+        "tool_sections": tools,
+        "chained_tool_sections": chained,
+        "chained_tool_output_share": (chained / tools) if tools else None,
+        "intermediate_tool_result_share": (intermediate / total_bytes) if total_bytes else None,
+    }
+    report["summary"] = format_step0(report).rstrip("\n")
+    return report
+
+
 def code_mode_step0_decision(report: dict[str, object]) -> str:
     decision = report.get("decision")
     return str(decision) if decision in {"keep", "drop", "incomplete"} else "incomplete"

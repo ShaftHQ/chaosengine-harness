@@ -27,6 +27,32 @@ def agentic_problems(body: str, *, human: bool = False) -> list[str]:
     return []
 
 
+def apply_wired_rules(payload: object) -> list[str]:
+    """Same rule bridge the pre-done gate calls."""
+    import pre_done_review
+
+    return pre_done_review.apply_wired_rules(payload)
+
+
+def flow_times(item: dict) -> dict:
+    """Lead, blocked, and queue seconds from the task ledger."""
+    import task_ledger
+
+    return task_ledger.flow_times(item)
+
+
+def next_pull(document: object) -> dict:
+    """A repeated defect class blocks the next pull until a preventive check exists."""
+    import task_ledger
+
+    gate = task_ledger.defect_ratchet(document)
+    return {
+        "ok": gate["ok"],
+        "blocked": list(gate["blocked"]),
+        "reasons": list(gate["reasons"]),
+    }
+
+
 def evaluate(data: dict) -> list[tuple[str, str, str]]:
     """Return (criterion, ok|gap, detail) rows from gh PR and required-check JSON."""
     pr = data["pr"]
@@ -37,13 +63,17 @@ def evaluate(data: dict) -> list[tuple[str, str, str]]:
     sources = [path for path in files if SOURCE.search(path) and path not in tests]
     red = [c["name"] for c in data.get("checks", []) if c.get("state") not in GREEN]
     gate = agentic_problems(pr.get("body") or "", human=bool(data.get("human")))
-    return [
+    rows = [
         ("release-note label", "ok" if len(notes) == 1 else "gap", ",".join(notes) or "none"),
         ("linked issue", "ok" if LINKED_ISSUE.search(pr.get("body") or "") else "gap", "Fixes #N in body"),
         ("tests changed", "ok" if tests or not sources else "gap", f"{len(sources)} source, {len(tests)} test"),
         ("required checks", "ok" if not red else "gap", ",".join(red) or "all green"),
         ("done-gate", "ok" if not gate else "gap", gate[0] if gate else "n/a"),
     ]
+    if "rules" in data:
+        findings = apply_wired_rules(data.get("rules"))
+        rows.append(("wired rules", "ok" if not findings else "gap", ",".join(findings) or "none"))
+    return rows
 
 
 def render(rows: list[tuple[str, str, str]]) -> str:

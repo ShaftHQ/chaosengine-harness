@@ -36,6 +36,11 @@ These fields are digests. They are not transcripts.
 | WIP open PRs | Pull requests still open for the stream. |
 | prSize | Changed lines on the pull request. |
 | cycleTimeSeconds | Seconds from start to done for the item. |
+| softwareWastes | Poppendieck's seven, each tagged or waived: partially done work, extra processes, extra features, task switching, waiting, motion, defects. Names only. |
+| feedbackReceipt | Id, accepted, and time. Not the feedback text. |
+| leadTimeSeconds | Finish time minus create time. |
+| blockedTimeSeconds | Seconds the item was blocked. |
+| queueTimeSeconds | Start time minus create time. |
 
 Unmeasured fields stay `unmeasured`. A run is not failed for an unmeasured digest.
 

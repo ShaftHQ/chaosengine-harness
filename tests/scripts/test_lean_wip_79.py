@@ -9,6 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "runtime"))
 
+import dod  # noqa: E402
 import handoff_receipt  # noqa: E402
 import session_token_usage  # noqa: E402
 import task_ledger  # noqa: E402
@@ -98,3 +99,58 @@ def test_ledger_view_reports_wip_and_blocks_a_repeated_defect():
     assert "fixture" in text
     assert "n≥5" in text or "n>=5" in text
     assert "Agile Manifesto" in text or "agilemanifesto.org" in text
+
+
+def test_seven_wastes_cycle_time_and_feedback_receipt(tmp_path: Path):
+    assert len(session_token_usage.SOFTWARE_WASTES) == 7
+    ledger = {
+        "schemaVersion": 1,
+        "totals": {"localPromptTokens": 1, "localCompletionTokens": 1, "cloudPromptTokens": 0, "cloudCompletionTokens": 0},
+        "waste": {
+            "tokenWaste": 1,
+            "contextWaste": 0,
+            "reworkWaste": 0,
+            "source": "digest",
+            "softwareWastes": {"defects": "tagged", "waiting": "waived", "not-a-waste": "tagged"},
+            "prompt": "do not store this transcript",
+        },
+        "feedbackReceipt": {"id": "fb-1", "accepted": True, "prompt": "hidden"},
+        "cycleTimeSeconds": 12,
+    }
+    (tmp_path / "beta.json").write_text(json.dumps(ledger), encoding="utf-8")
+    row = session_token_usage.usage_rows(tmp_path)[0]
+    assert row["softwareWastes"]["tagged"] == ["defects"]
+    assert row["softwareWastes"]["waived"] == ["waiting"]
+    assert row["feedbackReceipt"] == {"id": "fb-1", "accepted": True}
+    assert row["cycleTimeSeconds"] == 12
+    assert "do not store this transcript" not in json.dumps(row)
+    assert "hidden" not in json.dumps(row)
+    receipt = handoff_receipt.build(
+        task="gate",
+        head_sha="abc",
+        waste={"tokenWaste": 1, "softwareWastes": {"motion": "waived"}, "source": "digest"},
+        feedback_receipt={"id": "fb-2", "accepted": False},
+        cycle_time_seconds=9,
+    )
+    assert receipt["waste"]["softwareWastes"]["waived"] == ["motion"]
+    assert receipt["feedbackReceipt"]["id"] == "fb-2"
+    assert receipt["cycleTimeSeconds"] == 9
+    assert "prompt" not in receipt["waste"]
+
+
+def test_lead_blocked_and_queue_time_and_pull_block():
+    item = {"createdAt": 0, "startedAt": 10, "finishedAt": 40, "blockedTimeSeconds": 5}
+    times = task_ledger.flow_times(item)
+    assert times == {"leadTimeSeconds": 40, "blockedTimeSeconds": 5, "queueTimeSeconds": 10}
+    assert dod.flow_times(item) == times
+    ledger = {
+        "items": [
+            {"id": "a", "status": "done", "defect_type": "visual-inventory"},
+            {"id": "b", "status": "todo", "defect_type": "visual-inventory"},
+        ]
+    }
+    blocked = dod.next_pull(ledger)
+    assert blocked["ok"] is False
+    assert "visual-inventory" in blocked["blocked"]
+    ledger["preventive_checks"] = {"visual-inventory": "spec-template-headings"}
+    assert dod.next_pull(ledger)["ok"] is True
