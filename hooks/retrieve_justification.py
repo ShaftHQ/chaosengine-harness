@@ -569,6 +569,24 @@ def _mark_session(project: Path, session_id: str | None, *, owe: bool = False, r
     _write_payload(project, payload)
 
 
+def note_retrieve_demanded(project: Path, session_id: str | None) -> None:
+    """Remember that Stop already asked this project session for a retrieve.
+
+    The mark lives on the project ledger. A shared temp session id from
+    another checkout must not hide this project's debt.
+    """
+    payload = _load_payload(project)
+    sessions = _live_sessions(payload)
+    key = _session_key(session_id)
+    row = dict(sessions.get(key) or {})
+    row["retrieveDemanded"] = True
+    row["updated"] = time.time()
+    sessions[key] = row
+    payload["sessions"] = sessions
+    payload.setdefault("schemaVersion", 1)
+    _write_payload(project, payload)
+
+
 def note_retrieve_blocked(project: Path, session_id: str | None) -> None:
     """Remember that this guard denied the project retrieve command.
 
@@ -605,7 +623,7 @@ def session_retrieve_gap(project: Path, session_id: str) -> str | None:
     row = sessions.get(_session_key(session_id))
     if not isinstance(row, dict) or row.get("retrieved") or not row.get("retrieveOwed"):
         return None
-    if row.get("retrieveBlocked"):
+    if row.get("retrieveBlocked") or row.get("retrieveDemanded"):
         return None
     return RETRIEVE_COMMAND
 

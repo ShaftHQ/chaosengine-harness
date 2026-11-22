@@ -1,9 +1,4 @@
-"""#163 C1–C9: owned policy files must not contradict each other again.
-
-CONTRIBUTING.md is not writable here. It still says the installer floor is
-Python 3.11 and does not mention the 3.14.0 managed pin. AGENTS.md and
-bot-entry.md state both. The orchestrator owns the CONTRIBUTING edit.
-"""
+"""#163 C1–C9: policy files must not contradict each other again."""
 
 from __future__ import annotations
 
@@ -132,6 +127,7 @@ def test_c8_python_floor_and_managed_pin_are_both_stated():
         assert "3.14.0" in text
     contributing = _read("CONTRIBUTING.md")
     assert "3.11" in contributing
+    assert "3.14.0" in contributing
 
 
 def test_c9_overlay_sync_compares_core_commit():

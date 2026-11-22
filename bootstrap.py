@@ -7784,5 +7784,24 @@ def main() -> int:
     return 1 if post_install_code else 0
 
 
+def _rebind_shared_helpers() -> None:
+    """Use runtime.common when the tree is present. A lone curl|bash file keeps its copies."""
+    root = Path(__file__).resolve().parent
+    if not (root / "runtime" / "common.py").is_file():
+        return
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    from runtime.common import python_floor_message as _floor
+    from runtime.common import runtime_module as _runtime_module
+    from runtime.common import valid_branch as _valid_branch
+
+    globals()["python_floor_message"] = _floor
+    globals()["runtime_module"] = _runtime_module
+    globals()["valid_branch"] = _valid_branch
+
+
+_rebind_shared_helpers()
+
+
 if __name__ == "__main__":
     raise SystemExit(main())

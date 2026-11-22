@@ -33,14 +33,13 @@ _INSTALL_ROOT = str(Path(__file__).resolve().parent)
 if _INSTALL_ROOT not in sys.path:
     sys.path.insert(0, _INSTALL_ROOT)
 import runtime.ce_ui as ce_ui
-
-
-def runtime_module(root: Path, name: str) -> Path:
-    """Prefer runtime/<name>; fall back to a flat file from an older tree."""
-    nested = root / "runtime" / name
-    if nested.is_file():
-        return nested
-    return root / name
+from runtime.common import (  # noqa: E402
+    file_sha256,
+    is_link_or_reparse,
+    python_floor_message,
+    runtime_module,
+    valid_branch,
+)
 
 
 def _bind_java_pack() -> dict[str, object]:
@@ -275,10 +274,6 @@ def seed_graphify_ignore(project: Path) -> Path:
     return path
 
 
-def file_sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
 def mark_tools_skipped(target: Path) -> None:
     """Remember that this install did not provision a runtime.
 
@@ -304,21 +299,6 @@ def tools_were_skipped(target: Path) -> bool:
         return False
     provisioning = document.get("provisioning") if isinstance(document, dict) else None
     return isinstance(provisioning, dict) and provisioning.get("tools") == "skipped"
-
-
-def valid_branch(branch: str) -> bool:
-    parts = branch.split("/")
-    return (
-        BRANCH_PATTERN.fullmatch(branch) is not None
-        and not branch.startswith("-")
-        and not branch.startswith("/")
-        and not branch.endswith(("/", "."))
-        and "//" not in branch
-        and ".." not in branch
-        and "@{" not in branch
-        and branch != "HEAD"
-        and all(part and not part.startswith(".") and not part.endswith(".lock") for part in parts)
-    )
 
 
 def normalize_source_record(source: object) -> dict[str, str]:
@@ -356,16 +336,6 @@ def normalize_source_record(source: object) -> dict[str, str]:
     result = dict(source)
     result["repository"] = repository.casefold()
     return result
-
-
-def is_link_or_reparse(path: Path) -> bool:
-    if path.is_symlink():
-        return True
-    try:
-        attributes = getattr(os.lstat(path), "st_file_attributes", 0)
-    except FileNotFoundError:
-        return False
-    return bool(attributes & 0x400)
 
 
 def dependency_tombstone_entries(root: Path) -> list[Path]:
@@ -4581,15 +4551,17 @@ def initialize_account_project_palace(project: Path, controller, host_controller
     cannot resolve, fall back to the account controller.
     """
     local = (project / ".chaos-engine-state/mempalace").resolve()
+    if _central_palace_active(project):
+        return False
     resolved = _resolved_palace(project)
-    if resolved is None:
+    if resolved == local or resolved is None:
         resolve = getattr(controller, "mempalace_project_palace", None)
         if callable(resolve):
             try:
                 resolved = Path(resolve(project)).resolve()
             except (OSError, RuntimeError, ValueError, KeyError):
                 resolved = None
-    if resolved == local or _central_palace_active(project):
+    if resolved == local:
         return False
     host_controller.initialize_mempalace_runtime(project)
     return True
@@ -9278,8 +9250,8 @@ def _mempalace_empty_finding(
     if not isinstance(index, dict) or index.get("status") == "running":
         return None
     try:
-        stores = load_source_controller("stores")
-        count = stores.palace_drawer_count(stores.resolve_palace(project))
+        stores = _load_stores_module()
+        count = stores["palace_drawer_count"](stores["resolve_palace"](project))
     except (OSError, ImportError, KeyError, RuntimeError, SyntaxError, ValueError, AttributeError, TypeError):
         return None
     if count != 0:
@@ -10032,16 +10004,6 @@ def record_mcp_opt_in(project: Path, args: argparse.Namespace) -> None:
 
 
 MINIMUM_PYTHON = (3, 11)
-
-
-def python_floor_message(version: tuple[int, ...] | None = None) -> str:
-    """What is missing, why, and the one fix (#7766)."""
-    found = ".".join(str(part) for part in (version or sys.version_info)[:3])
-    return (
-        f"ChaosEngine requires Python {MINIMUM_PYTHON[0]}.{MINIMUM_PYTHON[1]} or newer; found {found}. "
-        "Hooks and the installer refuse an older interpreter. "
-        "Rerun the install one-liner, which provisions a supported Python through uv before any prompt.\n"
-    )
 
 
 def managed_python_roots() -> list[Path]:

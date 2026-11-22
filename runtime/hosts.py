@@ -24,6 +24,25 @@ import sys
 from pathlib import Path, PurePosixPath
 
 
+def _load_common():
+    try:
+        import runtime.common as module
+    except ImportError:
+        spec = importlib.util.spec_from_file_location(
+            "runtime.common",
+            Path(__file__).resolve().parent / "common.py",
+        )
+        if spec is None or spec.loader is None:
+            raise ImportError("runtime/common.py is missing") from None
+        module = importlib.util.module_from_spec(spec)
+        sys.modules["runtime.common"] = module
+        spec.loader.exec_module(module)
+    return module
+
+
+is_link_or_reparse = _load_common().is_link_or_reparse
+
+
 def _bind_java_pack() -> dict[str, object]:
     """Bind the java pack (maven_tools.py) into this controller's namespace."""
     runtime = Path(__file__).resolve().parent
@@ -1043,9 +1062,17 @@ def _status_palace(project: Path) -> Path:
     if module is None:
         return local
     try:
-        return Path(module.resolve_palace(project))
+        resolved = Path(module.resolve_palace(project))
     except (OSError, RuntimeError, TypeError, ValueError, AttributeError):
         return local
+    # A missing resolver path must not hide the checkout palace doctor and
+    # account init already use. An existing central palace still wins.
+    try:
+        if resolved.exists() and resolved.resolve() != local.resolve():
+            return resolved
+    except OSError:
+        return local
+    return local
 
 
 def mempalace_sidecar_paths(palace: Path) -> tuple[Path, Path]:
@@ -1358,6 +1385,9 @@ def mempalace_directory_status(palace: Path) -> dict[str, str]:
             palace / ".chaos-engine-source-revision.json",
             palace / "mempalace-documentation-pages.json",
             palace / "mempalace-source-revision.json",
+            palace / "knowledge_graph.sqlite3",
+            Path(f"{palace / 'knowledge_graph.sqlite3'}-wal"),
+            Path(f"{palace / 'knowledge_graph.sqlite3'}-shm"),
         )
     }
     unrecognized = [child for child in children if child.name not in allowed_names]
@@ -3899,16 +3929,6 @@ def ensure_claim(project: Path, base: Path, purpose: str, payload: bytes) -> Pat
     )
     os.close(descriptor)
     return claim
-
-
-def is_link_or_reparse(path: Path) -> bool:
-    if path.is_symlink():
-        return True
-    try:
-        attributes = getattr(os.lstat(path), "st_file_attributes", 0)
-    except FileNotFoundError:
-        return False
-    return bool(attributes & 0x400)
 
 
 def validate_path(project: Path, path: Path) -> None:

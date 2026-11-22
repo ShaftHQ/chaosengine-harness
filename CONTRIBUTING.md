@@ -40,7 +40,7 @@ This floor is for pull requests to this repository. The two-review step in the [
 
 ## Local checks
 
-`install.py` requires Python 3.11 or newer. Java and Maven are not required.
+Host hook launchers and tests run on Python 3.11 or newer. `install.py` refuses an older interpreter. The installer's managed runtime pin is Python 3.14.0 (`dependencies.json`). Java and Maven are not required.
 
 Check the syntax of each Python file you edit:
 

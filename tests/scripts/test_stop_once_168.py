@@ -199,6 +199,63 @@ class StopOnceTest(unittest.TestCase):
         self.assertNotIn("destructive broad scope", allowed.stdout)
         self.assertNotIn("tool.py retrieve", after_deny.stdout)
 
+    def test_retrieve_demand_follows_the_project_when_session_ids_collide(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            environment = _env(temporary)
+            previous = {key: os.environ.get(key) for key in ("TMPDIR", "TEMP", "TMP")}
+            os.environ.update(environment)
+            try:
+                reflection = _load("ce_reflection_shared_session", REFLECTION)
+                reflection.record_activity("shared-session", "retrieve-demanded")
+            finally:
+                for key, value in previous.items():
+                    if value is None:
+                        os.environ.pop(key, None)
+                    else:
+                        os.environ[key] = value
+            stops = []
+            first_project = None
+            for name in ("alpha", "beta"):
+                project = Path(temporary) / name
+                tool = project / ".chaos-engine" / "tool.py"
+                tool.parent.mkdir(parents=True)
+                tool.write_text(HIDDEN, encoding="utf-8")
+                if first_project is None:
+                    first_project = project
+                _run(
+                    {
+                        "hook_event_name": "PreToolUse",
+                        "tool_name": "Grep",
+                        "cwd": str(project),
+                        "session_id": "shared-session",
+                        "tool_input": {"pattern": "class", "glob": "*.java"},
+                    },
+                    environment,
+                )
+                stops.append(
+                    _run(
+                        {
+                            "hook_event_name": "Stop",
+                            "cwd": str(project),
+                            "session_id": "shared-session",
+                            "stop_hook_active": False,
+                        },
+                        environment,
+                    )
+                )
+            again = _run(
+                {
+                    "hook_event_name": "Stop",
+                    "cwd": str(first_project),
+                    "session_id": "shared-session",
+                    "stop_hook_active": False,
+                },
+                environment,
+            )
+        self.assertIn("tool.py retrieve --store graphify", stops[0].stdout)
+        self.assertIn("tool.py retrieve --store graphify", stops[1].stdout)
+        self.assertNotIn("tool.py retrieve", again.stdout)
+
     def test_project_tool_py_reads_are_allowed_and_a_nested_copy_is_named(self):
         with tempfile.TemporaryDirectory() as temporary:
             environment = _env(temporary)

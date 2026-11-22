@@ -2804,8 +2804,6 @@ def _retrieve_gap_reason(event: dict, session_id: str) -> str:
     root = justification.project_root(Path(str(event.get("cwd") or Path.cwd())))
     if justification.retrieve_blocked(root, session_id):
         return ""
-    if _activity_recorded(session_id, "retrieve-demanded"):
-        return ""
     gap = justification.session_retrieve_gap(root, session_id)
     return gap or ""
 
@@ -2840,6 +2838,9 @@ def _stop_block_reason(event: dict, session_id: str) -> str:
     ):
         gap = _retrieve_gap_reason(event, session_id)
         if gap:
+            root = justification.project_root(Path(str(event.get("cwd") or Path.cwd())))
+            with contextlib.suppress(Exception):
+                justification.note_retrieve_demanded(root, session_id)
             reflection.record_activity(session_id, "retrieve-demanded")
             return gap
     if event.get("hook_event_name") == "SubagentStop":
