@@ -8,7 +8,11 @@ Antigravity reads `AGENTS.md` and `GEMINI.md`. The host route stays `AGENTS.md`.
 
 A non-zero hook exit is fail-open. Denies are JSON on exit 0: `decision: "deny"` on PreToolUse, `decision: "continue"` plus `reason` on a Stop that still owes work, or `errorMessage` plus `terminationBehavior: "terminate"`. A Stop with `fullyIdle: false`, or `terminationReason` `USER_CANCELED`, `ERROR`, or `MAX_TOKEN_BUDGET_EXCEEDED`, does not emit `decision: "continue"`. SessionStart and PreInvocation inject context with `injectSteps`.
 
-MCP stays CLI-first. Antigravity reads `~/.gemini/config/mcp_config.json` or `plugins/<name>/mcp_config.json`. It does not read `.mcp.json`. A plugin bundle is `plugins/<name>/plugin.json`.
+MCP stays CLI-first. Antigravity reads `~/.gemini/config/mcp_config.json` or `plugins/<name>/mcp_config.json`. It does not read `.mcp.json`. A plugin bundle is `plugins/<name>/plugin.json`, written when a plugin or MCP bundle is requested.
+
+`GEMINI.md` stays one `@AGENTS.md` include. A Gemini-style `@[label](AGENTS.md)` is that same include, not a second instruction load.
+
+When `--with-mcp` is active, MemPalace prefers `--mcp light` (`palace_query`, `palace_exec`, `palace_coordinate`). The published host argv stays `tool.py mempalace-mcp`.
 
 The host receipt covers `.agents/hooks.json` with a digest and a backup blob. Doctor reports tampering. `python3 .chaos-engine/tool.py retrieve` is the trusted retrieve path. An untrusted script that launches a dynamic subprocess stays denied, and that denial does not set `retrieved: true`.
 

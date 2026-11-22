@@ -1175,6 +1175,31 @@ class AntigravitySupportTests(unittest.TestCase):
             self.assertIn("a" * 40, detail)
             self.assertIn("b" * 40, detail)
 
+    def test_plugin_bundle_user_mcp_path_and_gemini_include(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            home = project / "home"
+            home.mkdir()
+            path = self.hosts.write_antigravity_plugin_bundle(project, mcp=True)
+            self.assertEqual(project / "plugins" / "chaos-engine" / "plugin.json", path)
+            manifest = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual("chaos-engine", manifest["name"])
+            self.assertTrue((project / "plugins" / "chaos-engine" / "mcp_config.json").is_file())
+            with mock.patch.dict(os.environ, {}, clear=False):
+                os.environ.pop("GEMINI_HOME", None)
+                mcp_path = self.hosts.antigravity_user_mcp_path(home)
+            self.assertEqual(home / ".gemini" / "config" / "mcp_config.json", mcp_path)
+            with self.assertRaises(ValueError):
+                self.hosts.antigravity_plugin_manifest("../escape")
+        before = b"@[policy](AGENTS.md)\n@./AGENTS.md\nkeep\n"
+        rendered = self.hosts.import_pointer_instruction(before, relative="GEMINI.md")
+        text = rendered.decode("utf-8")
+        self.assertTrue(text.startswith("@AGENTS.md\n"))
+        self.assertEqual(1, text.count("@AGENTS.md"))
+        self.assertNotIn("@[policy]", text)
+        self.assertIn("keep", text)
+        self.assertEqual(b"@AGENTS.md\n", self.hosts.claude_pointer_bytes())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -975,7 +975,7 @@ class ChaosEngineKernelTest(TestCase):
             effect = self.kernel.Effect("s", "PreToolUse", "call", "rule", "record")
             valid = effect.to_record()
             valid["schemaVersion"] = 1
-            valid["identity"] = "act-as-mohab"
+            valid["identity"] = self.kernel.CANONICAL_IDENTITY
             valid["idempotencyKey"] = hashlib.sha256(
                 "\0".join(
                     valid[field]

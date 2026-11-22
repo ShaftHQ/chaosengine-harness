@@ -19,7 +19,23 @@ from typing import Callable, Mapping
 SCHEMA_VERSION = 1
 STATE_SCHEMA_VERSION = 3
 CANONICAL_IDENTITY = "chaos-engine"
-LEGACY_IDENTITIES = ("act-as-" + "mo" + "hab",)
+# Provider-neutral roles. A person token is not an identity.
+JOURNAL_ROLES = frozenset({
+    "orchestrator",
+    "implementer",
+    "reviewer",
+    "tester",
+    "mechanical-helper",
+})
+
+
+def _accepted_journal_identity(identity: str, schema_version: int) -> bool:
+    """Accept the product identity, or a v1 role. Never a person token."""
+    if identity == CANONICAL_IDENTITY:
+        return True
+    return schema_version == 1 and identity in JOURNAL_ROLES
+
+
 TERMINAL_PHASES = frozenset({"Complete", "Blocked"})
 LIFECYCLE_TRANSITIONS: Mapping[str, tuple[str, ...]] = {
     "ReadOnly": ("Complete", "Planned", "Blocked"),
@@ -1484,14 +1500,9 @@ class EffectJournal:
                 expected_key = _v1_effect_key(effect_values)
             else:
                 expected_key = _v2_effect_key(effect_values)
-            accepted_identities = (
-                {CANONICAL_IDENTITY, *LEGACY_IDENTITIES}
-                if item["schemaVersion"] == 1
-                else {CANONICAL_IDENTITY}
-            )
             digest = str(item["payloadDigest"])
             if (
-                item["identity"] not in accepted_identities
+                not _accepted_journal_identity(item["identity"], item["schemaVersion"])
                 or not str(item["sessionId"]).strip()
                 or item["idempotencyKey"] != expected_key
                 or re.fullmatch(r"[0-9a-f]{64}", digest) is None

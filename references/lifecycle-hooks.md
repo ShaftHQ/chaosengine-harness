@@ -26,6 +26,10 @@ Post-delivery [self-improve](../skills/self-improve/SKILL.md) stays a locator at
 Per-event host and enforce/guide mode live in the
 [hook trigger map](hook-trigger-map.md).
 
+Cursor, OpenCode, and Antigravity register the documented events through
+`runtime/hook_surfaces.py`. They are hook hosts. Grok Bot stays
+instruction-only. Skill bodies stay one source under `.chaos-engine/skills/`.
+
 ## Required events
 
 Every installed host that can run project hooks must register the same

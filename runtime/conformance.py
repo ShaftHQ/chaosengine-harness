@@ -393,6 +393,61 @@ def production_hook_registry() -> dict[str, set[str]]:
     return registry
 
 
+NINE_HOST_LABELS = (
+    ("claude", "Claude"),
+    ("codex", "Codex"),
+    ("grok", "Grok"),
+    ("gemini", "Gemini"),
+    ("copilot", "Copilot"),
+    ("opencode", "OpenCode"),
+    ("cursor", "Cursor"),
+    ("antigravity", "Antigravity"),
+    ("grok-bot", "Grok Bot"),
+)
+
+
+def host_parity_score(tree: Path | None = None) -> tuple[int, int]:
+    """(ready, 9). Each host needs a guide and a matrix label.
+
+    grok-bot stays out of production_hook_registry. CLAUDE.md and GEMINI.md,
+    when present, must stay a single @AGENTS.md pointer.
+    """
+    root = Path(tree) if tree is not None else Path(__file__).resolve().parents[1]
+    guides = root / "guides" / "tools"
+    matrix_path = root / "references" / "host-parity-matrix.md"
+    try:
+        matrix_text = matrix_path.read_text(encoding="utf-8")
+    except OSError:
+        matrix_text = ""
+    ready = 0
+    for host, label in NINE_HOST_LABELS:
+        guide = guides / f"{host}.md"
+        try:
+            text = guide.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        if host not in text:
+            continue
+        if label not in matrix_text and host not in matrix_text:
+            continue
+        ready += 1
+    pointers_ok = True
+    for name in ("CLAUDE.md", "GEMINI.md"):
+        path = root / name
+        if not path.is_file():
+            continue
+        try:
+            body = path.read_text(encoding="utf-8").replace("\r\n", "\n").strip()
+        except OSError:
+            pointers_ok = False
+            continue
+        if body != "@AGENTS.md":
+            pointers_ok = False
+    if not pointers_ok:
+        ready = max(0, ready - 1)
+    return ready, len(NINE_HOST_LABELS)
+
+
 def check_host_guide_events(registry: dict[str, set[str]], guides: Path | None = None) -> list[str]:
     """Fail when a kernel-registered event name is absent from guides/tools/<host>.md."""
     guide_dir = guides if guides is not None else Path(__file__).resolve().parents[1] / "guides" / "tools"

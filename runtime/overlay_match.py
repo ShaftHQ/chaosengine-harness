@@ -605,6 +605,43 @@ MEMPALACE_BACKEND = "sqlite_exact"
 _HOST_MCP_FILES = (".mcp.json", ".cursor/mcp.json", ".vscode/mcp.json", ".codex/config.toml")
 
 
+def _sibling_module(name: str, tag: str):
+    """Load a runtime sibling by path. Cache the result, including a failed load."""
+    cache = getattr(_sibling_module, "cache", None)
+    if cache is None:
+        cache = {}
+        _sibling_module.cache = cache
+    if tag in cache:
+        return cache[tag]
+    path = Path(__file__).resolve().with_name(name)
+    if not path.is_file():
+        cache[tag] = None
+        return None
+    spec = importlib.util.spec_from_file_location(tag, path)
+    if spec is None or spec.loader is None:
+        cache[tag] = None
+        return None
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+    except (OSError, ImportError, SyntaxError, AttributeError, ValueError):
+        cache[tag] = None
+        return None
+    cache[tag] = module
+    return module
+
+
+def _host_mcp_files() -> tuple[str, ...]:
+    policy = _sibling_module("mcp_policy.py", "ce_overlay_mcp_policy")
+    if policy is None:
+        return _HOST_MCP_FILES
+    try:
+        files = tuple(policy.project_mcp_files())
+    except (AttributeError, TypeError):
+        return _HOST_MCP_FILES
+    return files or _HOST_MCP_FILES
+
+
 def _server_backend(server: object) -> str | None:
     """Backend a host MCP entry selects, from its env or ``--backend`` argument."""
     if not isinstance(server, dict):
@@ -644,7 +681,7 @@ def _host_servers(path: Path) -> dict[str, object]:
 def host_backend_mismatches(project: Path) -> list[str]:
     """Host MCP configs whose MemPalace server selects a non-sqlite_exact backend."""
     found = []
-    for relative in _HOST_MCP_FILES:
+    for relative in _host_mcp_files():
         for name, server in _host_servers(Path(project) / relative).items():
             backend = _server_backend(server)
             if "mempalace" in str(name).casefold() and backend not in (None, MEMPALACE_BACKEND):
@@ -697,6 +734,14 @@ def apply_mempalace_backend_doctor(
         }
 
     apply_mempalace_owned_excludes_doctor(result, project)
+    policy = _sibling_module("mcp_policy.py", "ce_overlay_mcp_policy")
+    if policy is not None and hasattr(policy, "apply_mcp_report_doctor"):
+        policy.apply_mcp_report_doctor(result, project)
+    hosts = _sibling_module("hosts.py", "ce_overlay_hosts_windows_mcp")
+    if hosts is not None and hasattr(hosts, "windows_mcp_python_warning"):
+        warning = hosts.windows_mcp_python_warning(project)
+        if warning and isinstance(components, dict):
+            components["windows-mcp-python"] = warning
 
 
 def apply_mempalace_owned_excludes_doctor(result: dict[str, object], project: Path) -> None:

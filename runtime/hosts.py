@@ -978,14 +978,83 @@ def repository_map_resolver_present(project: Path) -> bool:
     return (project / "tools/repository-map/resolve_mempalace.py").is_file()
 
 
+def _operator_python() -> str:
+    """Operator CLI spelling: Windows py -3, POSIX python3."""
+    return "py -3" if os.name == "nt" else "python3"
+
+
 def centralized_mempalace_status() -> dict[str, str]:
+    cli = _operator_python()
     return {
         "status": "degraded",
         "detail": (
             "Centralized MemPalace is the operator path; "
-            "use py -3 scripts/agents/knowledge_stores.py status"
+            f"use {cli} scripts/agents/knowledge_stores.py status"
         ),
     }
+
+
+_STORES_STATUS = None
+
+
+def _stores_status_module():
+    """Load stores.py for resolve_palace. Does not create a palace directory."""
+    global _STORES_STATUS
+    if _STORES_STATUS is not None:
+        return _STORES_STATUS
+    path = Path(__file__).resolve().with_name("stores.py")
+    spec = importlib.util.spec_from_file_location("chaos_engine_hosts_stores_status", path)
+    if spec is None or spec.loader is None:
+        return None
+    module = importlib.util.module_from_spec(spec)
+    previous = sys.dont_write_bytecode
+    sys.dont_write_bytecode = True
+    try:
+        spec.loader.exec_module(module)
+    except (OSError, ImportError, SyntaxError):
+        return None
+    finally:
+        sys.dont_write_bytecode = previous
+    _STORES_STATUS = module
+    return module
+
+
+def _palace_env_set() -> bool:
+    for name in ("CHAOS_ENGINE_MEMPALACE", "SHA" + "FT_MEMPALACE"):
+        if os.environ.get(name, "").strip():
+            return True
+    return False
+
+
+def _status_palace(project: Path) -> Path:
+    """Palace to classify. A shaft resolver keeps the local path for existing probes.
+
+    Non-git projects without an override use the local palace. That is the path
+    stores.resolve_palace returns, and skipping git keeps a mocked MCP launcher
+    quiet. A git checkout or an override calls stores.resolve_palace and does
+    not create a directory.
+    """
+    local = project / ".chaos-engine-state" / "mempalace"
+    if repository_map_resolver_present(project):
+        return local
+    if not _palace_env_set() and not (Path(project) / ".git").exists():
+        return local
+    module = _stores_status_module()
+    if module is None:
+        return local
+    try:
+        return Path(module.resolve_palace(project))
+    except (OSError, RuntimeError, TypeError, ValueError, AttributeError):
+        return local
+
+
+def mempalace_sidecar_paths(palace: Path) -> tuple[Path, Path]:
+    """Documentation and revision sidecars live beside the palace, not inside it."""
+    parent = Path(palace).parent
+    return (
+        parent / "mempalace-documentation-pages.json",
+        parent / "mempalace-source-revision.json",
+    )
 
 
 def resolved_central_palace(project: Path) -> Path | None:
@@ -1285,6 +1354,10 @@ def mempalace_directory_status(palace: Path) -> dict[str, str]:
             Path(f"{logstream}-wal"),
             Path(f"{logstream}-shm"),
             palace / "replica.json",
+            palace / "documentation-pages.json",
+            palace / ".chaos-engine-source-revision.json",
+            palace / "mempalace-documentation-pages.json",
+            palace / "mempalace-source-revision.json",
         )
     }
     unrecognized = [child for child in children if child.name not in allowed_names]
@@ -1308,8 +1381,19 @@ def mempalace_directory_status(palace: Path) -> dict[str, str]:
 
 
 def mempalace_runtime_status(project: Path) -> dict[str, str]:
-    """Classify project-local or centralized MemPalace state."""
-    palace = project / ".chaos-engine-state/mempalace"
+    """Classify project-local or centralized MemPalace state.
+
+    Uses stores.resolve_palace when no shaft resolver is present. Does not
+    create .chaos-engine-state/mempalace. A healthy central palace wins over
+    a local directory the resolver did not select.
+    """
+    if repository_map_resolver_present(project):
+        central = resolved_central_palace(project)
+        if central is not None and central.exists():
+            central_status = mempalace_directory_status(central)
+            if central_status.get("status") == "healthy":
+                return central_status
+    palace = _status_palace(project)
     if is_link_or_reparse(palace):
         return {
             "status": "recovery-required",
@@ -1371,13 +1455,19 @@ def initialize_mempalace_runtime(project: Path) -> None:
     project = project.resolve()
     # #7465: merge owned excludes whenever runtime init is consulted (healthy or not).
     ensure_owned_mempalace_excludes(project)
-    state_root = project / ".chaos-engine-state"
-    palace = state_root / "mempalace"
     status = mempalace_runtime_status(project)["status"]
     if status == "healthy":
         return
     if status != "initialization-required":
         return
+    palace = _status_palace(project)
+    try:
+        inside = palace.resolve().is_relative_to(project)
+    except (OSError, ValueError):
+        inside = False
+    if not inside:
+        return
+    state_root = palace.parent
 
     validate_path(project, palace)
     state_root_created = not state_root.exists()
@@ -1532,7 +1622,7 @@ def mcp_runtime_status(
     palace = (
         resolved_central_palace(project)
         if repository_map_resolver_present(project)
-        else project / ".chaos-engine-state/mempalace"
+        else _status_palace(project)
     )
     palace_status = None if palace is None else mempalace_directory_status(palace).get("status")
     if palace_status == "initialization-required" and not repository_map_resolver_present(project):
@@ -2986,15 +3076,22 @@ def testing_rule_text(relative: str) -> str:
         "Cite only symbols that exist in the tree. Technique notes: "
         "`.chaos-engine/references/test-design.md`.\n"
     )
+    scope = 'tests/**,src/test/**,*test*.*'
     if relative.endswith("testing.instructions.md"):
-        front = '---\napplyTo: "**/*.{py,java,js,ts}"\n---\n\n'
+        front = f'---\napplyTo: "{scope}"\n---\n\n'
     elif relative.endswith("testing.md"):
-        front = '---\npaths:\n  - "**/*.{py,java,js,ts}"\n---\n\n'
+        front = (
+            "---\npaths:\n"
+            '  - "tests/**"\n'
+            '  - "src/test/**"\n'
+            '  - "*test*.*"\n'
+            "---\n\n"
+        )
     else:
         front = (
             "---\n"
             "description: Path-scoped testing rules\n"
-            'globs: "**/*.{py,java,js,ts}"\n'
+            f'globs: "{scope}"\n'
             "alwaysApply: false\n"
             "---\n\n"
         )
@@ -3399,6 +3496,93 @@ def mempalace_mcp_arguments(project: Path | None) -> list[str]:
     """Host MCP argv. ``tool.py`` injects ``--palace``; hosts must not."""
     del project
     return [".chaos-engine/tool.py", "mempalace-mcp"]
+
+
+MEMPALACE_LIGHT_TOOLS = ("palace_query", "palace_exec", "palace_coordinate")
+
+
+def mempalace_mcp_light_preference(project: Path | None) -> tuple[str, ...]:
+    """Prefer MemPalace light (3 tools) when MCP is opted in.
+
+    Published host argv stays mempalace_mcp_arguments. tool.py rejects extra
+    storage arguments, so this preference is not spliced into that argv.
+    """
+    if not mcp_opt_in(project):
+        return ()
+    return ("--mcp", "light")
+
+
+def windows_mcp_python_warning(
+    project: Path | None = None,
+    *,
+    platform_name: str | None = None,
+    finder=None,
+) -> dict[str, object] | None:
+    """Warn when Windows MCP opt-in would launch a missing or Store python3.
+
+    Report-only. Does not flip doctor to recovery-required.
+    """
+    if not mcp_opt_in(project):
+        return None
+    if (platform_name or os.name) != "nt":
+        return None
+    locate = finder or shutil.which
+    found = locate("python3")
+    reasons: list[str] = []
+    if not found:
+        reasons.append("python3-missing")
+    else:
+        folded = str(found).replace("/", "\\").casefold()
+        if "\\windowsapps\\" in folded:
+            reasons.append("windows-store-stub")
+    if not reasons:
+        return None
+    return {
+        "status": "sync-advisory",
+        "taskImpact": "advisory",
+        "reportOnly": True,
+        "reason": ",".join(reasons),
+        "detail": "Windows MCP launcher uses python3; it is missing or a Store stub",
+    }
+
+
+def antigravity_user_mcp_path(home: Path | None = None) -> Path:
+    """User-level Antigravity MCP file. Not .mcp.json."""
+    root = home or Path.home()
+    gemini = Path(os.environ.get("GEMINI_HOME") or root / ".gemini")
+    return gemini / "config" / "mcp_config.json"
+
+
+def antigravity_plugin_manifest(name: str = "chaos-engine") -> dict[str, str]:
+    """Flat plugins/<name>/plugin.json body. Reject path segments."""
+    chosen = str(name or "").strip()
+    if not chosen or chosen != Path(chosen).name or chosen in {".", ".."}:
+        raise ValueError("invalid antigravity plugin name")
+    return {
+        "name": chosen,
+        "description": "ChaosEngine host adapter",
+    }
+
+
+def write_antigravity_plugin_bundle(
+    project: Path,
+    name: str = "chaos-engine",
+    *,
+    mcp: bool = False,
+) -> Path:
+    """Write plugins/<name>/plugin.json when a plugin or MCP bundle is requested."""
+    manifest = antigravity_plugin_manifest(name)
+    directory = Path(project) / "plugins" / manifest["name"]
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / "plugin.json"
+    path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    if mcp:
+        mcp_path = directory / "mcp_config.json"
+        mcp_path.write_text(
+            json.dumps({"mcpServers": {}}, indent=2) + "\n",
+            encoding="utf-8",
+        )
+    return path
 
 
 def _optional_servers(
@@ -3917,6 +4101,15 @@ def instruction_content(before: bytes | None, instruction: str) -> bytes:
 
 AGENTS_IMPORT = "@AGENTS.md"
 IMPORT_POINTER_FILES = ("CLAUDE.md", "GEMINI.md")
+_AGENTS_INCLUDE = re.compile(r"^@\[[^\]]*\]\(\.?/?AGENTS\.md\)$")
+
+
+def _agents_include_line(line: str) -> bool:
+    """True for @AGENTS.md and the Gemini labeled include of the same file."""
+    stripped = line.strip()
+    if stripped in {AGENTS_IMPORT, "@./AGENTS.md"}:
+        return True
+    return _AGENTS_INCLUDE.fullmatch(stripped) is not None
 
 
 def claude_pointer_bytes() -> bytes:
@@ -3946,7 +4139,7 @@ def import_pointer_instruction(before: bytes | None, *, relative: str) -> bytes:
             _note_merge_handoff(relative, "markers exist but the interior is not the current owned block", AGENTS_IMPORT)
             return before
         existing = existing[:begin] + existing[finish:].lstrip("\n")
-    rest = [line for line in existing.split("\n") if line.strip() != AGENTS_IMPORT]
+    rest = [line for line in existing.split("\n") if not _agents_include_line(line)]
     body = "\n".join(rest).strip("\n")
     return (f"{AGENTS_IMPORT}\n" + (f"\n{body}\n" if body else "")).encode()
 
@@ -3960,7 +4153,7 @@ def user_owned_agents_text(text: str) -> str:
     lines = [
         line
         for line in text.replace("\r\n", "\n").split("\n")
-        if line.strip() != AGENTS_IMPORT
+        if not _agents_include_line(line)
     ]
     return "\n".join(lines).strip()
 

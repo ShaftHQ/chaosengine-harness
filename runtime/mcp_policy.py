@@ -335,15 +335,56 @@ def server_ids_from_text(text: str) -> list[str]:
     return [match.group(1).strip().strip('"') for match in _SERVER_HEADER.finditer(text)]
 
 
+NINE_HOSTS = (
+    "claude",
+    "codex",
+    "grok",
+    "gemini",
+    "copilot",
+    "opencode",
+    "cursor",
+    "antigravity",
+    "grok-bot",
+)
+
+# One project MCP file per host. The first four stay the historical set.
+PROJECT_MCP_FILES = (
+    ".mcp.json",
+    ".cursor/mcp.json",
+    ".vscode/mcp.json",
+    ".codex/config.toml",
+    ".grok/config.toml",
+    ".gemini/settings.json",
+    ".opencode/opencode.json",
+    "plugins/chaos-engine/mcp_config.json",
+    ".grok/bot-mcp.json",
+)
+
+MEMPALACE_LIGHT_TOOLS = ("palace_query", "palace_exec", "palace_coordinate")
+
+
+def project_mcp_files() -> tuple[str, ...]:
+    """Project MCP files scanned for policy and backend mismatch."""
+    return PROJECT_MCP_FILES
+
+
 def user_skill_roots(home: Path | None = None) -> tuple[tuple[str, Path], ...]:
     """User-home skill trees that must not collide with the overlay catalog."""
     root = home or Path.home()
+    gemini = Path(os.environ.get("GEMINI_HOME") or root / ".gemini")
+    grok = Path(os.environ.get("GROK_HOME") or root / ".grok")
+    xdg = Path(os.environ.get("XDG_CONFIG_HOME") or root / ".config")
     return (
         ("claude", root / ".claude" / "skills"),
         ("agents", root / ".agents" / "skills"),
         ("codex", Path(os.environ.get("CODEX_HOME") or root / ".codex") / "skills"),
-        ("grok", Path(os.environ.get("GROK_HOME") or root / ".grok") / "skills"),
-        ("gemini", Path(os.environ.get("GEMINI_HOME") or root / ".gemini") / "skills"),
+        ("grok", grok / "skills"),
+        ("gemini", gemini / "skills"),
+        ("copilot", Path(os.environ.get("COPILOT_HOME") or root / ".copilot") / "skills"),
+        ("opencode", xdg / "opencode" / "skills"),
+        ("cursor", root / ".cursor" / "skills"),
+        ("antigravity", gemini / "config" / "skills"),
+        ("grok-bot", grok / "bot" / "skills"),
     )
 
 
@@ -394,16 +435,22 @@ def user_mcp_paths(home: Path | None = None) -> tuple[tuple[str, Path], ...]:
     """Host user/global MCP files. Same heal prompt on every adapter."""
     root = home or Path.home()
     xdg = Path(os.environ.get("XDG_CONFIG_HOME") or root / ".config")
+    gemini = Path(os.environ.get("GEMINI_HOME") or root / ".gemini")
+    grok = Path(os.environ.get("GROK_HOME") or root / ".grok")
     named = (
         ("claude", Path(os.environ.get("CLAUDE_CONFIG") or root / ".claude.json")),
         ("codex", Path(os.environ.get("CODEX_HOME") or root / ".codex") / "config.toml"),
-        ("grok", Path(os.environ.get("GROK_HOME") or root / ".grok") / "config.toml"),
-        ("gemini", Path(os.environ.get("GEMINI_HOME") or root / ".gemini") / "settings.json"),
+        ("grok", grok / "config.toml"),
+        ("gemini", gemini / "settings.json"),
         ("copilot", Path(os.environ.get("COPILOT_HOME") or root / ".copilot") / "mcp-config.json"),
         (
             "copilot-intellij",
             xdg / "github-copilot" / "intellij" / "mcp.json",
         ),
+        ("opencode", xdg / "opencode" / "opencode.json"),
+        ("cursor", root / ".cursor" / "mcp.json"),
+        ("antigravity", gemini / "config" / "mcp_config.json"),
+        ("grok-bot", grok / "bot" / "mcp.json"),
     )
     return named
 
@@ -833,14 +880,9 @@ def upgrade_strip_retired_mcp(project: Path) -> list[str]:
     removed: list[str] = []
     try:
         root = Path(project)
-        paths = (
-            root / ".mcp.json",
+        paths = tuple(root / relative for relative in PROJECT_MCP_FILES) + (
             root / ".claude" / "settings.json",
             root / ".claude" / "settings.local.json",
-            root / ".codex" / "config.toml",
-            root / ".grok" / "config.toml",
-            root / ".cursor" / "mcp.json",
-            root / ".gemini" / "settings.json",
         )
         for path in paths:
             if not path.is_file():
@@ -856,6 +898,72 @@ def plugin_base_name(plugin_id: str) -> str:
     """Return `chaos-engine` from `chaos-engine@marketplace`."""
     text = str(plugin_id).strip()
     return text.split("@", 1)[0].casefold()
+
+
+def _mcp_opted_in(project: Path | None) -> bool:
+    if os.environ.get("CHAOS_ENGINE_WITH_MCP") == "1":
+        return True
+    return project is not None and (Path(project) / ".chaos-engine-state" / "with-mcp").is_file()
+
+
+def _tool_definition_bytes(document: object) -> int:
+    """Byte size of JSON tool-definition values. Missing tools count as zero."""
+    if not isinstance(document, dict):
+        return 0
+    total = 0
+    tools = document.get("tools")
+    if tools is not None:
+        total += len(json.dumps(tools, sort_keys=True).encode("utf-8"))
+    for key in ("mcpServers", "servers", "mcp_servers"):
+        servers = document.get(key)
+        if not isinstance(servers, dict):
+            continue
+        for server in servers.values():
+            if isinstance(server, dict) and server.get("tools") is not None:
+                total += len(json.dumps(server["tools"], sort_keys=True).encode("utf-8"))
+    return total
+
+
+def mcp_tool_definition_bytes(project: Path | None) -> int:
+    """Sum tool-definition JSON bytes across the nine project MCP files."""
+    if project is None:
+        return 0
+    total = 0
+    for relative in PROJECT_MCP_FILES:
+        path = Path(project) / relative
+        if not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            continue
+        try:
+            if path.suffix == ".toml":
+                import tomllib
+
+                document = tomllib.loads(text)
+            else:
+                document = json.loads(text)
+        except (ValueError, UnicodeError):
+            continue
+        total += _tool_definition_bytes(document)
+    return total
+
+
+def apply_mcp_report_doctor(result: dict[str, object], project: Path | None) -> None:
+    """Report MCP tool-definition bytes. Does not change doctor status."""
+    components = result.get("components")
+    if not isinstance(components, dict):
+        return
+    active = _mcp_opted_in(project)
+    components["mcp-tool-bytes"] = {
+        "status": "healthy",
+        "taskImpact": "advisory",
+        "reportOnly": True,
+        "bytes": mcp_tool_definition_bytes(project),
+        "mempalacePreference": "light" if active else "off",
+        "mempalaceTools": list(MEMPALACE_LIGHT_TOOLS) if active else [],
+    }
 
 
 def extra_enabled_plugins(enabled: dict[str, object]) -> list[str]:
