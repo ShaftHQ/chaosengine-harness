@@ -3793,9 +3793,12 @@ def _is_current_or_recognized_legacy_owned_span(
     if current is not None and interior == current:
         return True
     if start == START and end == END:
+        folded = interior.casefold()
+        # Either fingerprint is an owned ChaosEngine block. Owner text outside
+        # the markers stays. A marker pair with neither fingerprint is a handoff.
         return (
-            "Before every task, follow the canonical" in interior
-            and ".chaos-engine/" in interior
+            ".chaos-engine/" in folded
+            or "before every task, follow the canonical" in folded
         )
     if start == GITIGNORE_START and end == GITIGNORE_END:
         return (
@@ -4840,8 +4843,15 @@ def codex_content(
 
 
 def hook_content(before: bytes | None, rendered: bytes, label: str) -> bytes:
+    """Drop owned ChaosEngine handlers, then append the desired groups.
+
+    Callers that already pass ``without_chaos_hooks`` stay idempotent. A caller
+    that forgets the strip still replaces the old command instead of leaving it
+    beside the new one.
+    """
+    stripped = without_chaos_hooks(before, label)
     try:
-        existing = json.loads(before) if before is not None else {"hooks": {}}
+        existing = json.loads(stripped)
         desired = json.loads(rendered)
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
         raise ValueError(f"invalid {label} hook configuration") from error
@@ -7916,6 +7926,54 @@ def preflight(project: Path) -> dict[str, object]:
     }
 
 
+def retired_receipt_paths(previous_after: dict[str, bytes | None]) -> tuple[str, ...]:
+    """Receipt paths this install no longer ships.
+
+    Live memory files stay. A path still in ``managed_paths`` is reconciled,
+    not deleted here. Only bytes are removable; a recorded absence is not.
+    """
+    managed = frozenset(managed_paths())
+    found: list[str] = []
+    for relative, content in previous_after.items():
+        if not isinstance(relative, str) or not isinstance(content, bytes):
+            continue
+        if relative in managed or relative in LIVE_PERSISTENT_PATHS:
+            continue
+        try:
+            receipt_image_key(relative)
+        except ValueError:
+            continue
+        found.append(relative)
+    return tuple(found)
+
+
+def remove_retired_receipt_files(
+    project: Path,
+    previous_after: dict[str, bytes | None],
+    removed: list[tuple[str, bytes]],
+) -> None:
+    """Unlink a retired path only when the file still matches the previous receipt."""
+    for relative in retired_receipt_paths(previous_after):
+        path = project / relative
+        if path.is_dir():
+            continue
+        current = read_file(project, path)
+        expected = previous_after[relative]
+        if not isinstance(expected, bytes) or current is None or current != expected:
+            continue
+        atomic_remove(project, path, current)
+        removed.append((relative, current))
+
+
+def restore_retired_receipt_files(project: Path, removed: list[tuple[str, bytes]]) -> None:
+    """Put back files removed in this upgrade attempt. Leave a path that reappeared."""
+    for relative, content in reversed(removed):
+        path = project / relative
+        if read_file(project, path) is not None:
+            continue
+        atomic_write(project, path, content, None)
+
+
 def reconcile(  # noqa: MC0001 - one ordered pass retains rollback images for every host.
     project: Path,
     desired: dict[str, bytes | None],
@@ -8134,8 +8192,10 @@ def _install_with_existing_receipt(
             key=lambda item: (len(Path(item).parts), item),
         )
         next_raw = write_receipt(project, next_receipt, raw)
+        retired_removed: list[tuple[str, bytes]] = []
         try:
             prepare_created_directories(project, next_receipt)
+            remove_retired_receipt_files(project, after, retired_removed)
             reconcile(project, wanted, (current, wanted))
             next_receipt["phase"] = "installed"
             write_receipt(project, next_receipt, next_raw)
@@ -8145,6 +8205,7 @@ def _install_with_existing_receipt(
             _record_grok_and_identity(next_receipt, project)
             return next_receipt
         except BaseException:
+            restore_retired_receipt_files(project, retired_removed)
             reconcile(project, current, (current, wanted))
             if new_directories:
                 cleanup_receipt = dict(next_receipt)

@@ -87,7 +87,9 @@ with `--`. The regression is
 
 For a terminal receipt, the final user-facing summary is one retrospective:
 what happened, why it happened, continue doing, stop doing, start doing, and
-one next action.
+one next action. A line-leading `Why:`, `Continue:`, `Stop:`, or `Start:`
+heading counts for those four topics. The live Stop asks once after background
+work has exited. A later Stop does not ask again. A valid note is still accepted.
 Write the learning retrospective only after the merge SHA exists and after subagents and monitors have exited. A non-required check must not start the note and must not be the only reason the note waits.
 That is the Start-Stop-Continue close (gather the facts,
 name the cause, decide the behaviors, commit one action). An actionable line

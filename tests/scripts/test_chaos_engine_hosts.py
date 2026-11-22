@@ -2031,6 +2031,91 @@ class ChaosEngineHostsTest(unittest.TestCase):
         self.assertEqual("python tools/my-guard.py", cleaned["hooks"]["PreToolUse"][0]["hooks"][0]["command"])
         self.assertIn("Custom", cleaned["hooks"])
 
+    def test_hook_content_strips_owned_commands_before_append(self):
+        module = load(HOSTS, "chaos_engine_hook_content_strip")
+        before = {
+            "hooks": {
+                "Stop": [{
+                    "hooks": [
+                        {"type": "command", "command": "python3 .chaos-engine/hooks/guard.py"},
+                        {"type": "command", "command": "python3 tools/keep.py"},
+                    ],
+                }],
+            },
+        }
+        desired = {
+            "hooks": {
+                "Stop": [{
+                    "hooks": [
+                        {"type": "command", "command": "python3 .chaos-engine/hooks/launch.py"},
+                    ],
+                }],
+            },
+        }
+        merged = json.loads(
+            module.hook_content(json.dumps(before).encode(), json.dumps(desired).encode(), "Grok")
+        )
+        commands = [
+            hook["command"]
+            for group in merged["hooks"]["Stop"]
+            for hook in group["hooks"]
+        ]
+        self.assertIn("python3 tools/keep.py", commands)
+        self.assertIn("python3 .chaos-engine/hooks/launch.py", commands)
+        self.assertNotIn("python3 .chaos-engine/hooks/guard.py", commands)
+
+    def test_old_chaosengine_instruction_block_is_replaced(self):
+        module = load(HOSTS, "chaos_engine_old_instruction")
+        module.consume_merge_handoffs()
+        old = (
+            "<!-- CHAOSENGINE:START -->\n"
+            "Old router. Load `.chaos-engine/skills/chaos-engine/SKILL.md`.\n"
+            "<!-- CHAOSENGINE:END -->\n"
+        )
+        block = module.agents_md_block(project=ROOT)
+        merged = module.merge_instruction(
+            ("Owner rule stays.\n" + old).encode(),
+            block,
+            relative="AGENTS.md",
+        ).decode()
+        self.assertIn("Owner rule stays.", merged)
+        self.assertNotIn("Old router.", merged)
+        self.assertIn("Before every task, follow the canonical", merged)
+        self.assertEqual([], module.consume_merge_handoffs())
+        foreign = (
+            "<!-- CHAOSENGINE:START -->\n"
+            "This is my own note.\n"
+            "<!-- CHAOSENGINE:END -->\n"
+        )
+        kept = module.merge_instruction(foreign.encode(), block, relative="AGENTS.md")
+        self.assertEqual(foreign.encode(), kept)
+        self.assertTrue(module.consume_merge_handoffs())
+
+    def test_upgrade_removes_matching_retired_receipt_files_and_keeps_edits(self):
+        import base64
+
+        module = load(HOSTS, "chaos_engine_retired_receipt")
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary) / "consumer"
+            project.joinpath(".chaos-engine/skills/chaos-engine").mkdir(parents=True)
+            project.joinpath(".chaos-engine/skills/chaos-engine/SKILL.md").write_text("# C\n")
+            module.install(project, core_commit="1" * 40)
+            receipt, _raw = module.read_receipt(project)
+            retired = "plugins/chaos-engine/hooks/old_guard.py"
+            edited = "plugins/chaos-engine/hooks/user_note.py"
+            old_bytes = b"old-chaos-hook\n"
+            recorded = b"recorded-note\n"
+            changed = b"user edited\n"
+            receipt["after"][retired] = base64.b64encode(old_bytes).decode("ascii")
+            receipt["after"][edited] = base64.b64encode(recorded).decode("ascii")
+            (project / retired).write_bytes(old_bytes)
+            (project / edited).write_bytes(changed)
+            project.joinpath(module.RECEIPT_NAME).write_bytes(module.receipt_bytes(receipt, project))
+            module.install(project, core_commit="2" * 40)
+            self.assertFalse((project / retired).exists())
+            self.assertEqual(changed, (project / edited).read_bytes())
+            self.assertTrue((project / "plugins/chaos-engine/hooks/guard.py").is_file())
+
     def test_unrelated_claude_marketplace_coexists_and_uninstall_restores_exact_bytes(self):
         module = load(HOSTS, "chaos_engine_claude_marketplace_coexistence")
         with tempfile.TemporaryDirectory() as temporary:

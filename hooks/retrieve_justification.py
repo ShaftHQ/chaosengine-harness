@@ -553,11 +553,43 @@ def _mark_session(project: Path, session_id: str | None, *, owe: bool = False, r
     _write_payload(project, payload)
 
 
+def note_retrieve_blocked(project: Path, session_id: str | None) -> None:
+    """Remember that this guard denied the project retrieve command.
+
+    A later Stop does not ask for that command again. ``retrieved`` stays false.
+    """
+    payload = _load_payload(project)
+    sessions = _live_sessions(payload)
+    key = _session_key(session_id)
+    row = dict(sessions.get(key) or {})
+    if row.get("retrieved"):
+        return
+    row["retrieveBlocked"] = True
+    row["updated"] = time.time()
+    sessions[key] = row
+    payload["sessions"] = sessions
+    payload.setdefault("schemaVersion", 1)
+    _write_payload(project, payload)
+
+
+def retrieve_blocked(project: Path, session_id: str | None) -> bool:
+    """True when this guard denied the project retrieve and it has not been paid."""
+    sessions = _live_sessions(_load_payload(project))
+    row = sessions.get(_session_key(session_id))
+    return isinstance(row, dict) and bool(row.get("retrieveBlocked")) and not row.get("retrieved")
+
+
 def session_retrieve_gap(project: Path, session_id: str) -> str | None:
-    """Retrieve command while this session owes one, else None."""
+    """Retrieve command while this session owes one, else None.
+
+    No broad search means ``retrieveOwed`` is absent, so Stop does not ask.
+    A denied project retrieve clears the ask until a later successful retrieve.
+    """
     sessions = _live_sessions(_load_payload(project))
     row = sessions.get(_session_key(session_id))
     if not isinstance(row, dict) or row.get("retrieved") or not row.get("retrieveOwed"):
+        return None
+    if row.get("retrieveBlocked"):
         return None
     return RETRIEVE_COMMAND
 

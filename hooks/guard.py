@@ -133,6 +133,16 @@ TERMINAL_LABELS = (
     "start doing",
     "next action",
 )
+# Line-leading short headings from a real retrospective. The four long phrases
+# above still count. "what happened" and "next action" already match the
+# colon form the model writes.
+_SHORT_TERMINAL_HEADINGS = {
+    "why it happened": re.compile(r"(?im)^[ \t>*_-]*why\s*:"),
+    "continue doing": re.compile(r"(?im)^[ \t>*_-]*continue\s*:"),
+    "stop doing": re.compile(r"(?im)^[ \t>*_-]*stop\s*:"),
+    "start doing": re.compile(r"(?im)^[ \t>*_-]*start\s*:"),
+}
+_SCOPE_DENIAL = "ChaosEngine rejected destructive broad scope."
 # An actionable retrospective line is a GitHub issue. The attestation is the
 # only close that carries no URL. Upstream is the ChaosEngine repository.
 # Private is the repository of the project using ChaosEngine.
@@ -1934,16 +1944,64 @@ def _path_within(path: Path, root: Path) -> bool:
     return True
 
 
-def _is_project_tool_py(script: str, cwd: Path) -> bool:
-    """True only for this checkout's ``.chaos-engine/tool.py`` argument."""
-    path = Path(script)
+def _script_path(script: str, cwd: Path) -> Path | None:
+    text = script.replace("\\", "/")
+    path = Path(text)
     if not path.is_absolute():
         path = cwd / path
-    root = justification.project_root(cwd) if justification is not None else cwd
     try:
-        return path.resolve() == (root / ".chaos-engine" / "tool.py").resolve()
+        return path.resolve()
     except OSError:
+        return None
+
+
+def _install_roots(cwd: Path) -> tuple[Path, ...]:
+    """cwd up through the retrieve project root, and no further."""
+    try:
+        current = cwd.resolve()
+    except OSError:
+        return (cwd,)
+    stop = current
+    if justification is not None:
+        try:
+            stop = justification.project_root(cwd).resolve()
+        except OSError:
+            stop = current
+    found: list[Path] = []
+    seen: set[Path] = set()
+    while current not in seen:
+        seen.add(current)
+        found.append(current)
+        if current == stop or current.parent == current:
+            break
+        if stop != current and stop not in current.parents:
+            break
+        current = current.parent
+    return tuple(found)
+
+
+def _is_harness_source_tool(resolved: Path) -> bool:
+    """True for this repository's root ``tool.py``, not a nested copy."""
+    if resolved.name != "tool.py":
         return False
+    parent = resolved.parent
+    return (parent / "hooks" / "guard.py").is_file() and (parent / "runtime" / "hosts.py").is_file()
+
+
+def _is_project_tool_py(script: str, cwd: Path) -> bool:
+    """True for this checkout's tool.py, including a child overlay under a parent git root."""
+    resolved = _script_path(script, cwd)
+    if resolved is None:
+        return False
+    if _is_harness_source_tool(resolved):
+        return True
+    for root in _install_roots(cwd):
+        try:
+            if resolved == (root / ".chaos-engine" / "tool.py").resolve():
+                return True
+        except OSError:
+            continue
+    return False
 
 
 def _read_script(script: str, cwd: Path) -> str | None:
@@ -2325,20 +2383,36 @@ def _terminal_note(event: dict) -> str:
 
 def _terminal_note_accepted(message: str) -> bool:
     folded = message.casefold()
-    if any(label not in folded for label in TERMINAL_LABELS):
-        return False
+    for label in TERMINAL_LABELS:
+        if label in folded:
+            continue
+        pattern = _SHORT_TERMINAL_HEADINGS.get(label)
+        if pattern is None or pattern.search(message) is None:
+            return False
     return not enhancement_errors(message)
 
 
+def _activity_recorded(session_id: str, activity: str) -> bool:
+    try:
+        items = reflection.entries(session_id)
+    except (OSError, TypeError, ValueError):
+        return False
+    return any(
+        item.get("kind") == "task-activity" and item.get("activity") == activity
+        for item in items
+    )
+
+
 def _terminal_reflection_reason(event: dict, session_id: str) -> str:
-    """Demand the learning retrospective on a live Stop after one hour.
+    """Demand the learning retrospective once, on a live Stop after one hour.
 
     SessionEnd still files the notes. Grok does not show a SessionEnd
     systemMessage, so the note the user reads is this turn's reply.
     A Stop while a subagent or a background task is still in flight does
     not ask (#74). ``channel_closed`` and ``shutdown`` are ignored because
-    that Stop decision does not continue the turn. ``stop_hook_active``
-    does not clear an unpaid note.
+    that Stop decision does not continue the turn. One demand is recorded
+    for the session. A later Stop does not ask again. A valid note is still
+    accepted after that demand.
     """
     if str(event.get("hook_event_name") or "") == "SubagentStop":
         return ""
@@ -2355,6 +2429,9 @@ def _terminal_reflection_reason(event: dict, session_id: str) -> str:
     if _terminal_note_accepted(_terminal_note(event)):
         reflection.accept_terminal_reflection(session_id)
         return ""
+    if _activity_recorded(session_id, "terminal-reflection-demanded"):
+        return ""
+    reflection.record_activity(session_id, "terminal-reflection-demanded")
     return (
         "Terminal reflection required. This session exceeded one hour and "
         "background work has exited. Write the learning retrospective in this "
@@ -2678,6 +2755,61 @@ def _open_pull_request_reason(session_id: str, event: dict) -> str:
     )
 
 
+_READ_ONLY_TOOL_SUBCOMMANDS = frozenset({"entry", "ce-version", "retrieve"})
+
+
+def _tool_subcommand(arguments: list[str], script: str) -> str:
+    folded_script = script.replace("\\", "/")
+    seen_script = False
+    for arg in arguments:
+        if not seen_script:
+            if arg.replace("\\", "/") == folded_script:
+                seen_script = True
+            continue
+        if arg.startswith("-"):
+            continue
+        return arg.casefold()
+    return ""
+
+
+def _read_only_project_tool_command(command: str, cwd: Path) -> bool:
+    """True for entry, ce-version, or retrieve of this project's tool.py.
+
+    A compound that is already catastrophic stays false so a denied ``rm``
+    does not clear the retrieve debt.
+    """
+    if catastrophic_posix(command) or "git reset --hard" in command.casefold():
+        return False
+    parsed = tokens(command)
+    if not parsed:
+        return False
+    head, arguments = command_head(parsed)
+    lang = head.removesuffix(".exe")
+    if lang not in _PY_LANGS:
+        return False
+    script = _positional_script(arguments, ("-W", "-X", "-m", "-Q"))
+    if not script or not _is_project_tool_py(script, cwd):
+        return False
+    return _tool_subcommand(arguments, script) in _READ_ONLY_TOOL_SUBCOMMANDS
+
+
+def _retrieve_gap_reason(event: dict, session_id: str) -> str:
+    """One retrieve demand. None after a demand, a blocked project retrieve, or no debt.
+
+    ``retrieveOwed`` is set only by a broad search. A session that has not
+    searched does not owe, so Stop stays quiet.
+    """
+    if justification is None:
+        return ""
+    root = justification.project_root(Path(str(event.get("cwd") or Path.cwd())))
+    if justification.retrieve_blocked(root, session_id):
+        return ""
+    if _activity_recorded(session_id, "retrieve-demanded"):
+        return ""
+    gap = justification.session_retrieve_gap(root, session_id)
+    return gap or ""
+
+
 def _stop_block_reason(event: dict, session_id: str) -> str:
     if _stop_turn_closed(event):
         return ""
@@ -2706,9 +2838,9 @@ def _stop_block_reason(event: dict, session_id: str) -> str:
         and event.get("hook_event_name") != "SubagentStop"
         and not hook_retry
     ):
-        root = justification.project_root(Path(str(event.get("cwd") or Path.cwd())))
-        gap = justification.session_retrieve_gap(root, session_id)
+        gap = _retrieve_gap_reason(event, session_id)
         if gap:
+            reflection.record_activity(session_id, "retrieve-demanded")
             return gap
     if event.get("hook_event_name") == "SubagentStop":
         return ""
@@ -2852,6 +2984,25 @@ def _command_guard_state(
     return receipt_command, mutation, ""
 
 
+def _denial_fragment(text: str) -> str:
+    shown = " ".join(str(text).split())
+    if len(shown) > 160:
+        shown = shown[:157] + "..."
+    return shown or "(none)"
+
+
+def _scope_denial(branch: str, fragment: str) -> str:
+    """Name which check fired and the text it matched."""
+    return f"{_SCOPE_DENIAL} branch={branch} fragment={_denial_fragment(fragment)}"
+
+
+def _visible_command(commands: tuple[str, ...]) -> str:
+    for command in commands:
+        if command and command != _UNINSPECTED_PROCESS:
+            return command
+    return "uninspected-process"
+
+
 def _compound_installer_reason(command: str, project: Path) -> str | None:
     """Allow a compound whose only destructive statements are this project's installer.
 
@@ -2869,7 +3020,7 @@ def _compound_installer_reason(command: str, project: Path) -> str | None:
             continue
         if documented_installer_command(statement) is not None:
             return _INSTALLER_ORIGIN_DENIAL
-        return "ChaosEngine rejected destructive broad scope."
+        return _scope_denial("compound", statement)
     if not saw_installer:
         return None
     return ""
@@ -2877,8 +3028,10 @@ def _compound_installer_reason(command: str, project: Path) -> str | None:
 
 def _destructive_scope_reason(commands: tuple[str, ...], project: Path, uninspectable: bool) -> str:
     if uninspectable:
-        return "ChaosEngine rejected destructive broad scope."
+        return _scope_denial("uninspectable", "functions.exec")
     for candidate in commands:
+        if candidate == _UNINSPECTED_PROCESS:
+            continue
         if not _command_is_destructive(candidate) or documented_installer_for_project(candidate, project):
             continue
         if documented_installer_command(candidate) is not None:
@@ -2888,7 +3041,9 @@ def _destructive_scope_reason(commands: tuple[str, ...], project: Path, uninspec
             continue
         if compound:
             return compound
-        return "ChaosEngine rejected destructive broad scope."
+        return _scope_denial("destructive", candidate)
+    if _UNINSPECTED_PROCESS in commands:
+        return _scope_denial("uninspected", _visible_command(commands))
     return ""
 
 
@@ -3164,11 +3319,15 @@ def _deny(event: dict, event_name: str, tool_name: str, reason: str) -> int:
     if event_name == "PreToolUse" and justification is not None:
         with contextlib.suppress(Exception):
             cwd = Path(str(event.get("cwd") or Path.cwd()))
+            commands = _event_commands(tool_name, event.get("tool_input"))
+            root = justification.project_root(cwd)
             justification.forget_denied_retrieve(
-                justification.project_root(cwd),
+                root,
                 _scope_session(event),
-                _event_commands(tool_name, event.get("tool_input")),
+                commands,
             )
+            if any(_read_only_project_tool_command(command, cwd) for command in commands):
+                justification.note_retrieve_blocked(root, _scope_session(event))
     _record_denial_with_significance(event, event_name, tool_name)
     advice = None
     if event_name == "PreToolUse":
@@ -3495,10 +3654,8 @@ def _work_besides_open_pr(event: dict, session_id: str) -> bool:
     if _terminal_reflection_reason(event, session_id):
         return True
     hook_retry = bool(event.get("stop_hook_active") or event.get("stopHookActive"))
-    if justification is not None and not hook_retry:
-        root = justification.project_root(Path(str(event.get("cwd") or Path.cwd())))
-        if justification.session_retrieve_gap(root, session_id):
-            return True
+    if justification is not None and not hook_retry and _retrieve_gap_reason(event, session_id):
+        return True
     if not hook_retry and _pending_watch_claim_reason(event):
         return True
     return False

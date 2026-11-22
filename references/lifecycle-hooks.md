@@ -179,7 +179,9 @@ Stop becomes the Learning Session gate after every confirmed delivery
 surprise, or owner ask: Learning Session after every final delivery. That reason is returned before
 any retrieve citation. `stop_hook_active` does not clear an unpaid
 delivery-complete debt; a later Stop still blocks until a completion artifact
-exists. Commits, guard refusals,
+exists. The graphify retrieve gap is separate: Stop asks once per session,
+and it does not ask again after this guard has denied that project's
+read-only `tool.py retrieve`. A session with no broad search does not owe it. Commits, guard refusals,
 diagnostics, intermediate pushes, and recorded signals never start it early.
 The root session records one immutable completion
 after routing every assessed signal or attesting that nothing durable surfaced.
