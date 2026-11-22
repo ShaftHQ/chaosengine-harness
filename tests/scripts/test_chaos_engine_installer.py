@@ -5251,6 +5251,40 @@ class ReceiptShimWiring6230Test(unittest.TestCase):
             MODULE.unwire_receipt_shims(project)
             self.assertFalse((project / ".cursor/hooks.json").exists())
 
+    def test_codex_completion_keeps_receipt_owned_antigravity_hooks(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(temporary)
+            specification = json.loads((SOURCE / "dependencies.json").read_text(encoding="utf-8"))
+            controller = SimpleNamespace(
+                load_specification=lambda _path: specification,
+                install_account_dependencies=mock.Mock(
+                    return_value={
+                        "schemaVersion": 2,
+                        "components": {},
+                        "commands": {
+                            "memory-mcp": "/user/bin/memory-mcp",
+                            "mempalace-mcp": "/user/bin/mempalace-mcp",
+                            "node": "/user/bin/node",
+                            "python3": "/user/bin/python3.14",
+                        },
+                    }
+                ),
+            )
+            with (
+                mock.patch.object(MODULE, "load_dependency_controller", return_value=controller),
+                mock.patch.object(MODULE.shutil, "which", return_value=None),
+            ):
+                MODULE.install_with_dependencies(project, SOURCE, TEST_COMMIT, with_maven_tools=False)
+            MODULE.reconcile_locked_host_completion(project, ("codex",))
+            hosts = MODULE.load_source_controller("hosts")
+            receipt, _raw = hosts.read_receipt(project)
+            wanted = hosts.decode_images(receipt["after"], nullable=True)[".agents/hooks.json"]
+            hooks = project / ".agents/hooks.json"
+            self.assertTrue(hooks.is_file())
+            self.assertEqual(wanted, hooks.read_bytes())
+            self.assertFalse((project / ".cursor/hooks.json").exists())
+            self.assertEqual(("codex",), MODULE.read_completion_targets(project))
+
     def test_origin_overlay_ignores_the_generated_shim_files(self):
         hosts = MODULE.load_source_controller("hosts")
         for pattern in (".cursor/hooks.json", ".opencode/plugins/chaos-engine-receipt.js"):

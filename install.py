@@ -4781,6 +4781,31 @@ def apply_install_host_completion(
     return wire_selected_receipt_shims(project, targets)
 
 
+def _restore_receipt_owned_shim_files(project: Path) -> None:
+    """Completion unwire deletes shim files. A host receipt that owns the same path must keep its after image."""
+    hosts = load_source_controller("hosts")
+    owned = [path for path in RECEIPT_SHIM_TARGETS.values() if path in hosts.managed_paths()]
+    if not owned:
+        return
+    try:
+        receipt, _raw = hosts.read_receipt(project)
+    except (OSError, ValueError):
+        return
+    if receipt.get("phase") != "installed":
+        return
+    after = hosts.decode_images(receipt.get("after"), nullable=True)
+    for relative in owned:
+        wanted = after.get(relative)
+        if not isinstance(wanted, bytes):
+            continue
+        destination = project / relative
+        current = hosts.read_file(project, destination)
+        if current == wanted:
+            continue
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        hosts.atomic_write(project, destination, wanted, current)
+
+
 def reconcile_locked_host_completion(
     project: Path, targets: tuple[str, ...] | None
 ) -> dict[str, str]:
@@ -4789,7 +4814,9 @@ def reconcile_locked_host_completion(
         clear_completion_targets(project)
         return {}
     unwire_receipt_shims(project)
-    return apply_install_host_completion(project, targets)
+    wired = apply_install_host_completion(project, targets)
+    _restore_receipt_owned_shim_files(project)
+    return wired
 
 
 def with_completion_target_line(body: str, targets: object) -> str:
