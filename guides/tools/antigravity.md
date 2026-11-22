@@ -10,7 +10,7 @@ A non-zero hook exit is fail-open. Denies are JSON on exit 0: `decision: "deny"`
 
 MCP stays CLI-first. Antigravity reads `~/.gemini/config/mcp_config.json` or `plugins/<name>/mcp_config.json`. It does not read `.mcp.json`. A plugin bundle is `plugins/<name>/plugin.json`, written when a plugin or MCP bundle is requested.
 
-`GEMINI.md` stays one `@AGENTS.md` include. A Gemini-style `@[label](AGENTS.md)` is that same include, not a second instruction load.
+`GEMINI.md` stays one `@AGENTS.md` include. A Gemini-style labeled include is `@[label]` plus `(AGENTS.md)`, that same include, not a second instruction load.
 
 When `--with-mcp` is active, MemPalace prefers `--mcp light` (`palace_query`, `palace_exec`, `palace_coordinate`). The published host argv stays `tool.py mempalace-mcp`.
 
