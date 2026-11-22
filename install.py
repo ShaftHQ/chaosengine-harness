@@ -4782,9 +4782,20 @@ def apply_install_host_completion(
 
 
 def _restore_receipt_owned_shim_files(project: Path) -> None:
-    """Completion unwire deletes shim files. A host receipt that owns the same path must keep its after image."""
-    hosts = load_source_controller("hosts")
-    owned = [path for path in RECEIPT_SHIM_TARGETS.values() if path in hosts.managed_paths()]
+    """Completion unwire deletes shim files. A host receipt that owns the same path must keep its after image.
+
+    Load hosts.py by path. ``load_source_controller`` goes through
+    ``load_installed_controller``, which install tests replace with a stub.
+    """
+    try:
+        path = runtime_module(Path(__file__).resolve().parent, "hosts.py")
+        hosts = types.SimpleNamespace(**runpy.run_path(str(path)))
+        managed = hosts.managed_paths()
+    except (OSError, ValueError, AttributeError, TypeError, ImportError):
+        return
+    if not isinstance(managed, (tuple, list, set, frozenset)):
+        return
+    owned = [item for item in RECEIPT_SHIM_TARGETS.values() if item in managed]
     if not owned:
         return
     try:
