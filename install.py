@@ -4534,18 +4534,33 @@ def _resolved_palace(project: Path) -> Path | None:
         return None
 
 
-def _central_palace_active(project: Path) -> bool:
-    """True when a resolved palace already exists outside the checkout state directory.
+def _external_resolved_palace(project: Path) -> Path | None:
+    """Resolved palace directory outside the checkout, even when sqlite is missing."""
+    resolved = _resolved_palace(project)
+    if resolved is None or not resolved.is_dir():
+        return None
+    local = Path(project).resolve() / ".chaos-engine-state" / "mempalace"
+    try:
+        if resolved.resolve() == local.resolve():
+            return None
+    except OSError:
+        return None
+    return resolved
 
+
+def _central_palace_active(project: Path) -> bool:
+    """True when a resolved palace outside the checkout already has sqlite_exact.
+
+    A directory with no ``sqlite_exact.sqlite3`` is not active. Install and
+    repair must create that file there instead of skipping initialization.
     Documentation pages and the source revision stay beside that palace
     (``palace.parent / mempalace-documentation-pages.json`` and
     ``palace.parent / mempalace-source-revision.json``). ``stores.py`` writes them.
     """
-    resolved = _resolved_palace(project)
-    if resolved is None or not resolved.exists():
+    resolved = _external_resolved_palace(project)
+    if resolved is None:
         return False
-    local = Path(project).resolve() / ".chaos-engine-state" / "mempalace"
-    return resolved != local
+    return (resolved / "sqlite_exact.sqlite3").is_file()
 
 
 def initialize_account_project_palace(project: Path, controller, host_controller) -> bool:
@@ -8430,7 +8445,8 @@ def _annotate_install_contract(project: Path, result: object) -> object:
 
     A doctor exception stays installed. A fresh project raises ValueError when
     the plugin manifest is missing, and that install is still complete. Upgrade
-    and verify fail closed when doctor cannot run.
+    stays installed on that same exception. Needs-repair is only a non-empty
+    escalating name list. Verify still fails closed when doctor cannot run.
     """
     if not isinstance(result, dict) or result.get("status") != "installed":
         return result
@@ -8461,10 +8477,8 @@ def _run_guided_upgrade(args: argparse.Namespace) -> dict[str, object]:
         user = _install_user_scope(args)
         payload["userLayer"] = user.get("status")
     names = _contract_blockers(project)
-    # Doctor could not run (missing plugin manifest). That is needs-repair,
-    # not a clean install. An empty name list is a clean install.
-    if names is None:
-        return _needs_repair_payload(payload, [])
+    # ValueError/OSError from doctor is None: the upgrade stays installed and
+    # prints no needs-repair rows. Needs-repair is only a non-empty name list.
     if names:
         return _needs_repair_payload(payload, names)
     return payload
@@ -9100,7 +9114,7 @@ def _attach_l84_l92_doctor_findings(
 
 def _mempalace_sqlite_missing_finding(project: Path) -> dict[str, object] | None:
     """L84: palace directory present without sqlite_exact.sqlite3 is a doctor FAIL."""
-    palace = _resolved_palace(project) if _central_palace_active(project) else None
+    palace = _external_resolved_palace(project)
     if palace is None:
         palace = project / ".chaos-engine-state" / "mempalace"
     if not palace.is_dir():

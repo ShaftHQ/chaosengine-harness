@@ -1480,6 +1480,79 @@ def _cleanup_failed_mempalace_initialization(
         state_root.rmdir()
 
 
+_EMPTY_SQLITE_EXACT_SQL = """
+PRAGMA journal_mode=WAL;
+CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE collections (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    dimension INTEGER,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE documents (
+    collection_id INTEGER NOT NULL,
+    id TEXT NOT NULL,
+    document TEXT NOT NULL,
+    metadata_json TEXT NOT NULL,
+    embedding BLOB NOT NULL,
+    dim INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (collection_id, id),
+    FOREIGN KEY(collection_id) REFERENCES collections(id) ON DELETE CASCADE
+);
+CREATE INDEX idx_documents_collection ON documents(collection_id);
+INSERT INTO collections(name, created_at)
+VALUES ('mempalace_drawers', CURRENT_TIMESTAMP);
+"""
+
+
+def _write_empty_exact_sqlite(database: Path) -> None:
+    """Create one empty sqlite_exact file. The parent directory must already exist."""
+    descriptor = os.open(
+        database,
+        os.O_RDWR | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0),
+        0o600,
+    )
+    os.close(descriptor)
+    connection = sqlite3.connect(database)
+    try:
+        connection.executescript(_EMPTY_SQLITE_EXACT_SQL)
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def _drop_created_exact_sqlite(database: Path) -> None:
+    for suffix in ("", "-wal", "-shm"):
+        path = Path(f"{database}{suffix}") if suffix else database
+        try:
+            if path.is_file() and not is_link_or_reparse(path):
+                path.unlink()
+        except OSError:
+            continue
+
+
+def _create_missing_external_sqlite(palace: Path) -> None:
+    """Write sqlite_exact into a resolved palace that sits outside the checkout.
+
+    The directory must already exist. This does not create a second
+    ``.chaos-engine-state/mempalace`` and does not initialize over a link.
+    """
+    if is_link_or_reparse(palace) or not palace.is_dir():
+        return
+    database = palace / "sqlite_exact.sqlite3"
+    if database.exists() or is_link_or_reparse(database):
+        return
+    try:
+        _write_empty_exact_sqlite(database)
+    except (OSError, sqlite3.Error, ValueError):
+        _drop_created_exact_sqlite(database)
+        return
+    if mempalace_directory_status(palace).get("status") != "healthy":
+        _drop_created_exact_sqlite(database)
+
+
 def initialize_mempalace_runtime(project: Path) -> None:
     """Create only a fresh empty sqlite_exact collection; never migrate user state."""
     project = project.resolve()
@@ -1496,6 +1569,7 @@ def initialize_mempalace_runtime(project: Path) -> None:
     except (OSError, ValueError):
         inside = False
     if not inside:
+        _create_missing_external_sqlite(palace)
         return
     state_root = palace.parent
 
@@ -1534,33 +1608,7 @@ def initialize_mempalace_runtime(project: Path) -> None:
         os.close(descriptor)
         descriptor = None
         connection = sqlite3.connect(database)
-        connection.executescript(
-            """
-            PRAGMA journal_mode=WAL;
-            CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-            CREATE TABLE collections (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL UNIQUE,
-                dimension INTEGER,
-                created_at TEXT NOT NULL
-            );
-            CREATE TABLE documents (
-                collection_id INTEGER NOT NULL,
-                id TEXT NOT NULL,
-                document TEXT NOT NULL,
-                metadata_json TEXT NOT NULL,
-                embedding BLOB NOT NULL,
-                dim INTEGER NOT NULL,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL,
-                PRIMARY KEY (collection_id, id),
-                FOREIGN KEY(collection_id) REFERENCES collections(id) ON DELETE CASCADE
-            );
-            CREATE INDEX idx_documents_collection ON documents(collection_id);
-            INSERT INTO collections(name, created_at)
-            VALUES ('mempalace_drawers', CURRENT_TIMESTAMP);
-            """
-        )
+        connection.executescript(_EMPTY_SQLITE_EXACT_SQL)
         connection.commit()
         connection.close()
         connection = None

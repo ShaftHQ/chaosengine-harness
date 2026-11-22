@@ -339,6 +339,9 @@ class RetrieveRouterTest(unittest.TestCase):
             project = Path(temporary)
             (project / "chaos-engine").mkdir()
             (project / "chaos-engine" / "tool.py").write_text("# tool\n", encoding="utf-8")
+            overview = project / "guides" / "overview.md"
+            overview.parent.mkdir(parents=True)
+            overview.write_text("the palace stores shared memory\n", encoding="utf-8")
             graph = project / "graphify-out"
             graph.mkdir()
             (graph / "documentation-pages.json").write_text(
@@ -349,7 +352,67 @@ class RetrieveRouterTest(unittest.TestCase):
                 receipt = self.retrieve.retrieve("how does the palace work", project=project, store="graphify")
         self.assertNotEqual("no-rare-token", receipt.get("reason"))
         self.assertEqual("used", receipt["status"])
+        self.assertEqual("docs", receipt["reason"])
         self.assertTrue(receipt["hits"])
+
+    def test_docs_hits_follow_the_token_budget_and_live_files(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            (project / "chaos-engine").mkdir()
+            (project / "chaos-engine" / "tool.py").write_text("# tool\n", encoding="utf-8")
+            pages = []
+            for index in range(15):
+                relative = f"guides/palace-{index}.md"
+                path = project / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("the palace stores shared memory\n", encoding="utf-8")
+                pages.append({"path": relative, "text": "the palace stores shared memory", "headings": ["Palace"]})
+            pages.append({"path": "guides/missing.md", "text": "the palace stores shared memory", "headings": ["Gone"]})
+            graph = project / "graphify-out"
+            graph.mkdir()
+            (graph / "documentation-pages.json").write_text(json.dumps({"pages": pages}), encoding="utf-8")
+            with mock.patch.dict(os.environ, {"CHAOS_ENGINE_TOKEN_BUDGET": "ultra-lean"}):
+                with mock.patch.object(self.retrieve.subprocess, "run", side_effect=AssertionError("cli")):
+                    lean = self.retrieve.retrieve("how does the palace work", project=project, store="graphify")
+            with mock.patch.dict(os.environ, {"CHAOS_ENGINE_TOKEN_BUDGET": "deep"}):
+                with mock.patch.object(self.retrieve.subprocess, "run", side_effect=AssertionError("cli")):
+                    deep = self.retrieve.retrieve("how does the palace work", project=project, store="graphify")
+            self.assertEqual("docs", lean["reason"])
+            self.assertEqual(4, len(lean["hits"]))
+            self.assertEqual("docs", deep["reason"])
+            self.assertEqual(12, len(deep["hits"]))
+            self.assertTrue(all((project / hit["path"]).is_file() for hit in deep["hits"]))
+            self.assertNotIn("guides/missing.md", [hit["path"] for hit in deep["hits"]])
+
+    def test_punctuated_symbol_is_not_answered_from_every_doc_page(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            (project / "chaos-engine").mkdir()
+            (project / "chaos-engine" / "tool.py").write_text("# tool\n", encoding="utf-8")
+            pages = []
+            for index in range(6):
+                relative = f"src/order-{index}.md"
+                path = project / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("OrderService handles checkout\n", encoding="utf-8")
+                pages.append({"path": relative, "text": "OrderService handles checkout", "headings": ["OrderService"]})
+            graph = project / "graphify-out"
+            graph.mkdir()
+            (graph / "documentation-pages.json").write_text(json.dumps({"pages": pages}), encoding="utf-8")
+            self.assertEqual(["OrderService"], self.retrieve.question_rare_tokens("OrderService?"))
+            with mock.patch.object(
+                self.retrieve.subprocess,
+                "run",
+                return_value=mock.Mock(returncode=0, stdout="No results found\n", stderr=""),
+            ):
+                receipt = self.retrieve.retrieve("OrderService?", project=project, store="graphify", account=False)
+        self.assertNotEqual("docs", receipt.get("reason"))
+        self.assertLessEqual(len(receipt.get("hits") or []), self.retrieve._token_budget()[1])
+        self.assertNotEqual(6, len(receipt.get("hits") or []))
 
     def test_hit_receipt_drops_duplicate_paths(self):
         import tempfile

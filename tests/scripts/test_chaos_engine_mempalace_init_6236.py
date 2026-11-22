@@ -142,6 +142,38 @@ class MemPalaceInitializationTest(unittest.TestCase):
             self.hosts.mempalace_directory_status(fresh)["status"],
         )
 
+    def test_repair_creates_sqlite_in_the_resolved_palace(self):
+        """An external palace directory without sqlite is not active, and repair writes it there."""
+        import sqlite3
+
+        external = Path(self.temporary.name).resolve() / "central-palace"
+        external.mkdir()
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("CHAOS_ENGINE_MEMPALACE", None)
+            os.environ.pop("SHAFT_MEMPALACE", None)
+            self.account_install()
+            shutil.rmtree(self.project / PALACE, ignore_errors=True)
+            os.environ["CHAOS_ENGINE_MEMPALACE"] = str(external)
+            self.assertFalse(MODULE._central_palace_active(self.project))
+            missing = MODULE._mempalace_sqlite_missing_finding(self.project)
+            self.assertIsNotNone(missing)
+            self.assertIn("sqlite_exact.sqlite3", missing["detail"])
+            self.assertIn("repair --project . --component mempalace", missing["fixNext"])
+            result = self.repair()
+        self.assertEqual("repaired", result["status"])
+        database = external / "sqlite_exact.sqlite3"
+        self.assertTrue(database.is_file())
+        self.assertFalse((self.project / PALACE).exists())
+        connection = sqlite3.connect(database)
+        try:
+            name = connection.execute("select name from collections").fetchone()
+        finally:
+            connection.close()
+        self.assertEqual(("mempalace_drawers",), name)
+        with mock.patch.dict(os.environ, {"CHAOS_ENGINE_MEMPALACE": str(external)}):
+            self.assertTrue(MODULE._central_palace_active(self.project))
+            self.assertIsNone(MODULE._mempalace_sqlite_missing_finding(self.project))
+
     def test_opted_out_mcp_is_unchanged(self):
         with mock.patch.dict(os.environ, {self.hosts.WITH_MCP_ENV: "0"}):
             self.assertEqual("mcp-opted-out", self.hosts.mcp_runtime_status(self.project, None, {})["detail"])

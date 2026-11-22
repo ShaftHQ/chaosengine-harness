@@ -652,7 +652,7 @@ def _skip_no_rare_before_store(store: str, query: str) -> bool:
     if store != "graphify" or subprocess.run is not _REAL_RUN:
         return False
     split = _corpus_split()
-    if split is None or split.rare_tokens(query):
+    if split is None or question_rare_tokens(query):
         return False
     words = query.split()
     return not (len(words) == 1 and words[0].casefold() in split.GENERIC_SEEDS)
@@ -667,7 +667,7 @@ def _keep_store_path_or_skip_no_rare(store: str, query: str, outcome: dict[str, 
     if store != "graphify":
         return outcome
     split = _corpus_split()
-    if split is None or split.rare_tokens(query):
+    if split is None or question_rare_tokens(query):
         return outcome
     words = query.split()
     if len(words) == 1 and words[0].casefold() in split.GENERIC_SEEDS:
@@ -1084,10 +1084,18 @@ def _omit_duplicate_path_lines(body: str, hits: list) -> str:
     return "\n".join(kept)
 
 
+def _docs_hit_limit() -> int:
+    """Doc result count follows the token-budget mode (4, 8, or 12)."""
+    return _token_budget()[1]
+
+
 def _docs_answer(project: Path, query: str) -> dict[str, Any] | None:
-    """Natural language can be answered from filed docs without a rare code token."""
-    split = _corpus_split()
-    if split is not None and split.rare_tokens(query):
+    """Natural language can be answered from filed docs without a rare code token.
+
+    ``OrderService?`` is still a rare token. A docs answer is verified against
+    live files and capped by the token-budget result count.
+    """
+    if question_rare_tokens(query):
         return None
     stores = _load_stores()
     if stores is None:
@@ -1114,12 +1122,13 @@ def _docs_answer(project: Path, query: str) -> dict[str, Any] | None:
         if any(token in json.dumps(page).casefold() for token in tokens):
             headings = page.get("headings") or []
             hits.append({"path": str(page.get("path") or ""), "label": str(headings[0]) if headings else ""})
-    if not hits or not hits[0].get("path"):
+    kept = _verify_hits(project, hits)[: _docs_hit_limit()]
+    if not kept or not kept[0].get("path"):
         return None
     return {
         "status": STATUS_USED,
         "reason": "docs",
-        "hits": hits,
+        "hits": kept,
         "query": query,
         "excerpt": "",
         "bytes": 0,

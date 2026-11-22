@@ -2817,12 +2817,11 @@ class InstallerPalaceAndIgnoreTests(unittest.TestCase):
             ):
                 os.environ.pop(legacy, None)
                 created = INSTALL.initialize_account_project_palace(project, controller, HOSTS)
-                self.assertFalse(created)
+                self.assertTrue(created)
                 self.assertFalse((project / ".chaos-engine-state" / "mempalace").exists())
+                self.assertTrue((central / "sqlite_exact.sqlite3").is_file())
                 finding = INSTALL._mempalace_sqlite_missing_finding(project)
-        self.assertIsNotNone(finding)
-        self.assertEqual("invalid", finding["status"])
-        self.assertIn("sqlite_exact.sqlite3", finding["detail"])
+        self.assertIsNone(finding)
 
     def test_research_note_scrubs_the_captured_hostname(self):
         text = (

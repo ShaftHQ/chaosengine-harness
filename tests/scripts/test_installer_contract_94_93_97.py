@@ -378,26 +378,20 @@ class EscalatingDoctorContractTest(unittest.TestCase):
                     upgraded = self._upgrade_without_rebind(installer, project)
             self.assertEqual("installed", installed.get("status"))
             self.assertNotIn("escalatingRows", installed)
-            # Install stays installed when doctor cannot run. Upgrade fails closed.
-            self.assertEqual("needs-repair", upgraded.get("status"))
-            self.assertEqual("needs-repair", upgraded.get("failure"))
-            self.assertEqual([], upgraded.get("components"))
-            for command, payload, expected in (
-                ("install", installed, 0),
-                ("upgrade", upgraded, 1),
-            ):
+            # Install and upgrade stay installed when doctor raises. Needs-repair
+            # is only a non-empty escalating name list, and stderr has no rows.
+            self.assertEqual("installed", upgraded.get("status"))
+            self.assertNotIn("escalatingRows", upgraded)
+            self.assertNotEqual("needs-repair", upgraded.get("failure"))
+            for command, payload in (("install", installed), ("upgrade", upgraded)):
                 stdout, stderr = io.StringIO(), io.StringIO()
                 with redirect_stdout(stdout), redirect_stderr(stderr):
                     code = installer._emit_result(
                         SimpleNamespace(command=command, json=False), payload
                     )
-                self.assertEqual(expected, code, command)
-                if command == "install":
-                    self.assertNotIn("needs-repair", stdout.getvalue())
-                    self.assertNotIn("needs-repair", stderr.getvalue())
-                else:
-                    self.assertEqual("needs-repair\n", stdout.getvalue())
-                    self.assertNotIn("needs-repair:", stderr.getvalue())
+                self.assertEqual(0, code, command)
+                self.assertNotIn("needs-repair", stdout.getvalue())
+                self.assertNotIn("needs-repair", stderr.getvalue())
 
     def _upgrade_without_rebind(self, installer, project: Path):
         args = SimpleNamespace(project=project, source=None, commit=COMMIT)
