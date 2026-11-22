@@ -1939,8 +1939,9 @@ def _is_project_tool_py(script: str, cwd: Path) -> bool:
     path = Path(script)
     if not path.is_absolute():
         path = cwd / path
+    root = justification.project_root(cwd) if justification is not None else cwd
     try:
-        return path.resolve() == (cwd / ".chaos-engine" / "tool.py").resolve()
+        return path.resolve() == (root / ".chaos-engine" / "tool.py").resolve()
     except OSError:
         return False
 

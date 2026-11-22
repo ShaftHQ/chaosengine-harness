@@ -3108,8 +3108,12 @@ def validate_prior_host_receipt(
         or controller.receipt_bytes(receipt, project) != raw
     ):
         raise ValueError("cross-resource rollback journal is invalid")
-    controller.decode_images(receipt.get("before"), nullable=True)
-    controller.decode_images(receipt.get("after"), nullable=True)
+    controller.decode_images(
+        controller._hydrate_image_map(project, receipt.get("before")), nullable=True
+    )
+    controller.decode_images(
+        controller._hydrate_image_map(project, receipt.get("after")), nullable=True
+    )
     return receipt
 
 
@@ -3963,7 +3967,10 @@ def rollback(  # noqa: MC0001 - cross-resource rollback is one journaled state m
                     _current_receipt, current_raw = previous_hosts.read_receipt(project)
                     current_images = previous_hosts.current_images(project)
                     prior_after = previous_hosts.decode_images(
-                        prior_host_receipt_value["after"], nullable=True
+                        previous_hosts._hydrate_image_map(
+                            project, prior_host_receipt_value["after"]
+                        ),
+                        nullable=True,
                     )
                     previous_hosts.reconcile(
                         project, prior_after, (current_images, prior_after)
@@ -4068,7 +4075,10 @@ def rollback(  # noqa: MC0001 - cross-resource rollback is one journaled state m
                 pass
             elif prior_host_receipt_value is not None:
                 prior_after = previous_hosts.decode_images(
-                    prior_host_receipt_value["after"], nullable=True
+                    previous_hosts._hydrate_image_map(
+                        project, prior_host_receipt_value["after"]
+                    ),
+                    nullable=True,
                 )
                 if previous_hosts.current_images(project) == prior_after:
                     _, current_raw = previous_hosts.read_receipt(project)

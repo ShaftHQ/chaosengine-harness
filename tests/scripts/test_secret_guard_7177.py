@@ -285,7 +285,10 @@ class HookInstallTest(SecretGuardTestCase):
         self.assertEqual("", run(self.repo, "config", "--get", self.hooks.CHAIN_KEY).stdout)
         os.environ["CHAOS_ENGINE_SECRET_GUARD"] = "0"  # nosec B105 - a switch, not a secret
         try:
-            self.assertEqual("skipped", self.hooks.install_secret_guard(self.repo, GUARD)["status"])
+            skipped = self.hooks.install_secret_guard(self.repo, GUARD)
+            self.assertEqual("skipped", skipped["status"])
+            self.assertNotIn("hooksPath", skipped)
+            self.assertEqual("CHAOS_ENGINE_SECRET_GUARD=0", skipped["reason"])
         finally:
             del os.environ["CHAOS_ENGINE_SECRET_GUARD"]
         plain = Path(self.temp.name) / "plain"
@@ -327,11 +330,14 @@ class HookInstallTest(SecretGuardTestCase):
         self.assertEqual(["known secret value"], found)
         self.assertNotIn(app_value, " ".join(found))
 
+        os.environ["CHAOS_ENGINE_SECRET_GUARD"] = "0"  # nosec B105 - a switch, not a secret
+        skipped = self.hooks.install_secret_guard(self.repo, GUARD)
+        self.assertEqual("skipped", skipped["status"])
+        self.assertNotIn("hooksPath", skipped)
+        self.assertEqual("CHAOS_ENGINE_SECRET_GUARD=0", skipped["reason"])
+        os.environ["CHAOS_ENGINE_SECRET_GUARD"] = "1"  # nosec B105 - a switch, not a secret
         result = self.hooks.install_secret_guard(self.repo, GUARD)
-        if "hooksPath" not in result:
-            self.assertEqual("skipped", result["status"], result)
-            self.assertEqual("CHAOS_ENGINE_SECRET_GUARD=0", result["reason"], result)
-            return
+        self.assertIn("hooksPath", result)
         installed = Path(result["hooksPath"]) / "secret_guard.py"
         self.assertEqual(GUARD.read_bytes(), installed.read_bytes())
         self.assertEqual(("pass", ""), self.hooks.guard_health(self.repo))

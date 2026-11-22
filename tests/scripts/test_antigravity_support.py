@@ -743,7 +743,10 @@ class AntigravitySupportTests(unittest.TestCase):
             "WORDS = ('git', 'push', 'reset', 'merge')\n",
             encoding="utf-8",
         )
-        (project / "evil.py").write_text(
+        (overlay / "install.py").write_text("# stub\n", encoding="utf-8")
+        evil = project / "evil"
+        evil.mkdir()
+        (evil / "tool.py").write_text(
             (overlay / "tool.py").read_text(encoding="utf-8"), encoding="utf-8"
         )
         agents = project / ".agents"
@@ -836,12 +839,18 @@ class AntigravitySupportTests(unittest.TestCase):
                     "toolCall": {
                         "id": "toolu_evil",
                         "name": "run_command",
-                        "args": {"CommandLine": 'python3 evil.py retrieve "test"'},
+                        "args": {"CommandLine": 'python3 evil/tool.py retrieve "test"'},
                     },
                 },
             )
             self.assertEqual(0, denied.returncode, denied.stderr)
             self.assertEqual("deny", json.loads(denied.stdout)["decision"])
+            denied_state = json.loads(
+                (project / ".chaos-engine-state" / "retrieve-justification.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertNotEqual("s-deny", denied_state.get("awaitingReceipt"))
             justification = _load(
                 "ce_agy_justification_deny",
                 project / ".chaos-engine" / "hooks" / "retrieve_justification.py",
@@ -854,6 +863,59 @@ class AntigravitySupportTests(unittest.TestCase):
             )
             row = (payload.get("sessions") or {}).get("s-deny") or {}
             self.assertIsNot(row.get("retrieved"), True)
+
+    def test_subdirectory_tool_py_retrieve_is_allowed(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            agents = self._overlay_project(project)
+            sub = project / "sub"
+            sub.mkdir()
+            evil = sub / "evil"
+            evil.mkdir()
+            (evil / "tool.py").write_text(
+                (project / ".chaos-engine" / "tool.py").read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+            tool = project / ".chaos-engine" / "tool.py"
+            commands = (
+                'python3 ../.chaos-engine/tool.py retrieve "test"',
+                f"python3 {tool} retrieve \"test\"",
+            )
+            for index, command in enumerate(commands):
+                allowed = self._agy(
+                    project,
+                    agents,
+                    "PreToolUse",
+                    {
+                        "conversationId": f"s-sub-{index}",
+                        "hookEventName": "PreToolUse",
+                        "cwd": str(sub),
+                        "toolCall": {
+                            "id": f"toolu_sub_{index}",
+                            "name": "run_command",
+                            "args": {"CommandLine": command},
+                        },
+                    },
+                )
+                self.assertEqual(0, allowed.returncode, allowed.stderr)
+                self.assertEqual("allow", json.loads(allowed.stdout)["decision"], command)
+            denied = self._agy(
+                project,
+                agents,
+                "PreToolUse",
+                {
+                    "conversationId": "s-sub-deny",
+                    "hookEventName": "PreToolUse",
+                    "cwd": str(sub),
+                    "toolCall": {
+                        "id": "toolu_sub_evil",
+                        "name": "run_command",
+                        "args": {"CommandLine": 'python3 evil/tool.py retrieve "test"'},
+                    },
+                },
+            )
+            self.assertEqual(0, denied.returncode, denied.stderr)
+            self.assertEqual("deny", json.loads(denied.stdout)["decision"])
 
     def test_stop_ignores_not_idle_and_terminal_reasons(self):
         with tempfile.TemporaryDirectory() as temporary:

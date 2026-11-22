@@ -8666,6 +8666,42 @@ def cancel_uninstall(
         move_anchor(project, anchor, ACTIVE_ANCHOR_PREFIX)
 
 
+def _remove_uninstalled_receipt_blobs(project: Path, raw: bytes) -> None:
+    """Delete blob files named by the on-disk receipt, then empty backup dirs."""
+    refs: list[str] = []
+    try:
+        parsed: object = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        parsed = None
+    stack: list[object] = [parsed]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, dict):
+            digest = node.get("sha256")
+            blob = node.get("blob")
+            if (
+                isinstance(digest, str)
+                and isinstance(blob, str)
+                and re.fullmatch(r"[0-9a-f]{64}", digest)
+                and blob == f".chaos-engine-state/backups/{digest}"
+                and set(node) <= {"sha256", "blob"}
+            ):
+                refs.append(blob)
+            stack.extend(node.values())
+        elif isinstance(node, list):
+            stack.extend(node)
+    for relative in dict.fromkeys(refs):
+        path = project / relative
+        if path.is_file() and not is_link_or_reparse(path):
+            path.unlink()
+    backups = project / ".chaos-engine-state" / "backups"
+    state = project / ".chaos-engine-state"
+    if backups.is_dir() and not is_link_or_reparse(backups) and not any(backups.iterdir()):
+        backups.rmdir()
+    if state.is_dir() and not is_link_or_reparse(state) and not any(state.iterdir()):
+        state.rmdir()
+
+
 def finalize_uninstall(project: Path) -> None:
     project = project.resolve()
     receipt_path = project / RECEIPT_NAME
@@ -8676,7 +8712,7 @@ def finalize_uninstall(project: Path) -> None:
             anchors[0].unlink()
             return
         raise ValueError("ChaosEngine host receipt is missing or invalid")
-    receipt, _ = read_receipt(project)
+    receipt, raw = read_receipt(project)
     if receipt["phase"] != "removing":
         raise ValueError("ChaosEngine host removal is not prepared")
     before = decode_images(receipt["before"], nullable=True)
@@ -8706,6 +8742,7 @@ def finalize_uninstall(project: Path) -> None:
         sync_grok_user_lean_config(project, uninstall=True)
     receipt_path.unlink()
     anchor.unlink()
+    _remove_uninstalled_receipt_blobs(project, raw)
 
 
 def uninstall(
