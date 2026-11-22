@@ -15,7 +15,7 @@ Record a trigger with `record_rule_trigger(project, rule_id)` in
 Once a month, run:
 
 ```bash
-python3 -c "import importlib.util; p='chaos-engine/harness_mindset.py'; s=importlib.util.spec_from_file_location('m', p); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); print(m.zero_trigger_report(__import__('pathlib').Path('.')))"
+python3 -c "import importlib.util; p='runtime/harness_mindset.py'; s=importlib.util.spec_from_file_location('m', p); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); print(m.zero_trigger_report(__import__('pathlib').Path('.')))"
 ```
 
 The report lists every catalog rule with zero triggers inside the 30-day

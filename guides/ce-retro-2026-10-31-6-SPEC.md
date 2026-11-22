@@ -65,14 +65,14 @@ Personal names and client data stay out of repo text ("the subject" / "the prese
 - **Sources:** chaos.md L10; Orchestrator cleanup-at-close-spec; Coordinator/Client H9
 - **Problem:** Leftover WTs; delete-check blocks cleanup without ownership record.
 - **Rule:** Workers register created dirs/paths in ownership manifest at creation; cleanup-at-close deletes **only** manifest entries (plus tip-on-origin proofs).
-- **Enforcement:** Harden `references/cleanup-at-close.md`; add `scripts/ci/worker_ownership.py` (record/list/verify); wire note in bot-entry DoD; tests.
+- **Enforcement:** Harden `references/cleanup-at-close.md`; add `scripts/ci/worker_ownership.py` (external-example; record/list/verify); wire note in bot-entry DoD; tests.
 - **Acceptance:** `record` then `verify` passes; cleanup helper refuses path not in manifest.
 
 ### H-SKILLSPECTOR — Baseline keyed by semantic id
 - **Sources:** chaos.md L7
 - **Problem:** Baseline fingerprints are content hashes; skill trims churn every entry.
 - **Rule:** CE refresh tool keys suppressions by `semantic_id = rule_id + ":" + file` (optional `:+message_slug`); on refresh, update hash in place when semantic_id matches, keep reason.
-- **Enforcement:** `scripts/ci/skillspector/semantic_baseline.py` + tests; doc in skillspector_gate.py header.
+- **Enforcement:** `scripts/ci/skillspector/semantic_baseline.py` (external-example) + tests; doc in skillspector_gate.py header.
 - **Acceptance:** Refresh with changed hash / same rule_id+file keeps reason and updates hash; new semantic_id adds entry.
 
 ### H-RADIO — Radio-silence send guard
@@ -152,7 +152,7 @@ Personal names and client data stay out of repo text ("the subject" / "the prese
 - **Sources:** Designer scope-discipline retro (PR-path half)
 - **Problem:** PR body claimed a narrow gate while the diff wandered; reviewers missed churn.
 - **Rule:** Diff paths must match stated scope (`## Scope` bullets or `<!-- chaos-engine:scope ... -->`); else stop. Missing declaration → FAIL.
-- **Enforcement:** `scripts/ci/pr_scope_check.py` + `references/pr-scope-check.md`; wired into `overlay_pre_push.pr_scope_failures` and `harness_pr_gate.pr_scope_gate_failures` for agentic PRs; unit tests.
+- **Enforcement:** `scripts/ci/pr_scope_check.py` (external-example) + `references/pr-scope-check.md`; wired into `overlay_pre_push.pr_scope_failures` and `harness_pr_gate.pr_scope_gate_failures` for agentic PRs; unit tests.
 - **Acceptance:** Path outside prefixes → FAIL; all paths under prefixes → PASS; no scope block → FAIL; pre-push path calls `pr_scope_failures`.
 
 ### H-SCOPE — Spoken-lock + one-task / path-claim

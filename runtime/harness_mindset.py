@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Shipped checks for the harness follow-ups (#6868, #6882, #6891–#6894, #6900–#6903).
+Shipped checks for harness follow-ups.
 
 Install and bootstrap keep their own copies of the path check because the
 curl|bash entrypoint runs bootstrap.py before this file exists on disk.

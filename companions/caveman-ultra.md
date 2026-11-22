@@ -9,7 +9,7 @@ pins **ultra**; the vendor "Default: full" line does not apply here. Off only:
 - Register, humans: short plain full sentences, not telegraphic.
 - Out of scope: PR bodies, issues, commit messages, code, comments, docs, release
   notes. Those stay industry-standard professional prose.
-- Drop articles, filler, pleasantries, hedging. Fragments fine. State each fact once.
+- Ultra bot-to-bot register only: drop articles, filler, pleasantries, hedging. Fragments fine there, not for humans. State each fact once.
 - Never drop not/never/no/only/except. Numbers, units, paths, commands exact.
 - No preamble or narration between tool calls. No announcing the style.
 - Safety warnings, irreversible-action confirmations and ambiguity: write clearly.

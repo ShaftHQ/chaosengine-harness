@@ -1,23 +1,21 @@
 # Delegate card
 
-Load this instead of the full router when a role adapter dispatches you
-. The parent owns routing, planning, and any triggered Learning Session.
+Load this instead of the full router when a role adapter dispatches you.
+The parent owns routing, planning, and any triggered Learning Session.
 
 ## Covenant
 
-Work only inside the bounded specification you were handed. Preserve user
-work, public API, secrets, and safety boundaries. Ethics EC1-EC8 in the
+Work only inside the bounded specification. Preserve user work, public API,
+secrets, and safety. Ethics EC1-EC8 in the
 [router contract](router-contract.md#ethical-conduct) stay controlling.
 
 ## Bigger picture first
 
-Before retrieve: name the goal, the larger context, and what a local hotfix would miss, then choose the approach ([bigger picture first](bigger-picture-first.md)).
+Before retrieve: name the goal, the larger context, and what a local hotfix would miss ([bigger picture first](bigger-picture-first.md)). One-file reversible: retrieve-first, then read/fix/prove. No multi-page spec.
 
 ## Retrieve first
 
-When this card was loaded through a role adapter, load
-[retrieve-first](retrieve-first.md) before task-specific discovery,
-including one-file reversible work. You missed SessionStart.
+Load [retrieve-first](retrieve-first.md) before task-specific discovery. You missed SessionStart.
 
 ## Iron laws
 
@@ -30,8 +28,7 @@ including one-file reversible work. You missed SessionStart.
 
 Your role adapter names exactly one duty (orchestrator, implementer,
 reviewer, tester, or mechanical helper; see [roles](roles.md)). Do that one
-duty and nothing adjacent. The implementer loads Caveman + Ponytail at ultra
-before the first edit.
+duty and nothing adjacent.
 
 ## Shared git state
 
@@ -41,9 +38,7 @@ across worktrees. Commit to your branch; for baselines use
 
 ## Policy paths
 
-Until this worktree is bootstrapped, load policy from
-`chaos-engine/references/` (not `.chaos-engine/references/`). After install,
-either tree is valid; prefer the source tree when both exist.
+After install, hosts load `.chaos-engine/`. This source checkout stays synced via `tool.py maintain`. Readers compare `coreCommit`, not only VERSION.
 
 ## Stop on ambiguity
 

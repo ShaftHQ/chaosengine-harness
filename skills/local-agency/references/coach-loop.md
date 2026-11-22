@@ -66,7 +66,7 @@ next prompt is the failing assertion only.
 
 ### D. Design / spec turns
 
-Inject a locator-only system brief via `chaos-engine/ce_brief.py` when present
+Inject a locator-only system brief via `runtime/ce_brief.py` when present
 (`python3 .chaos-engine/runtime/ce_brief.py --json`). Do not paste full SKILL bodies.
 Host still reviews the design before implementation.
 
@@ -107,7 +107,7 @@ claim READY from a box probe of the work-machine ports.
 
 1. Run `python3 .chaos-engine/skills/local-agency/scripts/tip_preflight.py` before every push (the `git push` guard runs it too).
 2. Bandit B607: resolve argv0 with `shutil.which`; `# nosec B603` alone does not cover a bare executable.
-3. README inventory: a new import in a packaged `*.py` changes the inventory. On an adopter tree that is `chaos-engine/**/*.py`. On this root-layout repository (`install.py` and `VERSION` at the repo root) it is any `*.py` outside `tests/`, `scripts/`, `.github/`, and `experiments/`. Run the validator `--write` in the same commit.
+3. README inventory: a new import in a packaged `*.py` changes the inventory. On an adopter tree that is `chaos-engine/**/*.py` (external-example). On this root-layout repository (`install.py` and `VERSION` at the repo root) it is any `*.py` outside `tests/`, `scripts/`, `.github/`, and `experiments/`. Run the validator `--write` in the same commit.
 4. `.memory/` bodies touched outside `memory save --stdin`: `tip_preflight.py --rehash <sidecar>` in the same tip.
 5. Known flake fingerprint (see [CI status economy](../../../references/ci-status-economy.md)): no tip.
 
@@ -124,7 +124,7 @@ Executor / Task prompts: `brief_path:` pointer plus the delta slice only; check 
 
 - Skill: [local-agency SKILL.md](../SKILL.md)
 - Guide: local-agency.md (repo-only `chaos-engine/guides/local-agency.md`)
-- CE brief builder: `chaos-engine/ce_brief.py`
+- CE brief builder: `runtime/ce_brief.py`
 - Design/spec contract: [design-turn-contract.md](design-turn-contract.md)
 - Parent ROG Shell: [parent-rog-shell.md](parent-rog-shell.md)
 - Delegation / review stays host: [delegation.md](../../../references/delegation.md)

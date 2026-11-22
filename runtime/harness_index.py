@@ -310,7 +310,12 @@ ROUTER_USE = {
     "Complexity gate": "complexity gate",
     "Durable jobs": "outlives the session",
     "Docs follow the change": "a reader-facing contract changes",
+    "security-audit": "audit a repository we own",
 }
+
+
+# On-demand skills that still get one always-loaded route row. Family stays on-demand.
+ROUTED_ON_DEMAND = frozenset({"security-audit"})
 
 
 LOCAL_LLM_SKILLS = frozenset({
@@ -325,7 +330,7 @@ def render_route_table(index: dict) -> str:
         entry for entry in index["entries"]
         if entry.get("family") == "reference"
         or (entry["kind"] in {"portable", "route"} and entry["name"] != "chaos-engine"
-            and entry.get("family") != "on-demand")
+            and (entry.get("family") != "on-demand" or entry["name"] in ROUTED_ON_DEMAND))
     ]
     selected.sort(key=lambda entry: entry.get("family") == "reference")
     local = [entry for entry in selected if entry["name"] in LOCAL_LLM_SKILLS]
@@ -351,6 +356,7 @@ def render_route_table(index: dict) -> str:
             "learn-traces": "Learn traces",
             "git-cleanup": "Git cleanup",
             "ci-cd": "CI",
+            "security-audit": "Security audit",
         }.get(entry["name"], entry["name"])
         lines.append(f"| {label} | {use} | [{filename}]({href}) |")
     return "\n".join(lines)
@@ -414,6 +420,19 @@ def _index_script(tree: Path) -> Path | None:
 
 
 def _source_tree(root: Path) -> Path:
+    """Prefer the tree that owns this generator.
+
+    A source checkout keeps this file at runtime/harness_index.py and may also
+    symlink .chaos-engine to an installed overlay. Catalogs for that checkout
+    are the root copies. An installed copy still resolves chaos-engine/ then
+    .chaos-engine/ when this file is not the root script.
+    """
+    root_script = root / "runtime" / "harness_index.py"
+    try:
+        if root_script.is_file() and root_script.resolve() == Path(__file__).resolve():
+            return root
+    except OSError:
+        pass
     for candidate in (root / "chaos-engine", root / ".chaos-engine", root):
         if _index_script(candidate) is not None:
             return candidate
@@ -487,6 +506,41 @@ def listing_overflows(root: Path) -> list[str]:
     return findings
 
 
+def route_surface_findings(root: Path | None = None) -> list[str]:
+    """SKILL route block, sorted level-1 rows, and the security-audit path."""
+    root = root or HERE
+    findings: list[str] = []
+    table = render_route_table(build_index())
+    skill = root / "skills/chaos-engine/SKILL.md"
+    if skill.is_file() and table not in skill.read_text(encoding="utf-8"):
+        findings.append("route table drift: skills/chaos-engine/SKILL.md")
+    level = root / "references/level-1-catalog.md"
+    if level.is_file():
+        text = level.read_text(encoding="utf-8")
+        if "skills/security-audit/SKILL.md" not in text:
+            findings.append("level-1 catalog missing security-audit")
+        names: list[str] = []
+        for line in text.splitlines():
+            if not line.startswith("|") or "---" in line or line.startswith("| Name"):
+                continue
+            cell = line.strip("|").split("|", 1)[0].strip()
+            if cell and cell != "Name":
+                names.append(cell)
+        if names != sorted(names, key=str.casefold):
+            findings.append("level-1 catalog rows are not sorted")
+        for _title, path, _use in ROUTES:
+            base = path.rsplit("/", 1)[-1]
+            # The catalog does not name itself.
+            if base == "level-1-catalog.md":
+                continue
+            if base not in text:
+                findings.append(f"level-1 catalog missing route {base}")
+    catalog = root / CATALOG
+    if catalog.is_file() and "security-audit" not in catalog.read_text(encoding="utf-8"):
+        findings.append("catalog missing security-audit")
+    return findings
+
+
 def check(root: Path) -> list[str]:
     """Return drift findings; empty when every generated artifact matches."""
     findings: list[str] = []
@@ -499,6 +553,8 @@ def check(root: Path) -> list[str]:
         if not (source / entry["path"]).is_file():
             findings.append(f"index entry without a file: {entry['path']}")
     findings.extend(listing_overflows(root))
+    if source == root or source == HERE:
+        findings.extend(route_surface_findings(source))
     return findings
 
 

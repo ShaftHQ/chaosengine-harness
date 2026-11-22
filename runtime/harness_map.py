@@ -133,6 +133,25 @@ def main(argv: list[str] | None = None, repo: Path | None = None) -> int:
     if current != rendered:
         print(f"{MAP} is stale: run python3 chaos-engine/runtime/harness_map.py --write", file=sys.stderr)
         return 1
+    # Budget fixtures pass a temp repo. Route surfaces are this checkout only.
+    # Import the sibling by path insert, not importlib: a new stdlib import
+    # rewrites the README python-libraries inventory.
+    real = repo is None or Path(repo).resolve() in {HERE.resolve(), HERE.parent.resolve()}
+    if real and (HERE / "skills/chaos-engine/SKILL.md").is_file():
+        runtime = str((HERE / "runtime").resolve())
+        inserted = runtime not in sys.path
+        if inserted:
+            sys.path.insert(0, runtime)
+        try:
+            import harness_index as route_index
+        finally:
+            if inserted and runtime in sys.path:
+                sys.path.remove(runtime)
+        route_findings = route_index.route_surface_findings(HERE)
+        for item in route_findings:
+            print(item, file=sys.stderr)
+        if route_findings:
+            return 1
     return 0
 
 

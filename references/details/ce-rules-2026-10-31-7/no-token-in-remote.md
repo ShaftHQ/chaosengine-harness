@@ -11,7 +11,7 @@ Doctor and pre-push **FAIL** when any git remote URL embeds credentials:
 Never print the URL or token value — report remote **names** and reason codes
 only. Fix: rewrite remotes to credential-free HTTPS or SSH; authenticate via
 `GH_TOKEN` / `gh auth` / OS credential helper
-(repo `scripts/ci/github-auth-env.sh`; keep remotes credential-free).
+(external-example `scripts/ci/github-auth-env.sh`; keep remotes credential-free).
 
 Module: [`remote_credential_guard.py`](../../../rules/remote_credential_guard.py).
 

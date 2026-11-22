@@ -13,7 +13,7 @@
 
 | Id | Card | Module |
 | --- | --- | --- |
-| L78 | [review-scratch-cleanup](../references/details/ce-rules-2026-10-31-8/review-scratch-cleanup.md) | `scripts/ci/review_scratch.py` |
+| L78 | [review-scratch-cleanup](../references/details/ce-rules-2026-10-31-8/review-scratch-cleanup.md) | `scripts/ci/review_scratch.py` (external-example) |
 | L79 | [cms-block-identity](../references/details/ce-rules-2026-10-31-8/cms-block-identity.md) | [`cms_block_identity.py`](../rules/cms_block_identity.py) |
 | L80 | [test-run-budget](../references/details/ce-rules-2026-10-31-8/test-run-budget.md) | [`task_ledger.py`](../runtime/task_ledger.py) |
 | L81 | [no-self-clock](../references/details/ce-rules-2026-10-31-8/no-self-clock.md) | [`motion_graphics_gate.py`](../addons/design-skills/scripts/motion_graphics_gate.py) |

@@ -31,7 +31,7 @@ Columns: `backlog` -> `ready` -> `doing` -> `review` -> `done`.
 - `ready` requires acceptance criteria and a proof command. No criteria, no pull.
 - `doing` WIP **1 writer** per repository: one card being edited at a time.
 - `review` WIP **2**: at two cards waiting for review or CI, pull nothing new.
-  The two adversarial reviews of a single card still run one after another.
+  Ordinary reversible cards get one fresh-context adversarial review. A public-contract or hard-to-reverse card gets two, one after another.
   The open-PR advisory default is this review WIP times one stream. With no
   `hooks/open-pr-advisory.json`, the default stays one stream until that file
   sets `streams`. The advisory does not read a live parallel-stream set.
@@ -74,7 +74,7 @@ A card is done when all hold:
    latest harness from main before continuing. After each completed delivery
    run `python3 .chaos-engine/tool.py maintain` (fast-forward with local edits
    kept, reinstall, doctor, stale-store refresh, reload).
-8. Ship to-deliver items in the fewest pull requests; group related issues.
+8. Ship each card as a small vertical slice (~90 changed lines or a named `size_waiver`). One grouped pull request is allowed when an epic or batch waiver names it.
 
 Check items 2 and 4 plus labels and links with `python3 .chaos-engine/tool.py dod <PR>` ([`dod.py`](../../runtime/dod.py))
 (table; exit 1 names each gap).

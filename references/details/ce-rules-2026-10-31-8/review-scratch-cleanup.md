@@ -6,5 +6,5 @@ Reviewer copies must be removable without an owner delete code.
    (no linked worktree; outside git → scratch allow-list under `temp`).
 2. Or `git worktree add --detach <path> <pushed-sha>` where sha is on
    `origin` (HEAD not ahead; clean tree — no install dirt / `__pycache__`).
-3. Gate: `scripts/ci/review_scratch.py` (repo CI helper; not in portable overlay)
+3. Gate: `scripts/ci/review_scratch.py` (external-example; not in this tree)
    `evaluate()` FAILs receipts that used an unpushed tip or left porcelain dirt.

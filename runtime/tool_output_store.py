@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Store.
+"""Manual SQLite store for tool output.
 
-Manual SQLite store for tool output. The database is
+The database is
 ``.chaos-engine-state/tool-output/output.db`` under the project directory,
 never a home-directory path. Nothing here replaces host tool output and
 nothing here registers a hook.

@@ -24,10 +24,10 @@ Parallelize when it helps, under two hard rules:
    build config class; one avatar likeness iteration; one render pipeline per
    asset type).
 2. **No conflicting work.** No two workers edit the same file at once. Before
-   starting, claim the file set (`file_claim_lock` (repo `scripts/ci/file_claim_lock.py`)); overlapping
+   starting, claim the file set (`file_claim_lock` (external-example `scripts/ci/file_claim_lock.py`)); overlapping
    claims wait. Complements stream ownership in
    [parallel-streams.md](../../parallel-streams.md) /
-   `scripts/ci/parallel_stream_conflict.py`.
+   `scripts/ci/parallel_stream_conflict.py` (external-example).
 
 Different kinds with disjoint file sets may run in parallel. After each task:
 lessons → ChaosEngine before the next task of that kind.

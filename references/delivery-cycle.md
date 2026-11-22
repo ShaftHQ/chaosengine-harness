@@ -1,7 +1,8 @@
 # Delivery cycle
 
-Standard order for ChaosEngine work. A one-file reversible change still uses
-this order, with a one-line bigger-picture note. The cap is not a quota.
+Standard order for ChaosEngine work. A one-file reversible change uses the
+1-line bigger-picture note, retrieve-first, and the read/fix/prove path.
+No multi-page spec. The cap is not a quota.
 
 ## Order
 
@@ -11,6 +12,7 @@ this order, with a one-line bigger-picture note. The cap is not a quota.
 2. Run at most 3 PDCA iterations. Each iteration is Plan, Do, Check, Act. Check
    is the tests and evidence for that iteration, including the in-session
    review phase. Stop when Check accepts. Do not start a fourth iteration.
+   Two failed attempts on one approach: step back and re-plan.
 3. Self-accept, then push and start adversarial review 1 together. CI and
    that review run at the same time. Do not wait for CI before review 1.
    Do not start review 1 and review 2 in the same step. Do not run the two reviews in parallel.
@@ -19,12 +21,12 @@ this order, with a one-line bigger-picture note. The cap is not a quota.
    Kanban review WIP 2 is two cards, not two reviewers of one change.
    The second review is kaizen: it looks for what the first missed
    after those findings are fixed.
-   The floor is one adversarial, unbiased, fresh-context review on the same
-   model for every change, including a typo-sized diff and non-code work
-   (specs, stories, test plans). There is no zero-review path. Automated
-   checks and pre-done are not a substitute. A public contract, irreversible
-   work, or an outbound action still needs two independent adversarial reviews,
-   and those two run one after another. The author is neither reviewer.
+   Ordinary reversible changes get one fresh-context adversarial review on the
+   same model, including a typo-sized diff and non-code work (specs, stories,
+   test plans). There is no zero-review path. Automated checks and pre-done
+   are not a substitute. Public-contract or hard-to-reverse changes,
+   irreversible work, or an outbound action get two independent adversarial
+   reviews, and those two run one after another. The author is neither reviewer.
    The sequence:
 
    1. Develop, then test, then self-accept. This Check is the author. It is
@@ -49,11 +51,9 @@ this order, with a one-line bigger-picture note. The cap is not a quota.
    6. Finalize. The last push starts the final CI. Do not open a third
       review for a CI-only repair that only makes the failing check pass.
       If that repair changes behavior beyond the failing check, repeat step
-      4 once instead of opening a third reviewer. Arm `gh pr merge --auto`
-      only when the platform queues the merge until required checks succeed.
-      When that arm would merge immediately, watch until the required checks
-      are ready and no review thread is unresolved, then merge with
-      `gh pr merge --squash`. This repository allows only squash merges.
+      4 once instead of opening a third reviewer. Never arm `gh pr merge --auto`.
+      Merge with `gh pr merge --squash` only after required checks are green
+      and review threads are resolved. This repository allows only squash merges.
       A pending check is not success.
       A skipped required check is not success.
       A skipped or neutral check outside the required set does not block.
