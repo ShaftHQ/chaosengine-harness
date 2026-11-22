@@ -1394,10 +1394,23 @@ _INSTALL_SCRIPT = "install.sh"
 
 
 def _installer_url(url: str) -> tuple[str, str] | None:
-    """Owner and repo for a raw chaos-engine install.sh URL, else None."""
+    """Owner and repo for a raw install.sh URL, else None.
+
+    The longer ``/chaos-engine/install.sh`` marker wins so a nested script is
+    not parsed as the repository-root ``install.sh`` one-liner.
+    """
     prefix = "https://" + _RAW_HOST + "/"
-    marker = "/" + _INSTALL_DIR + "/" + _INSTALL_SCRIPT
-    if not url.startswith(prefix) or not url.endswith(marker):
+    if not url.startswith(prefix):
+        return None
+    marker = ""
+    for candidate in (
+        "/" + _INSTALL_DIR + "/" + _INSTALL_SCRIPT,
+        "/" + _INSTALL_SCRIPT,
+    ):
+        if url.endswith(candidate):
+            marker = candidate
+            break
+    if not marker:
         return None
     parts = url[len(prefix) : -len(marker)].split("/")
     if len(parts) < 3:
@@ -1511,8 +1524,11 @@ def _origin_slug(project: Path) -> str:
     return match.group(1) if match else ""
 
 
-# Assembled at runtime so portable forbiddenTokens never appear in this file.
-_PUBLISHED_INSTALLER = "sha" + "fthq/" + "sha" + "ft_engine"
+# Published consumer one-liners. Plaintext slugs; both URL shapes are allowed.
+_PUBLISHED_INSTALLERS = frozenset({
+    "ShaftHQ/SHAFT_ENGINE".casefold(),
+    "ShaftHQ/chaosengine-harness".casefold(),
+})
 _INSTALLER_ORIGIN_DENIAL = (
     "ChaosEngine rejected this install.sh pipe: the URL owner/repo is not "
     "this checkout's GitHub origin and is not the published consumer one-liner. "
@@ -1527,7 +1543,7 @@ def documented_installer_for_project(command: str, project: Path) -> bool:
         return False
     owner, repo = parsed
     slug = f"{owner}/{repo}".casefold()
-    if slug == _PUBLISHED_INSTALLER.casefold():
+    if slug in _PUBLISHED_INSTALLERS:
         return True
     return slug == _origin_slug(project).casefold()
 
@@ -1918,6 +1934,17 @@ def _path_within(path: Path, root: Path) -> bool:
     return True
 
 
+def _is_project_tool_py(script: str, cwd: Path) -> bool:
+    """True only for this checkout's ``.chaos-engine/tool.py`` argument."""
+    path = Path(script)
+    if not path.is_absolute():
+        path = cwd / path
+    try:
+        return path.resolve() == (cwd / ".chaos-engine" / "tool.py").resolve()
+    except OSError:
+        return False
+
+
 def _read_script(script: str, cwd: Path) -> str | None:
     if not script or script == "-" or script.startswith("-"):
         return None
@@ -1987,6 +2014,8 @@ def _code_bodies(command: str, cwd: Path) -> list[tuple[str, str, str]]:
         if heredocs:
             return bodies
         script = _positional_script(arguments, ("-W", "-X", "-m", "-Q"))
+        if script and _is_project_tool_py(script, cwd):
+            return bodies
         text = _read_script(script, cwd) if script else None
         if text is not None:
             bodies.append((lang, text, "code"))
@@ -2233,16 +2262,43 @@ def enhancement_errors(message: str) -> list[str]:
     return list(module.enhancement_errors(message))
 
 
-_IGNORED_STOP_REASONS = frozenset({"channel_closed", "shutdown"})
+_IGNORED_STOP_REASONS = frozenset({
+    "channel_closed",
+    "shutdown",
+    "user_canceled",
+    "error",
+    "max_invocations",
+    "max_forced_invocations",
+    "max_token_budget_exceeded",
+    "terminal_custom_hook",
+})
+
+
+def _stop_turn_closed(event: dict) -> bool:
+    """True when a Stop must not emit decision continue.
+
+    ``fullyIdle: false`` and a terminal ``terminationReason`` close the turn.
+    The termination field is checked before free-text ``reason``.
+    """
+    if event.get("fullyIdle") is False or event.get("fully_idle") is False:
+        return True
+    for key in ("terminationReason", "termination_reason"):
+        raw = event.get(key)
+        if isinstance(raw, str) and raw.strip().casefold() in _IGNORED_STOP_REASONS:
+            return True
+    reason = str(event.get("reason") or "").strip().casefold()
+    return reason in _IGNORED_STOP_REASONS
 
 
 def _in_flight_background(event: dict) -> bool:
     """True when Grok still has a shell, monitor, or subagent in flight.
 
     ``backgroundTasks`` is empty when nothing is running. A missing field is
-    not in-flight work. Scheduled ``sessionCrons`` are later wakeups, not a
-    running monitor.
+    not in-flight work. ``fullyIdle: false`` is in-flight. Scheduled
+    ``sessionCrons`` are later wakeups, not a running monitor.
     """
+    if event.get("fullyIdle") is False or event.get("fully_idle") is False:
+        return True
     for key in ("backgroundTasks", "background_tasks"):
         tasks = event.get(key)
         if isinstance(tasks, list) and tasks:
@@ -2622,6 +2678,8 @@ def _open_pull_request_reason(session_id: str, event: dict) -> str:
 
 
 def _stop_block_reason(event: dict, session_id: str) -> str:
+    if _stop_turn_closed(event):
+        return ""
     # An open delivery PR outranks Learning Session and the host stop retry.
     # Otherwise the turn ends when the PR is only opened.
     if event.get("hook_event_name") != "SubagentStop":
@@ -3102,6 +3160,14 @@ def _repeat_advice(event_name: str, session_id: str, tool_name: str, tool_input:
 
 
 def _deny(event: dict, event_name: str, tool_name: str, reason: str) -> int:
+    if event_name == "PreToolUse" and justification is not None:
+        with contextlib.suppress(Exception):
+            cwd = Path(str(event.get("cwd") or Path.cwd()))
+            justification.forget_denied_retrieve(
+                justification.project_root(cwd),
+                _scope_session(event),
+                _event_commands(tool_name, event.get("tool_input")),
+            )
     _record_denial_with_significance(event, event_name, tool_name)
     advice = None
     if event_name == "PreToolUse":
@@ -3583,7 +3649,12 @@ def _session_start_output(event: dict, event_name: str, session_id: str, token) 
         if checkpoint is not None:
             prompt = module.resume_prompt(checkpoint)
             if event_name in _COMPACT_EVENTS:
-                prompt = f"{prompt}\nEthics: `companions/ethics-card.md`"
+                ethics = _lifecycle._locate((
+                    "companions/ethics-card.md",
+                    ".chaos-engine/companions/ethics-card.md",
+                    "chaos-engine/companions/ethics-card.md",
+                )) or ".chaos-engine/companions/ethics-card.md"
+                prompt = f"{prompt}\nEthics: `{ethics}`"
             print(json.dumps({"additionalContext": prompt}))
             return 0
         if event_name in _COMPACT_EVENTS:

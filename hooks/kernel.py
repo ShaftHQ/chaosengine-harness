@@ -559,6 +559,12 @@ def normalize_hook_input(raw: Mapping[str, object]) -> dict[str, object]:
         normalized["tool_use_id"] = event.tool_call_id
     if "prompt" not in normalized and isinstance(raw.get("lastUserInput"), str):
         normalized["prompt"] = raw["lastUserInput"]
+    if not str(normalized.get("reason") or "").strip():
+        term = normalized.get("terminationReason")
+        if not isinstance(term, str) or not term.strip():
+            term = normalized.get("termination_reason")
+        if isinstance(term, str) and term.strip():
+            normalized["reason"] = term.strip().casefold()
     if (
         event.host == "antigravity"
         and event.name == "PostToolUse"

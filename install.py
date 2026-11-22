@@ -8990,6 +8990,11 @@ def _attach_l84_l92_doctor_findings(
                         + str(previous_empty.get("detail") or ""),
                     }
     version_row = _ce_version_after_upgrade_finding(project, target)
+    drift = _core_commit_drift_detail(project, target)
+    if drift:
+        core = components.get("core")
+        if isinstance(core, dict) and str(core.get("status") or "") not in {"invalid", "recovery-required"}:
+            components["core"] = {**core, "status": "degraded", "detail": drift}
     if version_row is not None and version_row.get("status") == "invalid":
         core = components.get("core")
         if isinstance(core, dict):
@@ -9067,6 +9072,37 @@ def _pack_version_exception(project: Path, core: str) -> str:
             if text != core:
                 diffs.append(path.relative_to(project).as_posix())
     return ", ".join(diffs)
+
+
+def _core_commit_drift_detail(project: Path, overlay: Path) -> str:
+    """Name manifest vs receipt commit drift when VERSION text still matches.
+
+    Empty when the commits match, VERSION text differs, or either file is absent.
+    """
+    try:
+        manifest = json.loads((overlay / "manifest.json").read_text(encoding="utf-8"))
+        receipt = json.loads((project / ".chaos-engine-hosts.json").read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError, TypeError):
+        return ""
+    source = manifest.get("source") if isinstance(manifest, dict) else None
+    pinned = source.get("commit") if isinstance(source, dict) else ""
+    recorded = receipt.get("coreCommit") if isinstance(receipt, dict) else ""
+    if not isinstance(pinned, str) or not isinstance(recorded, str) or not pinned or not recorded:
+        return ""
+    if pinned == recorded:
+        return ""
+    try:
+        installed = (overlay / "VERSION").read_text(encoding="utf-8").strip()
+        intended = (project / "VERSION").read_text(encoding="utf-8").strip()
+    except OSError:
+        installed = ""
+        intended = ""
+    if installed and intended and installed != intended:
+        return ""
+    return (
+        f"coreCommit drift while VERSION matches: manifest source.commit {pinned} "
+        f"receipt coreCommit {recorded}"
+    )
 
 
 def _ce_version_after_upgrade_finding(

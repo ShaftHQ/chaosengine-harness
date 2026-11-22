@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -352,6 +353,20 @@ class ConformanceTests(unittest.TestCase):
             {"id": "guessed", "status": "pass", "measured": True, "ran": True}
         )
         self.assertEqual("pass", ran)
+
+    def test_host_guides_name_every_registered_event(self):
+        registry = self.conformance.production_hook_registry()
+        self.assertEqual([], self.conformance.check_host_guide_events(registry))
+        self.assertNotIn("PostToolUseFailure", registry["codex"])
+        with tempfile.TemporaryDirectory() as temporary:
+            guides = Path(temporary)
+            shutil.copytree(ROOT / "guides" / "tools", guides, dirs_exist_ok=True)
+            guide = guides / "antigravity.md"
+            self.assertTrue(guide.is_file())
+            removed = next(iter(registry["antigravity"]))
+            guide.write_text(guide.read_text(encoding="utf-8").replace(removed, "removed-event"), encoding="utf-8")
+            errors = self.conformance.check_host_guide_events(registry, guides)
+            self.assertTrue(any("antigravity" in item and removed in item for item in errors), errors)
 
 
 if __name__ == "__main__":

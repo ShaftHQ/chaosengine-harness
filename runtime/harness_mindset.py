@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess  # nosec B404 - optional rg, fixed argv, no shell.
 from datetime import datetime, timezone
 from pathlib import Path
@@ -339,14 +340,21 @@ def usage_line(project: Path) -> str:
     return f"retrieve hit use: {rate['cited']}/{rate['records']}"
 
 
+def _orphan_host_receipt_name(name: str) -> bool:
+    if name.startswith(ORPHAN_MARK) or ".chaos-engine-hosts-" in name:
+        return True
+    if name == "orphaned-hosts-receipt.json":
+        return True
+    return name.startswith("orphaned-hosts-receipt-") and name.endswith(".json")
+
+
 def _host_state_entries(project: Path) -> list[Path]:
     state = project / ".chaos-engine-state"
     if not state.is_dir():
         return []
     found = []
     for path in sorted(state.iterdir()):
-        name = path.name
-        if name.startswith(ORPHAN_MARK) or ".chaos-engine-hosts-" in name:
+        if _orphan_host_receipt_name(path.name):
             found.append(path)
     return found
 
@@ -400,6 +408,22 @@ def prune_orphaned_host_entries(
         removed.append(path.name)
         if not dry_run:
             path.unlink(missing_ok=True)
+    scratch = project / ".chaos-engine-state" / "session-scratch"
+    if scratch.is_dir():
+        for child in sorted(scratch.iterdir()):
+            try:
+                age = moment - child.stat().st_mtime
+            except OSError:
+                continue
+            if age < lease_seconds:
+                continue
+            removed.append(child.name)
+            if dry_run:
+                continue
+            if child.is_dir():
+                shutil.rmtree(child)
+            else:
+                child.unlink(missing_ok=True)
     return {
         "dryRun": dry_run,
         "removed": removed,

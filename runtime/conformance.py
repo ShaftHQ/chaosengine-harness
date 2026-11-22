@@ -393,6 +393,26 @@ def production_hook_registry() -> dict[str, set[str]]:
     return registry
 
 
+def check_host_guide_events(registry: dict[str, set[str]], guides: Path | None = None) -> list[str]:
+    """Fail when a kernel-registered event name is absent from guides/tools/<host>.md."""
+    guide_dir = guides if guides is not None else Path(__file__).resolve().parents[1] / "guides" / "tools"
+    errors: list[str] = []
+    for host, names in sorted(registry.items()):
+        path = Path(guide_dir) / f"{host}.md"
+        if not path.is_file():
+            errors.append(f"{host}: guide missing registered events {', '.join(sorted(names))}")
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            errors.append(f"{host}: guide unreadable")
+            continue
+        for event in sorted(names):
+            if event not in text:
+                errors.append(f"{host}: guide omits event {event}")
+    return errors
+
+
 def check_hook_event_registry(registry: dict[str, set[str]], pins: list[dict]) -> list[str]:
     """Fail when a registered name or alias key is absent from that host's pin.
 

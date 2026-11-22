@@ -502,6 +502,25 @@ def _receipt_session(payload: dict, session_id: str | None) -> str:
     return _session_key(session_id)
 
 
+def forget_denied_retrieve(project: Path, session_id: str | None, commands: tuple[str, ...]) -> None:
+    """Drop awaitingReceipt after a denied retrieve. Leave retrieved: true alone."""
+    attempted = False
+    for command in commands:
+        for segment in _pipeline_parts(command):
+            if _retrieve_attempt(segment):
+                attempted = True
+                break
+        if attempted:
+            break
+    if not attempted:
+        return
+    payload = _load_payload(project)
+    if payload.get("awaitingReceipt") != _session_key(session_id):
+        return
+    payload.pop("awaitingReceipt", None)
+    _write_payload(project, payload)
+
+
 def _mark_awaiting_receipt(project: Path, session_id: str | None) -> None:
     """Remember which hook session is about to retrieve. Do not clear retrieveOwed yet."""
     payload = _load_payload(project)

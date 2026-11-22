@@ -41,8 +41,10 @@ OPENCODE_NATIVE_EVENTS = (
 
 ANTIGRAVITY_HOOK_NAME = "chaos-engine"
 ANTIGRAVITY_MATCHER_EVENTS = ("PreToolUse", "PostToolUse")
-ANTIGRAVITY_FLAT_EVENTS = ("SessionStart", "PreInvocation", "PostInvocation", "Stop")
+# PostInvocation stays a kernel alias. It is not a per-turn spawn.
+ANTIGRAVITY_FLAT_EVENTS = ("SessionStart", "PreInvocation", "Stop")
 ANTIGRAVITY_EVENTS = (*ANTIGRAVITY_MATCHER_EVENTS, *ANTIGRAVITY_FLAT_EVENTS)
+_RETIRED_ANTIGRAVITY_EVENTS = ("PostInvocation",)
 
 _OWNED_MARKERS = ("hooks/launch.py", "receipt_shim.py")
 _OPENCODE_MARKERS = (
@@ -301,16 +303,26 @@ export const ChaosEngineGuard = chaosEnginePlugin;
 """
 
 
+def _joined_matchers() -> tuple[str, str]:
+    """Read hooks/matchers.json directly. hosts.py already imports this module."""
+    path = Path(__file__).resolve().parents[1] / "hooks" / "matchers.json"
+    policy = json.loads(path.read_text(encoding="utf-8"))
+    return "|".join(policy["preventive"]), "|".join(policy["observational"])
+
+
 def antigravity_hooks_document() -> dict[str, object]:
     """Named hook object for Antigravity (.agents/hooks.json).
 
     Top-level keys are hook names. Matcher groups wrap tool events; the other
-    four events are flat handler arrays (swapping shapes drops flat events).
+    events are flat handler arrays (swapping shapes drops flat events).
+    PostInvocation is not registered: a per-turn spawn would be a no-op.
     """
+    preventive, observational = _joined_matchers()
+    matchers = {"PreToolUse": preventive, "PostToolUse": observational}
     spec: dict[str, object] = {}
     for event in ANTIGRAVITY_MATCHER_EVENTS:
         spec[event] = [{
-            "matcher": ".*",
+            "matcher": matchers[event],
             "hooks": [{
                 "type": "command",
                 "command": _locator("antigravity", event),
@@ -401,7 +413,7 @@ def merge_antigravity_hooks(existing: dict[str, object] | None) -> dict[str, obj
     """Keep foreign named hooks, migrate legacy top-level entries, write chaos-engine hook."""
     document = dict(existing) if isinstance(existing, dict) else {}
     # Migrate/strip legacy flat top-level ChaosEngine event arrays.
-    for event in ANTIGRAVITY_EVENTS:
+    for event in (*ANTIGRAVITY_EVENTS, *_RETIRED_ANTIGRAVITY_EVENTS):
         legacy = document.get(event)
         if not isinstance(legacy, list):
             continue
@@ -424,6 +436,13 @@ def merge_antigravity_hooks(existing: dict[str, object] | None) -> dict[str, obj
             if entry not in kept:
                 kept.append(entry)
         merged_spec[event] = kept
+    retired = merged_spec.get("PostInvocation")
+    if isinstance(retired, list):
+        kept_retired = [entry for entry in retired if not _antigravity_owned(entry)]
+        if kept_retired:
+            merged_spec["PostInvocation"] = kept_retired
+        else:
+            merged_spec.pop("PostInvocation", None)
     document[ANTIGRAVITY_HOOK_NAME] = merged_spec
     return document
 

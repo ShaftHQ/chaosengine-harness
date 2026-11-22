@@ -420,6 +420,22 @@ def _note_session_start_update() -> str:
     return ""
 
 
+def _core_commit_drift_line() -> str:
+    """One SessionStart line when the overlay pin and host receipt commits differ."""
+    root = _state_root()
+    try:
+        manifest = json.loads((root / ".chaos-engine" / "manifest.json").read_text(encoding="utf-8"))
+        receipt = json.loads((root / ".chaos-engine-hosts.json").read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError, TypeError):
+        return ""
+    source = manifest.get("source") if isinstance(manifest, dict) else None
+    pinned = source.get("commit") if isinstance(source, dict) else None
+    recorded = receipt.get("coreCommit") if isinstance(receipt, dict) else None
+    if not isinstance(pinned, str) or not isinstance(recorded, str) or pinned == recorded:
+        return ""
+    return f"coreCommit drift: manifest {pinned} receipt {recorded}"
+
+
 def session_start_context(token: str | None, activation: str, session_id: str = "") -> str:
     """Return SessionStart context within SESSION_START_MAX_BYTES.
 
@@ -461,9 +477,20 @@ def session_start_context(token: str | None, activation: str, session_id: str = 
                 "Advisory companion (design/structure): load "
                 f"`{_workspace_locator(path).removeprefix('chaos-engine/')}`"
             )
+    ethics = _locate((
+        "companions/ethics-card.md",
+        ".chaos-engine/companions/ethics-card.md",
+        "chaos-engine/companions/ethics-card.md",
+    )) or ".chaos-engine/companions/ethics-card.md"
+    budget_doc = _locate((
+        "references/token-budget-modes.md",
+        ".chaos-engine/references/token-budget-modes.md",
+        "chaos-engine/references/token-budget-modes.md",
+    )) or ".chaos-engine/references/token-budget-modes.md"
     tail = [
-        "Ethics: `companions/ethics-card.md`",
+        f"Ethics: `{ethics}`",
         f"Token budget: {resolve_token_budget_mode()}",
+        f"Details: `{budget_doc}`",
     ]
     base = "\n".join(parts)
     parts.append(_identity_context_block(base, "\n".join(tail)))
@@ -477,6 +504,11 @@ def session_start_context(token: str | None, activation: str, session_id: str = 
         within_hard = len(candidate.encode("utf-8")) <= SESSION_START_MAX_BYTES
         keeps_smoke = not _identity_over_soft(candidate) or _identity_over_soft(rendered)
         if within_hard and keeps_smoke:
+            rendered = candidate
+    drift_line = _core_commit_drift_line()
+    if drift_line:
+        candidate = f"{rendered}\n{drift_line}"
+        if len(candidate.encode("utf-8")) <= SESSION_START_MAX_BYTES:
             rendered = candidate
     with contextlib.suppress(Exception):
         counters_path = _overlay_module("learning_counters.py")
