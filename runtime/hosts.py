@@ -3576,9 +3576,20 @@ def windows_mcp_python_warning(
     }
 
 
+def _host_home() -> Path:
+    """Home from user_paths so the override stays in one module."""
+    path = Path(__file__).resolve().parent / "user_paths.py"
+    spec = importlib.util.spec_from_file_location("chaos_engine_hosts_user_paths", path)
+    if spec is None or spec.loader is None:
+        raise ImportError("runtime/user_paths.py is missing")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.home_dir()
+
+
 def antigravity_user_mcp_path(home: Path | None = None) -> Path:
     """User-level Antigravity MCP file. Not .mcp.json."""
-    root = home or Path.home()
+    root = home or _host_home()
     gemini = Path(os.environ.get("GEMINI_HOME") or root / ".gemini")
     return gemini / "config" / "mcp_config.json"
 

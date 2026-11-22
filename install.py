@@ -4553,16 +4553,16 @@ def initialize_account_project_palace(project: Path, controller, host_controller
     local = (project / ".chaos-engine-state/mempalace").resolve()
     if _central_palace_active(project):
         return False
-    resolved = _resolved_palace(project)
-    if resolved == local or resolved is None:
-        resolve = getattr(controller, "mempalace_project_palace", None)
-        if callable(resolve):
-            try:
-                resolved = Path(resolve(project)).resolve()
-            except (OSError, RuntimeError, ValueError, KeyError):
-                resolved = None
-    if resolved == local:
-        return False
+    # A resolver path equal to the checkout palace is not ownership.
+    # The account controller owns it only when it says so. Otherwise runtime
+    # init still merges owned excludes and creates the empty sqlite.
+    resolve = getattr(controller, "mempalace_project_palace", None)
+    if callable(resolve):
+        try:
+            if Path(resolve(project)).resolve() == local:
+                return False
+        except (OSError, RuntimeError, ValueError, KeyError):
+            pass
     host_controller.initialize_mempalace_runtime(project)
     return True
 
@@ -8424,7 +8424,7 @@ def _annotate_install_contract(project: Path, result: object) -> object:
 
     A doctor exception stays installed. A fresh project raises ValueError when
     the plugin manifest is missing, and that install is still complete. Upgrade
-    stays installed when doctor cannot run. Verify fails closed.
+    and verify fail closed when doctor cannot run.
     """
     if not isinstance(result, dict) or result.get("status") != "installed":
         return result
@@ -8455,9 +8455,13 @@ def _run_guided_upgrade(args: argparse.Namespace) -> dict[str, object]:
         user = _install_user_scope(args)
         payload["userLayer"] = user.get("status")
     names = _contract_blockers(project)
-    if not names:
-        return payload
-    return _needs_repair_payload(payload, names)
+    # Doctor could not run (missing plugin manifest). That is needs-repair,
+    # not a clean install. An empty name list is a clean install.
+    if names is None:
+        return _needs_repair_payload(payload, [])
+    if names:
+        return _needs_repair_payload(payload, names)
+    return payload
 
 
 def _doctor_python_cli() -> str:

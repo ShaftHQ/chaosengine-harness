@@ -4736,7 +4736,18 @@ def copy_source_from_local_clone(
     def ignore(directory: str, names: list[str]) -> set[str]:
         # Same omit rule as the remote download, applied to source-relative paths.
         skipped = set(caches(directory, names))
-        base = Path(directory).resolve().relative_to(source_src.resolve())
+        # A symlink that leaves the clone is not source. Follow it and relative_to raises.
+        try:
+            base = Path(directory).resolve().relative_to(source_src.resolve())
+        except ValueError:
+            return set(names)
+        for name in list(names):
+            candidate = Path(directory) / name
+            try:
+                if candidate.is_symlink() and not candidate.resolve().is_relative_to(source_src.resolve()):
+                    skipped.add(name)
+            except OSError:
+                skipped.add(name)
         # relative_to(self) is '.'; that prefix must not hide root omit rules.
         parts = () if base.parts == (".",) else base.parts
         for name in names:

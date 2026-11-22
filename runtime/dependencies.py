@@ -79,12 +79,25 @@ def uv_tool_executable(tools: Path, package: str, name: str, system: str | None 
     return Path(tools) / package / "bin" / name
 
 
+def _user_home() -> Path:
+    """Home from user_paths so the override stays in one module."""
+    import importlib.util
+
+    path = Path(__file__).resolve().parent / "user_paths.py"
+    spec = importlib.util.spec_from_file_location("chaos_engine_dependencies_user_paths", path)
+    if spec is None or spec.loader is None:
+        raise ImportError("runtime/user_paths.py is missing")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.home_dir()
+
+
 def default_uv_tools_dir() -> Path:
     """Shared account uv tools directory (concurrent bots race here)."""
     override = os.environ.get("UV_TOOL_DIR")
     if override:
         return Path(override).expanduser()
-    return uv_tools_dir_for(os.name, dict(os.environ), Path.home())
+    return uv_tools_dir_for(os.name, dict(os.environ), _user_home())
 
 
 @contextmanager
