@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import importlib.util
+import json
+import tempfile
 import unittest
+import uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -102,10 +105,6 @@ class OwnerGateTest(unittest.TestCase):
             self.assertFalse(second["new_work"])
             self.assertEqual("", second["ask"])
 
-    def test_stop_path_calls_the_gate(self):
-        source = (ROOT / "hooks" / "guard.py").read_text(encoding="utf-8")
-        self.assertIn("apply_owner_gate", source)
-
     def test_delivery_references_point_at_the_gate(self):
         for relative in (
             "references/delivery-cycle.md",
@@ -115,6 +114,84 @@ class OwnerGateTest(unittest.TestCase):
             text = (ROOT / relative).read_text(encoding="utf-8")
             self.assertIn("blocking: unverifiable", text)
             self.assertIn("runtime/owner_gate.py", text)
+
+
+def _load_guard():
+    path = ROOT / "hooks" / "guard.py"
+    spec = importlib.util.spec_from_file_location("ce_guard_stop_153", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot load {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    module._deny = lambda event, event_name, tool_name, reason: 2
+    return module
+
+
+class StopPathTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.guard = _load_guard()
+        cls.gate = _load()
+
+    def _open_pr(self, root: Path) -> None:
+        state = root / ".chaos-engine-state"
+        state.mkdir(parents=True)
+        (state / "open-pull-request.json").write_text(
+            json.dumps({"active": True, "state": "open", "pullRequest": 157}) + "\n",
+            encoding="utf-8",
+        )
+
+    def _stop(self, root: Path, message: str):
+        session_id = "owner-gate-" + uuid.uuid4().hex
+        event = {
+            "hook_event_name": "Stop",
+            "cwd": str(root),
+            "session_id": session_id,
+            "last_assistant_message": message,
+        }
+        return self.guard._stop_block(event, "Stop", "", session_id)
+
+    def test_a_short_owner_artifact_yields_the_open_pull_request_once(self):
+        message = "rendered proof for the frame"
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self._open_pr(root)
+            reason = self.guard._open_pull_request_reason("unused-session", {
+                "cwd": str(root),
+                "hook_event_name": "Stop",
+            })
+            self.assertTrue(
+                reason.startswith("Delivery is not complete while the pull request is open.")
+            )
+            self.assertIsNone(self._stop(root, message))
+            path = root / ".chaos-engine-state" / "owner-gate.json"
+            written = path.read_bytes()
+            again = self.gate.apply_owner_gate(
+                path,
+                blocker=message,
+                session_can_create=False,
+                only_remaining=True,
+            )
+            self.assertEqual("blocking: unverifiable", again["blocking"])
+            self.assertFalse(again["record"])
+            self.assertIsNone(self._stop(root, message))
+            self.assertEqual(written, path.read_bytes())
+
+    def test_a_long_essay_that_mentions_the_artifact_stays_denied(self):
+        essay = "rendered proof " + ("still open " * 20)
+        self.assertGreater(len(essay), 120)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self._open_pr(root)
+            self.assertEqual(2, self._stop(root, essay))
+            self.assertFalse((root / ".chaos-engine-state" / "owner-gate.json").exists())
+
+    def test_an_ordinary_stop_still_denies_the_open_pull_request(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self._open_pr(root)
+            self.assertEqual(2, self._stop(root, "checks are still running"))
+            self.assertFalse((root / ".chaos-engine-state" / "owner-gate.json").exists())
 
 
 if __name__ == "__main__":

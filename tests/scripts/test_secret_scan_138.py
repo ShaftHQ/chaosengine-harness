@@ -56,13 +56,25 @@ class SecretAssignmentTest(unittest.TestCase):
             "password = letmein\n",
             "token = supersecret\n",
             "PASSWORD=supersecret\n",
+            "token = superSecret\n",
             'password = "letmein"\n',
         ):
             result = self.rules.evaluate_secrets_text(line, kind="commit")
             self.assertIn("password-in-commit", result["hits"], line)
 
-    def test_short_token_identifier_is_not_a_password(self):
-        result = self.rules.evaluate_secrets_text("token = entry\n", kind="commit")
+    def test_ordinary_identifiers_are_not_secrets(self):
+        for line in (
+            "password = None\n",
+            "password = self\n",
+            "token = response\n",
+            "token = entry\n",
+        ):
+            result = self.rules.evaluate_secrets_text(line, kind="commit")
+            self.assertNotIn("password-in-commit", result["hits"], line)
+
+    def test_the_rule_source_does_not_contain_a_secret_assignment(self):
+        source = (ROOT / "rules" / "lessons_2026_11_06.py").read_text(encoding="utf-8")
+        result = self.rules.evaluate_secrets_text(source, kind="commit")
         self.assertNotIn("password-in-commit", result["hits"])
 
 

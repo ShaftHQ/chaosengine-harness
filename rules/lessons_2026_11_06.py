@@ -46,28 +46,30 @@ _BARE_NAME = re.compile(r"^[A-Za-z_][\w]*$")
 _JWT = re.compile(r"eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}")
 
 
-def _credential_looking(value: str, key: str) -> bool:
-    """A code expression is not a credential. A bare password literal still is.
+# Bare identifiers are code. These words are literals even with no digit.
+_BARE_SECRET_WORDS = frozenset({"letmein", "supersecret"})
 
-    ``token = entry`` is a variable. ``token = supersecret`` and
-    ``password = letmein`` are literals. A digit in a bare name is a literal.
+
+def _credential_looking(value: str) -> bool:
+    """A code expression is not a credential.
+
+    A bare name is a credential only when it contains a digit or is a known
+    literal word. Ordinary identifiers are not. Quoted text still is.
     """
     if _CODE_EXPR.match(value):
         return False
     if _BARE_NAME.match(value):
         if any(char.isdigit() for char in value):
             return True
-        if value.isalpha() and value.islower() and len(value) >= 7:
-            return True
-        return key.casefold() == "password"
+        return value.casefold() in _BARE_SECRET_WORDS
     return True
 
 
 def _password_hit(text: str) -> bool:
     """True for a credential assignment. Expressions, placeholders, and the next line are not."""
     for match in _PASSWORD.finditer(text or ""):
-        key, value = match.group(1), match.group(2)
-        if _PLACEHOLDER_VALUE.match(value) or not _credential_looking(value, key):
+        value = match.group(2)
+        if _PLACEHOLDER_VALUE.match(value) or not _credential_looking(value):
             continue
         return True
     return False
@@ -321,8 +323,8 @@ def evaluate_cover_letter(
         hits.append("founder-or-ceo-title")
     folded = body.casefold()
     for name in client_names or []:
-        token = str(name or "").strip()
-        if token and token.casefold() in folded:
+        client = str(name or "").strip()
+        if client and client.casefold() in folded:
             hits.append("client-name")
     sourced = {str(tool).casefold() for tool in (sourced_tools or [])}
     for tool in claimed_tools or []:

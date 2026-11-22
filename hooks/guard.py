@@ -3383,23 +3383,69 @@ def _post_tool_activity(event: dict, event_name: str, commands: tuple, session_i
         )
 
 
-def _owner_gate_allows_stop(event: dict, reason: str) -> bool:
-    """An owner-only artifact recorded once ends the goal instead of polling Stop."""
+def _owner_gate_module():
     path = _overlay_module("owner_gate.py")
-    if not path.is_file() or not reason:
-        return False
+    if not path.is_file():
+        return None
     spec = importlib.util.spec_from_file_location("chaos_engine_owner_gate", path)
     if spec is None or spec.loader is None:
-        return False
+        return None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    return module
+
+
+def _owner_artifact_line(event: dict) -> str:
+    """The owner artifact itself, never the open-PR deny essay."""
+    explicit = event.get("owner_gate") or event.get("ownerGate")
+    if isinstance(explicit, str) and explicit.strip():
+        return explicit.strip()
+    message = event.get("last_assistant_message")
+    if not isinstance(message, str):
+        message = event.get("lastAssistantMessage")
+    if not isinstance(message, str):
+        return ""
+    module = _owner_gate_module()
+    if module is None:
+        return ""
+    for line in message.splitlines():
+        text = line.strip()
+        if text and len(text) <= 120 and module._owner_only(text):
+            return text
+    return ""
+
+
+def _work_besides_open_pr(event: dict, session_id: str) -> bool:
+    """True when Stop still owes something other than the open pull request."""
+    if event.get("hook_event_name") == "SubagentStop":
+        return False
+    if learning_session_reason(session_id, event):
+        return True
+    if _terminal_reflection_reason(event, session_id):
+        return True
+    hook_retry = bool(event.get("stop_hook_active") or event.get("stopHookActive"))
+    if justification is not None and not hook_retry:
+        root = justification.project_root(Path(str(event.get("cwd") or Path.cwd())))
+        if justification.session_retrieve_gap(root, session_id):
+            return True
+    if not hook_retry and _pending_watch_claim_reason(event):
+        return True
+    return False
+
+
+def _owner_gate_ends_open_pr(event: dict, session_id: str) -> bool:
+    """Record one unverifiable owner artifact and let that open-PR deny yield."""
+    artifact = _owner_artifact_line(event)
+    module = _owner_gate_module()
+    if not artifact or module is None:
+        return False
     state = Path(str(event.get("cwd") or Path.cwd())) / ".chaos-engine-state" / "owner-gate.json"
     try:
         decision = module.apply_owner_gate(
             state,
-            blocker=reason,
+            blocker=artifact,
             session_can_create=False,
-            only_remaining=True,
+            only_remaining=not _work_besides_open_pr(event, session_id),
         )
     except (OSError, TypeError, ValueError):
         return False
@@ -3410,9 +3456,11 @@ def _stop_block(event: dict, event_name: str, tool_name: str, session_id: str) -
     if event_name not in {"Stop", "SubagentStop"}:
         return None
     reason = _stop_block_reason(event, session_id)
+    if _owner_gate_ends_open_pr(event, session_id):
+        if reason and not reason.startswith("Delivery is not complete while the pull request is open."):
+            return _deny(event, event_name, tool_name, reason)
+        return None
     if reason:
-        if _owner_gate_allows_stop(event, reason):
-            return None
         return _deny(event, event_name, tool_name, reason)
     return None
 
