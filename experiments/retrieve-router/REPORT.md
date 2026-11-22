@@ -2,7 +2,7 @@
 
 Label: fixture backends, not live stores. P7 (the #45 model rig) was not run. No live Graphify or MemPalace process was scored. `retrieve_py` is `retrieve(query, store=pick_store(query))`. `router_v2` is `classify_scope` through `retrieve(query)` with no store. No second router was added.
 
-Frozen set: `experiments/retrieve-router/questions.json` (60 questions, sha256 `2bddae46ff4c05312bf28bfad7cb4443ca220664378d90e76ef68101db5106ef`). The scorer does not rewrite that file.
+Frozen set: `experiments/retrieve-router/questions.json` (60 questions, sha256 `4c90c7e18e2a2033e7d8cecf5437bfa6c9024311d4738c3deeb5f94f72a5fbc1`). The scorer does not rewrite that file.
 
 ## K1
 
@@ -32,9 +32,9 @@ Synthetic padded MemPalace and Memory bodies at N=8, 4N=32, and 16N=128. Bytes a
 
 | Arm | Store | N bytes | 4N bytes | 16N bytes | N p95 s | 4N p95 s | 16N p95 s |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| retrieve_py | memory | 800 | 800 | 800 | 0.004910721996566281 | 0.004576982988510281 | 0.005136947002029046 |
-| retrieve_py | mempalace | 800 | 800 | 800 | 0.007036221999442205 | 0.008523259981302544 | 0.007627954997587949 |
-| router_v2 | memory | 800 | 800 | 800 | 0.005788512993603945 | 0.005773936019977555 | 0.0054288860119413584 |
-| router_v2 | mempalace | 800 | 800 | 800 | 0.009198850981192663 | 0.009164807008346543 | 0.009491070988588035 |
+| retrieve_py | memory | 800 | 800 | 800 | 0.004932873998768628 | 0.004720775003079325 | 0.004505118995439261 |
+| retrieve_py | mempalace | 800 | 800 | 800 | 0.007203422981547192 | 0.008118085999740288 | 0.008037934981985018 |
+| router_v2 | memory | 800 | 800 | 800 | 0.005619478004518896 | 0.005564313993090764 | 0.005882254015887156 |
+| router_v2 | mempalace | 800 | 800 | 800 | 0.009258756006602198 | 0.008856908971210942 | 0.009598083997843787 |
 
 p95 is the in-process timer around `retrieve()`, 21 samples. Latency is not required to be flat.

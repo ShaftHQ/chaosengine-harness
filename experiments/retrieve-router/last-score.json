@@ -12,21 +12,21 @@
             "bytes": 800,
             "bytes_max": 800,
             "items": 128,
-            "p95_seconds": 0.005136947002029046,
+            "p95_seconds": 0.004505118995439261,
             "within_budget": true
           },
           "4N": {
             "bytes": 800,
             "bytes_max": 800,
             "items": 32,
-            "p95_seconds": 0.004576982988510281,
+            "p95_seconds": 0.004720775003079325,
             "within_budget": true
           },
           "N": {
             "bytes": 800,
             "bytes_max": 800,
             "items": 8,
-            "p95_seconds": 0.004910721996566281,
+            "p95_seconds": 0.004932873998768628,
             "within_budget": true
           }
         },
@@ -35,21 +35,21 @@
             "bytes": 800,
             "bytes_max": 800,
             "items": 128,
-            "p95_seconds": 0.007627954997587949,
+            "p95_seconds": 0.008037934981985018,
             "within_budget": true
           },
           "4N": {
             "bytes": 800,
             "bytes_max": 800,
             "items": 32,
-            "p95_seconds": 0.008523259981302544,
+            "p95_seconds": 0.008118085999740288,
             "within_budget": true
           },
           "N": {
             "bytes": 800,
             "bytes_max": 800,
             "items": 8,
-            "p95_seconds": 0.007036221999442205,
+            "p95_seconds": 0.007203422981547192,
             "within_budget": true
           }
         }
@@ -68,21 +68,21 @@
             "bytes": 800,
             "bytes_max": 800,
             "items": 128,
-            "p95_seconds": 0.0054288860119413584,
+            "p95_seconds": 0.005882254015887156,
             "within_budget": true
           },
           "4N": {
             "bytes": 800,
             "bytes_max": 800,
             "items": 32,
-            "p95_seconds": 0.005773936019977555,
+            "p95_seconds": 0.005564313993090764,
             "within_budget": true
           },
           "N": {
             "bytes": 800,
             "bytes_max": 800,
             "items": 8,
-            "p95_seconds": 0.005788512993603945,
+            "p95_seconds": 0.005619478004518896,
             "within_budget": true
           }
         },
@@ -91,21 +91,21 @@
             "bytes": 800,
             "bytes_max": 800,
             "items": 128,
-            "p95_seconds": 0.009491070988588035,
+            "p95_seconds": 0.009598083997843787,
             "within_budget": true
           },
           "4N": {
             "bytes": 800,
             "bytes_max": 800,
             "items": 32,
-            "p95_seconds": 0.009164807008346543,
+            "p95_seconds": 0.008856908971210942,
             "within_budget": true
           },
           "N": {
             "bytes": 800,
             "bytes_max": 800,
             "items": 8,
-            "p95_seconds": 0.009198850981192663,
+            "p95_seconds": 0.009258756006602198,
             "within_budget": true
           }
         }
@@ -132,21 +132,21 @@
         "bytes": 800,
         "bytes_max": 800,
         "items": 128,
-        "p95_seconds": 0.0054288860119413584,
+        "p95_seconds": 0.005882254015887156,
         "within_budget": true
       },
       "4N": {
         "bytes": 800,
         "bytes_max": 800,
         "items": 32,
-        "p95_seconds": 0.005773936019977555,
+        "p95_seconds": 0.005564313993090764,
         "within_budget": true
       },
       "N": {
         "bytes": 800,
         "bytes_max": 800,
         "items": 8,
-        "p95_seconds": 0.005788512993603945,
+        "p95_seconds": 0.005619478004518896,
         "within_budget": true
       }
     },
@@ -155,21 +155,21 @@
         "bytes": 800,
         "bytes_max": 800,
         "items": 128,
-        "p95_seconds": 0.009491070988588035,
+        "p95_seconds": 0.009598083997843787,
         "within_budget": true
       },
       "4N": {
         "bytes": 800,
         "bytes_max": 800,
         "items": 32,
-        "p95_seconds": 0.009164807008346543,
+        "p95_seconds": 0.008856908971210942,
         "within_budget": true
       },
       "N": {
         "bytes": 800,
         "bytes_max": 800,
         "items": 8,
-        "p95_seconds": 0.009198850981192663,
+        "p95_seconds": 0.009258756006602198,
         "within_budget": true
       }
     }
