@@ -123,8 +123,12 @@ push of the self-accepted head. CI and review 1 run together. Fix whichever
 returns first, wait for the other, reconcile, and push once. That push starts
 CI and adversarial review 2 together. Do not start both reviewers in one step.
 Do not merge
-until those reviews are done, their comments are applied, and every CI check
-on that head has finished successfully. A pending check is not success. An unchanged head
+until those reviews are done, their comments are applied, and the required
+checks have passed. This repository merges with `gh pr merge --squash`.
+A skipped or neutral check outside the required set does not block.
+A failed, cancelled, or pending check blocks when it is required and when
+no check is marked required. An unmarked skip blocks.
+An empty check list is not success. A pending check is not success. An unchanged head
 gets at most two reviews. Never review
 individual implementation steps. A pull request that changes an existing test
 contract, or whose CI does not run the changed surface

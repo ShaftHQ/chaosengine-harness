@@ -10,7 +10,7 @@ Maps the ChaosEngine delivery loop to **hooks** (machine-checkable) vs **skills*
 | Implement (Do) | Hook | PreToolUse session identity, catastrophic deny, worktree | playbooks / roles |
 | Check | Skill + tests | PostToolUse records outcomes | consolidated proof commands |
 | Two adversarial reviews | Skill | review 1 with the self-accept push; do not start both reviewers in one step | [delivery cycle](delivery-cycle.md) |
-| Merge | Hook | PreToolUse refuses `gh pr merge` until every CI check succeeded and review threads are resolved. A pending check is not success. `--auto` is not a bypass | [delivery cycle](delivery-cycle.md) |
+| Merge | Hook | PreToolUse refuses `gh pr merge` until the required checks pass and review threads are resolved. A skipped or neutral check outside the required set does not block. A failed, cancelled, or pending check blocks when it is required and when no check is marked required. An unmarked skip blocks. An empty check list is not success. A pending check is not success. This repository merges with `gh pr merge --squash`. `--auto` is not a bypass | [delivery cycle](delivery-cycle.md) |
 | Learning Session | Hook | Stop requires terminal Learning Session | [learning](../runtime/learning.py) + [self-improve](../skills/self-improve/SKILL.md) |
 
 ## Research-before-mutation (enforced path)
@@ -44,14 +44,14 @@ open pull request is not completion. By default, finish the delivery:
 
 1. Commit on a `ChaosEngine/…` branch taken from the fetched default branch.
 2. Push that branch.
-3. Open a pull request. This repository allows merge commits only.
+3. Open a pull request. This repository allows only squash merges (`gh pr merge --squash`).
 4. Watch required checks and merge the pull request. A green local test is not
    a merge.
 
 Stop short of that sequence only when the owner explicitly asked for a local
 change, a draft, or a plan, or when a hard external blocker (credentials,
 denied permission, or a required check that cannot be fixed in this session)
-is stated with evidence.
+is stated with evidence. When the only remaining gate is an owner-only artifact this session cannot create, record `blocking: unverifiable` once and end the goal (`runtime/owner_gate.py`).
 
 ## Invariants
 

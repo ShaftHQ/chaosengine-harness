@@ -1,0 +1,62 @@
+=== last frame with 'Verify installation running' ===
+
+ ▗▄▄███████▗▄▄▄▄   ChaosEngine 0.4.20261115.5
+███▛▀▘ ▄▄▄▛████▀     Project    /workspace/ce-vis-e2e/proj
+
+
+ ▗▄▄███████▗▄▄▄▄   ChaosEngine 0.4.20261115.5
+███▛▀▘ ▄▄▄▛████▀     Project    /workspace/ce-vis-e2e/proj
+███▙▄▖ ▝▀▀▟████▄     Source     ShaftHQ/chaosengine-harness@main
+
+ ▗▄▄███████▗▄▄▄▄   ChaosEngine 0.4.20261115.5
+███▛▀▘ ▄▄▄▛████▀     Project    /workspace/ce-vis-e2e/proj
+███▙▄▖ ▝▀▀▟████▄     Source     ShaftHQ/chaosengine-harness@main
+ ▝▀▀███████▝▀▀▀▀     Commit     db38269bb8fa…
+
+  [✓] Resolve source          00:02
+  [✓] Download source         00:14
+  [✓] Install core            00:00
+  [✓] Provision dependencies  00:28
+  [⠼] Verify installation     running
+└─ 4/6 · Elapsed 00:54
+  [·] Activate clients
+chaos-engine: MemPalace index mode=full reason=index empty; previous index kept at /workspace/ce-vis-e
+2e/proj/.git/chaos-engine/mempalace.previous-20261122005833
+chaos-engine: MemPalace index running in the background; progress: /workspace/ce-vis-e2e/proj/.git/cha
+os-engine/mempalace-index.log
+
+
+
+
+
+=== final screen ===
+
+ ▗▄▄███████▗▄▄▄▄   ChaosEngine 0.4.20261115.5
+███▛▀▘ ▄▄▄▛████▀     Project    /workspace/ce-vis-e2e/proj
+███▙▄▖ ▝▀▀▟████▄     Source     ShaftHQ/chaosengine-harness@main
+ ▗▄▄███████▗▄▄▄▄   ChaosEngine 0.4.20261115.5
+███▛▀▘ ▄▄▄▛████▀     Project    /workspace/ce-vis-e2e/proj
+███▙▄▖ ▝▀▀▟████▄     Source     ShaftHQ/chaosengine-harness@main
+ ▝▀▀███████▝▀▀▀▀     Commit     db38269bb8fa…
+
+  [✓] Resolve source          00:02
+  [✓] Download source         00:14
+  [✓] Install core            00:00
+  [✓] Provision dependencies  00:28
+  [✓] Verify installation     00:10
+  [✓] Activate clients        00:00
+
+  ✓ Installed in 01:08 · Doctor healthy (18/18)
+  Hosts      codex (needs /hooks trust) · grok (on PATH) · copilot (IDE)
+  Action     Codex: run /hooks once to trust .codex/hooks.json
+             https://shafthq.github.io/docs/agentic/chaos-engine
+  Action     Grok: run /hooks-trust, then reload hooks
+             https://shafthq.github.io/docs/agentic/chaos-engine
+  Trace      /workspace/ce-vis-e2e/proj/.chaos-engine-state/install-trace.json
+  Guide      https://shafthq.github.io/docs/agentic/chaos-engine
+  Receipt    .chaos-engine-state/install-receipt.json
+
+  Next
+    1. Open a host in this project and invoke /chaos-engine
+    2. Run python3 .chaos-engine/install.py doctor --project . anytime
+

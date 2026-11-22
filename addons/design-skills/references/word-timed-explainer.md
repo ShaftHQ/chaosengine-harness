@@ -35,12 +35,14 @@ pipeline, D08 motion tokens, D17 voice production, or the D21 arc.
    is not the shipped voice.
 3. Write `timings.json`: an object with a `lines` array. Each line has
    non-empty `text`, a `words` array of `{text, start, end}` with `end`
-   greater than `start`, and a `picture` string that names the cue.
+   greater than `start`, a `picture` string, the `take` file name, the
+   spoken `word` that cue hits, and `overflow: false` only after a measured
+   fit. `"draft": true` is a timing pass, not a master.
 4. Rebuild the one canvas from that file. Change a line by replacing its
    take, re-timing that line, and rebuilding so only that cue moves.
 5. Lay out 16:9 and 9:16 as two compositions. Caption from the same words.
-6. Run the timings gate, then a measured pass on frames that were actually
-   rendered. Do not treat this card as that render.
+6. Run `wordtiming` and `wordcue`, then a measured pass on frames that were
+   actually rendered. Do not treat this card as that render.
 
 ## Verify
 
@@ -48,8 +50,16 @@ pipeline, D08 motion tokens, D17 voice production, or the D21 arc.
   `lines`, a line with no words, or a line with no picture exits non-zero
   and prints a named reason (`empty-file`, `missing-lines`, `no-words`,
   `no-picture`).
+- `design_qc.py wordcue timings.json` exits 0 only when every line names a
+  take, a shipped take is not `*.scratch.*`, `overflow` is false, and `word`
+  is one of that line's timed words. Missing evidence fails closed
+  (`missing-take`, `scratch-take`, `overflow-text`, `cue-without-word`).
+  A shipped file also fails `missing-whisper` unless this add-on contains
+  the pinned whisper.cpp binary. A draft may omit that binary and may name
+  a scratch take. The gate reads the timing file. It does not run a model
+  and it does not call a second ASR stack.
 - The manifest names the shipped voice and states that the scratch take was
-  not shipped.
+  not shipped. The line `take` is that name.
 - 16:9 and 9:16 frames, when a render exists, show their own layout, not a
   crop. No pilot is claimed here.
 

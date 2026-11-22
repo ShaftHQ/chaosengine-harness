@@ -99,6 +99,189 @@ def pick_store(query: str, store: str | None = None) -> str:
     return "graphify"
 
 
+# First match wins. A second backend runs only after a miss, never after an error.
+_IMPACT_RE = re.compile(r"\b(who\s+calls|callers?|calls|impact|breaks|depends|depend)\b", re.I)
+_EXPLAIN_RE = re.compile(r"\b(explain|orient|overview)\b", re.I)
+_HISTORY_RE = re.compile(r"\b(why|when|decided|decision|before|last\s+time|history)\b", re.I)
+_DATE_RE = re.compile(r"\b(20\d{2}-\d{2}-\d{2})\b")
+_GOTCHA_RE = re.compile(r"\b(gotcha|constraint|bitten)\b", re.I)
+_EXACT_RE = re.compile(
+    r"\"[^\"]+\"|'[^']+'|\b(current behavio[u]r|exact string|right now)\b",
+    re.I,
+)
+_MISS_REASONS = frozenset(
+    {
+        "no-relevant-hits",
+        "no-rare-token",
+        "no-node",
+        "ambiguous",
+        "ambiguous-unparsed",
+        "miss",
+        "no-results",
+    }
+)
+_CANDIDATE_ID = re.compile(r"^\s+id:\s*(\S+)\s*$", re.MULTILINE)
+_RRF_K = 60
+POLICY_ON_MISS = "two-store-on-miss"
+
+
+def _route(
+    reason: str,
+    store: str,
+    verb: str,
+    symbols: list[str],
+    fallback: str | None = None,
+    fallback_verb: str | None = None,
+    **extra: Any,
+) -> dict[str, Any]:
+    route: dict[str, Any] = {
+        "reason": reason,
+        "primary": store,
+        "verb": verb,
+        "fallback": fallback,
+        "fallbackVerb": fallback_verb,
+        "symbols": list(symbols),
+    }
+    route.update(extra)
+    return route
+
+
+def question_rare_tokens(query: str) -> list[str]:
+    """Rare tokens after punctuation is split off, so ``FooBar?`` still counts."""
+    split = _corpus_split()
+    if split is None:
+        return []
+    cleaned = re.sub(r"[^\w./-]+", " ", query)
+    return split.rare_tokens(cleaned)
+
+
+def implicit_clue(query: str, gold_text: str) -> bool:
+    """True when no rare question token occurs in the gold item."""
+    folded = gold_text.casefold()
+    return not any(token.casefold() in folded for token in question_rare_tokens(query))
+
+
+def classify_scope(query: str) -> dict[str, Any]:
+    """Deterministic scope table. No model call."""
+    symbols = question_rare_tokens(query)
+    dated = _DATE_RE.search(query)
+    since = dated.group(1) if dated else None
+    if symbols and _IMPACT_RE.search(query):
+        return _route("symbol-impact", "graphify", "affected", symbols, "graphify", "query", depth=2)
+    if len(symbols) >= 2:
+        return _route("two-symbols", "graphify", "path", symbols, "graphify", "explain")
+    if _EXPLAIN_RE.search(query):
+        if symbols:
+            return _route("explain-symbol", "graphify", "explain", symbols, "rg", "rg")
+        return _route("explain-query", "graphify", "query", symbols, "rg", "rg", budget=1500)
+    if _HISTORY_RE.search(query) or since:
+        return _route(
+            "history", "mempalace", "search", symbols, "memory", "query", results=5, since=since
+        )
+    if _GOTCHA_RE.search(query):
+        return _route("gotcha", "memory", "query", symbols, "mempalace", "search", results=5)
+    if not symbols:
+        return _route("no-rare-token", "mempalace", "search", symbols, "graphify", "query", results=5)
+    if _EXACT_RE.search(query):
+        return _route("exact-string", "rg", "rg", symbols)
+    return _route("symbol-query", "graphify", "query", symbols, "rg", "rg", budget=1500)
+
+
+def _top_graphify_candidate(text: str) -> str | None:
+    found = _CANDIDATE_ID.findall(text or "")
+    if found:
+        return found[0]
+    for line in (text or "").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith(("Ambiguous:", "Retry", "No unique")):
+            continue
+        if stripped.startswith("id:"):
+            return stripped.split(":", 1)[1].strip() or None
+        return stripped
+    return None
+
+
+def _miss_receipt(store: str, query: str, reason: str) -> dict[str, Any]:
+    return {
+        "store": store,
+        "status": STATUS_SKIPPED,
+        "reason": reason,
+        "query": query,
+        "hits": [],
+        "excerpt": "",
+        "bytes": 0,
+    }
+
+
+def _is_miss(outcome: dict[str, Any]) -> bool:
+    if outcome.get("status") == STATUS_DEGRADED:
+        return False
+    if str(outcome.get("reason") or "") in _MISS_REASONS:
+        return True
+    return outcome.get("status") == STATUS_USED and not outcome.get("hits")
+
+
+def _live_hit(project: Path, hit: dict[str, Any]) -> bool:
+    raw = str(hit.get("path") or "").replace("\\", "/").strip()
+    if not raw or raw.startswith("/") or raw.startswith("../") or "/../" in f"/{raw}":
+        return False
+    path = (project / raw).resolve()
+    try:
+        path.relative_to(project.resolve())
+    except ValueError:
+        return False
+    return path.is_file()
+
+
+def reciprocal_rank_fusion(groups: list[list[dict[str, Any]]], *, k: int = _RRF_K) -> list[dict[str, Any]]:
+    """Fuse ranked hit lists. Cap 8. Shared hits outrank a hit from one list."""
+    totals: dict[tuple[str, int | None], float] = {}
+    best_rank: dict[tuple[str, int | None], int] = {}
+    chosen: dict[tuple[str, int | None], dict[str, Any]] = {}
+    for group in groups:
+        for rank, hit in enumerate(group, start=1):
+            path = str(hit.get("path") or "")
+            if not path:
+                continue
+            line = hit.get("line")
+            key = (path, int(line) if isinstance(line, int) else None)
+            totals[key] = totals.get(key, 0.0) + 1.0 / (k + rank)
+            previous = best_rank.get(key)
+            if previous is None or rank < previous:
+                best_rank[key] = rank
+                item: dict[str, Any] = {
+                    "path": path,
+                    "store": hit.get("store"),
+                    "route": hit.get("route"),
+                }
+                if isinstance(line, int):
+                    item["line"] = line
+                chosen[key] = item
+    ordered = sorted(totals, key=lambda item: (-totals[item], item[0], -1 if item[1] is None else item[1]))
+    fused: list[dict[str, Any]] = []
+    for key in ordered[:_HIT_LIMIT]:
+        hit = chosen[key]
+        hit["score"] = totals[key]
+        fused.append(hit)
+    return fused
+
+
+def _tag_hits(hits: list[dict[str, Any]], store: str, reason: str) -> list[dict[str, Any]]:
+    tagged: list[dict[str, Any]] = []
+    for hit in hits:
+        if not isinstance(hit, dict) or not hit.get("path"):
+            continue
+        item: dict[str, Any] = {"path": str(hit["path"]), "store": store, "route": reason}
+        if hit.get("line") is not None:
+            item["line"] = int(hit["line"])
+        tagged.append(item)
+    return tagged
+
+
+def _verify_hits(project: Path, hits: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [hit for hit in hits if _live_hit(project, hit)]
+
+
 def _justification(project: Path):
     path = Path(__file__).resolve().parents[1] / "hooks" / "retrieve_justification.py"
     if not path.is_file():
@@ -587,8 +770,14 @@ def _store_hit_receipt(
     return receipt
 
 
-def _run_store(project: Path, store: str, query: str) -> dict[str, Any]:
-    """One attempt; no retries. Missing/unhealthy → degraded; empty relevance → skipped."""
+def _run_store(
+    project: Path,
+    store: str,
+    query: str,
+    scope: dict[str, Any] | None = None,
+    _reseeded: bool = False,
+) -> dict[str, Any]:
+    """One attempt. Graphify exit 3 reseeds once. Exit 4 is a miss, not an outage."""
     tool = _tool_py(project)
     if tool is None:
         return {
@@ -611,14 +800,43 @@ def _run_store(project: Path, store: str, query: str) -> dict[str, Any]:
                 "fixNext": gate["fixNext"],
                 "quarantine": gate.get("quarantine", ""),
             }
+    scoped = scope or {}
     if store == "memory":
         args = [sys.executable, str(tool), "memory", "query", query]
     elif store == "mempalace":
         args = [sys.executable, str(tool), "mempalace", "search", query]
+        if scoped.get("wing"):
+            args.extend(["--wing", str(scoped["wing"])])
+        if scoped.get("results"):
+            args.extend(["--results", str(scoped["results"])])
+        if scoped.get("since"):
+            args.extend(["--since", str(scoped["since"])])
     else:
-        args = [sys.executable, str(tool), "graphify", "query", query]
-        seeds = _graphify_seeds(query)
-        if seeds and [seed.casefold() for seed in seeds] != [word.casefold() for word in query.split()]:
+        verb = str(scoped.get("verb") or "query")
+        symbols = [str(item) for item in scoped.get("symbols") or []]
+        if _reseeded and scoped.get("symbol"):
+            symbols = [str(scoped["symbol"])]
+        if verb == "affected":
+            symbol = symbols[0] if symbols else query
+            depth = scoped.get("depth") or 2
+            args = [sys.executable, str(tool), "graphify", "affected", symbol, "--depth", str(depth)]
+        elif verb == "path" and len(symbols) >= 2:
+            args = [sys.executable, str(tool), "graphify", "path", symbols[0], symbols[1]]
+        elif verb == "explain":
+            symbol = symbols[0] if symbols else query
+            args = [sys.executable, str(tool), "graphify", "explain", symbol]
+        else:
+            args = [sys.executable, str(tool), "graphify", "query", query]
+            if scoped.get("budget"):
+                args.extend(["--budget", str(scoped["budget"])])
+            if scoped.get("depth"):
+                args.extend(["--depth", str(scoped["depth"])])
+            if scoped.get("seeds"):
+                seeds = [str(seed) for seed in scoped["seeds"]]
+            else:
+                seeds = _graphify_seeds(query)
+                if seeds and [seed.casefold() for seed in seeds] == [word.casefold() for word in query.split()]:
+                    seeds = []
             for seed in seeds:
                 args.extend(["--seed", seed])
     env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1", "CHAOS_ENGINE_RETRIEVE": "1"}
@@ -655,6 +873,18 @@ def _run_store(project: Path, store: str, query: str) -> dict[str, Any]:
     origin_sync = "not synchronized with origin/" in (
         (completed.stderr or "") + (completed.stdout or "")
     )
+    if completed.returncode == 3 and store == "graphify":
+        if not _reseeded:
+            candidate = _top_graphify_candidate((completed.stderr or "") + "\n" + (completed.stdout or ""))
+            if candidate:
+                reseed = dict(scoped)
+                reseed["symbol"] = candidate
+                reseed["seeds"] = [candidate]
+                reseed.setdefault("verb", "query")
+                return _run_store(project, store, query, reseed, True)
+        return _miss_receipt(store, query, "ambiguous")
+    if completed.returncode == 4 and store == "graphify":
+        return _miss_receipt(store, query, "no-node")
     if completed.returncode != 0:
         if origin_sync:
             return {
@@ -749,6 +979,252 @@ def _graphify_direct(root: Path, cleaned: str, mode: str, chosen: str) -> dict[s
         return None
 
 
+def _scope_for(project: Path, step: dict[str, Any]) -> dict[str, Any]:
+    scope: dict[str, Any] = {
+        "verb": step.get("verb"),
+        "symbols": list(step.get("symbols") or []),
+        "reason": step.get("reason"),
+    }
+    for key in ("depth", "budget", "results", "since"):
+        if step.get(key):
+            scope[key] = step[key]
+    if step.get("store") == "mempalace":
+        stores = _load_stores()
+        wing = None
+        if stores is not None and hasattr(stores, "read_wing"):
+            try:
+                wing = stores.read_wing(project)
+            except OSError:
+                wing = None
+        if wing:
+            scope["wing"] = wing
+    return scope
+
+
+def _run_rg(project: Path, query: str, reason: str) -> dict[str, Any]:
+    matched = re.search(r'"([^"]+)"|\'([^\']+)\'', query)
+    if matched:
+        needle = matched.group(1) or matched.group(2)
+    elif _EXACT_RE.search(query):
+        needle = query
+        for prefix in ("find the exact string ", "exact string "):
+            if needle.casefold().startswith(prefix):
+                needle = needle[len(prefix) :]
+                break
+    else:
+        needle = query
+    mindset = _mindset()
+    if mindset is None or not hasattr(mindset, "run_rg"):
+        return _miss_receipt("rg", query, "no-relevant-hits")
+    try:
+        completed = mindset.run_rg(
+            ["rg", "-n", "--no-heading", "--glob", "!.git/**", needle],
+            cwd=project,
+        )
+    except OSError as error:
+        return {
+            "store": "rg",
+            "status": STATUS_DEGRADED,
+            "reason": f"os-error:{type(error).__name__}",
+            "query": query,
+        }
+    if completed.returncode == 1 or is_empty_result(completed.stdout or ""):
+        return _miss_receipt("rg", query, "no-relevant-hits")
+    if completed.returncode != 0:
+        return {
+            "store": "rg",
+            "status": STATUS_DEGRADED,
+            "reason": (completed.stderr or "nonzero-exit").strip().splitlines()[:1][0][:120]
+            if (completed.stderr or "").strip()
+            else "nonzero-exit",
+            "query": query,
+            "exitCode": completed.returncode,
+        }
+    hits: list[dict[str, Any]] = []
+    for line in (completed.stdout or "").splitlines():
+        found = re.match(r"(?P<path>[^:]+):(?P<line>\d+):", line)
+        if not found:
+            continue
+        path = found.group("path")
+        if path.startswith("./"):
+            path = path[2:]
+        hits.append({"path": path, "line": int(found.group("line")), "store": "rg", "route": reason})
+        if len(hits) >= _HIT_LIMIT:
+            break
+    kept = _verify_hits(project, hits)
+    if not kept:
+        return _miss_receipt("rg", query, "no-relevant-hits")
+    excerpt = _bounded_excerpt(completed.stdout or "", _EXCERPT_WITH_HITS)
+    return {
+        "store": "rg",
+        "status": STATUS_USED,
+        "reason": "hits",
+        "query": query,
+        "hits": kept,
+        "excerpt": excerpt,
+        "bytes": len(excerpt.encode("utf-8")),
+    }
+
+
+def _execute_step(project: Path, query: str, step: dict[str, Any]) -> dict[str, Any]:
+    store = str(step["store"])
+    reason = str(step.get("reason") or "")
+    if store == "rg":
+        return _run_rg(project, query, reason)
+    if store == "graphify" and step.get("verb") in {None, "query"} and _skip_no_rare_before_store(store, query):
+        return _miss_receipt(store, query, "no-rare-token")
+    outcome = _run_store(project, store, query, _scope_for(project, step))
+    if store == "graphify":
+        outcome = _keep_store_path_or_skip_no_rare(store, query, outcome)
+    hits = outcome.get("hits") if isinstance(outcome.get("hits"), list) else []
+    if hits:
+        kept = _verify_hits(project, hits)
+        if not kept:
+            return _miss_receipt(store, query, "no-relevant-hits")
+        outcome = dict(outcome)
+        outcome["hits"] = kept
+        outcome["status"] = STATUS_USED
+    return outcome
+
+
+def _step(route: dict[str, Any], which: str) -> dict[str, Any] | None:
+    if which == "primary":
+        return {
+            "store": route["primary"],
+            "verb": route.get("verb"),
+            "reason": route["reason"],
+            "symbols": route.get("symbols") or [],
+            "depth": route.get("depth"),
+            "budget": route.get("budget"),
+            "results": route.get("results"),
+            "since": route.get("since"),
+        }
+    if not route.get("fallback"):
+        return None
+    return {
+        "store": route["fallback"],
+        "verb": route.get("fallbackVerb") or route.get("verb"),
+        "reason": route["reason"],
+        "symbols": route.get("symbols") or [],
+        "depth": route.get("depth"),
+        "budget": route.get("budget"),
+        "results": route.get("results") if route["fallback"] == "mempalace" else None,
+        "since": route.get("since") if route["fallback"] == "mempalace" else None,
+    }
+
+
+def _account(root: Path, store: str, query: str, receipt: dict[str, Any], account: bool) -> None:
+    mindset = _mindset()
+    if (
+        account
+        and mindset is not None
+        and receipt.get("status") in {STATUS_USED, STATUS_SKIPPED}
+    ):
+        hits = receipt.get("hits") if isinstance(receipt.get("hits"), list) else []
+        paths = [str(hit.get("path")) for hit in hits if isinstance(hit, dict) and hit.get("path")]
+        try:
+            mindset.record_retrieve_usage(
+                root,
+                store=store,
+                hit_count=len(hits),
+                byte_size=int(receipt.get("bytes") or 0),
+                paths=paths,
+            )
+            _note_cited_usage(root, mindset, paths)
+        except (OSError, TypeError, ValueError):
+            pass
+    _commit_retrieve_receipt(root, store, query, receipt)
+
+
+def _retrieve_routed(
+    cleaned: str,
+    root: Path,
+    *,
+    dry_run: bool,
+    recheck: bool,
+    account: bool,
+) -> dict[str, Any]:
+    route = classify_scope(cleaned)
+    primary = _step(route, "primary")
+    fallback = _step(route, "fallback")
+    assert primary is not None
+    receipt: dict[str, Any] = {
+        "schemaVersion": 1,
+        "kind": "retrieve-orchestrator",
+        "store": primary["store"],
+        "query": cleaned,
+        "policy": POLICY_ON_MISS if fallback else "one-store-one-attempt",
+        "route": {
+            "reason": route["reason"],
+            "primary": primary["store"],
+            "fallback": None if fallback is None else fallback["store"],
+        },
+    }
+    if dry_run:
+        receipt["status"] = STATUS_SKIPPED
+        receipt["reason"] = "dry-run"
+        return receipt
+    recorded = _recorded_mismatch(root, str(primary["store"]), recheck)
+    if recorded is not None:
+        receipt.update(recorded)
+        return receipt
+    outcome = _execute_step(root, cleaned, primary)
+    groups: list[list[dict[str, Any]]] = []
+    excerpts: list[str] = []
+    if outcome.get("status") == STATUS_DEGRADED:
+        receipt.update(outcome)
+        receipt["route"] = receipt["route"]
+        return receipt
+    if not _is_miss(outcome):
+        groups.append(_tag_hits(outcome.get("hits") or [], str(primary["store"]), route["reason"]))
+        excerpts.append(str(outcome.get("excerpt") or ""))
+    elif fallback is not None:
+        second = _execute_step(root, cleaned, fallback)
+        if second.get("status") == STATUS_DEGRADED:
+            receipt.update(second)
+            receipt["store"] = fallback["store"]
+            return receipt
+        if _is_miss(second):
+            receipt.update(second)
+            receipt["store"] = fallback["store"]
+            if fallback["store"] == "graphify" or primary["store"] == "graphify":
+                receipt["freshness"] = graph_freshness_field(root)
+            _account(root, str(fallback["store"]), cleaned, receipt, account)
+            return receipt
+        groups.append(_tag_hits(second.get("hits") or [], str(fallback["store"]), route["reason"]))
+        excerpts.append(str(second.get("excerpt") or ""))
+        receipt["store"] = fallback["store"]
+    else:
+        receipt.update(outcome)
+        _account(root, str(primary["store"]), cleaned, receipt, account)
+        return receipt
+    fused = reciprocal_rank_fusion(groups)
+    if not fused:
+        missed = _miss_receipt(str(receipt["store"]), cleaned, "no-relevant-hits")
+        receipt.update(missed)
+        _account(root, str(receipt["store"]), cleaned, receipt, account)
+        return receipt
+    excerpt = _bounded_excerpt("\n".join(part for part in excerpts if part), _EXCERPT_WITH_HITS)
+    if not excerpt:
+        excerpt = _bounded_excerpt(
+            "\n".join(f"{hit['path']}:{hit.get('line', '')}" for hit in fused),
+            _EXCERPT_WITH_HITS,
+        )
+    receipt.update(
+        {
+            "status": STATUS_USED,
+            "reason": "hits",
+            "hits": fused,
+            "excerpt": excerpt,
+            "bytes": len(excerpt.encode("utf-8")),
+        }
+    )
+    if receipt["store"] == "graphify" or primary["store"] == "graphify":
+        receipt["freshness"] = graph_freshness_field(root)
+    _account(root, str(receipt["store"]), cleaned, receipt, account)
+    return receipt
+
+
 def retrieve(
     query: str,
     *,
@@ -766,6 +1242,8 @@ def retrieve(
     if len(cleaned) > QUERY_MAX:
         raise ValueError(f"query exceeds {QUERY_MAX} characters")
     root = project_root(project)
+    if store is None and mode != "impact":
+        return _retrieve_routed(cleaned, root, dry_run=dry_run, recheck=recheck, account=account)
     chosen = "graphify" if mode == "impact" and store in {None, "graphify"} else pick_store(cleaned, store)
     receipt: dict[str, Any] = {
         "schemaVersion": 1,
@@ -773,6 +1251,9 @@ def retrieve(
         "store": chosen,
         "query": cleaned,
         "policy": "one-store-one-attempt",
+        "route": {
+            "reason": "impact-mode" if mode == "impact" and store in {None, "graphify"} else "explicit-store"
+        },
     }
     if dry_run:
         receipt["status"] = STATUS_SKIPPED

@@ -1,0 +1,10 @@
+{
+  "id": "distinct-calls",
+  "label": "pass",
+  "source": "experiments/harness-ab/raw/A/01/transcript.md",
+  "calls": [
+    "Web Search: SHAFT_Engine UI test automation Java Selenium saucedemo example",
+    "List: /tmp/ce-harness-wt-experiment/experiments/harness-ab/exp/A-bare/run-01",
+    "Execute: mvn -B test (Download SHAFT and run SauceDemo UI tests)"
+  ]
+}

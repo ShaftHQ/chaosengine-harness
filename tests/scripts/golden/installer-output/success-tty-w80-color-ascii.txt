@@ -1,37 +1,32 @@
-[K
+[?25l[K
 [ChaosEngine 0.4.20261115.5] ShaftHQ/chaosengine-harness@main[K
 [K
-[3F[K
+[J[3F[K
 [ChaosEngine 0.4.20261115.5] ShaftHQ/chaosengine-harness@main[K
 [K
   [36m[-][0m Resolve source   [36mrunning[0m[K
-+- 0/3 | Elapsed 00:03[K
+      +- 0/3 | Elapsed 00:03[K
 [2m  [ ] Download source[0m[K
 [2m  [ ] Install core[0m[K
-[7F[K
+[J[7F[K
 [ChaosEngine 0.4.20261115.5] ShaftHQ/chaosengine-harness@main[K
 [K
   [32m[+][0m Resolve source   00:02[K
 [2m  [ ] Download source[0m[K
 [2m  [ ] Install core[0m[K
-[6F[K
+[J[6F[K
 [ChaosEngine 0.4.20261115.5] ShaftHQ/chaosengine-harness@main[K
 [K
   [32m[+][0m Resolve source   00:02[K
   [36m[-][0m Download source  [36mrunning[0m[K
-+- 1/3 | Elapsed 00:07[K
+      +- 1/3 | Elapsed 00:07[K
 [2m  [ ] Install core[0m[K
-[7F[K
+[J[7F[K
 [ChaosEngine 0.4.20261115.5] ShaftHQ/chaosengine-harness@main[K
 [K
   [32m[+][0m Resolve source   00:02[K
   [32m[+][0m Download source  00:02[K
-[5F[K
-[K
-[K
-[K
-[K
-[5F[ChaosEngine 0.4.20261115.5] ShaftHQ/chaosengine-harness@main (0123456789ab)
+[J[5F[J[?25h[ChaosEngine 0.4.20261115.5] ShaftHQ/chaosengine-harness@main (0123456789ab)
 
   [32m[+][0m Resolve source   00:02
   [32m[+][0m Download source  00:02

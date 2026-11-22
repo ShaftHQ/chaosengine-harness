@@ -1266,11 +1266,14 @@ class ChaosEngineHostsTest(unittest.TestCase):
             claude_lifecycle = json.loads(
                 project.joinpath(".claude/settings.json").read_text()
             )["hooks"]
-            self.assertEqual(required_events - {"PostToolUseFailure"}, set(lifecycle))
-            self.assertEqual(required_events, set(grok_lifecycle))
+            compact = {"PreCompact", "PostCompact"}
+            codex_events = (required_events - {"PostToolUseFailure"}) | compact
+            grok_events = required_events | compact
+            self.assertEqual(codex_events, set(lifecycle))
+            self.assertEqual(grok_events, set(grok_lifecycle))
             for document, events in (
-                (lifecycle, required_events - {"PostToolUseFailure"}),
-                (grok_lifecycle, required_events),
+                (lifecycle, codex_events),
+                (grok_lifecycle, grok_events),
             ):
                 for event in events:
                     self.assertEqual(1, len(document[event]), event)

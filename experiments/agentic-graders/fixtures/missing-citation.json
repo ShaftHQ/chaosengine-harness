@@ -1,0 +1,9 @@
+{
+  "id": "missing-citation",
+  "label": "fail",
+  "source": "constructed-control; frozen traces had no uncited final",
+  "expects_citation": true,
+  "citations": [],
+  "answer": "Tests run: 2, Failures: 0",
+  "calls": ["Execute: mvn -B test"]
+}

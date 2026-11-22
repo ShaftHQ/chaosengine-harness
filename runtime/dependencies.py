@@ -17,6 +17,7 @@ import secrets
 import shlex
 import shutil
 import sqlite3
+import ssl
 import stat
 import subprocess  # nosec B404 - fixed list-form dependency commands from tracked spec.
 import sys
@@ -1189,6 +1190,63 @@ def _version_from_output(output: str) -> str | None:
     return match.group(1).replace("_", ".") if match else None
 
 
+def _cert_hint() -> str:
+    """The macOS certificate command is only a fix on darwin."""
+    if sys.platform == "darwin":
+        return (
+            " — on macOS python.org builds run "
+            '"/Applications/Python 3.x/Install Certificates.command", or set SSL_CERT_FILE'
+        )
+    return " — set SSL_CERT_FILE to a CA bundle this Python trusts"
+
+
+def _cert_verify_failed(error: BaseException) -> bool:
+    current: object = error
+    for _ in range(5):
+        if not isinstance(current, BaseException):
+            return False
+        if isinstance(current, ssl.SSLCertVerificationError):
+            return True
+        if "CERTIFICATE_VERIFY_FAILED" in str(current):
+            return True
+        reason = getattr(current, "reason", None)
+        if isinstance(reason, BaseException) and reason is not current:
+            current = reason
+            continue
+        cause = getattr(current, "__cause__", None)
+        if isinstance(cause, BaseException) and cause is not current:
+            current = cause
+            continue
+        return False
+    return False
+
+
+def _failure_detail(error: BaseException) -> str:
+    reason = getattr(error, "reason", None)
+    if isinstance(reason, BaseException) and reason is not error:
+        detail = str(reason).strip()
+    elif isinstance(reason, str) and reason.strip():
+        detail = reason.strip()
+    else:
+        detail = str(error).strip()
+    name = type(error).__name__
+    if not detail or detail == name:
+        return name
+    if detail.startswith(name):
+        return detail
+    return f"{name}: {detail}"
+
+
+def _failure_text(error: BaseException) -> str:
+    """Keep the verifier reason. Name the macOS certificate command only on darwin."""
+    detail = _failure_detail(error)
+    if not _cert_verify_failed(error):
+        return detail
+    if "certificate" not in detail.casefold():
+        detail = "SSL certificate verification failed: " + detail
+    return detail + _cert_hint()
+
+
 def probe_account_dependency(
     name: str,
     executable_path: str,
@@ -1220,7 +1278,7 @@ def probe_account_dependency(
             env=environment,
         )
     except (OSError, subprocess.SubprocessError) as error:
-        return {"healthy": False, "version": None, "detail": type(error).__name__}
+        return {"healthy": False, "version": None, "detail": _failure_text(error)}
     output = f"{result.stdout or ''}\n{result.stderr or ''}".strip()
     version = _version_from_output(output)
     if name == "java":
@@ -1410,11 +1468,11 @@ def discover_account_commands(
 def _resolve_stable_version_or_error(
     name: str, contract: dict[str, object], *, opener=urllib.request.urlopen
 ) -> tuple[str | None, str | None]:
-    """Resolve the stable version, or return the lookup error type after network retries."""
+    """Resolve the stable version, or return the lookup error after network retries."""
     try:
         version = resolve_stable_version(name, contract, opener=opener)
     except (OSError, ValueError, json.JSONDecodeError) as error:
-        return None, type(error).__name__
+        return None, _failure_text(error)
     if name == "java":
         version = _published_temurin_or_pinned(version, opener=opener)
     return version, None

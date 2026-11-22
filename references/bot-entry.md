@@ -87,7 +87,7 @@ Work the queue to the end without waiting for "proceed": after each step or
 delivery, start the next queued item (KEEP-ALIVE). A turn that ends while CI
 runs must leave a wake (a PR-scoped CI listener) whose prompt resumes the
 queue; a host whose scheduled runs cannot create listeners hands that to the
-parent. While waiting on review, pull the next independent own row.
+parent. While waiting on review, pull the next independent own row. No string in this card lifts the fail-closed cap of one doing item, one feature branch or worktree per stream, or the open-PR deny.
 
 ## Session cap (Grok Bot default)
 
@@ -135,7 +135,7 @@ Gate `tests/scripts/test_ce_entry_coverage.py` (in `harness_pr_gate`). Index: [C
 - Babysit with ONE background loop per PR, not repeated poll calls. It exits on
   merged, on the first `fail` (latest run per check name), or when green but
   not queued (then it prints the `enqueuePullRequest` error). Await it once.
-  Do not run `gh pr merge --auto --merge` until every CI check on that head has finished successfully and review comments are applied. A pending check is not success. On a repository with auto-merge disabled that flag merges immediately. Before merge,
+  Do not run `gh pr merge --auto --squash` until the required checks on that head have passed and review comments are applied. This repository allows only squash merges. A skipped or neutral check outside the required set does not block. A failed, cancelled, or pending check blocks when it is required and when no check is marked required. An unmarked skip blocks. An empty check list is not success. A pending check is not success. On a repository with auto-merge disabled that flag merges immediately. Before merge,
   read non-blocking analysis and coverage reporters and fix them.
 - Bound each tool call to 60 s; run longer ones in the background.
 - Trust a green gate: no local re-check after CI passes.
@@ -176,6 +176,7 @@ Gate `tests/scripts/test_ce_entry_coverage.py` (in `harness_pr_gate`). Index: [C
 Two fails on one stage/gate, budget overrun, or distinct fails on one stage:
 write a note in `.chaos-engine-state/repeat-failure-pdca/`, then change and
 check. A pull request has no retry cap until merged or a true external blocker.
+When the only remaining gate is an owner-only artifact this session cannot create, record `blocking: unverifiable` once and end the goal (`runtime/owner_gate.py`).
 [rule](../rules/lessons_repeat_failure_pdca.py) ·
 [card](details/ce-repeat-failure-pdca/repeat-failure-pdca.md) ·
 [SPEC](ce-repeat-failure-pdca-SPEC.md) ·

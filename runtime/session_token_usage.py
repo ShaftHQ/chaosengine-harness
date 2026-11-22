@@ -528,6 +528,76 @@ def _receipt_section(directory: Path | None) -> str:
     return "\n".join(blocks) + "\n"
 
 
+def _digest_field(value: object) -> int | str:
+    """A waste number, or unmeasured. Never a transcript."""
+    if value is None or value == "unmeasured":
+        return "unmeasured"
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return "unmeasured"
+    return value
+
+
+def waste_digest(
+    *,
+    token_waste: int | None = None,
+    context_waste: int | None = None,
+    rework_waste: int | None = None,
+    wip_items: int | None = None,
+    wip_branches: int | None = None,
+    wip_open_prs: int | None = None,
+    pr_size: int | None = None,
+    cycle_time_seconds: int | None = None,
+    source: str = "unmeasured",
+) -> dict[str, object]:
+    """Digest fields for tool.py usage and the handoff. No prompt or transcript text."""
+    return {
+        "tokenWaste": _digest_field(token_waste),
+        "contextWaste": _digest_field(context_waste),
+        "reworkWaste": _digest_field(rework_waste),
+        "wip": {
+            "items": _digest_field(wip_items),
+            "branches": _digest_field(wip_branches),
+            "openPrs": _digest_field(wip_open_prs),
+        },
+        "prSize": _digest_field(pr_size),
+        "cycleTimeSeconds": _digest_field(cycle_time_seconds),
+        "source": source if source in {"unmeasured", "digest", "fixture"} else "unmeasured",
+    }
+
+
+def fixture_scorecard() -> dict[str, object]:
+    """Synthetic scorecard. Not a measured n>=5 campaign."""
+    card = waste_digest(
+        token_waste=120,
+        context_waste=400,
+        rework_waste=2,
+        wip_items=1,
+        wip_branches=1,
+        wip_open_prs=4,
+        pr_size=90,
+        cycle_time_seconds=86400,
+        source="fixture",
+    )
+    card["label"] = "fixture, not a measured n>=5 campaign"
+    return card
+
+
+def _row_digests(document: dict) -> dict[str, object]:
+    waste = document.get("waste") if isinstance(document.get("waste"), dict) else {}
+    wip = document.get("wip") if isinstance(document.get("wip"), dict) else {}
+    return waste_digest(
+        token_waste=waste.get("tokenWaste") if "tokenWaste" in waste else None,
+        context_waste=waste.get("contextWaste") if "contextWaste" in waste else None,
+        rework_waste=waste.get("reworkWaste") if "reworkWaste" in waste else None,
+        wip_items=wip.get("items") if "items" in wip else None,
+        wip_branches=wip.get("branches") if "branches" in wip else None,
+        wip_open_prs=wip.get("openPrs") if "openPrs" in wip else None,
+        pr_size=document.get("prSize") if "prSize" in document else None,
+        cycle_time_seconds=document.get("cycleTimeSeconds") if "cycleTimeSeconds" in document else None,
+        source=str(waste.get("source") or ("digest" if waste or wip else "unmeasured")),
+    )
+
+
 def usage_rows(directory: Path | None = None) -> list[dict[str, object]]:
     """One row per recorded task ledger (#6414): tokens in and out plus ballpark cost."""
     folder = directory if directory is not None else _state_dir()
@@ -535,11 +605,27 @@ def usage_rows(directory: Path | None = None) -> list[dict[str, object]]:
     for path in sorted(folder.glob("*.json")) if folder.is_dir() else []:
         if path.name.endswith(".tool-receipt.json"):
             continue
-        totals = json.loads(path.read_text(encoding="utf-8")).get("totals", {})
+        document = json.loads(path.read_text(encoding="utf-8"))
+        totals = document.get("totals", {}) if isinstance(document, dict) else {}
+        if not isinstance(totals, dict):
+            totals = {}
         tokens_in = int(totals.get("localPromptTokens", 0)) + int(totals.get("cloudPromptTokens", 0))
         tokens_out = int(totals.get("localCompletionTokens", 0)) + int(totals.get("cloudCompletionTokens", 0))
         cost = float(estimate_cost_usd(totals)["totalEstimatedUsd"])
-        rows.append({"task": path.stem, "tokensIn": tokens_in, "tokensOut": tokens_out, "estimatedUsd": cost})
+        digests = _row_digests(document if isinstance(document, dict) else {})
+        rows.append({
+            "task": path.stem,
+            "tokensIn": tokens_in,
+            "tokensOut": tokens_out,
+            "estimatedUsd": cost,
+            "tokenWaste": digests["tokenWaste"],
+            "contextWaste": digests["contextWaste"],
+            "reworkWaste": digests["reworkWaste"],
+            "wip": digests["wip"],
+            "prSize": digests["prSize"],
+            "cycleTimeSeconds": digests["cycleTimeSeconds"],
+            "wasteSource": digests["source"],
+        })
     return rows
 
 
@@ -550,9 +636,15 @@ def usage_json(directory: Path | None = None) -> str:
 
 def usage_table(directory: Path | None = None) -> str:
     """Markdown table for status reports."""
-    lines = ["| Task | Tokens in | Tokens out | Est. cost (USD) |", "|---|---|---|---|"]
+    lines = [
+        "| Task | Tokens in | Tokens out | Est. cost (USD) | Token waste | Context waste | Rework |",
+        "|---|---|---|---|---|---|---|",
+    ]
     lines += [
-        f"| {row['task']} | {row['tokensIn']} | {row['tokensOut']} | {row['estimatedUsd']:.4f} |"
+        (
+            f"| {row['task']} | {row['tokensIn']} | {row['tokensOut']} | {row['estimatedUsd']:.4f} | "
+            f"{row['tokenWaste']} | {row['contextWaste']} | {row['reworkWaste']} |"
+        )
         for row in usage_rows(directory)
     ]
     text = "\n".join(lines) + "\n"

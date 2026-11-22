@@ -1,0 +1,371 @@
+{
+  "version": 1,
+  "frozen": "2026-11-22",
+  "note": "Honest gold path:line set. Not the 60-question target. Implicit means corpus_split.rare_tokens(question) shares nothing with rare_tokens(path + line).",
+  "questions": [
+    {
+      "id": "h1",
+      "kind": "history",
+      "question": "why do we keep one palace",
+      "gold_route": "history",
+      "implicit": true,
+      "expect": "One palace, one graph",
+      "gold": [
+        {
+          "path": "runtime/corpus_split.py",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "h2",
+      "kind": "history",
+      "question": "why does session start skip memory prose",
+      "gold_route": "history",
+      "implicit": true,
+      "expect": "injects no Memory",
+      "gold": [
+        {
+          "path": "references/retrieve-first.md",
+          "line": 77
+        }
+      ]
+    },
+    {
+      "id": "h3",
+      "kind": "history",
+      "question": "why confirm a retrieved claim against the file",
+      "gold_route": "history",
+      "implicit": true,
+      "expect": "settles a disagreement",
+      "gold": [
+        {
+          "path": "references/retrieve-first.md",
+          "line": 66
+        }
+      ]
+    },
+    {
+      "id": "h4",
+      "kind": "history",
+      "question": "when the index and the file disagree which one wins",
+      "gold_route": "history",
+      "implicit": true,
+      "expect": "never let an index outrank",
+      "gold": [
+        {
+          "path": "references/retrieve-first.md",
+          "line": 67
+        }
+      ]
+    },
+    {
+      "id": "h5",
+      "kind": "history",
+      "question": "which store answers what happened before",
+      "gold_route": "history",
+      "implicit": true,
+      "expect": "What happened around this before",
+      "gold": [
+        {
+          "path": "references/retrieve-first.md",
+          "line": 62
+        }
+      ]
+    },
+    {
+      "id": "h6",
+      "kind": "history",
+      "question": "why is PALACE_BACKEND pinned",
+      "gold_route": "history",
+      "implicit": false,
+      "expect": "sqlite_exact",
+      "gold": [
+        {
+          "path": "runtime/stores.py",
+          "line": 29
+        }
+      ]
+    },
+    {
+      "id": "g1",
+      "kind": "gotcha",
+      "question": "has this constraint bitten us about a whole memory pack",
+      "gold_route": "gotcha",
+      "implicit": true,
+      "expect": "whole-store context pack",
+      "gold": [
+        {
+          "path": "references/retrieve-first.md",
+          "line": 81
+        }
+      ]
+    },
+    {
+      "id": "g2",
+      "kind": "gotcha",
+      "question": "has this gotcha bitten us about writing the home palace",
+      "gold_route": "gotcha",
+      "implicit": true,
+      "expect": "do not turn it into a recovery essay",
+      "gold": [
+        {
+          "path": "references/retrieve-first.md",
+          "line": 50
+        }
+      ]
+    },
+    {
+      "id": "g3",
+      "kind": "gotcha",
+      "question": "has this gotcha bitten us on a backend mismatch",
+      "gold_route": "gotcha",
+      "implicit": true,
+      "expect": "backend-mismatch is recorded once",
+      "gold": [
+        {
+          "path": "references/retrieve-first.md",
+          "line": 49
+        }
+      ]
+    },
+    {
+      "id": "g4",
+      "kind": "gotcha",
+      "question": "has this constraint bitten us if a cheap read waits for a store",
+      "gold_route": "gotcha",
+      "implicit": true,
+      "expect": "cheap read does not wait",
+      "gold": [
+        {
+          "path": "references/retrieve-first.md",
+          "line": 48
+        }
+      ]
+    },
+    {
+      "id": "c1",
+      "kind": "conceptual",
+      "question": "where do we say to measure thrice",
+      "gold_route": "no-rare-token",
+      "implicit": true,
+      "expect": "measure thrice",
+      "gold": [
+        {
+          "path": "identity.md",
+          "line": 15
+        }
+      ]
+    },
+    {
+      "id": "c2",
+      "kind": "conceptual",
+      "question": "what is the rule after two failed attempts",
+      "gold_route": "no-rare-token",
+      "implicit": true,
+      "expect": "two failed attempts",
+      "gold": [
+        {
+          "path": "identity.md",
+          "line": 17
+        }
+      ]
+    },
+    {
+      "id": "c3",
+      "kind": "conceptual",
+      "question": "what must tests never do to get to green",
+      "gold_route": "no-rare-token",
+      "implicit": true,
+      "expect": "never weaken",
+      "gold": [
+        {
+          "path": "identity.md",
+          "line": 26
+        }
+      ]
+    },
+    {
+      "id": "c4",
+      "kind": "conceptual",
+      "question": "what does the flow rule say about work in progress",
+      "gold_route": "no-rare-token",
+      "implicit": true,
+      "expect": "respect WIP limits",
+      "gold": [
+        {
+          "path": "identity.md",
+          "line": 21
+        }
+      ]
+    },
+    {
+      "id": "c5",
+      "kind": "conceptual",
+      "question": "what does the code do right now",
+      "gold_route": "no-rare-token",
+      "implicit": true,
+      "expect": "What does the code do right now",
+      "gold": [
+        {
+          "path": "references/retrieve-first.md",
+          "line": 64
+        }
+      ]
+    },
+    {
+      "id": "c6",
+      "kind": "conceptual",
+      "question": "where is industry standard output required",
+      "gold_route": "no-rare-token",
+      "implicit": true,
+      "expect": "Industry-standard output",
+      "gold": [
+        {
+          "path": "identity.md",
+          "line": 25
+        }
+      ]
+    },
+    {
+      "id": "s1",
+      "kind": "structural",
+      "question": "who calls inject_graphify_arguments",
+      "gold_route": "symbol-impact",
+      "implicit": false,
+      "expect": "def inject_graphify_arguments",
+      "gold": [
+        {
+          "path": "runtime/stores.py",
+          "line": 449
+        }
+      ]
+    },
+    {
+      "id": "s2",
+      "kind": "structural",
+      "question": "what depends on GRAPHIFY_GRAPH_COMMANDS",
+      "gold_route": "symbol-impact",
+      "implicit": false,
+      "expect": "GRAPHIFY_GRAPH_COMMANDS",
+      "gold": [
+        {
+          "path": "runtime/stores.py",
+          "line": 35
+        }
+      ]
+    },
+    {
+      "id": "s3",
+      "kind": "structural",
+      "question": "impact of read_wing",
+      "gold_route": "symbol-impact",
+      "implicit": false,
+      "expect": "def read_wing",
+      "gold": [
+        {
+          "path": "runtime/stores.py",
+          "line": 737
+        }
+      ]
+    },
+    {
+      "id": "s4",
+      "kind": "structural",
+      "question": "how does rare_tokens reach is_rare",
+      "gold_route": "two-symbols",
+      "implicit": false,
+      "expect": "is_rare(token)",
+      "gold": [
+        {
+          "path": "runtime/corpus_split.py",
+          "line": 110
+        }
+      ]
+    },
+    {
+      "id": "s5",
+      "kind": "structural",
+      "question": "explain store_budget_bytes",
+      "gold_route": "explain-symbol",
+      "implicit": false,
+      "expect": "def store_budget_bytes",
+      "gold": [
+        {
+          "path": "runtime/harness_mindset.py",
+          "line": 197
+        }
+      ]
+    },
+    {
+      "id": "s6",
+      "kind": "structural",
+      "question": "who calls run_rg",
+      "gold_route": "symbol-impact",
+      "implicit": false,
+      "expect": "def run_rg",
+      "gold": [
+        {
+          "path": "runtime/harness_mindset.py",
+          "line": 185
+        }
+      ]
+    },
+    {
+      "id": "s7",
+      "kind": "structural",
+      "question": "what breaks if drop_semantic_misses drops a hit",
+      "gold_route": "symbol-impact",
+      "implicit": false,
+      "expect": "def drop_semantic_misses",
+      "gold": [
+        {
+          "path": "runtime/corpus_split.py",
+          "line": 124
+        }
+      ]
+    },
+    {
+      "id": "s8",
+      "kind": "structural",
+      "question": "explain direct_graphify_outcome",
+      "gold_route": "explain-symbol",
+      "implicit": false,
+      "expect": "def direct_graphify_outcome",
+      "gold": [
+        {
+          "path": "runtime/corpus_split.py",
+          "line": 476
+        }
+      ]
+    },
+    {
+      "id": "s9",
+      "kind": "structural",
+      "question": "how does inject_graphify_arguments reach GRAPHIFY_GRAPH_COMMANDS",
+      "gold_route": "two-symbols",
+      "implicit": false,
+      "expect": "GRAPHIFY_GRAPH_COMMANDS",
+      "gold": [
+        {
+          "path": "runtime/stores.py",
+          "line": 451
+        }
+      ]
+    },
+    {
+      "id": "e1",
+      "kind": "conceptual",
+      "question": "find the exact string STORE_BUDGET_BYTES",
+      "gold_route": "exact-string",
+      "implicit": false,
+      "expect": "STORE_BUDGET_BYTES",
+      "gold": [
+        {
+          "path": "runtime/harness_mindset.py",
+          "line": 26
+        }
+      ]
+    }
+  ]
+}

@@ -2882,6 +2882,136 @@ def instruction_block(tree: str = INSTALLED_TREE) -> str:
     )
 
 
+def detect_pack_commands(project: Path | None) -> dict[str, str]:
+    """Build, test, lint, and single-test commands from a pack, else this tree."""
+    if project is None:
+        return {}
+    root = Path(project)
+    for profile in sorted(root.glob("*/ce-pack/profile.json")):
+        try:
+            data = json.loads(profile.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            continue
+        scripts = data.get("scripts") or data.get("commands")
+        if not isinstance(scripts, dict):
+            continue
+        found: dict[str, str] = {}
+        for key, label in (
+            ("build", "build"),
+            ("test", "test"),
+            ("lint", "lint"),
+            ("single_test", "single_test"),
+            ("test_one", "single_test"),
+        ):
+            value = scripts.get(key)
+            if isinstance(value, str) and value.strip():
+                found[label] = value.strip()
+        if found:
+            return found
+    if (root / "tests").is_dir() and (root / "runtime").is_dir():
+        commands = {"test": "python3 -m pytest -q tests"}
+        single = "tests/scripts/test_sdlc_flows_8059.py"
+        if (root / single).is_file():
+            commands["single_test"] = f"python3 -m pytest -q {single}"
+        return commands
+    return {}
+
+
+def _command_line(label: str, command: str | None) -> str:
+    if not command:
+        return f"- {label}: not detected"
+    return f"- {label}: `{command}`"
+
+
+def agents_md_block(tree: str = INSTALLED_TREE, project: Path | None = None) -> str:
+    """AGENTS.md marker: the canonical load, then Commands, Testing, Boundaries, More."""
+    del tree
+    core = instruction_block(INSTALLED_TREE)
+    end = f"{END}\n"
+    if not core.endswith(end):
+        core = core.rstrip("\n") + "\n"
+        if not core.endswith(end):
+            raise ValueError("instruction block is missing the end marker")
+    commands = detect_pack_commands(project)
+    sections = [
+        "",
+        "## Commands",
+        "",
+        _command_line("Build", commands.get("build")),
+        _command_line("Test", commands.get("test")),
+        _command_line("Lint", commands.get("lint")),
+        _command_line("Single test", commands.get("single_test")),
+        "",
+        "## Testing",
+        "",
+        "- Map every acceptance criterion to a check that can fail.",
+        "- An input needs an invalid partition or a boundary check.",
+        "- Do not overwrite a human-edited test unless the owner named that file.",
+        "- A generated test may cite only symbols that exist in the tree.",
+        "",
+        "## Boundaries",
+        "",
+        "- Ask before delete, force-push, a paid API call, or an outbound send.",
+        "- Do not install a new tool or start a live model campaign without an owner yes.",
+        "- One doing item and one feature branch per stream unless the named waiver is present.",
+        "",
+        "## More",
+        "",
+        f"- Skills and policy: `{INSTALLED_TREE}/skills/chaos-engine/SKILL.md`",
+        f"- Test design: `{INSTALLED_TREE}/references/test-design.md`",
+        f"- Lean and Agile: `{INSTALLED_TREE}/references/lean-agile.md`",
+        f"- Work item: `{INSTALLED_TREE}/skills/work-item/SKILL.md`",
+        "",
+    ]
+    body = core[: -len(end)] + "\n".join(sections) + end
+    if len(body.splitlines()) > 60:
+        raise ValueError("AGENTS.md marker block exceeds 60 lines")
+    return body
+
+
+TESTING_RULE_PATHS = (
+    ".github/instructions/testing.instructions.md",
+    ".claude/rules/testing.md",
+    ".cursor/rules/testing.mdc",
+)
+
+
+def testing_rule_text(relative: str) -> str:
+    """Host-native path scope plus the same short testing rules."""
+    shared = (
+        "# Testing\n\n"
+        "Map every acceptance criterion to a check that can fail.\n"
+        "An input-bearing criterion needs an invalid partition or a boundary check.\n"
+        "Do not overwrite a human-edited test unless the owner named that file.\n"
+        "Cite only symbols that exist in the tree. Technique notes: "
+        "`.chaos-engine/references/test-design.md`.\n"
+    )
+    if relative.endswith("testing.instructions.md"):
+        front = '---\napplyTo: "**/*.{py,java,js,ts}"\n---\n\n'
+    elif relative.endswith("testing.md"):
+        front = '---\npaths:\n  - "**/*.{py,java,js,ts}"\n---\n\n'
+    else:
+        front = (
+            "---\n"
+            "description: Path-scoped testing rules\n"
+            'globs: "**/*.{py,java,js,ts}"\n'
+            "alwaysApply: false\n"
+            "---\n\n"
+        )
+    return front + shared
+
+
+def testing_rule_bytes(relative: str, before: bytes | None) -> bytes:
+    """Write the generated rule, or leave an owner-edited file untouched."""
+    desired = testing_rule_text(relative).encode()
+    if before in (None, b""):
+        return desired
+    if before == desired:
+        return desired
+    _note_merge_handoff(relative, "owner testing rule left untouched", testing_rule_text(relative))
+    return before
+
+
 def copilot_instruction_block(tree: str = INSTALLED_TREE) -> str:
     """Prefix overlay paths for files under `.github/`; never rewrite nested names."""
     tree = INSTALLED_TREE
@@ -3035,7 +3165,9 @@ def competing_policy_errors(project: Path) -> list[str]:
             if EXTRA_POLICY_LOAD.search(text):
                 errors.append(f"{relative}: extra ChaosEngine Load outside marker")
             continue
-        bodies[relative] = normalize_marker_policy(text)
+        normalized = normalize_marker_policy(text)
+        core = normalize_marker_policy(instruction_block())
+        bodies[relative] = core if core in normalized or normalized == core else normalized
         outside = text
         if START in text and END in text:
             begin = text.index(START)
@@ -3349,6 +3481,9 @@ def managed_paths() -> tuple[str, ...]:
         ".codex/agents/chaos-engine-tester.toml",
         ".codex/agents/chaos-engine-mechanical-helper.toml",
         "AGENTS.md",
+        ".github/instructions/testing.instructions.md",
+        ".claude/rules/testing.md",
+        ".cursor/rules/testing.mdc",
         "CLAUDE.md",
         "GEMINI.md",
         ".github/copilot-instructions.md",
@@ -4716,11 +4851,16 @@ def lifecycle_event_names(host: str) -> tuple[str, ...]:
     """Events a generated lifecycle document registers.
 
     Codex has no official PostToolUseFailure. Failure stays on PostToolUse.
+    Codex and Grok also register PreCompact and PostCompact: both pages list
+    them, and the guard already emits the compact locator.
     """
     if host == "claude":
         return CLAUDE_HOOK_EVENTS
+    compact = ("PreCompact", "PostCompact")
     if host == "codex":
-        return tuple(event for event in REQUIRED_HOOK_EVENTS if event != "PostToolUseFailure")
+        return tuple(event for event in REQUIRED_HOOK_EVENTS if event != "PostToolUseFailure") + compact
+    if host == "grok":
+        return REQUIRED_HOOK_EVENTS + compact
     return REQUIRED_HOOK_EVENTS
 
 
@@ -4769,7 +4909,7 @@ LAUNCH_PYTHON_UNAVAILABLE = (
 # command stays within HOOK_COMMAND_MAX_CHARS.
 # Short enough that the unix polyglot, including the Stop receipt and the zsh
 # heredoc, stays within HOOK_COMMAND_MAX_CHARS. What is missing, and the fix.
-HOOK_LAUNCH_PYTHON_BLOCK = "no Python 3.11+; rerun installer"
+HOOK_LAUNCH_PYTHON_BLOCK = "no Python 3.11+; reinstall"
 _CWD_UNAVAILABLE_ERRNOS = {
     errno.ENOENT,
     getattr(errno, "ESTALE", 116),
@@ -5322,7 +5462,8 @@ def _unix_powershell_polyglot(target: str, block: str, probe: str, *, consumer_s
 
     ``<#`` is a bash syntax error, so the comment starts after ``echo``.
     The opener's newline goes to stderr (``>&2``), so a failed launch leaves
-    stdout empty. ``>&`` is not an Out-File target.
+    stdout empty. Consumer Stop sends that opener to ``/dev/null`` so the
+    receipt is the only stderr line. ``>&`` is not an Out-File target.
     ``exec`` replaces the process, so a real hook deny (exit 2) does not try
     the next interpreter. The command walks parents for ``launch.py``. On a
     miss it runs ``worktree_overlay.py adopt`` (git primary, real hook copy)
@@ -5341,6 +5482,7 @@ def _unix_powershell_polyglot(target: str, block: str, probe: str, *, consumer_s
     heredoc opener is inside the ``<#`` comment, and ``#>`` closes it.
     ``LASTEXITCODE=``, ``n=``, and ``r=`` satisfy Grok's ``$NAME`` scanner for the probe.
     """
+    opener = "echo `# <#`>/dev/null\n" if consumer_stop else "echo `# <#` >&2\n"
     if consumer_stop:
         # stderr is the receipt. A new file would mutate a consumer checkout.
         miss = (
@@ -5351,16 +5493,16 @@ def _unix_powershell_polyglot(target: str, block: str, probe: str, *, consumer_s
     else:
         miss = '[ -n "$d" ]&&[ -f "$d/$h" ]||{ echo "missing $h" >&2; exit 2; }\n'
     return (
-        "echo `# <#` >&2\n"
-        "LASTEXITCODE=\n"
+        opener
+        + "LASTEXITCODE=\n"
         "n=\n"
         "r=\n"
         'h=.chaos-engine/hooks/launch.py;d=$(pwd);while [ ! -f "$d/$h" ]&&[ -n "$d" ];do d=${d%/*};done;'
         '[ -f "$d/$h" ]||{ p=$(git rev-parse --path-format=absolute --git-common-dir);p=${p%/.git};'
-        'o=worktree_overlay.py;for n in .chaos-engine chaos-engine .;do for r in runtime/ "";do python3 "$p/$n/$r$o" adopt&&break 2;done;done;'
+        'o=worktree_overlay.py;for n in .chaos-engine chaos-engine .;do for r in runtime/ "";do python3 "$p/$n/$r$o" adopt 2>/dev/null&&break 2;done;done;'
         'd=$(git rev-parse --show-toplevel); };'
         + miss
-        + '[ -n "${BASH_VERSION-}" ] && shopt -s execfail\n'
+        + '[ -n "${BASH_VERSION-}" ]&&shopt -s execfail\n'
         'f="$d/$h";a="'
         f"{target.partition(' ')[2]}"
         '";exec python3 "$f" $a||exec py -3 "$f" $a'
@@ -6759,8 +6901,10 @@ def desired_content(
         validate_mempalace_config(mempalace_before)
         after["mempalace.yaml"] = mempalace_before
     after[".gitignore"] = gitignore_content(before[".gitignore"])
-    block = instruction_block(tree)
+    block = agents_md_block(tree, project=project)
     after["AGENTS.md"] = merge_instruction(before["AGENTS.md"], block, relative="AGENTS.md")
+    for relative in TESTING_RULE_PATHS:
+        after[relative] = testing_rule_bytes(relative, before.get(relative))
     for relative in IMPORT_POINTER_FILES:
         after[relative] = import_pointer_instruction(before[relative], relative=relative)
     after[".github/copilot-instructions.md"] = merge_instruction(

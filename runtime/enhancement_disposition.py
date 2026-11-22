@@ -78,6 +78,67 @@ def enhancement_errors(note: str) -> list[str]:
     return errors
 
 
+_SURFACES = frozenset({"rule", "gate", "playbook", "memory", "memory module"})
+_INLINE_ITEM = re.compile(
+    r"(?i)^(?:[-*+]\s*)?(enhancement|prevention)\s*:\s*(.+?)\s*\|\s*proof\s*:\s*(.+?)\s*\|\s*surface\s*:\s*"
+    r"(rule|gate|playbook|memory(?:[ \t]+module)?)\s*$"
+)
+_KIND_ITEM = re.compile(r"(?i)^(?:[-*+]\s*)?(enhancement|prevention)\s*:\s*(.+?)\s*$")
+_PROOF_ITEM = re.compile(r"(?i)^(?:[-*+]\s*)?proof\s*:\s*(.+?)\s*$")
+_SURFACE_ITEM = re.compile(
+    r"(?i)^(?:[-*+]\s*)?surface\s*:\s*(rule|gate|playbook|memory(?:[ \t]+module)?)\s*$"
+)
+
+
+def abstractable_harness_items(note: str) -> list[dict[str, str]]:
+    """Enhancement or prevention rows that name external proof and a harness surface."""
+    items: list[dict[str, str]] = []
+    current: dict[str, str] | None = None
+
+    def finish() -> None:
+        nonlocal current
+        if current is None:
+            return
+        surface = current.get("surface", "")
+        if current.get("text") and current.get("proof") and surface in _SURFACES:
+            items.append({
+                "kind": current.get("kind", "enhancement"),
+                "text": current["text"],
+                "proof": current["proof"],
+                "surface": surface,
+            })
+        current = None
+
+    for raw in (note or "").splitlines():
+        line = raw.strip()
+        inline = _INLINE_ITEM.match(line)
+        if inline:
+            finish()
+            items.append({
+                "kind": inline.group(1).lower(),
+                "text": inline.group(2).strip(),
+                "proof": inline.group(3).strip(),
+                "surface": re.sub(r"\s+", " ", inline.group(4).lower()),
+            })
+            continue
+        kind = _KIND_ITEM.match(line)
+        if kind:
+            finish()
+            current = {"kind": kind.group(1).lower(), "text": kind.group(2).strip()}
+            continue
+        if current is None:
+            continue
+        proof = _PROOF_ITEM.match(line)
+        if proof:
+            current["proof"] = proof.group(1).strip()
+            continue
+        surface = _SURFACE_ITEM.match(line)
+        if surface:
+            current["surface"] = re.sub(r"\s+", " ", surface.group(1).lower())
+    finish()
+    return items
+
+
 def tracked_urls(note: str) -> list[str]:
     block = _block(note)
     if block is None:

@@ -1,0 +1,30 @@
+mohab@rog:/media/mohab/Data/chaosengine-harness$ curl -fsSL "https://raw.githubusercontent.com/ShaftHQ
+/SHAFT_ENGINE/main/chaos-engine/install.sh" | bash
+ChaosEngine moved to ShaftHQ/chaosengine-harness; forwarding to https://raw.githubusercontent.com/Shaf
+tHQ/chaosengine-harness/main/install.sh
+
+ ▗▄▄███████▗▄▄▄▄   ChaosEngine 0.4.20261115.5
+███▛▀▘ ▄▄▄▛████▀     Project    /media/mohab/Data/chaosengine-harness
+
+ ▗▄▄███████▗▄▄▄▄   ChaosEngine 0.4.20261115.5
+███▛▀▘ ▄▄▄▛████▀     Project    /media/mohab/Data/chaosengine-harness
+███▙▄▖ ▝▀▀▟████▄     Source     ShaftHQ/chaosengine-harness@main
+ ▝▀▀███████▝▀▀▀▀     Commit     db38269bb8fa…
+
+  [✓] Resolve source          00:15
+  [✓] Download source         00:35
+  [✓] Install core            00:20
+  [✓] Provision dependencies  00:10
+  [⠋] Verify installation     running
+└─ 4/6 · Elapsed 02:15
+  [·] Activate clients
+  [·] Activate clients
+
+
+
+
+
+
+
+
+

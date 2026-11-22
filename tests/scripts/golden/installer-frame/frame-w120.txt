@@ -1,0 +1,231 @@
+===== start
+
+   ▄▄▄▄▄█       ChaosEngine 0.4.20261115.5
+ ▄███████▐██▄     Project    /tmp/ce-frame-project
+███▛▘   █▟▜██     Source     ShaftHQ/chaosengine-harness@main
+███   ██▞███
+███   ▀▀▚███
+███▙▖   █▚▄▄▄
+ ▀███████▐██▛
+   ▀▀▀▀▀█
+
+  [⠋] Resolve source          running
+      └─ 0/6 · Elapsed 00:00
+  [·] Download source
+  [·] Install core
+  [·] Provision dependencies
+  [·] Verify installation
+  [·] Activate clients
+
+===== note-commit
+
+   ▄▄▄▄▄█       ChaosEngine 0.4.20261115.5
+ ▄███████▐██▄     Project    /tmp/ce-frame-project
+███▛▘   █▟▜██     Source     ShaftHQ/chaosengine-harness@main
+███   ██▞███      Commit     abababababab…
+███   ▀▀▚███
+███▙▖   █▚▄▄▄
+ ▀███████▐██▛
+   ▀▀▀▀▀█
+
+  [⠋] Resolve source          running
+      └─ 0/6 · Elapsed 00:00
+  [·] Download source
+  [·] Install core
+  [·] Provision dependencies
+  [·] Verify installation
+  [·] Activate clients
+
+===== complete-resolve
+
+   ▄▄▄▄▄█       ChaosEngine 0.4.20261115.5
+ ▄███████▐██▄     Project    /tmp/ce-frame-project
+███▛▘   █▟▜██     Source     ShaftHQ/chaosengine-harness@main
+███   ██▞███      Commit     abababababab…
+███   ▀▀▚███
+███▙▖   █▚▄▄▄
+ ▀███████▐██▛
+   ▀▀▀▀▀█
+
+  [✓] Resolve source          00:00
+  [·] Download source
+  [·] Install core
+  [·] Provision dependencies
+  [·] Verify installation
+  [·] Activate clients
+
+===== begin-download
+
+   ▄▄▄▄▄█       ChaosEngine 0.4.20261115.5
+ ▄███████▐██▄     Project    /tmp/ce-frame-project
+███▛▘   █▟▜██     Source     ShaftHQ/chaosengine-harness@main
+███   ██▞███      Commit     abababababab…
+███   ▀▀▚███
+███▙▖   █▚▄▄▄
+ ▀███████▐██▛
+   ▀▀▀▀▀█
+
+  [✓] Resolve source          00:00
+  [⠏] Download source         running
+      └─ https://example.invalid/chaos-engine/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa…
+      └─ 1/6 · Elapsed 00:00
+  [·] Install core
+  [·] Provision dependencies
+  [·] Verify installation
+  [·] Activate clients
+
+===== detail
+
+   ▄▄▄▄▄█       ChaosEngine 0.4.20261115.5
+ ▄███████▐██▄     Project    /tmp/ce-frame-project
+███▛▘   █▟▜██     Source     ShaftHQ/chaosengine-harness@main
+███   ██▞███      Commit     abababababab…
+███   ▀▀▚███
+███▙▖   █▚▄▄▄
+ ▀███████▐██▛
+   ▀▀▀▀▀█
+
+  [✓] Resolve source          00:00
+  [⠏] Download source         running
+      └─ https://example.invalid/chaos-engine/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa…
+      └─ 1/6 · Elapsed 00:00
+  [·] Install core
+  [·] Provision dependencies
+  [·] Verify installation
+  [·] Activate clients
+
+===== complete-download
+
+   ▄▄▄▄▄█       ChaosEngine 0.4.20261115.5
+ ▄███████▐██▄     Project    /tmp/ce-frame-project
+███▛▘   █▟▜██     Source     ShaftHQ/chaosengine-harness@main
+███   ██▞███      Commit     abababababab…
+███   ▀▀▚███
+███▙▖   █▚▄▄▄
+ ▀███████▐██▛
+   ▀▀▀▀▀█
+
+  [✓] Resolve source          00:00
+  [✓] Download source         00:00
+  [·] Install core
+  [·] Provision dependencies
+  [·] Verify installation
+  [·] Activate clients
+
+===== complete-core
+
+   ▄▄▄▄▄█       ChaosEngine 0.4.20261115.5
+ ▄███████▐██▄     Project    /tmp/ce-frame-project
+███▛▘   █▟▜██     Source     ShaftHQ/chaosengine-harness@main
+███   ██▞███      Commit     abababababab…
+███   ▀▀▚███
+███▙▖   █▚▄▄▄
+ ▀███████▐██▛
+   ▀▀▀▀▀█
+
+  [✓] Resolve source          00:00
+  [✓] Download source         00:00
+  [✓] Install core            00:00
+  [·] Provision dependencies
+  [·] Verify installation
+  [·] Activate clients
+
+===== provision-detail
+
+   ▄▄▄▄▄█       ChaosEngine 0.4.20261115.5
+ ▄███████▐██▄     Project    /tmp/ce-frame-project
+███▛▘   █▟▜██     Source     ShaftHQ/chaosengine-harness@main
+███   ██▞███      Commit     abababababab…
+███   ▀▀▚███
+███▙▖   █▚▄▄▄
+ ▀███████▐██▛
+   ▀▀▀▀▀█
+
+  [✓] Resolve source          00:00
+  [✓] Download source         00:00
+  [✓] Install core            00:00
+  [⠏] Provision dependencies  running
+      └─ provision detail
+      └─ 3/6 · Elapsed 00:00
+  [·] Verify installation
+  [·] Activate clients
+
+===== stray-stderr
+injected-provision-note
+
+   ▄▄▄▄▄█       ChaosEngine 0.4.20261115.5
+ ▄███████▐██▄     Project    /tmp/ce-frame-project
+███▛▘   █▟▜██     Source     ShaftHQ/chaosengine-harness@main
+███   ██▞███      Commit     abababababab…
+███   ▀▀▚███
+███▙▖   █▚▄▄▄
+ ▀███████▐██▛
+   ▀▀▀▀▀█
+
+  [✓] Resolve source          00:00
+  [✓] Download source         00:00
+  [✓] Install core            00:00
+  [⠏] Provision dependencies  running
+      └─ provision detail
+      └─ 3/6 · Elapsed 00:00
+  [·] Verify installation
+  [·] Activate clients
+
+===== shrink
+injected-provision-note
+
+   ▄▄▄▄▄█       ChaosEngine 0.4.20261115.5
+ ▄███████▐██▄     Project    /tmp/ce-frame-project
+███▛▘   █▟▜██     Source     ShaftHQ/chaosengine-harness@main
+███   ██▞███      Commit     abababababab…
+███   ▀▀▚███
+███▙▖   █▚▄▄▄
+ ▀███████▐██▛
+   ▀▀▀▀▀█
+
+  [✓] Resolve source          00:00
+  [✓] Download source         00:00
+  [✓] Install core            00:00
+  [✓] Provision dependencies  00:00
+  [·] Verify installation
+  [·] Activate clients
+
+===== grow
+injected-provision-note
+
+   ▄▄▄▄▄█       ChaosEngine 0.4.20261115.5
+ ▄███████▐██▄     Project    /tmp/ce-frame-project
+███▛▘   █▟▜██     Source     ShaftHQ/chaosengine-harness@main
+███   ██▞███      Commit     abababababab…
+███   ▀▀▚███
+███▙▖   █▚▄▄▄
+ ▀███████▐██▛
+   ▀▀▀▀▀█
+
+  [✓] Resolve source          00:00
+  [✓] Download source         00:00
+  [✓] Install core            00:00
+  [✓] Provision dependencies  00:00
+  [⠏] Verify installation     running
+      └─ 4/6 · Elapsed 00:00
+  [·] Activate clients
+
+===== fail
+injected-provision-note
+
+   ▄▄▄▄▄█       ChaosEngine 0.4.20261115.5
+ ▄███████▐██▄     Project    /tmp/ce-frame-project
+███▛▘   █▟▜██     Source     ShaftHQ/chaosengine-harness@main
+███   ██▞███      Commit     abababababab…
+███   ▀▀▚███
+███▙▖   █▚▄▄▄
+ ▀███████▐██▛
+   ▀▀▀▀▀█
+
+  [✓] Resolve source          00:00
+  [✓] Download source         00:00
+  [✓] Install core            00:00
+  [✓] Provision dependencies  00:00
+  [✗] Verify installation     failed
+      └─ download timed out
+  [·] Activate clients

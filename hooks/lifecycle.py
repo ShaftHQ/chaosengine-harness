@@ -367,6 +367,59 @@ def _identity_context_block(base: str, suffix: str = "") -> str:
     return fallback
 
 
+def _pinned_release_fetcher():
+    """Env pin or feed. None when the check should use the network fetcher."""
+    feed = os.environ.get("CHAOS_ENGINE_RELEASE_FEED", "").strip()
+    pinned = os.environ.get("CHAOS_ENGINE_RELEASE_VERSION", "").strip()
+    if not feed and not pinned:
+        return None
+
+    def fetcher():
+        if feed:
+            payload = Path(feed).read_text(encoding="utf-8")
+            try:
+                return json.loads(payload)
+            except json.JSONDecodeError:
+                return payload.strip()
+        return pinned
+
+    return fetcher
+
+
+def _note_session_start_update() -> str:
+    """Ask whether a newer release exists. Never block and never rewrite files.
+
+    Pytest sets PYTEST_CURRENT_TEST. Skip the network then. A pin or feed
+    still reports, so one call site covers both the session and the tests.
+    """
+    fetcher = _pinned_release_fetcher()
+    if os.environ.get("PYTEST_CURRENT_TEST") and fetcher is None:
+        return ""
+    path = _overlay_module("update_check.py")
+    if not path.is_file():
+        return ""
+    try:
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("ce_update_check", path)
+        if spec is None or spec.loader is None:
+            return ""
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        confirm = os.environ.get("CHAOS_ENGINE_APPLY_UPDATE", "").strip() == "1"
+        if fetcher is None:
+            status = module.session_start_update_check()
+        else:
+            status = module.session_start_update_check(fetcher, confirm=confirm)
+    except Exception:
+        return ""
+    if isinstance(status, str) and (
+        status.startswith("update available:") or status.startswith("update confirmed:")
+    ):
+        return "ChaosEngine " + status
+    return ""
+
+
 def session_start_context(token: str | None, activation: str, session_id: str = "") -> str:
     """Return SessionStart context within SESSION_START_MAX_BYTES.
 
@@ -374,9 +427,12 @@ def session_start_context(token: str | None, activation: str, session_id: str = 
     bullets, or the path locator when the file is missing, unreadable, or the
     body would exceed the byte budget.
     """
+    update_note = _note_session_start_update()
     with contextlib.suppress(Exception):
         stamp_cards_loaded(session_id)
     parts = [f"ChaosEngine: {activation}"]
+    if update_note:
+        parts.append(update_note)
     if token:
         parts.append(f"Token (never track it): {token}")
     stopped = read_stopped_companions(session_id)

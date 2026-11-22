@@ -54,6 +54,7 @@ CLAUDE_EVENTS = (
     "SessionEnd",
 )
 # Official Codex hooks have no PostToolUseFailure. Failure stays on PostToolUse.
+# PreCompact and PostCompact are official; the guard already emits them.
 CODEX_EVENTS = (
     "SessionStart",
     "UserPromptSubmit",
@@ -61,6 +62,8 @@ CODEX_EVENTS = (
     "PostToolUse",
     "Stop",
     "SubagentStop",
+    "PreCompact",
+    "PostCompact",
     "SessionEnd",
 )
 GROK_EVENTS = (
@@ -71,6 +74,8 @@ GROK_EVENTS = (
     "PostToolUseFailure",
     "Stop",
     "SubagentStop",
+    "PreCompact",
+    "PostCompact",
     "SessionEnd",
 )
 GEMINI_EVENTS = (
@@ -149,6 +154,7 @@ GAP_EXIT2_SENTENCE = gap_exit2_sentence()
 _OFFICIAL_SUBAGENT_START = {"SubagentStart": "SessionStart"}
 INPUT_SYNONYMS = MappingProxyType({
     # Convenience spellings. Official names stay in each host's event_aliases.
+    # The 2026-11-22 Grok hooks page lists PascalCase only.
     "SubagentStart": "SessionStart",
     "subagentStart": "SessionStart",
     "subagent_start": "SessionStart",
@@ -158,6 +164,14 @@ INPUT_SYNONYMS = MappingProxyType({
     "agentStop": "Stop",
     "sessionEnd": "SessionEnd",
     "sessionStart": "SessionStart",
+    "session_start": "SessionStart",
+    "user_prompt_submit": "UserPromptSubmit",
+    "pre_tool_use": "PreToolUse",
+    "post_tool_use": "PostToolUse",
+    "post_tool_use_failure": "PostToolUseFailure",
+    "stop": "Stop",
+    "subagent_stop": "SubagentStop",
+    "session_end": "SessionEnd",
 })
 
 
@@ -203,18 +217,7 @@ HOST_CAPABILITIES: Mapping[str, HostCapability] = {
     ),
     "grok": HostCapability(
         ("AGENTS.md", ".grok/plugins/chaos-engine"),
-        _aliases(
-            GROK_EVENTS,
-            session_start="SessionStart",
-            user_prompt_submit="UserPromptSubmit",
-            pre_tool_use="PreToolUse",
-            post_tool_use="PostToolUse",
-            post_tool_use_failure="PostToolUseFailure",
-            stop="Stop",
-            subagent_stop="SubagentStop",
-            session_end="SessionEnd",
-            **_OFFICIAL_SUBAGENT_START,
-        ),
+        _aliases(GROK_EVENTS, **_OFFICIAL_SUBAGENT_START),
         GROK_EVENTS,
         hard_block_mechanism="decision_json",
         deny_exit_code=2,

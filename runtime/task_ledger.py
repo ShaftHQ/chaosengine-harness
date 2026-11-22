@@ -182,6 +182,112 @@ def items(name: str) -> dict[str, dict]:
     return latest
 
 
+DOING_CAP = 1
+BRANCH_CAP = 1
+OPEN_PR_CAP = 1
+_DONE_STATUSES = frozenset({"merged", "done", "skipped"})
+_DOING_STATUSES = frozenset({"in-progress", "doing"})
+_OPEN_PR_STATUSES = frozenset({"pr", "review", "in-progress", "doing"})
+
+
+def _status_head(row: dict) -> str:
+    raw = str(row.get("status") or row.get("column") or "")
+    return raw.split(":", 1)[0].strip().casefold()
+
+
+def _ledger_rows(document: object) -> list:
+    if isinstance(document, dict):
+        rows = document.get("items")
+        if rows is None:
+            rows = document.get("cards")
+        return list(rows or [])
+    if isinstance(document, list):
+        return document
+    return []
+
+
+def ledger_wip(document: object) -> dict:
+    """Read a delivery-ledger JSON object or item list and report WIP counts.
+
+    ``items`` is the count of doing rows, not the size of the whole ledger.
+    """
+    doing = 0
+    branches: set[str] = set()
+    prs: set[str] = set()
+    for row in _ledger_rows(document):
+        if not isinstance(row, dict):
+            continue
+        status = _status_head(row)
+        if status in _DOING_STATUSES:
+            doing += 1
+        branch = str(row.get("branch") or "").strip()
+        if branch and status not in _DONE_STATUSES:
+            branches.add(branch)
+        pr = str(row.get("pr") or "").strip()
+        if pr and status in _OPEN_PR_STATUSES:
+            prs.add(pr)
+    return {"items": doing, "branches": len(branches), "openPrs": len(prs)}
+
+
+def wip_gate(*, doing: int, branches: int, open_prs: int, waiver: str = "") -> dict:
+    """Fail closed over the per-stream caps.
+
+    ``waiver`` stays in the signature so older callers still run. No string
+    lifts the cap, including a token that used to be printed on the
+    always-loaded card.
+    """
+    ignored = waiver
+    reasons: list[str] = []
+    if doing > DOING_CAP:
+        reasons.append("wip-doing-cap")
+    if branches > BRANCH_CAP:
+        reasons.append("wip-branch-cap")
+    if open_prs > OPEN_PR_CAP:
+        reasons.append("wip-open-pr-cap")
+    return {"ok": not reasons, "reasons": reasons, "waiverAccepted": bool(ignored) and False}
+
+
+def wip_from_ledger(document: object, *, waiver: str = "") -> dict:
+    """Machine-checked WIP view plus the fail-closed gate."""
+    counts = ledger_wip(document)
+    gate = wip_gate(
+        doing=counts["items"],
+        branches=counts["branches"],
+        open_prs=counts["openPrs"],
+        waiver=waiver,
+    )
+    return {**counts, **gate}
+
+
+def defect_ratchet(document: object) -> dict:
+    """A repeated defect type blocks the next item until a preventive check id exists."""
+    rows = _ledger_rows(document)
+    counts: dict[str, int] = {}
+    checks: dict[str, str] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        kind = str(row.get("defect_type") or row.get("defectType") or "").strip()
+        if not kind:
+            continue
+        counts[kind] = counts.get(kind, 0) + 1
+        check = row.get("preventive_check") or row.get("preventiveCheck")
+        if str(check or "").strip():
+            checks[kind] = str(check).strip()
+    if isinstance(document, dict):
+        extra = document.get("preventive_checks") or document.get("preventiveChecks") or {}
+        if isinstance(extra, dict):
+            for kind, check in extra.items():
+                if str(check or "").strip():
+                    checks[str(kind)] = str(check).strip()
+    blocked = [kind for kind, count in sorted(counts.items()) if count >= 2 and kind not in checks]
+    return {
+        "ok": not blocked,
+        "blocked": blocked,
+        "reasons": [f"repeated-defect:{kind}" for kind in blocked],
+    }
+
+
 def items_table(name: str) -> str:
     rows = items(name)
     if not rows:

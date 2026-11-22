@@ -30,18 +30,46 @@ def _load_sibling(name: str):
 _SECRET = re.compile(
     r"\b(?:ghp_[A-Za-z0-9]{8,}|github_pat_[A-Za-z0-9_]{8,}|AKIA[0-9A-Z]{16}|xox[baprs]-[A-Za-z0-9-]{8,})\b"
 )
-_PASSWORD = re.compile(r"\b(?:password|token)\s*[:=]\s*(\S+)", re.I)
+_PASSWORD = re.compile(r"\b(password|token)[ \t]*[:=][ \t]*(\S+)", re.I)
 _PLACEHOLDER_VALUE = re.compile(
     r"^(?:#.*|//.*|\$(?:\{[^}]*\}|\w+)|<[^>]*>|changeme|placeholder|todo|\*+|x{3,}|your_token|['\"]+)$",
     re.I,
 )
+_CODE_EXPR = re.compile(
+    r"^(?:"
+    r"[A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)*\[[^\]]*\]"
+    r"|[A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)*\([^)]*\)"
+    r"|[A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)+"
+    r")$"
+)
+_BARE_NAME = re.compile(r"^[A-Za-z_][\w]*$")
 _JWT = re.compile(r"eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}")
 
 
+# Bare identifiers are code. These words are literals even with no digit.
+_BARE_SECRET_WORDS = frozenset({"letmein", "supersecret"})
+
+
+def _credential_looking(value: str) -> bool:
+    """A code expression is not a credential.
+
+    A bare name is a credential only when it contains a digit or is a known
+    literal word. Ordinary identifiers are not. Quoted text still is.
+    """
+    if _CODE_EXPR.match(value):
+        return False
+    if _BARE_NAME.match(value):
+        if any(char.isdigit() for char in value):
+            return True
+        return value.casefold() in _BARE_SECRET_WORDS
+    return True
+
+
 def _password_hit(text: str) -> bool:
-    """True for a real assignment value. Comments, env refs, and placeholders are not."""
+    """True for a credential assignment. Expressions, placeholders, and the next line are not."""
     for match in _PASSWORD.finditer(text or ""):
-        if _PLACEHOLDER_VALUE.match(match.group(1)):
+        value = match.group(2)
+        if _PLACEHOLDER_VALUE.match(value) or not _credential_looking(value):
             continue
         return True
     return False
@@ -295,8 +323,8 @@ def evaluate_cover_letter(
         hits.append("founder-or-ceo-title")
     folded = body.casefold()
     for name in client_names or []:
-        token = str(name or "").strip()
-        if token and token.casefold() in folded:
+        client = str(name or "").strip()
+        if client and client.casefold() in folded:
             hits.append("client-name")
     sourced = {str(tool).casefold() for tool in (sourced_tools or [])}
     for tool in claimed_tools or []:

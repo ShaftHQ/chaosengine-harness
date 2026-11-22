@@ -22,6 +22,14 @@ body:
       description: What you expected instead.
     validations:
       required: true
+  - type: textarea
+    id: exact_output
+    attributes:
+      label: Exact output (verbatim)
+      description: |
+        Optional. Paste the exact text in a code block, including stray glyphs. Count rows or elements against the total the screen itself states. External reporters are not asked for an agent brief.
+    validations:
+      required: false
   - type: dropdown
     id: host
     attributes:

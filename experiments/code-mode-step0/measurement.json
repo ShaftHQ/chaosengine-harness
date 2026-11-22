@@ -1,0 +1,15 @@
+{
+  "decision": "keep",
+  "files": 1501,
+  "grok_token_share": null,
+  "grok_tool_result_bytes": 157556026,
+  "grok_tool_results": 53189,
+  "intermediate_share": 0.9629577340421559,
+  "intermediate_uncached_tokens": 11527048,
+  "model_turns": 366,
+  "pipe_share": 0.4890710382513661,
+  "pipe_turns": 179,
+  "tool_result_bytes": 986533,
+  "tool_results": 279,
+  "uncached_tokens": 11970461
+}

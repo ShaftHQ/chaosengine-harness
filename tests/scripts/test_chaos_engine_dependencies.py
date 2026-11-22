@@ -7,6 +7,7 @@ import hashlib
 import io
 import importlib.util
 import json
+import ssl
 import urllib.error
 import re
 import os
@@ -560,7 +561,7 @@ class ChaosEngineDependenciesTest(unittest.TestCase):
             actions = module.resolve_account_actions(specification, local)
         self.assertEqual("reused", actions["graphify"]["action"])
         self.assertFalse(actions["graphify"]["latestVersionVerified"])
-        self.assertEqual("OSError", actions["graphify"]["lookupError"])
+        self.assertEqual("OSError: down", actions["graphify"]["lookupError"])
         self.assertEqual("", module.describe_blocked_dependencies(actions))
 
     def test_unreachable_registry_still_blocks_a_missing_tool_with_its_cause(self):
@@ -576,7 +577,7 @@ class ChaosEngineDependenciesTest(unittest.TestCase):
             actions = module.resolve_account_actions(specification, local)
         self.assertEqual("blocked", actions["graphify"]["action"])
         self.assertEqual(
-            "graphify (stable-channel lookup failed: OSError)",
+            "graphify (stable-channel lookup failed: OSError: down)",
             module.describe_blocked_dependencies(actions),
         )
 
@@ -2590,6 +2591,74 @@ class ChaosEngineDependenciesTest(unittest.TestCase):
 
             self.assertFalse(runtime.exists())
             self.assertFalse(runtime.with_name(f"{runtime.name}.removing").exists())
+
+    def test_stable_lookup_keeps_the_error_reason(self):
+        module = load_controller()
+        contract = {"stableChannel": "https://example.invalid/x", "minimumVersion": "1.0.0"}
+
+        def opener(*_args, **_kwargs):
+            raise urllib.error.URLError("timed out")
+
+        with mock.patch.object(module.time, "sleep"):
+            version, error = module._resolve_stable_version_or_error(
+                "context7", contract, opener=opener
+            )
+        self.assertIsNone(version)
+        self.assertIn("timed out", error)
+        self.assertNotEqual(type(urllib.error.URLError("x")).__name__, error)
+
+    def test_certificate_lookup_names_the_macos_install_command(self):
+        module = load_controller()
+        specification = json.loads(SPECIFICATION.read_text(encoding="utf-8"))
+        contract = specification["dependencies"]["context7"]
+        local = {name: {"healthy": False, "version": None, "status": "absent"} for name in specification["dependencies"]}
+
+        def opener(*_args, **_kwargs):
+            raise urllib.error.URLError(ssl.SSLCertVerificationError(1, "CERTIFICATE_VERIFY_FAILED"))
+
+        with mock.patch.object(module.time, "sleep"), mock.patch.object(
+            module, "resolve_stable_version", side_effect=opener
+        ):
+            with mock.patch.object(module.sys, "platform", "linux"):
+                actions = module.resolve_account_actions(specification, local, opener=opener)
+            with mock.patch.object(module.sys, "platform", "darwin"):
+                fresh = {name: dict(row) for name, row in local.items()}
+                darwin_actions = module.resolve_account_actions(specification, fresh, opener=opener)
+        reason = module.describe_blocked_dependencies(actions)
+        self.assertIn("CERTIFICATE_VERIFY_FAILED", reason)
+        self.assertIn("SSL_CERT_FILE", reason)
+        self.assertNotIn("Install Certificates.command", reason)
+        self.assertNotIn("lookup failed: URLError)", reason)
+        self.assertNotIn("repair --project . --component hosts", reason)
+        darwin = module.describe_blocked_dependencies(darwin_actions)
+        self.assertIn("CERTIFICATE_VERIFY_FAILED", darwin)
+        self.assertIn("Install Certificates.command", darwin)
+
+    def test_probe_health_detail_keeps_the_error_reason(self):
+        module = load_controller()
+        specification = json.loads(SPECIFICATION.read_text(encoding="utf-8"))
+        contract = specification["dependencies"]["graphify"]
+
+        def boom(*_args, **_kwargs):
+            raise OSError("probe boom")
+
+        result = module.probe_account_dependency("graphify", "/bin/true", contract, runner=boom)
+        self.assertFalse(result["healthy"])
+        self.assertIn("probe boom", result["detail"])
+        self.assertNotEqual("OSError", result["detail"])
+
+        def cert(*_args, **_kwargs):
+            raise urllib.error.URLError(ssl.SSLCertVerificationError(1, "CERTIFICATE_VERIFY_FAILED"))
+
+        with mock.patch.object(module.sys, "platform", "linux"):
+            certified = module.probe_account_dependency("graphify", "/bin/true", contract, runner=cert)
+        self.assertIn("CERTIFICATE_VERIFY_FAILED", certified["detail"])
+        self.assertIn("SSL_CERT_FILE", certified["detail"])
+        self.assertNotIn("Install Certificates.command", certified["detail"])
+        with mock.patch.object(module.sys, "platform", "darwin"):
+            darwin = module.probe_account_dependency("graphify", "/bin/true", contract, runner=cert)
+        self.assertIn("Install Certificates.command", darwin["detail"])
+        self.assertIn("CERTIFICATE_VERIFY_FAILED", darwin["detail"])
 
     def test_dependency_tests_are_reached_by_pull_request_gate(self):
         budget = json.loads(

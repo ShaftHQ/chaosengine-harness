@@ -89,6 +89,8 @@ The same flags work on `install.sh`, `bootstrap.py`, and `install.py`. PowerShel
 
 `install.sh` and `install.ps1` print `Installing ChaosEngine into …` and `Download:` only with `--verbose` / `-Verbose`, or when Stage-0 itself fails. `CHAOS_ENGINE_JSON=1` matches `--json`. After a successful install the summary is at most 18 lines: a readiness line, active hosts, the trace and guide, a receipt link on a TTY, and two Next steps (open a host and invoke `/chaos-engine`, then doctor). Log mode still prints the four `Receipt` lines. `--verbose` adds the first-session brief and host cards. Uninstall stays `python3 .chaos-engine/install.py uninstall --project .`.
 
+On a TTY the checklist hides the cursor while it is live and shows it again when the run finishes, including after Ctrl+C. A certificate verification failure names the macOS `Install Certificates.command` (or `SSL_CERT_FILE`) instead of a bare `URLError`.
+
 The catalog, the precedence, and the telemetry statement are in [docs/configuration.md](docs/configuration.md). ChaosEngine sends no usage data.
 
 ## Install scope
