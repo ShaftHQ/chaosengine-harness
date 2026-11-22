@@ -42,6 +42,42 @@ TRUST_LEVELS = frozenset({"trusted", "verified", "quarantined"})
 ORIGIN_RE = re.compile(r"^[a-z][a-z0-9_-]{0,31}$")
 
 PROVENANCE_KEYS = frozenset({"origin", "trust", "verifiedBy", "verifiedAt"})
+_CAUSE = re.compile(r"\b(root cause|caused by|the cause is|because)\b", re.I)
+_HYPOTHESIS = re.compile(r"\bhypothesis\b", re.I)
+_VERIFIED_WORD = re.compile(r"\bverified\b", re.I)
+
+
+def _note_text(note: object) -> str:
+    if isinstance(note, str):
+        return note
+    if isinstance(note, dict):
+        parts = []
+        for key in ("text", "body", "note", "content", "cause", "summary"):
+            if note.get(key) is not None:
+                parts.append(str(note[key]))
+        return "\n".join(parts)
+    return ""
+
+
+def accept_memory_note(note: object) -> dict[str, Any]:
+    """Reject a cause that has no explicit hypothesis or verified marker."""
+    text = _note_text(note)
+    if not _CAUSE.search(text):
+        return {"ok": True, "rejected": False, "reasons": []}
+    marked = bool(_HYPOTHESIS.search(text) or _VERIFIED_WORD.search(text))
+    if isinstance(note, dict) and not marked:
+        if str(note.get("hypothesis") or "").strip():
+            marked = True
+        verified = note.get("verified")
+        if verified is True or (isinstance(verified, str) and verified.strip()):
+            marked = True
+    if marked:
+        return {"ok": True, "rejected": False, "reasons": []}
+    return {
+        "ok": False,
+        "rejected": True,
+        "reasons": ["cause-without-hypothesis-or-verified"],
+    }
 
 
 def normalize_origin(value: object) -> str:

@@ -19,6 +19,7 @@ done gate: exit 0 pass, 1 a rule was skipped, 2 usage or bad JSON. Stdlib only.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import re
 import sys
@@ -165,6 +166,130 @@ def review(text: str, roots: list[Path] | None = None) -> list[str]:
     return findings
 
 
+_DIFF_FILE = re.compile(r"^diff --git a/(.+?) b/(.+)$")
+_PARAM_INTRO = re.compile(
+    r"(os\.environ|getenv|getProperty|config(?:uration)?\s*[\.\[]|"
+    r"parameters?\s*[\.\[]|@Parameter|suite[_\s-]*param|params\.get)",
+    re.I,
+)
+_STRING_LITERAL = re.compile(r"""(?P<q>['"])(?P<body>[^'"\n]{2,80})(?P=q)""")
+_NUMBER_LITERAL = re.compile(r"(?<![\w.])(\d{2,})(?![\w.])")
+_READER_SUFFIXES = frozenset({
+    ".py", ".java", ".js", ".ts", ".md", ".properties", ".xml", ".yml", ".yaml", ".json", ".feature", ".kt",
+})
+_BRIDGE = None
+
+
+def _line_literals(line: str) -> set[str]:
+    found = {match.group("body") for match in _STRING_LITERAL.finditer(line)}
+    found.update(match.group(1) for match in _NUMBER_LITERAL.finditer(line))
+    return found
+
+
+def _literal_on_line(literal: str, line: str) -> bool:
+    if literal.isdigit():
+        pattern = rf"(?<![\w.]){re.escape(literal)}(?![\w.])"
+    else:
+        pattern = rf"(?<![\w]){re.escape(literal)}(?![\w])"
+    return re.search(pattern, line) is not None
+
+
+def check_replaced_literal_readers(diff_text: str, project_root) -> list[str]:
+    """Warn with file and line when a parameter replaces a literal another file still reads."""
+    root = Path(project_root)
+    literals: set[str] = set()
+    changed: set[str] = set()
+    file_name: str | None = None
+    removed: set[str] = set()
+    saw_param = False
+
+    def flush() -> None:
+        nonlocal removed, saw_param
+        if file_name and saw_param:
+            literals.update(removed)
+            changed.add(file_name.replace("\\", "/"))
+        removed = set()
+        saw_param = False
+
+    for line in (diff_text or "").splitlines():
+        if line.startswith("diff --git "):
+            flush()
+            match = _DIFF_FILE.match(line)
+            file_name = match.group(2) if match else None
+            continue
+        if line.startswith(("---", "+++", "@@")):
+            continue
+        if line.startswith("-"):
+            removed.update(_line_literals(line[1:]))
+        elif line.startswith("+") and _PARAM_INTRO.search(line[1:]):
+            saw_param = True
+    flush()
+    if not literals or not root.is_dir():
+        return []
+    warnings: list[str] = []
+    for path in sorted(root.rglob("*")):
+        if not path.is_file() or path.suffix.casefold() not in _READER_SUFFIXES:
+            continue
+        relative_parts = path.relative_to(root).parts
+        if any(part.startswith(".") or part == "__pycache__" for part in relative_parts):
+            continue
+        relative = path.relative_to(root).as_posix()
+        if relative in changed or path.stat().st_size > 1_000_000:
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            continue
+        for number, content in enumerate(text.splitlines(), start=1):
+            for literal in sorted(literals):
+                if _literal_on_line(literal, content):
+                    warnings.append(f"replaced-literal: {literal} still read at {relative}:{number}")
+    return warnings
+
+
+def _rules_bridge():
+    global _BRIDGE
+    if _BRIDGE is not None:
+        return _BRIDGE
+    path = Path(__file__).resolve().parents[1] / "rules" / "pre_done_bridge.py"
+    spec = importlib.util.spec_from_file_location("ce_pre_done_bridge", path)
+    if spec is None or spec.loader is None:
+        raise ImportError(path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    _BRIDGE = module
+    return module
+
+
+def apply_wired_rules(payload: object) -> list[str]:
+    """Run wired rules/*.py functions when the gate payload names them."""
+    if not isinstance(payload, dict) or not payload:
+        return []
+    bridge = _rules_bridge()
+    found: list[str] = []
+    for name, item in payload.items():
+        if name not in bridge.WIRED:
+            found.append(f"rule:{name}:not-wired")
+            continue
+        result = bridge.invoke(name, item)
+        if not result.get("ok", True):
+            for hit in result.get("hits") or ["fail"]:
+                found.append(f"rule:{name}:{hit}")
+    return found
+
+
+def _memory_cause_problems(note: object) -> list[str]:
+    directory = str(Path(__file__).resolve().parent)
+    if directory not in sys.path:
+        sys.path.insert(0, directory)
+    import memory_provenance
+
+    decision = memory_provenance.accept_memory_note(note)
+    if decision.get("rejected"):
+        return list(decision["reasons"])
+    return []
+
+
 def mechanical_problems(obs: dict) -> list[str]:
     """Named misses. Empty means the mechanical rules that apply were not skipped.
 
@@ -209,6 +334,14 @@ def mechanical_problems(obs: dict) -> list[str]:
         checked = set(obs.get("checked_claims") or [])
         if any(claim not in checked for claim in claims):
             found.append("outbound unchecked claims")
+    diff = obs.get("diff") or obs.get("diff_text") or ""
+    root = obs.get("project_root") or obs.get("root")
+    if diff and root:
+        found.extend(check_replaced_literal_readers(str(diff), root))
+    if "memory_note" in obs:
+        found.extend(_memory_cause_problems(obs.get("memory_note")))
+    if "rules" in obs:
+        found.extend(apply_wired_rules(obs.get("rules")))
     return found
 
 

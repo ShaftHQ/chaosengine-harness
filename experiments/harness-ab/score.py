@@ -577,6 +577,40 @@ def subprocess_timeout() -> type[BaseException]:
     return subprocess.TimeoutExpired
 
 
+def ct_genai_metrics(*, requirements=None, checks=None, executions=None) -> dict:
+    """CT-GenAI 2.3.1 rates. None when the denominator is empty. No model call."""
+    reqs = [row for row in (requirements or []) if isinstance(row, dict) and row.get("id")]
+    req_ids = [str(row["id"]) for row in reqs]
+    negative = [str(row["id"]) for row in reqs if row.get("negative") or row.get("boundary")]
+    rows = [row for row in (checks or []) if isinstance(row, dict)]
+    covered: set[str] = set()
+    hallucinated = 0
+    for row in rows:
+        requirement_id = str(row.get("requirement_id") or row.get("criterion_id") or "")
+        if requirement_id in req_ids:
+            covered.add(requirement_id)
+        if row.get("hallucination") is True or row.get("hallucinated") is True:
+            hallucinated += 1
+    runs = list(executions) if executions is not None else None
+    successes = 0
+    if runs is not None:
+        for item in runs:
+            if item is True or (isinstance(item, dict) and item.get("success") is True):
+                successes += 1
+
+    def ratio(numerator: int, denominator: int) -> float | None:
+        if denominator == 0:
+            return None
+        return numerator / denominator
+
+    return {
+        "requirement_recall": ratio(len(covered), len(req_ids)),
+        "negative_boundary_recall": ratio(len([item for item in negative if item in covered]), len(negative)),
+        "execution_success_rate": None if runs is None else ratio(successes, len(runs)),
+        "hallucination_rate": ratio(hallucinated, len(rows)),
+    }
+
+
 def self_check() -> None:
     import tempfile
 

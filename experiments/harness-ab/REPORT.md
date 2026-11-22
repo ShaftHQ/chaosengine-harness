@@ -14,7 +14,7 @@ This is a loss for the ChaosEngine arm on the frozen total. Mean total (correctn
 | Client | grok 1.0.85 (d15ff2d24f6f) [alpha] |
 | Model flag | `--model grok-4.7` |
 | Recorded usage key | `grok-4.7-build` on every run |
-| Host | TheMohie-ROG-Zephyrus-G14-GA401QM-GA401QM |
+| Host | <user>@<host> |
 | Maven cache | warm, shared `~/.m2` |
 | Stop reason | `end_turn` on all 15 runs |
 

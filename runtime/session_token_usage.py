@@ -528,6 +528,54 @@ def _receipt_section(directory: Path | None) -> str:
     return "\n".join(blocks) + "\n"
 
 
+SOFTWARE_WASTES = (
+    "partially-done-work",
+    "extra-processes",
+    "extra-features",
+    "task-switching",
+    "waiting",
+    "motion",
+    "defects",
+)
+
+
+def normalize_software_wastes(value: object) -> dict | str:
+    """Tag or waive Poppendieck's seven software wastes. Unknown names are dropped."""
+    if value is None or value == "unmeasured":
+        return "unmeasured"
+    tagged: list[str] = []
+    waived: list[str] = []
+    if isinstance(value, dict):
+        pairs = value.items()
+    elif isinstance(value, list):
+        pairs = ((item, "tagged") for item in value)
+    else:
+        pairs = ()
+    for name, state in pairs:
+        key = str(name).strip()
+        if key not in SOFTWARE_WASTES:
+            continue
+        mark = state.strip().casefold() if isinstance(state, str) else state
+        if mark in {"waived", "waive"}:
+            if key not in waived:
+                waived.append(key)
+            continue
+        if key not in tagged:
+            tagged.append(key)
+    return {"tagged": tagged, "waived": waived}
+
+
+def feedback_receipt(value: object) -> dict | str:
+    """Id, accepted, and at. Prompt and transcript text are not a receipt."""
+    if not isinstance(value, dict):
+        return "unmeasured"
+    kept: dict[str, object] = {}
+    for key in ("id", "accepted", "at"):
+        if key in value:
+            kept[key] = value[key]
+    return kept or "unmeasured"
+
+
 def _digest_field(value: object) -> int | str:
     """A waste number, or unmeasured. Never a transcript."""
     if value is None or value == "unmeasured":
@@ -585,7 +633,7 @@ def fixture_scorecard() -> dict[str, object]:
 def _row_digests(document: dict) -> dict[str, object]:
     waste = document.get("waste") if isinstance(document.get("waste"), dict) else {}
     wip = document.get("wip") if isinstance(document.get("wip"), dict) else {}
-    return waste_digest(
+    digest = waste_digest(
         token_waste=waste.get("tokenWaste") if "tokenWaste" in waste else None,
         context_waste=waste.get("contextWaste") if "contextWaste" in waste else None,
         rework_waste=waste.get("reworkWaste") if "reworkWaste" in waste else None,
@@ -596,6 +644,20 @@ def _row_digests(document: dict) -> dict[str, object]:
         cycle_time_seconds=document.get("cycleTimeSeconds") if "cycleTimeSeconds" in document else None,
         source=str(waste.get("source") or ("digest" if waste or wip else "unmeasured")),
     )
+    if "softwareWastes" in waste or "software_wastes" in waste:
+        digest["softwareWastes"] = normalize_software_wastes(
+            waste.get("softwareWastes", waste.get("software_wastes"))
+        )
+    else:
+        digest["softwareWastes"] = "unmeasured"
+    if "feedbackReceipt" in document:
+        raw_feedback = document.get("feedbackReceipt")
+    elif "feedback_receipt" in document:
+        raw_feedback = document.get("feedback_receipt")
+    else:
+        raw_feedback = None
+    digest["feedbackReceipt"] = feedback_receipt(raw_feedback) if raw_feedback is not None else "unmeasured"
+    return digest
 
 
 def usage_rows(directory: Path | None = None) -> list[dict[str, object]]:
@@ -625,6 +687,8 @@ def usage_rows(directory: Path | None = None) -> list[dict[str, object]]:
             "prSize": digests["prSize"],
             "cycleTimeSeconds": digests["cycleTimeSeconds"],
             "wasteSource": digests["source"],
+            "softwareWastes": digests["softwareWastes"],
+            "feedbackReceipt": digests["feedbackReceipt"],
         })
     return rows
 

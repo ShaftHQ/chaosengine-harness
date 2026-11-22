@@ -15,6 +15,7 @@ if _DIR not in sys.path:
     sys.path.insert(0, _DIR)
 
 import honesty  # noqa: E402
+import session_token_usage  # noqa: E402
 
 SCHEMA_VERSION = honesty.SCHEMA_VERSION
 NewerReceiptError = honesty.NewerReceiptError
@@ -43,6 +44,7 @@ def build(
     wip: dict | None = None,
     pr_size: int | str | None = None,
     cycle_time_seconds: int | str | None = None,
+    feedback_receipt: dict | str | None = None,
 ) -> dict:
     """Allow-listed handoff object. Waste fields are digests, not transcripts."""
     complete = coverage == "complete"
@@ -74,6 +76,15 @@ def build(
     receipt["wip"] = _digest_wip(wip)
     receipt["prSize"] = _digest_number(pr_size)
     receipt["cycleTimeSeconds"] = _digest_number(cycle_time_seconds)
+    feedback = feedback_receipt
+    if feedback is None and isinstance(waste, dict):
+        if "feedbackReceipt" in waste:
+            feedback = waste.get("feedbackReceipt")
+        elif "feedback_receipt" in waste:
+            feedback = waste.get("feedback_receipt")
+    receipt["feedbackReceipt"] = (
+        session_token_usage.feedback_receipt(feedback) if feedback is not None else "unmeasured"
+    )
     return receipt
 
 
@@ -91,6 +102,13 @@ def _digest_waste(waste: dict | None) -> dict:
         "tokenWaste": _digest_number(body.get("tokenWaste", body.get("token_waste"))),
         "contextWaste": _digest_number(body.get("contextWaste", body.get("context_waste"))),
         "reworkWaste": _digest_number(body.get("reworkWaste", body.get("rework_waste"))),
+        "softwareWastes": (
+            session_token_usage.normalize_software_wastes(
+                body.get("softwareWastes", body.get("software_wastes"))
+            )
+            if "softwareWastes" in body or "software_wastes" in body
+            else "unmeasured"
+        ),
         "source": (
             str(body.get("source"))
             if body.get("source") in {"unmeasured", "digest", "fixture"}

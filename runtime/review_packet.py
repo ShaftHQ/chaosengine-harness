@@ -21,6 +21,35 @@ _DIFF = re.compile(r"(?m)^(diff --git|## Diff\b)")
 _BLOCK = ("wrong", "unsafe", "untruthful")
 
 
+PROMPT_PARTS = (
+    "role",
+    "context",
+    "instruction",
+    "input_data",
+    "constraints",
+    "output_format",
+)
+
+
+def lint_structured_prompt(packet: dict) -> dict:
+    """CT-GenAI structured prompt: six parts plus model, version, and sampling."""
+    body = packet if isinstance(packet, dict) else {}
+    missing = [name for name in PROMPT_PARTS if not str(body.get(name) or "").strip()]
+    sampling = body.get("sampling")
+    if sampling in (None, ""):
+        sampling = "unrecorded"
+    metadata = {
+        "model": str(body.get("model") or "").strip() or "unrecorded",
+        "version": str(body.get("version") or body.get("model_version") or "").strip() or "unrecorded",
+        "sampling": sampling,
+    }
+    reasons = [f"missing-{name}" for name in missing]
+    for key, value in metadata.items():
+        if value == "unrecorded":
+            reasons.append(f"missing-{key}")
+    return {"ok": not reasons, "missing": missing, "metadata": metadata, "reasons": reasons}
+
+
 def lint_packet(text: str) -> list[str]:
     """Fail a packet that carries a plan section or author reasoning."""
     reasons = []

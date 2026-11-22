@@ -259,6 +259,32 @@ def wip_from_ledger(document: object, *, waiver: str = "") -> dict:
     return {**counts, **gate}
 
 
+def _seconds(value: object) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
+        return None
+    return int(value)
+
+
+def _span(end: int | None, start: int | None) -> int | str:
+    if end is None or start is None or end < start:
+        return "unmeasured"
+    return end - start
+
+
+def flow_times(item: object) -> dict:
+    """Lead is finish minus create. Queue is start minus create. Blocked is recorded."""
+    row = item if isinstance(item, dict) else {}
+    created = _seconds(row.get("createdAt", row.get("created_at")))
+    started = _seconds(row.get("startedAt", row.get("started_at")))
+    finished = _seconds(row.get("finishedAt", row.get("finished_at")))
+    blocked = _seconds(row.get("blockedTimeSeconds", row.get("blocked_seconds")))
+    return {
+        "leadTimeSeconds": _span(finished, created),
+        "blockedTimeSeconds": blocked if blocked is not None else "unmeasured",
+        "queueTimeSeconds": _span(started, created),
+    }
+
+
 def defect_ratchet(document: object) -> dict:
     """A repeated defect type blocks the next item until a preventive check id exists."""
     rows = _ledger_rows(document)

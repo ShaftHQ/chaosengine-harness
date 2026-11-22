@@ -131,6 +131,40 @@ class LearnTracesToolBytesTest(unittest.TestCase):
         self.assertEqual("incomplete", report["decision"])
         self.assertIsNone(report["grok_token_share"])
 
+    def test_markdown_transcript_shares_are_exact(self):
+        text = (
+            "## User\n\ngo\n\n## Assistant\n\nlook\n\n## Tools\n\n- Read: alpha\n\n"
+            "## Assistant\n\nnext\n\n## Tools\n\n- Read: beta\n"
+        )
+        scored = self.learn.score_markdown_transcript(text)
+        self.assertEqual(2, scored["tool_sections"])
+        self.assertEqual(1, scored["chained_tool_sections"])
+        self.assertEqual(0.5, scored["chained_tool_output_share"])
+        alpha = len("- Read: alpha".encode("utf-8"))
+        beta = len("- Read: beta".encode("utf-8"))
+        self.assertEqual(alpha / (alpha + beta), scored["intermediate_tool_result_share"])
+        self.assertEqual(0, scored["llm_calls"])
+
+    def test_harness_ab_step0_is_zero_llm_over_fifteen_transcripts(self):
+        raw = ROOT / "experiments" / "harness-ab" / "raw"
+        report = self.learn.harness_ab_step0(raw)
+        self.assertEqual(15, report["transcripts"])
+        self.assertEqual(0, report["llm_calls"])
+        self.assertIsInstance(report["chained_tool_output_share"], float)
+        self.assertIsInstance(report["intermediate_tool_result_share"], float)
+        self.assertGreaterEqual(report["chained_tool_output_share"], 0.0)
+        self.assertLessEqual(report["chained_tool_output_share"], 1.0)
+        self.assertGreaterEqual(report["intermediate_tool_result_share"], 0.0)
+        self.assertLessEqual(report["intermediate_tool_result_share"], 1.0)
+        summary = (ROOT / "experiments" / "harness-ab" / "step0-summary.md").read_text(encoding="utf-8")
+        rendered = self.learn.format_step0(report)
+        self.assertEqual(rendered, summary)
+        self.assertIn("chained tool-output share", summary)
+        self.assertIn("intermediate tool-result share", summary)
+        self.assertNotIn("GHSA", summary)
+        self.assertNotIn("TheMohie", summary)
+        self.assertNotIn("mohab@", summary.casefold())
+
 
 if __name__ == "__main__":
     unittest.main()
