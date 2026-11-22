@@ -12,6 +12,7 @@ import sys
 import tempfile
 import textwrap
 import unittest
+from unittest import mock
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -331,6 +332,109 @@ class HookParityTests(unittest.TestCase):
             self.assertIn("threw:", missing_launch.stdout, missing_launch.stderr)
             self.assertIn("invalid JSON", missing_launch.stdout)
             self.assertNotIn("allowed", missing_launch.stdout)
+
+
+class RetrieveGateTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.justification = load(
+            ROOT / "hooks" / "retrieve_justification.py", "ce_hook_parity_retrieve"
+        )
+        cls.shim = load(ROOT / "hooks" / "receipt_shim.py", "ce_hook_parity_shim")
+
+    def test_shim_edit_tools_and_graph_commands_clear_owe(self):
+        self.assertIn("antigravity", self.shim.SHIM_HOSTS)
+        self.assertIn("apply_patch", self.justification.EDIT_TOOLS)
+        self.assertNotIn("cursor", self.justification.INSTRUCTION_ONLY_HOSTS)
+        self.assertNotIn("opencode", self.justification.INSTRUCTION_ONLY_HOSTS)
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            with self.assertRaises(ValueError):
+                self.justification.record_instruction_only_impact_line(project, "cursor")
+            for command in (
+                "graphify query hooks",
+                "graphify explain hooks",
+                "graphify affected hooks/kernel.py",
+                "graphify path a b",
+                "graphify god-nodes",
+            ):
+                session = "clear-" + command.split()[1]
+                self.justification._mark_session(project, session, owe=True)
+                self.assertIsNotNone(self.justification.session_retrieve_gap(project, session))
+                self.justification.file_read_block_reason(
+                    project=project,
+                    event_name="PreToolUse",
+                    tool_name="Bash",
+                    tool_input={"command": command},
+                    commands=(command,),
+                    session_id=session,
+                )
+                self.assertIsNone(
+                    self.justification.session_retrieve_gap(project, session), command
+                )
+            for command in ("graphify diagnose", "graphify cluster-only"):
+                session = "keep-" + command.split()[1]
+                self.justification._mark_session(project, session, owe=True)
+                self.justification.file_read_block_reason(
+                    project=project,
+                    event_name="PreToolUse",
+                    tool_name="Bash",
+                    tool_input={"command": command},
+                    commands=(command,),
+                    session_id=session,
+                )
+                self.assertIsNotNone(
+                    self.justification.session_retrieve_gap(project, session), command
+                )
+
+    def test_branch_delta_edit_clears_and_ledger_write_is_atomic(self):
+        justification = self.justification
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            subprocess.run(["git", "init"], cwd=project, check=True, capture_output=True)
+            subprocess.run(
+                ["git", "config", "user.email", "dev@example.com"], cwd=project, check=True
+            )
+            subprocess.run(["git", "config", "user.name", "Dev"], cwd=project, check=True)
+            target = project / "kept.txt"
+            target.write_text("a\n", encoding="utf-8")
+            subprocess.run(["git", "add", "kept.txt"], cwd=project, check=True)
+            subprocess.run(
+                ["git", "commit", "-m", "init"], cwd=project, check=True, capture_output=True
+            )
+            target.write_text("b\n", encoding="utf-8")
+            (project / "other.txt").write_text("c\n", encoding="utf-8")
+            justification._mark_session(project, "s", owe=True)
+            allowed = justification.impact_edit_block_reason(
+                project=project,
+                event_name="PreToolUse",
+                tool_name="Edit",
+                session_id="s",
+                tool_input={"file_path": "kept.txt"},
+            )
+            self.assertIsNone(allowed)
+            self.assertIsNone(justification.session_retrieve_gap(project, "s"))
+            blocked = justification.impact_edit_block_reason(
+                project=project,
+                event_name="PreToolUse",
+                tool_name="apply_patch",
+                session_id="outside",
+                tool_input={"file_path": "other.txt"},
+            )
+            self.assertIsNotNone(blocked)
+            called = {}
+            real = justification.os.replace
+
+            def spy(source, destination):
+                called["yes"] = True
+                return real(source, destination)
+
+            with mock.patch.object(justification.os, "replace", side_effect=spy):
+                justification._write_payload(project, {"schemaVersion": 1, "citations": []})
+            self.assertTrue(called.get("yes"))
+            ledger = project / ".chaos-engine-state" / "retrieve-justification.json"
+            json.loads(ledger.read_text(encoding="utf-8"))
+            self.assertEqual([], list(ledger.parent.glob(".retrieve-justification.*.tmp")))
 
 
 if __name__ == "__main__":

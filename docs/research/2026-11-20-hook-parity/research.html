@@ -1,0 +1,1610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ChaosEngine Harness — Multi-Client Hook & Entry-Point Implementation Tracker</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --surface-2: #1f2630;
+      --border: #30363d;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --accent: #58a6ff;
+      --green: #2ea043;
+      --green-bg: rgba(46, 160, 67, 0.16);
+      --amber: #d29922;
+      --amber-bg: rgba(210, 153, 34, 0.16);
+      --red: #f85149;
+      --red-bg: rgba(248, 81, 73, 0.16);
+      --purple: #bc8cff;
+      --purple-bg: rgba(188, 140, 255, 0.16);
+      --cyan: #39c5cf;
+      --cyan-bg: rgba(57, 197, 207, 0.16);
+      --gray-bg: rgba(139, 148, 158, 0.15);
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      background: rgba(110, 118, 129, 0.22);
+      padding: 2px 5px;
+      border-radius: 4px;
+    }
+
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 20px 24px;
+    }
+    .header-top {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+      max-width: 1600px;
+      margin: 0 auto;
+    }
+    h1 {
+      margin: 0 0 6px 0;
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+    .subtitle {
+      color: var(--muted);
+      font-size: 13px;
+      max-width: 960px;
+    }
+    .header-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    button {
+      background: var(--surface-2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 7px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:hover { border-color: var(--accent); }
+    button.primary {
+      background: #1f6feb;
+      border-color: #388bfd;
+      color: #fff;
+    }
+
+    main {
+      max-width: 1600px;
+      margin: 0 auto;
+      padding: 20px 24px 48px;
+    }
+
+    .kpis {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(195px, 1fr));
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .kpi {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 16px;
+    }
+    .kpi-label {
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 600;
+    }
+    .kpi-value {
+      font-size: 26px;
+      font-weight: 700;
+      margin-top: 4px;
+    }
+    .kpi-sub {
+      color: var(--muted);
+      font-size: 11px;
+      margin-top: 2px;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 6px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+    .tab-btn {
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      border-radius: 0;
+      padding: 10px 14px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .tab-btn.active {
+      color: var(--text);
+      border-bottom-color: var(--accent);
+    }
+
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    .filters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 14px;
+      align-items: center;
+    }
+    .filters input, .filters select {
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 12px;
+    }
+    .filters input { min-width: 240px; flex: 1; }
+    .filter-count {
+      margin-left: auto;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      text-align: left;
+    }
+    th, td {
+      padding: 10px 11px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    th {
+      background: var(--surface-2);
+      color: var(--text);
+      font-weight: 700;
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      white-space: nowrap;
+    }
+    tr:hover td { background: rgba(88, 166, 255, 0.04); }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 7px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .b-impl { background: var(--green-bg); color: #56d364; border: 1px solid rgba(46,160,67,0.4); }
+    .b-part { background: var(--amber-bg); color: #e3b341; border: 1px solid rgba(210,153,34,0.4); }
+    .b-plan { background: var(--cyan-bg); color: #56d4dd; border: 1px solid rgba(57,197,207,0.4); }
+    .b-gap  { background: var(--red-bg); color: #ff7b72; border: 1px solid rgba(248,81,73,0.4); }
+    .b-na   { background: var(--gray-bg); color: var(--muted); border: 1px solid rgba(139,148,158,0.3); }
+    .b-uniq { background: var(--purple-bg); color: var(--purple); border: 1px solid rgba(188,140,255,0.4); }
+
+    .status-select {
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 4px 6px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .cell-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .muted { color: var(--muted); }
+    .small { font-size: 11px; }
+
+    .card-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .card h3 {
+      margin: 0 0 8px 0;
+      font-size: 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+    .card ul {
+      margin: 8px 0 0 0;
+      padding-left: 18px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .card li { margin-bottom: 4px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-top">
+      <div>
+        <h1>ChaosEngine Harness — Hook & Entry-Point Implementation Tracker</h1>
+        <div class="subtitle">
+          Cross-client lifecycle parity matrix and implementation audit for <code>ShaftHQ/chaosengine-harness</code> against Claude Code (CLI & Desktop), OpenAI Codex (CLI & Desktop plugins), Grok (Build CLI & Bot), Google Antigravity (CLI/App/IDE & Python SDK), Gemini CLI, GitHub Copilot (CLI, VS Code/Desktop, Cloud, SDK), IntelliJ IDEA plugins, and Top-10 coding agents (Data vintage: Nov 2026).
+        </div>
+      </div>
+      <div class="header-actions">
+        <button id="exportJsonBtn" class="primary">Export Tracker JSON</button>
+        <button id="resetStateBtn">Reset Local Edits</button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="kpis" id="kpiRow"></section>
+
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="matrix">Hook Parity & ChaosEngine Matrix</button>
+      <button class="tab-btn" data-tab="entrypoints">Client Entry Points & Config Surface</button>
+      <button class="tab-btn" data-tab="intellij">IntelliJ IDEA & Top-10 Agents Audit</button>
+      <button class="tab-btn" data-tab="gaps">Verified Gaps, Drift & Official Docs</button>
+    </div>
+
+    <section class="tab-panel active" id="tab-matrix">
+      <div class="filters">
+        <input type="text" id="searchInput" placeholder="Search hook name, client spelling, ChaosEngine file, or issue..." />
+        <select id="categoryFilter">
+          <option value="all">All Lifecycle Categories</option>
+          <option value="Session">Session</option>
+          <option value="Prompt">Prompt & Turn</option>
+          <option value="Model">Model & Invocation</option>
+          <option value="Tool">Tool Execution</option>
+          <option value="Permission">Permissions</option>
+          <option value="Subagent">Subagents & Teams</option>
+          <option value="Context">Compaction & Memory</option>
+          <option value="Environment">Workspace, Config & Git</option>
+          <option value="Interaction">Notifications, UI & MCP</option>
+        </select>
+        <select id="statusFilter">
+          <option value="all">All ChaosEngine Statuses</option>
+          <option value="Implemented">Implemented</option>
+          <option value="Partial">Partial / Drift</option>
+          <option value="Planned">Planned / Issue Spec</option>
+          <option value="Gap">Not Implemented / Gap</option>
+        </select>
+        <select id="parityFilter">
+          <option value="all">All Parity Classes</option>
+          <option value="unique">Unique to 1 Client</option>
+          <option value="two">2-Client Only</option>
+          <option value="broad">Broad (3+ Clients)</option>
+        </select>
+        <span class="filter-count" id="matrixCount"></span>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Phase / Canonical Event</th>
+              <th>Parity</th>
+              <th>Claude Code (33)</th>
+              <th>Codex CLI (5)</th>
+              <th>Grok Build (14)</th>
+              <th>Antigravity CLI/SDK (6/5)</th>
+              <th>Gemini CLI (11)</th>
+              <th>GitHub Copilot (VS Code / CLI / SDK)</th>
+              <th>Cursor / OpenCode / Top-10 Other</th>
+              <th>ChaosEngine Implementation & Refs</th>
+              <th>Status (Editable)</th>
+            </tr>
+          </thead>
+          <tbody id="matrixBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="tab-panel" id="tab-entrypoints">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Client / Surface</th>
+              <th>CLI / Runtime Entry Points</th>
+              <th>Instruction & Rules Files</th>
+              <th>Hook Config Locations</th>
+              <th>Handler Types & Blocking Contract</th>
+              <th>ChaosEngine Adapter & Wiring Status</th>
+              <th>Primary Sources</th>
+            </tr>
+          </thead>
+          <tbody id="entryBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="tab-panel" id="tab-intellij">
+      <div class="card-grid" id="intellijCards"></div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Agent / Plugin</th>
+              <th>2026 Adoption / Rank Context</th>
+              <th>IntelliJ IDEA / JetBrains Support</th>
+              <th>Hook / Extension Mechanism</th>
+              <th>Evidence Confidence & Gaps</th>
+              <th>ChaosEngine Alignment</th>
+            </tr>
+          </thead>
+          <tbody id="top10Body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="tab-panel" id="tab-gaps">
+      <div class="card-grid" id="gapCards"></div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Reference Category</th>
+              <th>Title / Artifact</th>
+              <th>Verified URL / Issue</th>
+              <th>Scope & Relevance to Tracker</th>
+            </tr>
+          </thead>
+          <tbody id="refsBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const STORAGE_KEY = "chaosengine_hook_tracker_v2";
+
+    const HOOK_DATA = [
+      {
+        id: "setup",
+        category: "Session",
+        canonical: "One-Time Repo Setup",
+        desc: "Runs on --init-only, or --init / --maintenance in -p mode for CI/repo prep",
+        parity: "unique",
+        parityLabel: "UNIQUE (Claude Code)",
+        claude: "Setup",
+        codex: "—",
+        grok: "—",
+        antigravity: "—",
+        gemini: "—",
+        copilot: "—",
+        other: "—",
+        ceImpl: "Not wired. ChaosEngine relies on install.py doctor / bootstrap.py manually instead of Claude Setup hook.",
+        ceRefs: ["https://code.claude.com/docs/en/hooks"],
+        status: "Gap"
+      },
+      {
+        id: "workspace-open",
+        category: "Session",
+        canonical: "Workspace Open",
+        desc: "Fires when editor opens workspace; returns pluginPaths to auto-load workspace plugins",
+        parity: "unique",
+        parityLabel: "UNIQUE (Cursor)",
+        claude: "—",
+        codex: "—",
+        grok: "—",
+        antigravity: "—",
+        gemini: "—",
+        copilot: "—",
+        other: "Cursor: workspaceOpen (startup reload race #172939)",
+        ceImpl: "Gap (GAP-CURSOR-HOOKS in SHAFT_ENGINE#8051; Cursor absent from hosts.py).",
+        ceRefs: ["https://forum.cursor.com/t/project-workspaceopen-hook-never-runs-the-event-fires-during-a-hooks-config-reload-before-project-hooks-are-registered/172939", "https://github.com/ShaftHQ/SHAFT_ENGINE/issues/8051"],
+        status: "Gap"
+      },
+      {
+        id: "session-start",
+        category: "Session",
+        canonical: "Session Start",
+        desc: "Fires on session start or resume; commonly injects context",
+        parity: "broad",
+        parityLabel: "Broad (6 families)",
+        claude: "SessionStart (supports compact matcher)",
+        codex: "SessionStart (startup|resume)",
+        grok: "SessionStart (passive)",
+        antigravity: "SessionStart",
+        gemini: "SessionStart",
+        copilot: "SessionStart (VS Code) / sessionStart (CLI & Cloud) / onSessionStart (SDK)",
+        other: "—",
+        ceImpl: "Unverified / Gap: Grok .grok/hooks/lifecycle.json configures 8 events (#5354), but only UserPromptSubmit/PreToolUse/PostToolUse probes were logged; Codex/Copilot/Antigravity/Gemini SessionStart wiring unverified.",
+        ceRefs: ["https://github.com/ShaftHQ/SHAFT_ENGINE/issues/5354", "https://github.com/github/copilot-cli/issues/1730"],
+        status: "Gap"
+      },
+      {
+        id: "session-end",
+        category: "Session",
+        canonical: "Session End",
+        desc: "Fires when a session terminates for cleanup and telemetry",
+        parity: "broad",
+        parityLabel: "Broad (4 families)",
+        claude: "SessionEnd",
+        codex: "—",
+        grok: "SessionEnd (passive)",
+        antigravity: "—",
+        gemini: "SessionEnd",
+        copilot: "CLI: sessionEnd",
+        other: "—",
+        ceImpl: "Gap / Unverified: Grok lifecycle.json (#5354) covers 8 events (names beyond probed events unexposed); usage receipts run manually via tool.py usage (#8032 R2 / #8048 R5).",
+        ceRefs: ["https://docs.x.ai/build/features/hooks", "https://github.com/ShaftHQ/SHAFT_ENGINE/issues/5354"],
+        status: "Gap"
+      },
+      {
+        id: "user-prompt-submit",
+        category: "Prompt",
+        canonical: "User Prompt Submit / Pre-Turn",
+        desc: "Fires when user submits a prompt before agent processing",
+        parity: "broad",
+        parityLabel: "Broad (5 families + SDK)",
+        claude: "UserPromptSubmit",
+        codex: "UserPromptSubmit (exit 2 rejects)",
+        grok: "UserPromptSubmit (passive)",
+        antigravity: "SDK: PreTurnHook (missing in hooks.json)",
+        gemini: "BeforeAgent",
+        copilot: "UserPromptSubmit (VS Code) / userPromptSubmitted (CLI) / SDK",
+        other: "—",
+        ceImpl: "Implemented in hooks/guard.py (probe-verified #5354: exit 0 + ChaosEngine additionalContext). Not wired for Codex/Copilot/Gemini.",
+        ceRefs: ["https://github.com/ShaftHQ/SHAFT_ENGINE/issues/5354", "https://ai.sulat.com/codex-hooks-just-gave-you-back-complete-control-over-your-code-57d044bcae1b"],
+        status: "Implemented"
+      },
+      {
+        id: "user-prompt-expand",
+        category: "Prompt",
+        canonical: "Slash-Command Prompt Expansion",
+        desc: "Fires when a user-typed command expands into a prompt before reaching model; can block",
+        parity: "unique",
+        parityLabel: "UNIQUE (Claude Code)",
+        claude: "UserPromptExpansion (can block)",
+        codex: "—",
+        grok: "—",
+        antigravity: "—",
+        gemini: "—",
+        copilot: "—",
+        other: "—",
+        ceImpl: "Not implemented in guard.py.",
+        ceRefs: ["https://code.claude.com/docs/en/hooks"],
+        status: "Gap"
+      },
+      {
+        id: "user-prompt-transformed",
+        category: "Prompt",
+        canonical: "Model-Facing Prompt Replacement (SDK)",
+        desc: "Replaces model-facing user prompts programmatically in Copilot SDK",
+        parity: "unique",
+        parityLabel: "UNIQUE (Copilot SDK)",
+        claude: "—",
+        codex: "—",
+        grok: "—",
+        antigravity: "—",
+        gemini: "—",
+        copilot: "SDK: User Prompt Transformed",
+        other: "—",
+        ceImpl: "Not implemented.",
+        ceRefs: ["https://github.com/github/copilot-sdk/blob/main/docs/hooks/hooks-overview.md"],
+        status: "Gap"
+      },
+      {
+        id: "pre-invocation",
+        category: "Model",
+        canonical: "Before Model Invocation",
+        desc: "Runs directly before each LLM API call",
+        parity: "two",
+        parityLabel: "2-Client (Google Only)",
+        claude: "—",
+        codex: "—",
+        grok: "—",
+        antigravity: "PreInvocation (no matcher)",
+        gemini: "BeforeModel",
+        copilot: "—",
+        other: "—",
+        ceImpl: "Not implemented. Antigravity forbids extra matcher wrapper here (Language Server crash bug).",
+        ceRefs: ["https://antigravity.google/docs/hooks/", "https://discuss.ai.google.dev/t/hooks-in-antigravity/120458", "https://github.com/shanraisshan/gemini-cli-hooks"],
+        status: "Gap"
+      },
+      {
+        id: "post-invocation",
+        category: "Model",
+        canonical: "After Model Invocation",
+        desc: "Runs immediately after each LLM API response finishes",
+        parity: "two",
+        parityLabel: "2-Client (Google Only)",
+        claude: "—",
+        codex: "—",
+        grok: "—",
+        antigravity: "PostInvocation (no matcher)",
+        gemini: "AfterModel",
+        copilot: "—",
+        other: "—",
+        ceImpl: "Not implemented.",
+        ceRefs: ["https://antigravity.google/docs/hooks/", "https://github.com/shanraisshan/gemini-cli-hooks"],
+        status: "Gap"
+      },
+      {
+        id: "before-tool-selection",
+        category: "Model",
+        canonical: "Before Tool Selection",
+        desc: "Filters or modifies available tools prior to model tool selection",
+        parity: "unique",
+        parityLabel: "UNIQUE (Gemini CLI)",
+        claude: "—",
+        codex: "—",
+        grok: "—",
+        antigravity: "—",
+        gemini: "BeforeToolSelection",
+        copilot: "—",
+        other: "—",
+        ceImpl: "Not implemented.",
+        ceRefs: ["https://github.com/shanraisshan/gemini-cli-hooks"],
+        status: "Gap"
+      },
+      {
+        id: "pre-model-switch",
+        category: "Model",
+        canonical: "Pre-Model Switch",
+        desc: "Intercepts and can block requested model switches",
+        parity: "unique",
+        parityLabel: "UNIQUE (Claude Code)",
+        claude: "PreModelSwitch (can block)",
+        codex: "—",
+        grok: "—",
+        antigravity: "—",
+        gemini: "—",
+        copilot: "—",
+        other: "—",
+        ceImpl: "Not implemented (Grok model loading uses grok_model_load.py / grok_lean_config.py directly).",
+        ceRefs: ["https://code.claude.com/docs/en/hooks", "https://github.com/ShaftHQ/chaosengine-harness"],
+        status: "Gap"
+      },
+      {
+        id: "post-model-switch",
+        category: "Model",
+        canonical: "Post-Model Switch",
+        desc: "Fires after session model changes (including resume restore)",
+        parity: "unique",
+        parityLabel: "UNIQUE (Claude Code)",
+        claude: "PostModelSwitch",
+        codex: "—",
+        grok: "—",
+        antigravity: "—",
+        gemini: "—",
+        copilot: "—",
+        other: "—",
+        ceImpl: "Not implemented.",
+        ceRefs: ["https://code.claude.com/docs/en/hooks"],
+        status: "Gap"
+      },
+      {
+        id: "pre-tool-use",
+        category: "Tool",
+        canonical: "Pre-Tool Use / Gate",
+        desc: "Intercepts tool execution; can deny, ask, or rewrite arguments before running",
+        parity: "broad",
+        parityLabel: "Broad (Universal Hooked)",
+        claude: "PreToolUse",
+        codex: "PreToolUse (no reliable updatedInput)",
+        grok: "PreToolUse (ONLY blocker)",
+        antigravity: "PreToolUse / SDK: PreToolCallDecideHook",
+        gemini: "BeforeTool",
+        copilot: "PreToolUse (VS Code) / preToolUse (CLI) / onPreToolUse (SDK)",
+        other: "Cursor: preToolUse + beforeShellExecution; OpenCode: execute.before / tool.execute.before; Pi: tool_call; OpenClaw: before_tool_call; Trae & Droid: PreToolUse; Vibe: pre_tool",
+        ceImpl: "Implemented in hooks/guard.py + secret_guard.py (Claude, Codex .codex/hooks.json, Grok .grok/hooks/lifecycle.json). Open-PR cap proposed (#8032 R1). Gaps on Cursor, OpenCode, Gemini, Antigravity, Copilot, Grok Bot.",
+        ceRefs: ["https://github.com/ShaftHQ/SHAFT_ENGINE/issues/5354", "https://github.com/ShaftHQ/SHAFT_ENGINE/issues/8032", "https://github.com/ShaftHQ/SHAFT_ENGINE/issues/8051", "https://www.rtk-ai.app/docs/getting-started/supported-agents/"],
+        status: "Implemented"
+      },
+      {
+        id: "permission-request",
+        category: "Permission",
+        canonical: "Permission Request",
+        desc: "Fires when a tool call requires a permission decision",
+        parity: "unique",
+        parityLabel: "UNIQUE (Claude Code)",
+        claude: "PermissionRequest",
+        codex: "—",
+        grok: "—",
+        antigravity: "—",
+        gemini: "—",
+        copilot: "—",
+        other: "—",
+        ceImpl: "Not implemented (ChaosEngine gates inside PreToolUse).",
+        ceRefs: ["https://code.claude.com/docs/en/hooks"],
+        status: "Gap"
+      },
+      {
+        id: "permission-denied",
+        category: "Permission",
+        canonical: "Permission Denied",
+        desc: "Fires when auto-mode or permission system denies a tool call",
+        parity: "two",
+        parityLabel: "2-Client (Claude & Grok)",
+        claude: "PermissionDenied (supports retry: true)",
+        codex: "—",
+        grok: "PermissionDenied (passive)",
+        antigravity: "—",
+        gemini: "—",
+        copilot: "—",
+        other: "—",
+        ceImpl: "Not implemented.",
+        ceRefs: ["https://code.claude.com/docs/en/hooks", "https://docs.x.ai/build/features/hooks"],
+        status: "Gap"
+      },
+      {
+        id: "post-tool-use",
+        category: "Tool",
+        canonical: "Post-Tool Completion",
+        desc: "Fires after tool execution completes; formats, audits, or steers next turn",
+        parity: "broad",
+        parityLabel: "Broad (6 families + Cursor)",
+        claude: "PostToolUse",
+        codex: "PostToolUse",
+        grok: "PostToolUse (passive)",
+        antigravity: "PostToolUse / SDK: PostToolCallHook",
+        gemini: "AfterTool",
+        copilot: "PostToolUse (VS Code) / postToolUse (CLI) / onPostToolUse (SDK)",
+        other: "Cursor: afterFileEdit (file edits only)",
+        ceImpl: "Implemented in hooks/guard.py + hooks/reflection.py (#5000, #5354) for Claude, Codex, Grok.",
+        ceRefs: ["https://github.com/ShaftHQ/SHAFT_ENGINE/issues/5000", "https://github.com/ShaftHQ/SHAFT_ENGINE/issues/5354"],
+        status: "Implemented"
+      },
+      {
+        id: "post-tool-failure",
+        category: "Tool",
+        canonical: "Post-Tool Failure / Error",
+        desc: "Fires specifically when a tool call fails or throws an error",
+        parity: "broad",
+        parityLabel: "Broad (2 JSON + SDK)",
+        claude: "PostToolUseFailure",
+        codex: "Explicitly Missing (#5000)",
+        grok: "PostToolUseFailure (passive)",
+        antigravity: "SDK: OnToolErrorHook (rewrites error)",
+        gemini: "—",
+        copilot: "—",
+        other: "—",
+        ceImpl: "Partial: #5000 tracks Claude PostToolUseFailure vs. Codex PostToolUse normalization in reflection.py.",
+        ceRefs: ["https://github.com/ShaftHQ/SHAFT_ENGINE/issues/5000", "https://github.com/google-antigravity/antigravity-sdk-python/blob/main/google/antigravity/hooks/README.md"],
+        status: "Partial"
+      },
+      {
+        id: "post-tool-batch",
+        category: "Tool",
+        canonical: "Post-Tool Parallel Batch",
+        desc: "Fires once after a parallel batch of tool calls resolves, before next model turn",
+        parity: "unique",
+        parityLabel: "UNIQUE (Claude Code)",
+        claude: "PostToolBatch",
+        codex: "—",
+        grok: "—",
+        antigravity: "—",
+        gemini: "—",
+        copilot: "—",
+        other: "—",
+        ceImpl: "Not implemented.",
+        ceRefs: ["https://code.claude.com/docs/en/hooks"],
+        status: "Gap"
+      },
+      {
+        id: "stop",
+        category: "Prompt",
+        canonical: "Agent Turn Stop",
+        desc: "Fires when agent finishes responding; blocking forces continuation",
+        parity: "broad",
+        parityLabel: "Broad (6 families)",
+        claude: "Stop",
+        codex: "Stop (JSON required; decision: block)",
+        grok: "Stop (passive)",
+        antigravity: "Stop (no matcher)",
+        gemini: "AfterAgent",
+        copilot: "Stop (VS Code; bills extra request) / agentStop (CLI)",
+        other: "—",
+        ceImpl: "Implemented in guard.py (_stop_block_reason; infinite-loop bug fixed in #7860 by checking stop_hook_active first). Verified on Claude CLI & Desktop (#7860).",
+        ceRefs: ["https://github.com/ShaftHQ/SHAFT_ENGINE/issues/7860", "https://daily.dev/posts/put-your-own-logic-inside-the-codex-agentic-loop-jowjgysff", "https://zenn.dev/rampo_dev/articles/github-copilot-hooks"],
+        status: "Implemented"
+      },
+      {
+        id: "stop-failure",
+        category: "Prompt",
+        canonical: "Turn Stop API Failure",
+        desc: "Fires when the turn terminates due to an API error",
+        parity: "two",
+        parityLabel: "2-Client (Claude & Grok)",
+        claude: "StopFailure",
+        codex: "—",
+        grok: "StopFailure (passive)",
+        antigravity: "—",
+        gemini: "—",
+        copilot: "—",
+        other: "—",
+        ceImpl: "Not implemented.",
+        ceRefs: ["https://code.claude.com/docs/en/hooks", "https://docs.x.ai/build/features/hooks"],
+        status: "Gap"
+      },
+      {
+        id: "subagent-start",
+        category: "Subagent",
+        canonical: "Subagent Start",
+        desc: "Fires when a child subagent is spawned",
+        parity: "broad",
+        parityLabel: "Broad (3 families)",
+        claude: "SubagentStart",
+        codex: "—",
+        grok: "SubagentStart (passive)",
+        antigravity: "—",
+        gemini: "—",
+        copilot: "VS Code: SubagentStart",
+        other: "—",
+        ceImpl: "Partial: SHAFT_ENGINE release #7390 added entry-locator injection when a subagent session starts; standalone chaosengine-harness parity unverified.",
+        ceRefs: ["https://github.com/MohabMohie/SHAFT_ENGINE/releases", "https://code.claude.com/docs/en/hooks"],
+        status: "Partial"
+      },
+      {
+        id: "subagent-stop",
+        category: "Subagent",
+        canonical: "Subagent Stop",
+        desc: "Fires when a child subagent finishes execution",
+        parity: "broad",
+        parityLabel: "Broad (3 families)",
+        claude: "SubagentStop",
+        codex: "—",
+        grok: "SubagentStop (passive)",
+        antigravity: "—",
+        gemini: "—",
+        copilot: "VS Code: SubagentStop / CLI: subagentStop",
+        other: "—",
+        ceImpl: "Not verified in standalone guard.py.",
+        ceRefs: ["https://github.com/github/copilot-cli/issues/1730", "https://docs.x.ai/build/features/hooks"],
+        status: "Gap"
+      },
+      {
+        id: "task-created",
+        category: "Subagent",
+        canonical: "Task Created",
+        desc: "Fires when a task is created via TaskCreate",
+        parity: "unique",
+        parityLabel: "UNIQUE (Claude Code)",
+        claude: "TaskCreated",
+        codex: "—",
+        grok: "—",
+        antigravity: "—",
+        gemini: "—",
+        copilot: "—",
+        other: "—",
+        ceImpl: "Not implemented.",
+        ceRefs: ["https://code.claude.com/docs/en/hooks"],
+        status: "Gap"
+      },
+      {
+        id: "task-completed",
+        category: "Subagent",
+        canonical: "Task Completed",
+        desc: "Fires when a task is marked completed",
+        parity: "unique",
+        parityLabel: "UNIQUE (Claude Code)",
+        claude: "TaskCompleted",
+        codex: "—",
+        grok: "—",
+        antigravity: "—",
+        gemini: "—",
+        copilot: "—",
+        other: "—",
+        ceImpl: "Not implemented (ChaosEngine uses tool.py pre-done / dod.py).",
+        ceRefs: ["https://code.claude.com/docs/en/hooks", "https://github.com/ShaftHQ/SHAFT_ENGINE/issues/8051"],
+        status: "Gap"
+      },
+      {
+        id: "teammate-idle",
+        category: "Subagent",
+        canonical: "Teammate Idle",
+        desc: "Fires when an agent team teammate is about to go idle",
+        parity: "unique",
+        parityLabel: "UNIQUE (Claude Code)",
+        claude: "TeammateIdle",
+        codex: "—",
+        grok: "—",
+        antigravity: "—",
+        gemini: "—",
+        copilot: "—",
+        other: "—",
+        ceImpl: "Not implemented.",
+        ceRefs: ["https://code.claude.com/docs/en/hooks"],
+        status: "Gap"
+      },
+      {
+        id: "pre-compact",
+        category: "Context",
+        canonical: "Pre-Compaction / Compress",
+        desc: "Fires before conversation history is compacted/summarized",
+        parity: "broad",
+        parityLabel: "Broad (4 families)",
+        claude: "PreCompact",
+        codex: "—",
+        grok: "PreCompact (passive)",
+        antigravity: "—",
+        gemini: "PreCompress",
+        copilot: "VS Code: PreCompact",
+        other: "—",
+        ceImpl: "Not implemented (memory mining uses MemPalace/Graphify tools instead).",
+        ceRefs: ["https://code.claude.com/docs/en/hooks", "https://code.visualstudio.com/learn/customizations/5-hooks"],
+        status: "Gap"
+      },
+      {
+        id: "post-compact",
+        category: "Context",
+        canonical: "Post-Compaction",
+        desc: "Fires after conversation compaction finishes",
+        parity: "two",
+        parityLabel: "2-Client (Claude & Grok)",
+        claude: "PostCompact",
+        codex: "—",
+        grok: "PostCompact (passive)",
+        antigravity: "—",
+        gemini: "—",
+        copilot: "—",
+        other: "—",
+        ceImpl: "Not implemented.",
+        ceRefs: ["https://code.claude.com/docs/en/hooks", "https://docs.x.ai/build/features/hooks"],
+        status: "Gap"
+      },
+      {
+        id: "notification",
+        category: "Interaction",
+        canonical: "Notification",
+        desc: "Fires when agent emits permission_prompt, idle_prompt, or setup notifications",
+        parity: "broad",
+        parityLabel: "Broad (3 families)",
+        claude: "Notification",
+        codex: "—",
+        grok: "Notification (passive)",
+        antigravity: "—",
+        gemini: "Notification",
+        copilot: "—",
+        other: "—",
+        ceImpl: "Not implemented.",
+        ceRefs: ["https://code.claude.com/docs/en/hooks-guide", "https://docs.x.ai/build/features/hooks", "https://github.com/shanraisshan/gemini-cli-hooks"],
+        status: "Gap"
+      },
+      {
+        id: "message-display",
+        category: "Interaction",
+        canonical: "Message Display",
+        desc: "Fires while assistant message text is displayed (+ JS mods UI hooks)",
+        parity: "unique",
+        parityLabel: "UNIQUE (Claude Code)",
+        claude: "MessageDisplay (+ JS mods)",
+        codex: "—",
+        grok: "—",
+        antigravity: "—",
+        gemini: "—",
+        copilot: "—",
+        other: "—",
+        ceImpl: "Not implemented.",
+        ceRefs: ["https://code.claude.com/docs/en/hooks"],
+        status: "Gap"
+      },
+      {
+        id: "on-interaction-hook",
+        category: "Interaction",
+        canonical: "User Interaction Transform (SDK)",
+        desc: "Transform hook modifying interactive responses in Antigravity Python SDK",
+        parity: "unique",
+        parityLabel: "UNIQUE (Antigravity SDK)",
+        claude: "—",
+        codex: "—",
+        grok: "—",
+        antigravity: "SDK: OnInteractionHook",
+        gemini: "—",
+        copilot: "—",
+        other: "—",
+        ceImpl: "Not implemented.",
+        ceRefs: ["https://github.com/google-antigravity/antigravity-sdk-python/blob/main/google/antigravity/hooks/README.md"],
+        status: "Gap"
+      },
+      {
+        id: "instructions-loaded",
+        category: "Environment",
+        canonical: "Instructions Loaded",
+        desc: "Fires when CLAUDE.md or .claude/rules/*.md is loaded into context",
+        parity: "unique",
+        parityLabel: "UNIQUE (Claude Code)",
+        claude: "InstructionsLoaded",
+        codex: "—",
+        grok: "—",
+        antigravity: "—",
+        gemini: "—",
+        copilot: "—",
+        other: "—",
+        ceImpl: "Not implemented.",
+        ceRefs: ["https://code.claude.com/docs/en/hooks"],
+        status: "Gap"
+      },
+      {
+        id: "config-change",
+        category: "Environment",
+        canonical: "Config Change",
+        desc: "Fires when a configuration file changes mid-session",
+        parity: "unique",
+        parityLabel: "UNIQUE (Claude Code)",
+        claude: "ConfigChange",
+        codex: "—",
+        grok: "—",
+        antigravity: "—",
+        gemini: "—",
+        copilot: "—",
+        other: "—",
+        ceImpl: "Not implemented (drift checked via install.py verify / doctor).",
+        ceRefs: ["https://code.claude.com/docs/en/hooks"],
+        status: "Gap"
+      },
+      {
+        id: "cwd-changed",
+        category: "Environment",
+        canonical: "Working Directory Changed",
+        desc: "Fires when working directory changes (e.g., cd); updates CLAUDE_ENV_FILE",
+        parity: "unique",
+        parityLabel: "UNIQUE (Claude Code)",
+        claude: "CwdChanged",
+        codex: "—",
+        grok: "—",
+        antigravity: "—",
+        gemini: "—",
+        copilot: "—",
+        other: "—",
+        ceImpl: "Not implemented (ghost cwd blocked in PreToolUse #7528).",
+        ceRefs: ["https://code.claude.com/docs/en/hooks", "https://github.com/MohabMohie/SHAFT_ENGINE/releases"],
+        status: "Gap"
+      },
+      {
+        id: "directory-added",
+        category: "Environment",
+        canonical: "Directory Added",
+        desc: "Fires when workspace dir added mid-session via /add-dir or register_repo_root",
+        parity: "unique",
+        parityLabel: "UNIQUE (Claude Code)",
+        claude: "DirectoryAdded",
+        codex: "—",
+        grok: "—",
+        antigravity: "—",
+        gemini: "—",
+        copilot: "—",
+        other: "—",
+        ceImpl: "Not implemented.",
+        ceRefs: ["https://code.claude.com/docs/en/hooks"],
+        status: "Gap"
+      },
+      {
+        id: "file-changed",
+        category: "Environment",
+        canonical: "Watched File Changed",
+        desc: "Fires when a watched file changes on disk (matcher specifies watchPaths)",
+        parity: "unique",
+        parityLabel: "UNIQUE (Claude Code)",
+        claude: "FileChanged",
+        codex: "—",
+        grok: "—",
+        antigravity: "—",
+        gemini: "—",
+        copilot: "—",
+        other: "—",
+        ceImpl: "Not implemented.",
+        ceRefs: ["https://code.claude.com/docs/en/hooks"],
+        status: "Gap"
+      },
+      {
+        id: "worktree-create",
+        category: "Environment",
+        canonical: "Git Worktree Create",
+        desc: "Replaces default git worktree creation (--worktree / isolation: worktree)",
+        parity: "unique",
+        parityLabel: "UNIQUE (Claude Code)",
+        claude: "WorktreeCreate",
+        codex: "—",
+        grok: "—",
+        antigravity: "—",
+        gemini: "—",
+        copilot: "—",
+        other: "—",
+        ceImpl: "Not implemented (worktree policy handled in PR/skill rules #7513).",
+        ceRefs: ["https://code.claude.com/docs/en/hooks", "https://github.com/MohabMohie/SHAFT_ENGINE/releases"],
+        status: "Gap"
+      },
+      {
+        id: "worktree-remove",
+        category: "Environment",
+        canonical: "Git Worktree Remove",
+        desc: "Fires when removing a worktree created via WorktreeCreate",
+        parity: "unique",
+        parityLabel: "UNIQUE (Claude Code)",
+        claude: "WorktreeRemove",
+        codex: "—",
+        grok: "—",
+        antigravity: "—",
+        gemini: "—",
+        copilot: "—",
+        other: "—",
+        ceImpl: "Not implemented.",
+        ceRefs: ["https://code.claude.com/docs/en/hooks"],
+        status: "Gap"
+      },
+      {
+        id: "elicitation",
+        category: "Interaction",
+        canonical: "MCP Elicitation Request",
+        desc: "Fires when an MCP server requests user input during a tool call",
+        parity: "unique",
+        parityLabel: "UNIQUE (Claude Code)",
+        claude: "Elicitation",
+        codex: "—",
+        grok: "—",
+        antigravity: "—",
+        gemini: "—",
+        copilot: "—",
+        other: "—",
+        ceImpl: "Not implemented.",
+        ceRefs: ["https://code.claude.com/docs/en/hooks"],
+        status: "Gap"
+      },
+      {
+        id: "elicitation-result",
+        category: "Interaction",
+        canonical: "MCP Elicitation Result",
+        desc: "Fires after user answers an MCP elicitation, before returning to MCP server",
+        parity: "unique",
+        parityLabel: "UNIQUE (Claude Code)",
+        claude: "ElicitationResult",
+        codex: "—",
+        grok: "—",
+        antigravity: "—",
+        gemini: "—",
+        copilot: "—",
+        other: "—",
+        ceImpl: "Not implemented.",
+        ceRefs: ["https://code.claude.com/docs/en/hooks"],
+        status: "Gap"
+      }
+    ];
+
+    const ENTRY_DATA = [
+      {
+        client: "ChaosEngine Harness (Reference Core)",
+        cli: "install.sh / install.ps1 / install.py (doctor, verify, status --json, uninstall); chaosengine_harness.py; bootstrap.py; tool.py pre-done; dod.py; bin/*",
+        instructions: "AGENTS.md (canonical), CLAUDE.md (thin import), GEMINI.md (CE block), skills/chaos-engine/SKILL.md, always-loaded-budget.json",
+        hooks: "hooks/guard.py, hooks/reflection.py, secret_guard.py, overlay_pre_push.py, scripts/ci/harness_pr_gate.py, evals/parity-fixtures.json",
+        contract: "Stdin JSON with hook_event_name; exit 0 + additionalContext or block/deny; deterministic CLI & CI gates for hookless hosts",
+        ceStatus: "Implemented Core",
+        refs: ["https://github.com/ShaftHQ/chaosengine-harness", "https://github.com/ShaftHQ/SHAFT_ENGINE/issues/8051"]
+      },
+      {
+        client: "Claude Code (CLI, Desktop, VS Code, JetBrains, Web)",
+        cli: "claude (-p, --init-only, --init, --maintenance, --worktree, /hooks, /add-dir, /loop)",
+        instructions: "CLAUDE.md, AGENTS.md, .claude/rules/*.md, ~/.claude/projects/.../memory/, .mcp.json",
+        hooks: "~/.claude/settings.json, .claude/settings.json, .claude/settings.local.json, managed settings, plugins & JS mods",
+        contract: "command, http (allowlisted), prompt, agent, JS mods; 33 events; blocks via exit 2 or JSON permissionDecision",
+        ceStatus: "Implemented (CLAUDE.md + guard.py + #7860 Stop fix)",
+        refs: ["https://code.claude.com/docs/en/hooks", "https://github.com/ShaftHQ/SHAFT_ENGINE/issues/7860"]
+      },
+      {
+        client: "OpenAI Codex (CLI, Desktop App, IDE, Cloud)",
+        cli: "codex, codex app, codex mcp, /hooks, --dangerously-bypass-hook-trust",
+        instructions: "AGENTS.md, config.toml, requirements.toml (allow_managed_hooks_only)",
+        hooks: "~/.codex/hooks.json, .codex/hooks.json; manual Codex desktop plugins only",
+        contract: "5 CLI events (no PostToolUseFailure); hash-based trust approval; PreToolUse updatedInput rejected in tested builds",
+        ceStatus: "Partial (.codex/hooks.json -> guard.py for Pre/PostToolUse; #5000)",
+        refs: ["https://developers.openai.com/plugins/build/plugins", "https://learn.chatgpt.com/docs/hooks", "https://agenticcontrolplane.com/blog/codex-cli-hooks-reference", "https://github.com/ShaftHQ/SHAFT_ENGINE/issues/5000"]
+      },
+      {
+        client: "Grok Build (CLI / TUI / ACP)",
+        cli: "grok, grok -p, grok -w, grok agent stdio (ACP), grok inspect, grok import, /hooks, /hooks-trust, --trust",
+        instructions: "AGENTS.md, CLAUDE.md, .grok/skills, .grok/agents/, personas",
+        hooks: "~/.grok/hooks/*.json, .grok/hooks/*.json (lifecycle.json), plus .claude/settings.json & .cursor/hooks.json",
+        contract: "command & http (5s default); 14 events; ONLY PreToolUse blocks (exit 2 or decision: deny); crashes/timeouts fail open; trust in trusted_folders.toml",
+        ceStatus: "Implemented 8-event .grok/hooks/lifecycle.json (#5354) — drifted vs. 14-event docs",
+        refs: ["https://docs.x.ai/build/features/hooks", "https://github.com/ShaftHQ/SHAFT_ENGINE/issues/5354"]
+      },
+      {
+        client: "Grok Bot (Hosted Bot)",
+        cli: "Hosted MCP / Bot integration (supercompress-proxy / PR bots)",
+        instructions: "Repo AGENTS.md / skills / PR templates",
+        hooks: "None (hookless bot surface)",
+        contract: "Skips PreToolUse; enforced only via tool.py pre-done, dod.py, and CI PR gates",
+        ceStatus: "Supported via CI & tool.py pre-done (#8051)",
+        refs: ["https://github.com/ShaftHQ/SHAFT_ENGINE/issues/8051", "https://www.npmjs.com/search?q=keywords:grok-build"]
+      },
+      {
+        client: "Google Antigravity (agy CLI, App 2.0, IDE, Python SDK)",
+        cli: "agy, agy mcp list, /hooks; Antigravity App (Manager/Editor/Playground); Python SDK LocalConnection",
+        instructions: "AGENTS.md, GEMINI.md, .agents/rules/*.md (24 KB limit), ~/.gemini/config/rules/*.md (.agent/workflows deprecated)",
+        hooks: "~/.gemini/config/hooks.json, .agents/hooks.json, plugin hooks.json (NO system hooks); SDK hook classes",
+        contract: "command only (30s default); 6 JSON events (Pre/PostInvocation & Stop take direct arrays); no UserPromptSubmit blocker; SDK 3-tier hooks",
+        ceStatus: "Gap (not in README clients; inherits AGENTS.md/GEMINI.md passively)",
+        refs: ["https://antigravity.google/docs/hooks/", "https://antigravity.google/docs/rules/", "https://docs.neuraltrust.ai/integrations/antigravity", "https://github.com/google-antigravity/antigravity-sdk-python/blob/main/google/antigravity/hooks/README.md"]
+      },
+      {
+        client: "Gemini CLI",
+        cli: "gemini",
+        instructions: "GEMINI.md",
+        hooks: ".gemini/settings.json, ~/.gemini/settings.json (hooks.*)",
+        contract: "11 Before*/After* PascalCase events (v0.38.2) including BeforeModel, AfterModel, BeforeToolSelection",
+        ceStatus: "Gap (GEMINI.md has CE block only per #6178)",
+        refs: ["https://geminicli.com/docs/reference/configuration/", "https://github.com/shanraisshan/gemini-cli-hooks", "https://github.com/ShaftHQ/SHAFT_ENGINE/issues/6178"]
+      },
+      {
+        client: "GitHub Copilot (CLI, VS Code, Desktop, Cloud Agent, SDK)",
+        cli: "copilot (-p, plugin install, /model); VS Code Chat/Agents (/hooks); GitHub Actions Cloud Agent",
+        instructions: ".github/copilot-instructions.md, ~/.copilot/copilot-instructions.md, custom agent frontmatter hooks",
+        hooks: ".github/hooks/*.json, ~/.copilot/hooks/*.json, .github/copilot/settings*.json, .claude/settings*.json, plugin hooks.json",
+        contract: "command, http (frontmatter), CLI sessionStart prompt hooks; VS Code PascalCase (8 events) vs. CLI camelCase (7 events); Stop consumes extra premium request",
+        ceStatus: "Unverified / Partial (Client listed in README; no .github/hooks generator verified)",
+        refs: ["https://docs.github.com/en/copilot/reference/hooks-reference", "https://code.visualstudio.com/docs/agent-customization/hooks", "https://github.com/github/copilot-sdk/blob/main/docs/hooks/hooks-overview.md", "https://github.com/github/copilot-cli/issues/1730"]
+      },
+      {
+        client: "Cursor (Editor & CLI)",
+        cli: "Cursor IDE, Cursor CLI (& Cloud Handoff)",
+        instructions: "AGENTS.md, .cursor/permissions.json, .cursor/mcp.json",
+        hooks: ".cursor/hooks.json",
+        contract: "camelCase events (workspaceOpen, preToolUse, beforeShellExecution, afterFileEdit); #172939 workspaceOpen reload race",
+        ceStatus: "Gap (GAP-CURSOR-HOOKS; instruction-only via AGENTS.md)",
+        refs: ["https://forum.cursor.com/t/project-workspaceopen-hook-never-runs-the-event-fires-during-a-hooks-config-reload-before-project-hooks-are-registered/172939", "https://github.com/ShaftHQ/SHAFT_ENGINE/issues/8051"]
+      },
+      {
+        client: "OpenCode",
+        cli: "opencode (/init)",
+        instructions: "AGENTS.md",
+        hooks: "~/.config/opencode/plugins/*.ts",
+        contract: "TypeScript plugin functions: execute.before (2.0) and tool.execute.before (1.x >= 1.18.29)",
+        ceStatus: "Gap (GAP-OPENCODE-HOOKS; instruction-only via AGENTS.md)",
+        refs: ["https://www.rtk-ai.app/docs/getting-started/supported-agents/", "https://github.com/ShaftHQ/SHAFT_ENGINE/issues/8051"]
+      }
+    ];
+
+    const INTELLIJ_TOP10_DATA = [
+      {
+        name: "Claude Code (JetBrains Plugin + CLI/Desktop)",
+        rank: "#1 in Oct 2026 blog survey summary (65.5% usage share); 131,380 repo stars",
+        intellij: "Official JetBrains plugin documented",
+        mechanism: "Shares CLAUDE.md/AGENTS.md & .claude/settings.json 33-event runtime; JetBrains-specific plugin hook API unverified in retrieved docs",
+        evidence: "JetBrains surface confirmed; plugin-specific hook docs absent",
+        ce: "CLAUDE.md + guard.py when invoking Claude runtime"
+      },
+      {
+        name: "OpenAI Codex",
+        rank: "#2 in Oct 2026 blog survey summary; 131k CLI stars (Oct 2026)",
+        intellij: "No IntelliJ plugin documented (CLI, Desktop app, IDE ext)",
+        mechanism: "CLI 5-event hooks.json; Desktop manual plugin hooks",
+        evidence: "High for CLI; desktop plugin event list & JetBrains presence unverified",
+        ce: ".codex/hooks.json wired for Pre/PostToolUse (#5000)"
+      },
+      {
+        name: "GitHub Copilot",
+        rank: "#3 in Oct 2026 blog survey summary (58.7% usage share)",
+        intellij: "JetBrains & Visual Studio extensions exist",
+        mechanism: "VS Code/Desktop/CLI/Cloud share .github/hooks/*.json; JetBrains plugin local hook execution unverified in retrieved docs",
+        evidence: "High for VS Code/CLI/SDK; JetBrains Copilot hook spec not retrieved",
+        ce: "Listed in README; .github/hooks generator unverified"
+      },
+      {
+        name: "Cursor",
+        rank: "#4 in Oct 2026 blog survey summary",
+        intellij: "None (VS Code fork + Cursor CLI)",
+        mechanism: ".cursor/hooks.json (4 camelCase events verified in bug report & RTK)",
+        evidence: "Partial (4 events verified; full Cursor reference not retrieved)",
+        ce: "GAP-CURSOR-HOOKS (instruction-only)"
+      },
+      {
+        name: "Google Antigravity",
+        rank: "#5 in Oct 2026 blog survey summary (16% tried)",
+        intellij: "No IntelliJ plugin documented (Antigravity IDE, App 2.0, CLI)",
+        mechanism: "6 JSON events + 5 Python SDK hooks",
+        evidence: "High (antigravity.google/docs/hooks + SDK README)",
+        ce: "Not implemented"
+      },
+      {
+        name: "Devin (Devin Desktop / Windsurf)",
+        rank: "#6 in Oct 2026 blog survey summary",
+        intellij: "Not documented in retrieved sources",
+        mechanism: "Rules files (prompt-level; no transparent hook rewriting in RTK matrix)",
+        evidence: "Low (no hook runtime spec retrieved)",
+        ce: "Instruction-only fallback"
+      },
+      {
+        name: "OpenCode",
+        rank: "#7 in survey summary; #1 OSS at 222k stars (Oct 2026)",
+        intellij: "IDE extension exists (IntelliJ not explicitly named)",
+        mechanism: "TypeScript plugin execute.before / tool.execute.before",
+        evidence: "Confirmed via RTK integration docs",
+        ce: "GAP-OPENCODE-HOOKS (instruction-only)"
+      },
+      {
+        name: "Gemini CLI",
+        rank: "#8 in survey summary; 109k stars (Oct 2026)",
+        intellij: "None (CLI)",
+        mechanism: "11 Before*/After* hooks in .gemini/settings.json",
+        evidence: "High (geminicli.com + gemini-cli-hooks v0.38.2)",
+        ce: "GEMINI.md block only (#6178)"
+      },
+      {
+        name: "Cline (and archived Roo Code)",
+        rank: "#9 in survey summary; 71k stars (Oct 2026)",
+        intellij: "VS Code + CLI + SDK (IntelliJ not listed)",
+        mechanism: "Rules file only; UI approval checkpoints",
+        evidence: "Confirmed prompt-level only in RTK matrix",
+        ce: "CI/CLI gate fallback"
+      },
+      {
+        name: "Kiro / Grok Build / Goose / Aider / OpenHands / Continue / Kilo / Junie / Q / SHAFT-IntelliJ",
+        rank: "#10 (Kiro) + 26.7k* Grok Build + Top OSS & JetBrains Ecosystem",
+        intellij: "Continue (36k*), Kilo Code, Amazon Q, JetBrains Junie, and shaft-intellij target JetBrains IDEs",
+        mechanism: "Grok Build (14 JSON events); Pi/OMP (tool_call), OpenClaw (before_tool_call), Trae/Droid (PreToolUse), Vibe (pre_tool), Hermes (Python); no JetBrains lifecycle hook API documented",
+        evidence: "Explicit evidence gap for JetBrains plugin hook APIs",
+        ce: "shaft-mcp + tool.py pre-done + CI PR gate"
+      }
+    ];
+
+    const GAP_CARDS = [
+      {
+        title: "Gap 1: Unexposed files in hooks/ & plugin-adapters/",
+        badge: "b-part",
+        badgeText: "Repo Visibility",
+        points: [
+          "Root tree confirms hooks/ and plugin-adapters/ directories exist in ShaftHQ/chaosengine-harness.",
+          "Issue records explicitly confirm hooks/guard.py, hooks/reflection.py, secret_guard.py, and overlay_pre_push.py.",
+          "Remaining internal modules inside hooks/ and the exact 8 event names inside .grok/hooks/lifecycle.json were not exposed in scraped pages."
+        ]
+      },
+      {
+        title: "Gap 2: IntelliJ IDEA Plugin Hook APIs Unverified",
+        badge: "b-gap",
+        badgeText: "Docs Gap",
+        points: [
+          "JetBrains plugins exist for Claude Code, GitHub Copilot, Continue, Kilo Code, Amazon Q, Junie, and shaft-intellij.",
+          "Codex, Grok Build, and Antigravity have NO documented IntelliJ IDEA plugin in retrieved 2026 sources.",
+          "No primary JetBrains plugin hook runtime specification was retrieved, preventing claim of local hook execution parity with VS Code/CLI."
+        ]
+      },
+      {
+        title: "Gap 3: Host Parity Drift in ChaosEngine hosts.py",
+        badge: "b-part",
+        badgeText: "Active Tech Debt",
+        points: [
+          "Cursor (GAP-CURSOR-HOOKS) and OpenCode (GAP-OPENCODE-HOOKS) remain instruction-only in #8051/#6178 despite having native hook/plugin APIs.",
+          "Grok .grok/hooks/lifecycle.json (#5354) covers 8 events vs. 14 in docs.x.ai (July 2026); Grok passive events fail open and discard stdout.",
+          "Codex CLI lacks PostToolUseFailure (#5000), and its desktop plugin hooks are isolated to manually installed plugins."
+        ]
+      },
+      {
+        title: "Gap 4: Copilot Dual-Casing & Billing Trap",
+        badge: "b-part",
+        badgeText: "Casing & Billing",
+        points: [
+          "VS Code Copilot loads PascalCase (.claude/settings.json) while Copilot CLI uses camelCase (.github/hooks/*.json).",
+          "Registering both casings causes double hook execution; CLI bugs #1730 and #2540 break sessionStart and plugin hooks on affected versions.",
+          "Blocking inside Copilot Stop hooks consumes an additional premium request per continuation turn."
+        ]
+      }
+    ];
+
+    const REFS_DATA = [
+      { cat: "ChaosEngine Repo", title: "ShaftHQ/chaosengine-harness", url: "https://github.com/ShaftHQ/chaosengine-harness", note: "Root structure, entry points, supported clients, dod.py, VERSION" },
+      { cat: "ChaosEngine Issue", title: "SHAFT_ENGINE#5000 — Reflection & Codex vs Claude parity", url: "https://github.com/ShaftHQ/SHAFT_ENGINE/issues/5000", note: "Confirms .codex/hooks.json, guard.py, reflection.py, Codex missing PostToolUseFailure" },
+      { cat: "ChaosEngine Issue", title: "SHAFT_ENGINE#5354 — Runtime, Grok 8-event lifecycle & probes", url: "https://github.com/ShaftHQ/SHAFT_ENGINE/issues/5354", note: "Confirms Python 3.11.15, .grok/hooks/lifecycle.json (8 events), guard.py probes" },
+      { cat: "ChaosEngine Issue", title: "SHAFT_ENGINE#7860 — Claude Desktop Stop loop fix", url: "https://github.com/ShaftHQ/SHAFT_ENGINE/issues/7860", note: "Confirms _stop_block_reason + stop_hook_active ordering in Claude Desktop Code tab" },
+      { cat: "ChaosEngine Issue", title: "SHAFT_ENGINE#8051 — Mechanical tool.py & CI gates", url: "https://github.com/ShaftHQ/SHAFT_ENGINE/issues/8051", note: "Confirms GAP-CURSOR-HOOKS, GAP-OPENCODE-HOOKS, hookless bots, pre-done, harness_pr_gate.py" },
+      { cat: "ChaosEngine Issue", title: "SHAFT_ENGINE#8032 — Open-PR PreToolUse gate spec", url: "https://github.com/ShaftHQ/SHAFT_ENGINE/issues/8032", note: "Proposes extending hooks/guard.py PreToolUse on gh pr create/ready/reopen" },
+      { cat: "ChaosEngine Issue", title: "SHAFT_ENGINE#6178 — Host parity & GEMINI.md", url: "https://github.com/ShaftHQ/SHAFT_ENGINE/issues/6178", note: "Confirms GEMINI.md CE block only and Cursor/OpenCode absence from hosts.py" },
+      { cat: "Official Docs", title: "Claude Code Hooks Reference (33 events)", url: "https://code.claude.com/docs/en/hooks", note: "Primary specification for all 33 Claude Code lifecycle hooks" },
+      { cat: "Official Docs", title: "OpenAI Codex Plugins & Standalone Hooks", url: "https://developers.openai.com/plugins/build/plugins", note: "Confirms lifecycle hooks for manually installed Codex desktop plugins only" },
+      { cat: "Official Docs", title: "OpenAI Codex Hooks Discovery", url: "https://learn.chatgpt.com/docs/hooks", note: "Standalone hooks.json discovery semantics" },
+      { cat: "Community Ref", title: "Codex CLI Hooks Reference & 5 Events", url: "https://agenticcontrolplane.com/blog/codex-cli-hooks-reference", note: "Trust hashing, allow_managed_hooks_only, updatedInput rejection" },
+      { cat: "Community Ref", title: "Codex CLI 5-Event Lifecycle Breakdown", url: "https://ai.sulat.com/codex-hooks-just-gave-you-back-complete-control-over-your-code-57d044bcae1b", note: "PR #14626 UserPromptSubmit, v0.117.0 Pre/PostToolUse, SessionStart, Stop" },
+      { cat: "Official Docs", title: "SpaceXAI Grok Build Hooks (14 events)", url: "https://docs.x.ai/build/features/hooks", note: "Primary Grok Build spec: 14 events, PreToolUse sole blocker, fail-open, Cursor compat" },
+      { cat: "Official Docs", title: "Google Antigravity Hooks & Rules", url: "https://antigravity.google/docs/hooks/", note: "Primary spec for 6 Antigravity JSON hooks, tool schemas, config paths" },
+      { cat: "Vendor Integration", title: "NeuralTrust Antigravity Hooks Deployment", url: "https://docs.neuraltrust.ai/integrations/antigravity", note: "Notes lack of pre-model prompt blocker and workspace hooks.json caveats" },
+      { cat: "Official SDK", title: "Google Antigravity Python SDK Hook Architecture", url: "https://github.com/google-antigravity/antigravity-sdk-python/blob/main/google/antigravity/hooks/README.md", note: "Inspect / Decide / Transform SDK hook classes" },
+      { cat: "Official Docs", title: "Gemini CLI Configuration & 11 Hooks", url: "https://geminicli.com/docs/reference/configuration/", note: "hooks.BeforeTool / AfterTool reference (paired with gemini-cli-hooks v0.38.2)" },
+      { cat: "Official Docs", title: "GitHub Copilot Hooks & VS Code Docs", url: "https://docs.github.com/en/copilot/reference/hooks-reference", note: "CLI, Cloud Agent, frontmatter hooks, VS Code shared harness, Copilot SDK" },
+      { cat: "Official SDK", title: "GitHub Copilot SDK Hooks Overview", url: "https://github.com/github/copilot-sdk/blob/main/docs/hooks/hooks-overview.md", note: "onPreToolUse, onPostToolUse, onSessionStart, prompt transformation hooks" },
+      { cat: "Issue / Bug", title: "Copilot CLI #1730 & #2540; Cursor #172939", url: "https://github.com/github/copilot-cli/issues/1730", note: "Documented sessionStart, plugin hook (#2540), and workspaceOpen (#172939) execution bugs" },
+      { cat: "Integration Map", title: "RTK Supported Agents Hook Matrix", url: "https://www.rtk-ai.app/docs/getting-started/supported-agents/", note: "Adapter mapping across 18 harnesses including OpenCode, Pi, OpenClaw, Trae, Droid, Vibe" }
+    ];
+
+    function loadState() {
+      try {
+        return JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+      } catch {
+        return {};
+      }
+    }
+
+    function saveState(state) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }
+
+    function getStatus(item, state) {
+      return state[item.id] || item.status;
+    }
+
+    function badgeForStatus(status) {
+      if (status === "Implemented") return '<span class="badge b-impl">Implemented</span>';
+      if (status === "Partial") return '<span class="badge b-part">Partial / Drift</span>';
+      if (status === "Planned") return '<span class="badge b-plan">Planned</span>';
+      return '<span class="badge b-gap">Gap / Missing</span>';
+    }
+
+    function badgeForParity(item) {
+      if (item.parity === "unique") return `<span class="badge b-uniq">${item.parityLabel}</span>`;
+      if (item.parity === "two") return `<span class="badge b-plan">${item.parityLabel}</span>`;
+      return `<span class="badge b-na">${item.parityLabel}</span>`;
+    }
+
+    function renderKPIs() {
+      const state = loadState();
+      const counts = { total: HOOK_DATA.length, Implemented: 0, Partial: 0, Planned: 0, Gap: 0, unique: 0 };
+      HOOK_DATA.forEach(item => {
+        const st = getStatus(item, state);
+        if (counts[st] !== undefined) counts[st]++;
+        if (item.parity === "unique") counts.unique++;
+      });
+
+      const pct = Math.round(((counts.Implemented + counts.Partial * 0.5) / counts.total) * 100);
+      const kpis = [
+        { label: "Canonical Hooks Tracked", value: counts.total, sub: "Across Claude, Codex, Grok, Antigravity, Gemini, Copilot, Top-10" },
+        { label: "ChaosEngine Implemented", value: counts.Implemented, sub: "Core guard.py events (UserPromptSubmit, Pre/PostToolUse, Stop)" },
+        { label: "Partial / Host Drift", value: counts.Partial, sub: "PostToolUseFailure (#5000), SubagentStart (#7390)" },
+        { label: "Unimplemented / Gap", value: counts.Gap + counts.Planned, sub: "Includes unverified host wiring & client-specific hooks" },
+        { label: "Client-Unique Events", value: counts.unique, sub: "19 Claude + 1 Cursor + 1 Gemini + 2 SDK-only hooks" },
+        { label: "Weighted Parity Score", value: pct + "%", sub: "Full = 1.0, Partial = 0.5 across 39 canonical events" }
+      ];
+
+      document.getElementById("kpiRow").innerHTML = kpis.map(k => `
+        <div class="kpi">
+          <div class="kpi-label">${k.label}</div>
+          <div class="kpi-value">${k.value}</div>
+          <div class="kpi-sub">${k.sub}</div>
+        </div>
+      `).join("");
+    }
+
+    function renderMatrix() {
+      const state = loadState();
+      const q = document.getElementById("searchInput").value.trim().toLowerCase();
+      const cat = document.getElementById("categoryFilter").value;
+      const stFilter = document.getElementById("statusFilter").value;
+      const parFilter = document.getElementById("parityFilter").value;
+
+      const filtered = HOOK_DATA.filter(item => {
+        const st = getStatus(item, state);
+        if (cat !== "all" && item.category !== cat) return false;
+        if (stFilter !== "all" && st !== stFilter) return false;
+        if (parFilter !== "all" && item.parity !== parFilter) return false;
+        if (q) {
+          const hay = [
+            item.canonical, item.desc, item.claude, item.codex, item.grok,
+            item.antigravity, item.gemini, item.copilot, item.other, item.ceImpl, item.parityLabel
+          ].join(" ").toLowerCase();
+          if (!hay.includes(q)) return false;
+        }
+        return true;
+      });
+
+      document.getElementById("matrixCount").textContent = `Showing ${filtered.length} of ${HOOK_DATA.length} canonical events`;
+
+      document.getElementById("matrixBody").innerHTML = filtered.map(item => {
+        const currentStatus = getStatus(item, state);
+        const linksHtml = item.ceRefs.map(u => {
+          const label = u.includes("issues/") ? "#" + u.split("issues/")[1] : new URL(u).hostname.replace("www.", "");
+          return `<a href="${u}" target="_blank" rel="noopener">${label}</a>`;
+        }).join(" · ");
+
+        return `
+          <tr>
+            <td>
+              <strong>${item.canonical}</strong>
+              <div class="muted small">${item.category} · ${item.desc}</div>
+            </td>
+            <td>${badgeForParity(item)}</td>
+            <td><code>${item.claude}</code></td>
+            <td><code>${item.codex}</code></td>
+            <td><code>${item.grok}</code></td>
+            <td><code>${item.antigravity}</code></td>
+            <td><code>${item.gemini}</code></td>
+            <td>${item.copilot === "—" ? "—" : `<code>${item.copilot}</code>`}</td>
+            <td>${item.other === "—" ? "—" : `<span class="small">${item.other}</span>`}</td>
+            <td>
+              <div class="cell-list">
+                <span>${item.ceImpl}</span>
+                <span class="small">${linksHtml}</span>
+              </div>
+            </td>
+            <td>
+              <div class="cell-list">
+                ${badgeForStatus(currentStatus)}
+                <select class="status-select" data-id="${item.id}">
+                  <option value="Implemented" ${currentStatus === "Implemented" ? "selected" : ""}>Implemented</option>
+                  <option value="Partial" ${currentStatus === "Partial" ? "selected" : ""}>Partial</option>
+                  <option value="Planned" ${currentStatus === "Planned" ? "selected" : ""}>Planned</option>
+                  <option value="Gap" ${currentStatus === "Gap" ? "selected" : ""}>Gap</option>
+                </select>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join("");
+
+      document.querySelectorAll(".status-select").forEach(sel => {
+        sel.addEventListener("change", e => {
+          const next = loadState();
+          next[e.target.dataset.id] = e.target.value;
+          saveState(next);
+          renderKPIs();
+          renderMatrix();
+        });
+      });
+    }
+
+    function renderEntryPoints() {
+      document.getElementById("entryBody").innerHTML = ENTRY_DATA.map(row => {
+        const refs = row.refs.map(u => `<a href="${u}" target="_blank" rel="noopener">${u}</a>`).join("<br>");
+        return `
+          <tr>
+            <td><strong>${row.client}</strong></td>
+            <td>${row.cli}</td>
+            <td><code>${row.instructions}</code></td>
+            <td><code>${row.hooks}</code></td>
+            <td>${row.contract}</td>
+            <td><strong>${row.ceStatus}</strong></td>
+            <td class="small">${refs}</td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    function renderTop10AndIntelliJ() {
+      document.getElementById("intellijCards").innerHTML = [
+        {
+          title: "JetBrains / IntelliJ Plugins Confirmed in Sources",
+          badge: '<span class="badge b-part">6 Agents + SHAFT</span>',
+          items: [
+            "Claude Code (JetBrains plugin alongside CLI, Desktop, VS Code, Web).",
+            "GitHub Copilot (JetBrains & Visual Studio extensions alongside VS Code & CLI).",
+            "Continue (36k stars), Kilo Code, Amazon Q Developer, and JetBrains Junie.",
+            "SHAFT IntelliJ plugin (shaft-intellij) for SHAFT_ENGINE Java automation."
+          ]
+        },
+        {
+          title: "Missing / Unverified IntelliJ Plugin Hook Specs",
+          badge: '<span class="badge b-gap">Evidence Boundary</span>',
+          items: [
+            "Codex, Grok Build, and Antigravity have NO documented IntelliJ IDEA plugin in retrieved 2026 sources.",
+            "No primary JetBrains plugin hook documentation was retrieved for Claude, Copilot, Continue, Kilo, Q, or Junie.",
+            "Local IntelliJ hook parity must be treated as UNVERIFIED until tested in a live JetBrains IDE host."
+          ]
+        }
+      ].map(c => `
+        <div class="card">
+          <h3><span>${c.title}</span>${c.badge}</h3>
+          <ul>${c.items.map(i => `<li>${i}</li>`).join("")}</ul>
+        </div>
+      `).join("");
+
+      document.getElementById("top10Body").innerHTML = INTELLIJ_TOP10_DATA.map(r => `
+        <tr>
+          <td><strong>${r.name}</strong></td>
+          <td>${r.rank}</td>
+          <td>${r.intellij}</td>
+          <td>${r.mechanism}</td>
+          <td>${r.evidence}</td>
+          <td>${r.ce}</td>
+        </tr>
+      `).join("");
+    }
+
+    function renderGapsAndRefs() {
+      document.getElementById("gapCards").innerHTML = GAP_CARDS.map(g => `
+        <div class="card">
+          <h3><span>${g.title}</span><span class="badge ${g.badge}">${g.badgeText}</span></h3>
+          <ul>${g.points.map(p => `<li>${p}</li>`).join("")}</ul>
+        </div>
+      `).join("");
+
+      document.getElementById("refsBody").innerHTML = REFS_DATA.map(r => `
+        <tr>
+          <td><span class="badge b-na">${r.cat}</span></td>
+          <td><strong>${r.title}</strong></td>
+          <td><a href="${r.url}" target="_blank" rel="noopener">${r.url}</a></td>
+          <td>${r.note}</td>
+        </tr>
+      `).join("");
+    }
+
+    document.querySelectorAll(".tab-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+        document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+        btn.classList.add("active");
+        document.getElementById("tab-" + btn.dataset.tab).classList.add("active");
+      });
+    });
+
+    ["searchInput", "categoryFilter", "statusFilter", "parityFilter"].forEach(id => {
+      document.getElementById(id).addEventListener("input", renderMatrix);
+      document.getElementById(id).addEventListener("change", renderMatrix);
+    });
+
+    document.getElementById("exportJsonBtn").addEventListener("click", () => {
+      const state = loadState();
+      const payload = HOOK_DATA.map(item => ({ ...item, currentStatus: getStatus(item, state) }));
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "chaosengine-hook-tracker.json";
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    document.getElementById("resetStateBtn").addEventListener("click", () => {
+      localStorage.removeItem(STORAGE_KEY);
+      renderKPIs();
+      renderMatrix();
+    });
+
+    renderKPIs();
+    renderMatrix();
+    renderEntryPoints();
+    renderTop10AndIntelliJ();
+    renderGapsAndRefs();
+  </script>
+</body>
+</html>

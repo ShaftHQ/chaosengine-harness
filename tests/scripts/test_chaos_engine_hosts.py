@@ -5586,3 +5586,94 @@ class TokenEconomyWave2HostsParityTest(unittest.TestCase):
                 document = self.hosts.lifecycle_hooks_document(host, managed_python=managed).decode("utf-8")
                 self.assertNotIn(str(managed), document)
                 self.assertIn("python3", document)
+
+
+class Ws3HostSliceTest(unittest.TestCase):
+    def test_posix_centralized_wording_and_light_preference(self):
+        module = load(HOSTS, "chaos_engine_ws3_hosts")
+        detail = module.centralized_mempalace_status()["detail"]
+        if os.name == "nt":
+            self.assertIn("py -3 scripts/agents/knowledge_stores.py status", detail)
+        else:
+            self.assertIn("python3 scripts/agents/knowledge_stores.py status", detail)
+            self.assertNotIn("py -3", detail)
+        self.assertEqual(
+            [".chaos-engine/tool.py", "mempalace-mcp"],
+            module.mempalace_mcp_arguments(None),
+        )
+        with mock.patch.dict(os.environ, {"CHAOS_ENGINE_WITH_MCP": "1"}):
+            self.assertEqual(("--mcp", "light"), module.mempalace_mcp_light_preference(None))
+            self.assertEqual(
+                [".chaos-engine/tool.py", "mempalace-mcp"],
+                module.mempalace_mcp_arguments(None),
+            )
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("CHAOS_ENGINE_WITH_MCP", None)
+            self.assertEqual((), module.mempalace_mcp_light_preference(None))
+
+    def test_legacy_sidecars_and_external_palace_do_not_create_a_local_dir(self):
+        module = load(HOSTS, "chaos_engine_ws3_palace")
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary) / "proj"
+            project.mkdir()
+            palace = project / ".chaos-engine-state" / "mempalace"
+            palace.mkdir(parents=True)
+            create_sqlite_exact_state(palace / "sqlite_exact.sqlite3")
+            (palace / "documentation-pages.json").write_text("{}\n", encoding="utf-8")
+            (palace / ".chaos-engine-source-revision.json").write_text("{}\n", encoding="utf-8")
+            self.assertEqual("healthy", module.mempalace_directory_status(palace)["status"])
+            pages, revision = module.mempalace_sidecar_paths(palace)
+            self.assertEqual(palace.parent / "mempalace-documentation-pages.json", pages)
+            self.assertEqual(palace.parent / "mempalace-source-revision.json", revision)
+
+            outside = Path(temporary) / "shared"
+            outside.mkdir()
+            create_sqlite_exact_state(outside / "sqlite_exact.sqlite3")
+            fresh = Path(temporary) / "fresh"
+            fresh.mkdir()
+            (fresh / ".git").mkdir()
+            with mock.patch.dict(os.environ, {"CHAOS_ENGINE_MEMPALACE": str(outside)}):
+                state = module.mempalace_runtime_status(fresh)
+                self.assertEqual("healthy", state["status"])
+                module.initialize_mempalace_runtime(fresh)
+            self.assertFalse((fresh / ".chaos-engine-state" / "mempalace").exists())
+
+    def test_windows_mcp_python_warning_is_advisory(self):
+        module = load(HOSTS, "chaos_engine_ws3_windows")
+        with mock.patch.dict(os.environ, {"CHAOS_ENGINE_WITH_MCP": "1"}):
+            missing = module.windows_mcp_python_warning(
+                platform_name="nt", finder=lambda _name: None
+            )
+            self.assertEqual("sync-advisory", missing["status"])
+            self.assertEqual("advisory", missing["taskImpact"])
+            self.assertIn("python3-missing", missing["reason"])
+            stub = module.windows_mcp_python_warning(
+                platform_name="nt",
+                finder=lambda _name: r"C:\Users\dev\AppData\Local\Microsoft\WindowsApps\python3.exe",
+            )
+            self.assertIn("windows-store-stub", stub["reason"])
+            self.assertIsNone(
+                module.windows_mcp_python_warning(
+                    platform_name="posix", finder=lambda _name: None
+                )
+            )
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("CHAOS_ENGINE_WITH_MCP", None)
+            self.assertIsNone(
+                module.windows_mcp_python_warning(
+                    platform_name="nt", finder=lambda _name: None
+                )
+            )
+
+    def test_testing_rules_use_plan_scopes(self):
+        module = load(HOSTS, "chaos_engine_ws3_testing")
+        copilot = module.testing_rule_text(".github/instructions/testing.instructions.md")
+        claude = module.testing_rule_text(".claude/rules/testing.md")
+        cursor = module.testing_rule_text(".cursor/rules/testing.mdc")
+        self.assertIn('applyTo: "tests/**,src/test/**,*test*.*"', copilot)
+        self.assertIn('  - "tests/**"', claude)
+        self.assertIn('  - "src/test/**"', claude)
+        self.assertIn('  - "*test*.*"', claude)
+        self.assertIn('globs: "tests/**,src/test/**,*test*.*"', cursor)
+        self.assertIn("invalid partition", copilot)
+        self.assertIn(".chaos-engine/references/test-design.md", claude)

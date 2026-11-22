@@ -7,8 +7,8 @@ project read. It never blocks, never overwrites an existing receipt, and never
 fills the `retrieve:` field: the agent still records `used`, `skipped(<reason>)`
 or `exempt(harness)`, and the Learning Session keeps flagging a pending one.
 
-    ensure  --host cursor|opencode|copilot-cloud [--project DIR]   (Cursor: JSON on stdin)
-    install --host cursor|opencode [--project DIR]
+    ensure  --host cursor|opencode|antigravity|copilot-cloud [--project DIR]   (Cursor: JSON on stdin)
+    install --host cursor|opencode|antigravity [--project DIR]
 
 The installer wires these automatically for detected hosts (#6230).
 """
@@ -23,7 +23,7 @@ import time
 from pathlib import Path
 
 SINK = ".chaos-engine-state/research-receipt.md"
-SHIM_HOSTS = ("cursor", "opencode")
+SHIM_HOSTS = ("cursor", "opencode", "antigravity")
 # Copilot cloud has no project hook file; its setup-steps job runs `ensure` (#6218).
 SETUP_STEP_HOSTS = ("copilot-cloud",)
 INSTRUCTION_ONLY = ("grok-bot",)

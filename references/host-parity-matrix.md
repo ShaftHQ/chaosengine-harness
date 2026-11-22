@@ -109,6 +109,8 @@ No dedupe ships from these counts. `CE_HOOK_TRACE` stays off unless set, and one
 | Copilot | not measured | not measured | not measured | not-measured | No scripted Copilot count in this session. |
 | JetBrains | not measured | not measured | not measured | not-measured | No JetBrains plugin run in this session. |
 
+Live cursor-agent, Copilot, and JetBrains logins are blocking: unverifiable. This archive does not add trace lines for those hosts. Research copy: [2026-11-20 hook parity](../docs/research/2026-11-20-hook-parity/research-full.md).
+
 ## Official self-heal
 
 Doctor runs each required third party's **official install command** (or CE vendor rematerialize for Caveman/Ponytail) before agentic handoff. Inventory and heal wiring live in [`official_self_heal.py`](../runtime/official_self_heal.py) + `chaos-engine/INSTALL.md` (repo-only). Opt-out `--without-*` stays off. Parent epic:.

@@ -22,6 +22,7 @@ core; every host hook calls this module. Host adapters keep no second copy.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
@@ -94,6 +95,8 @@ _INSTRUCTION_MARKERS = (
     "/ce-pack/",
 )
 _STORE_HEADS = frozenset({"mempalace", "graphify"})
+# Bounded graph reads that pay retrieveOwed. diagnose and cluster-only do not.
+_GRAPH_CLEAR_COMMANDS = frozenset({"query", "explain", "affected", "path", "god-nodes"})
 _PY = frozenset({"py", "python", "python3"})
 _SHELL_PATH = re.compile(r"(?<![\w@])(/?\.?[\w.-]+(?:/[\w.-]+)+\.[\w.]+)")
 _JOB_LOG_DOWNLOAD = re.compile(
@@ -358,9 +361,22 @@ def _load_payload(project: Path) -> dict:
 
 
 def _write_payload(project: Path, payload: dict) -> None:
+    """Atomically replace the ledger. A crash must not leave a partial JSON file."""
     destination = receipt_path(project)
     destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    descriptor, temporary = tempfile.mkstemp(
+        dir=destination.parent,
+        prefix=".retrieve-justification.",
+        suffix=".tmp",
+    )
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+        os.replace(temporary, destination)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(temporary)
+        raise
 
 
 def _citable(project: Path, path: str) -> bool:
@@ -1457,6 +1473,16 @@ def _retrieve_attempt(segment: str) -> bool:
     return "mempalace" in folded and "search" in folded
 
 
+def _bounded_graph_read(segment: str) -> bool:
+    """Graphify query, explain, affected, path, or god-nodes. Not diagnose."""
+    folded = [item.casefold() for item in _tokens(segment)]
+    if "graphify" not in folded:
+        return False
+    if any(item in {"--help", "-h", "--dry-run"} for item in folded):
+        return False
+    return any(item in _GRAPH_CLEAR_COMMANDS for item in folded)
+
+
 def downloads_job_log(command: str) -> bool:
     """True when the command downloads a GitHub Actions job log, not a checkout file."""
     return _JOB_LOG_DOWNLOAD.search(command or "") is not None
@@ -1535,6 +1561,8 @@ def _shell_block(project: Path, commands: tuple[str, ...], session_id: str | Non
             for segment in _pipeline_parts(command):
                 if _retrieve_attempt(segment):
                     _mark_awaiting_receipt(project, session_id)
+                if _bounded_graph_read(segment):
+                    _mark_session(project, session_id, retrieved=True)
                 if _segment_reads_project(project, segment):
                     return BLOCK_REASON
             continue
@@ -1549,6 +1577,8 @@ def _shell_block(project: Path, commands: tuple[str, ...], session_id: str | Non
         for segment in _pipeline_parts(command):
             if _retrieve_attempt(segment):
                 _mark_awaiting_receipt(project, session_id)
+            if _bounded_graph_read(segment):
+                _mark_session(project, session_id, retrieved=True)
             if segment_kind(segment) != "read":
                 continue
             head, _arguments = _command_head(_tokens(segment))
@@ -1575,7 +1605,15 @@ def _input_paths(tool_input: dict) -> list[str]:
     return paths
 
 
-EDIT_TOOLS = frozenset({"Write", "Edit", "StrReplace", "MultiEdit"})
+# Normalized edit tools plus Codex apply_patch. Cursor and OpenCode are hook hosts.
+EDIT_TOOLS = frozenset({
+    "Write",
+    "Edit",
+    "StrReplace",
+    "MultiEdit",
+    "NotebookEdit",
+    "apply_patch",
+})
 IMPACT_EDIT_BLOCK = (
     "Impact receipt missing for this task area. "
     "Run `python3 .chaos-engine/tool.py retrieve --store graphify \"impact of this edit\"` "
@@ -1585,7 +1623,7 @@ STALE_EDIT_BLOCK = (
     "refresh first. The retrieve receipt does not cite this path or its index is stale. "
     "Run `python3 .chaos-engine/tool.py retrieve --store graphify \"impact of this edit\"`."
 )
-INSTRUCTION_ONLY_HOSTS = ("cursor", "opencode", "grok-bot")
+INSTRUCTION_ONLY_HOSTS = ("grok-bot",)
 
 
 def _scratch_edit(project: Path, tool_input: dict | None) -> bool:
@@ -1721,6 +1759,37 @@ def _receipt_covers(text: str, tool_input: dict | None) -> bool:
     return False
 
 
+def _git_lines(project: Path, *args: str) -> list[str]:
+    try:
+        completed = subprocess.run(  # nosec B603 - fixed git argv, no shell.
+            ["git", "-C", str(project), "-c", "core.quotepath=false", *args],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    if completed.returncode != 0:
+        return []
+    return [line.strip() for line in completed.stdout.splitlines() if line.strip()]
+
+
+def branch_delta_paths(project: Path) -> set[str]:
+    """Paths in the worktree, the index, or the branch delta against a base."""
+    found = set(_git_lines(project, "diff", "--name-only"))
+    found.update(_git_lines(project, "diff", "--name-only", "--cached"))
+    base = ""
+    for candidate in ("origin/HEAD", "main", "master"):
+        lines = _git_lines(project, "merge-base", "HEAD", candidate)
+        if lines:
+            base = lines[0]
+            break
+    if base:
+        found.update(_git_lines(project, "diff", "--name-only", f"{base}...HEAD"))
+    return {_norm(item) for item in found}
+
+
 def impact_edit_block_reason(
     *,
     project: Path,
@@ -1752,6 +1821,14 @@ def impact_edit_block_reason(
         return STALE_EDIT_BLOCK
     row = _live_sessions(_load_payload(project)).get(_session_key(session_id))
     if isinstance(row, dict) and row.get("retrieved"):
+        return None
+    edited = [
+        _norm(_project_relative(project, item))
+        for item in _input_paths(tool_input or {})
+    ]
+    edited = [item for item in edited if item]
+    if edited and all(item in branch_delta_paths(project) for item in edited):
+        _mark_session(project, session_id, retrieved=True)
         return None
     return IMPACT_EDIT_BLOCK
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 import tempfile
 import unittest
@@ -88,6 +89,59 @@ class CliOverMcpTests(unittest.TestCase):
         self.assertIn("actions.json", learn)
         research = (ROOT / "references/deep-research.md").read_text(encoding="utf-8")
         self.assertIn("deep_research.py", research)
+
+    def test_nine_hosts_and_report_only_tool_bytes(self):
+        hosts = {
+            "claude",
+            "codex",
+            "grok",
+            "gemini",
+            "copilot",
+            "opencode",
+            "cursor",
+            "antigravity",
+            "grok-bot",
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary) / "home"
+            home.mkdir()
+            mcp_ids = {host for host, _path in self.policy.user_mcp_paths(home)}
+            skill_ids = {host for host, _path in self.policy.user_skill_roots(home)}
+            self.assertTrue(hosts <= mcp_ids)
+            self.assertTrue(hosts <= skill_ids)
+            self.assertIn("agents", skill_ids)
+            self.assertIn("copilot-intellij", mcp_ids)
+            antigravity = dict(self.policy.user_mcp_paths(home))["antigravity"]
+            self.assertTrue(str(antigravity).endswith(".gemini/config/mcp_config.json"))
+            project = Path(temporary) / "proj"
+            settings = project / ".gemini" / "settings.json"
+            settings.parent.mkdir(parents=True)
+            settings.write_text(
+                json.dumps(
+                    {
+                        "mcpServers": {
+                            "mempalace": {
+                                "env": {"MEMPALACE_BACKEND": "chroma"},
+                                "tools": [{"name": "palace_query"}],
+                            }
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            overlay = load(ROOT / "runtime" / "overlay_match.py", "ce_overlay_cli_ws3")
+            mismatches = overlay.host_backend_mismatches(project)
+            self.assertTrue(
+                any(".gemini/settings.json" in item and "chroma" in item for item in mismatches)
+            )
+            clean = {"status": "healthy", "components": {}}
+            overlay.apply_mempalace_backend_doctor(clean, Path(temporary) / "empty")
+            row = clean["components"]["mcp-tool-bytes"]
+            self.assertEqual("healthy", clean["status"])
+            self.assertTrue(row["reportOnly"])
+            self.assertEqual("advisory", row["taskImpact"])
+            self.assertEqual("healthy", row["status"])
+            self.assertNotIn("windows-mcp-python", clean["components"])
 
 
 if __name__ == "__main__":
