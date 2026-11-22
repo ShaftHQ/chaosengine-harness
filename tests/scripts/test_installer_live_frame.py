@@ -399,9 +399,24 @@ def test_certificate_fix_next_names_the_macos_command() -> None:
         error,
         "python3 .chaos-engine/install.py",
     )
-    assert "Install Certificates.command" in hint
+    assert "SSL certificate verification failed" in hint
     assert "SSL_CERT_FILE" in hint
     assert "repair --project . --component hosts" not in hint
+    with unittest.mock.patch.object(BOOTSTRAP.sys, "platform", "linux"):
+        linux = BOOTSTRAP.next_fix_hint(
+            "CE-INSTALL-FAILED",
+            error,
+            "python3 .chaos-engine/install.py",
+        )
+    assert "Install Certificates.command" not in linux
+    with unittest.mock.patch.object(BOOTSTRAP.sys, "platform", "darwin"):
+        darwin = BOOTSTRAP.next_fix_hint(
+            "CE-INSTALL-FAILED",
+            error,
+            "python3 .chaos-engine/install.py",
+        )
+    assert "Install Certificates.command" in darwin
+    assert "SSL certificate verification failed" in darwin
 
 
 def _cursor_script(body: str) -> str:

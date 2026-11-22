@@ -356,13 +356,33 @@ def _identity_context_block(base: str, suffix: str = "") -> str:
     return fallback
 
 
+def _pinned_release_fetcher():
+    """Env pin or feed. None when the check should use the network fetcher."""
+    feed = os.environ.get("CHAOS_ENGINE_RELEASE_FEED", "").strip()
+    pinned = os.environ.get("CHAOS_ENGINE_RELEASE_VERSION", "").strip()
+    if not feed and not pinned:
+        return None
+
+    def fetcher():
+        if feed:
+            payload = Path(feed).read_text(encoding="utf-8")
+            try:
+                return json.loads(payload)
+            except json.JSONDecodeError:
+                return payload.strip()
+        return pinned
+
+    return fetcher
+
+
 def _note_session_start_update() -> str:
     """Ask whether a newer release exists. Never block and never rewrite files.
 
-    Pytest sets PYTEST_CURRENT_TEST; a real session does not, and that is when
-    the check may use the network.
+    Pytest sets PYTEST_CURRENT_TEST. Skip the network then. A pin or feed
+    still reports, so one call site covers both the session and the tests.
     """
-    if os.environ.get("PYTEST_CURRENT_TEST"):
+    fetcher = _pinned_release_fetcher()
+    if os.environ.get("PYTEST_CURRENT_TEST") and fetcher is None:
         return ""
     path = _overlay_module("update_check.py")
     if not path.is_file():
@@ -375,10 +395,16 @@ def _note_session_start_update() -> str:
             return ""
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        status = module.session_start_update_check()
+        confirm = os.environ.get("CHAOS_ENGINE_APPLY_UPDATE", "").strip() == "1"
+        if fetcher is None:
+            status = module.session_start_update_check()
+        else:
+            status = module.session_start_update_check(fetcher, confirm=confirm)
     except Exception:
         return ""
-    if isinstance(status, str) and status.startswith("update available:"):
+    if isinstance(status, str) and (
+        status.startswith("update available:") or status.startswith("update confirmed:")
+    ):
         return "ChaosEngine " + status
     return ""
 

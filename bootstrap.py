@@ -6974,11 +6974,14 @@ def next_fix_hint(code: str, error: BaseException, prefix: str | None) -> str:
         or "certificate_verify_failed" in cause
         or "ssl certificate verification failed" in cause
     ):
-        return (
-            "SSL certificate verification failed — on macOS python.org builds run "
-            '"/Applications/Python 3.x/Install Certificates.command", or set SSL_CERT_FILE, '
-            + rerun
-        )
+        if sys.platform == "darwin":
+            hint = (
+                "on macOS python.org builds run "
+                '"/Applications/Python 3.x/Install Certificates.command", or set SSL_CERT_FILE, '
+            )
+        else:
+            hint = "set SSL_CERT_FILE to a CA bundle this Python trusts, "
+        return "SSL certificate verification failed (" + one_line_cause(error) + ") — " + hint + rerun
     if _still_unpacking_account_timeout(error):
         return (
             "the command exceeded its budget while work was still in progress; "

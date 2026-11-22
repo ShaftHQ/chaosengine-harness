@@ -48,6 +48,7 @@ class NightlyEvidenceCloseTest(unittest.TestCase):
             "closing_keyword_in_product_pr": False,
             "partial_jobs_dispatch": False,
             "runner": self.runner,
+            "branch_reader": lambda _repo, _sha: True,
         }
         payload.update(overrides)
         return self.mindset.close_nightly_failure_tracker(**payload)
@@ -94,6 +95,7 @@ class NightlyEvidenceCloseTest(unittest.TestCase):
             cause_on_main=True,
             fixing_sha=SHA,
             failing_run=RUN,
+            branch_reader=lambda _repo, _sha: True,
         )
         self.assertEqual("evidence-close", decision["action"])
         self.assertEqual(1, len(decision["commands"]))
@@ -107,6 +109,21 @@ class NightlyEvidenceCloseTest(unittest.TestCase):
         closed = self._close()
         self.assertEqual([command], self.calls)
         self.assertEqual("evidence-close", closed["action"])
+
+    def test_a_failed_branch_read_leaves_the_issue_open(self):
+        decision = self.mindset.decide_nightly_failure_close(
+            repo="example/widgets",
+            number=8101,
+            cause_on_main=True,
+            fixing_sha=SHA,
+            failing_run=RUN,
+            branch_reader=lambda _repo, _sha: False,
+        )
+        self.assertEqual("leave-open", decision["action"])
+        self.assertEqual([], decision["commands"])
+        closed = self._close(branch_reader=lambda _repo, _sha: (_ for _ in ()).throw(OSError("down")))
+        self.assertEqual("leave-open", closed["action"])
+        self.assertEqual([], self.calls)
 
     def test_later_red_nightly_is_not_blocked(self):
         text = re.sub(

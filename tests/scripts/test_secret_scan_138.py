@@ -51,6 +51,20 @@ class SecretAssignmentTest(unittest.TestCase):
         numbered = self.rules.evaluate_secrets_text("password = hunter2\n", kind="commit")
         self.assertIn("password-in-commit", numbered["hits"])
 
+    def test_alphabetic_password_and_token_literals_still_match(self):
+        for line in (
+            "password = letmein\n",
+            "token = supersecret\n",
+            "PASSWORD=supersecret\n",
+            'password = "letmein"\n',
+        ):
+            result = self.rules.evaluate_secrets_text(line, kind="commit")
+            self.assertIn("password-in-commit", result["hits"], line)
+
+    def test_short_token_identifier_is_not_a_password(self):
+        result = self.rules.evaluate_secrets_text("token = entry\n", kind="commit")
+        self.assertNotIn("password-in-commit", result["hits"])
+
 
 class RemovedCommitLineTest(unittest.TestCase):
     def test_add_then_delete_does_not_stay_red(self):

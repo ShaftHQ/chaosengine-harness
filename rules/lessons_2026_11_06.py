@@ -30,7 +30,7 @@ def _load_sibling(name: str):
 _SECRET = re.compile(
     r"\b(?:ghp_[A-Za-z0-9]{8,}|github_pat_[A-Za-z0-9_]{8,}|AKIA[0-9A-Z]{16}|xox[baprs]-[A-Za-z0-9-]{8,})\b"
 )
-_PASSWORD = re.compile(r"\b(?:password|token)[ \t]*[:=][ \t]*(\S+)", re.I)
+_PASSWORD = re.compile(r"\b(password|token)[ \t]*[:=][ \t]*(\S+)", re.I)
 _PLACEHOLDER_VALUE = re.compile(
     r"^(?:#.*|//.*|\$(?:\{[^}]*\}|\w+)|<[^>]*>|changeme|placeholder|todo|\*+|x{3,}|your_token|['\"]+)$",
     re.I,
@@ -46,20 +46,28 @@ _BARE_NAME = re.compile(r"^[A-Za-z_][\w]*$")
 _JWT = re.compile(r"eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}")
 
 
-def _credential_looking(value: str) -> bool:
-    """An expression or a plain name is not a credential. A digit in a bare name is."""
+def _credential_looking(value: str, key: str) -> bool:
+    """A code expression is not a credential. A bare password literal still is.
+
+    ``token = entry`` is a variable. ``token = supersecret`` and
+    ``password = letmein`` are literals. A digit in a bare name is a literal.
+    """
     if _CODE_EXPR.match(value):
         return False
     if _BARE_NAME.match(value):
-        return any(char.isdigit() for char in value)
+        if any(char.isdigit() for char in value):
+            return True
+        if value.isalpha() and value.islower() and len(value) >= 7:
+            return True
+        return key.casefold() == "password"
     return True
 
 
 def _password_hit(text: str) -> bool:
     """True for a credential assignment. Expressions, placeholders, and the next line are not."""
     for match in _PASSWORD.finditer(text or ""):
-        value = match.group(1)
-        if _PLACEHOLDER_VALUE.match(value) or not _credential_looking(value):
+        key, value = match.group(1), match.group(2)
+        if _PLACEHOLDER_VALUE.match(value) or not _credential_looking(value, key):
             continue
         return True
     return False

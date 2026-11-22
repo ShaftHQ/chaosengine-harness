@@ -2619,12 +2619,20 @@ class ChaosEngineDependenciesTest(unittest.TestCase):
         with mock.patch.object(module.time, "sleep"), mock.patch.object(
             module, "resolve_stable_version", side_effect=opener
         ):
-            actions = module.resolve_account_actions(specification, local, opener=opener)
+            with mock.patch.object(module.sys, "platform", "linux"):
+                actions = module.resolve_account_actions(specification, local, opener=opener)
+            with mock.patch.object(module.sys, "platform", "darwin"):
+                fresh = {name: dict(row) for name, row in local.items()}
+                darwin_actions = module.resolve_account_actions(specification, fresh, opener=opener)
         reason = module.describe_blocked_dependencies(actions)
-        self.assertIn("Install Certificates.command", reason)
+        self.assertIn("CERTIFICATE_VERIFY_FAILED", reason)
         self.assertIn("SSL_CERT_FILE", reason)
+        self.assertNotIn("Install Certificates.command", reason)
         self.assertNotIn("lookup failed: URLError)", reason)
         self.assertNotIn("repair --project . --component hosts", reason)
+        darwin = module.describe_blocked_dependencies(darwin_actions)
+        self.assertIn("CERTIFICATE_VERIFY_FAILED", darwin)
+        self.assertIn("Install Certificates.command", darwin)
 
     def test_probe_health_detail_keeps_the_error_reason(self):
         module = load_controller()
@@ -2642,9 +2650,15 @@ class ChaosEngineDependenciesTest(unittest.TestCase):
         def cert(*_args, **_kwargs):
             raise urllib.error.URLError(ssl.SSLCertVerificationError(1, "CERTIFICATE_VERIFY_FAILED"))
 
-        certified = module.probe_account_dependency("graphify", "/bin/true", contract, runner=cert)
-        self.assertIn("Install Certificates.command", certified["detail"])
+        with mock.patch.object(module.sys, "platform", "linux"):
+            certified = module.probe_account_dependency("graphify", "/bin/true", contract, runner=cert)
+        self.assertIn("CERTIFICATE_VERIFY_FAILED", certified["detail"])
         self.assertIn("SSL_CERT_FILE", certified["detail"])
+        self.assertNotIn("Install Certificates.command", certified["detail"])
+        with mock.patch.object(module.sys, "platform", "darwin"):
+            darwin = module.probe_account_dependency("graphify", "/bin/true", contract, runner=cert)
+        self.assertIn("Install Certificates.command", darwin["detail"])
+        self.assertIn("CERTIFICATE_VERIFY_FAILED", darwin["detail"])
 
     def test_dependency_tests_are_reached_by_pull_request_gate(self):
         budget = json.loads(

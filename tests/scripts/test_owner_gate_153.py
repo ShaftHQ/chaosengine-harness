@@ -78,6 +78,34 @@ class OwnerGateTest(unittest.TestCase):
         source = (ROOT / "runtime" / "owner_gate.py").read_text(encoding="utf-8")
         self.assertNotIn("while ", source)
 
+    def test_apply_persists_the_blocker_once(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "owner-gate.json"
+            first = self.gate.apply_owner_gate(
+                path,
+                blocker="rendered proof for Windows Terminal",
+                session_can_create=False,
+                only_remaining=True,
+            )
+            self.assertTrue(first["record"])
+            self.assertTrue(first["end_goal"])
+            second = self.gate.apply_owner_gate(
+                path,
+                blocker="rendered proof for Windows Terminal",
+                session_can_create=False,
+                only_remaining=True,
+            )
+            self.assertFalse(second["record"])
+            self.assertTrue(second["end_goal"])
+            self.assertFalse(second["new_work"])
+            self.assertEqual("", second["ask"])
+
+    def test_stop_path_calls_the_gate(self):
+        source = (ROOT / "hooks" / "guard.py").read_text(encoding="utf-8")
+        self.assertIn("apply_owner_gate", source)
+
     def test_delivery_references_point_at_the_gate(self):
         for relative in (
             "references/delivery-cycle.md",

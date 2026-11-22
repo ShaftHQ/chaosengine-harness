@@ -3383,11 +3383,36 @@ def _post_tool_activity(event: dict, event_name: str, commands: tuple, session_i
         )
 
 
+def _owner_gate_allows_stop(event: dict, reason: str) -> bool:
+    """An owner-only artifact recorded once ends the goal instead of polling Stop."""
+    path = _overlay_module("owner_gate.py")
+    if not path.is_file() or not reason:
+        return False
+    spec = importlib.util.spec_from_file_location("chaos_engine_owner_gate", path)
+    if spec is None or spec.loader is None:
+        return False
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    state = Path(str(event.get("cwd") or Path.cwd())) / ".chaos-engine-state" / "owner-gate.json"
+    try:
+        decision = module.apply_owner_gate(
+            state,
+            blocker=reason,
+            session_can_create=False,
+            only_remaining=True,
+        )
+    except (OSError, TypeError, ValueError):
+        return False
+    return bool(decision.get("end_goal"))
+
+
 def _stop_block(event: dict, event_name: str, tool_name: str, session_id: str) -> int | None:
     if event_name not in {"Stop", "SubagentStop"}:
         return None
     reason = _stop_block_reason(event, session_id)
     if reason:
+        if _owner_gate_allows_stop(event, reason):
+            return None
         return _deny(event, event_name, tool_name, reason)
     return None
 
@@ -3497,58 +3522,6 @@ def _session_end_retrospective(event: dict, event_name: str) -> int | None:
     return 0
 
 
-def _read_installed_version(cwd: Path) -> str:
-    for candidate in (cwd / "VERSION", Path(__file__).resolve().parents[1] / "VERSION"):
-        try:
-            text = candidate.read_text(encoding="utf-8").strip()
-        except OSError:
-            continue
-        if text:
-            return text
-    return ""
-
-
-def _release_fetcher(installed: str):
-    """Local pin only. No network. An unset pin reports the installed version."""
-
-    def fetcher():
-        feed = os.environ.get("CHAOS_ENGINE_RELEASE_FEED", "").strip()
-        if feed:
-            payload = Path(feed).read_text(encoding="utf-8")
-            try:
-                return json.loads(payload)
-            except json.JSONDecodeError:
-                return payload.strip()
-        pinned = os.environ.get("CHAOS_ENGINE_RELEASE_VERSION", "").strip()
-        if pinned:
-            return pinned
-        return installed
-
-    return fetcher
-
-
-def _release_check_notice(cwd: Path) -> str:
-    path = _overlay_module("update_check.py")
-    if not path.is_file():
-        return ""
-    try:
-        spec = importlib.util.spec_from_file_location("chaos_engine_update_check", path)
-        if spec is None or spec.loader is None:
-            return ""
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        installed = _read_installed_version(cwd)
-        confirm = os.environ.get("CHAOS_ENGINE_APPLY_UPDATE", "").strip() == "1"
-        result = module.session_start_update_check(_release_fetcher(installed), installed, confirm)
-    except Exception:
-        return ""
-    if isinstance(result, str) and (
-        result.startswith("update available:") or result.startswith("update confirmed:")
-    ):
-        return "ChaosEngine update check: " + result
-    return ""
-
-
 def _session_start_output(event: dict, event_name: str, session_id: str, token) -> int | None:
     if event_name == "SessionStart":
         _prepare_scratch(event)
@@ -3582,9 +3555,6 @@ def _session_start_output(event: dict, event_name: str, session_id: str, token) 
             follow = session_scratch.prevention_followup(Path(str(event.get("cwd") or Path.cwd())))
             if follow:
                 context = f"{context}\n\n{follow}"
-    notice = _release_check_notice(Path(str(event.get("cwd") or Path.cwd())))
-    if notice:
-        context = f"{context}\n\n{notice}"
     print(json.dumps({"additionalContext": context}))
     _mark_entry_injected(session_id)
     return 0

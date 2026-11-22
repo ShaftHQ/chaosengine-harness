@@ -60,15 +60,15 @@ def test_handoff_receipt_stores_digests_only():
     assert empty["cycleTimeSeconds"] == "unmeasured"
 
 
-def test_wip_caps_fail_closed_unless_the_named_waiver():
+def test_wip_caps_fail_closed_and_no_string_lifts_them():
     over = task_ledger.wip_gate(doing=2, branches=2, open_prs=2)
     assert over["ok"] is False
     assert "wip-doing-cap" in over["reasons"]
     assert "wip-branch-cap" in over["reasons"]
     assert "wip-open-pr-cap" in over["reasons"]
     waived = task_ledger.wip_gate(doing=2, branches=2, open_prs=4, waiver=WAIVER)
-    assert waived["ok"] is True
-    assert waived["waiverAccepted"] is True
+    assert waived["ok"] is False
+    assert waived["waiverAccepted"] is False
     other = task_ledger.wip_gate(doing=2, branches=1, open_prs=1, waiver="not-the-waiver")
     assert other["ok"] is False
 
@@ -92,7 +92,9 @@ def test_ledger_view_reports_wip_and_blocks_a_repeated_defect():
     ledger["preventive_checks"] = {"visual-inventory": "spec-template-headings"}
     assert task_ledger.defect_ratchet(ledger)["ok"] is True
     text = (ROOT / "references" / "lean-agile.md").read_text(encoding="utf-8")
-    assert WAIVER in text
+    card = (ROOT / "references" / "bot-entry.md").read_text(encoding="utf-8")
+    assert WAIVER not in text
+    assert WAIVER not in card
     assert "fixture" in text
     assert "n≥5" in text or "n>=5" in text
     assert "Agile Manifesto" in text or "agilemanifesto.org" in text

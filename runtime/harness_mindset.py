@@ -642,6 +642,33 @@ _NIGHTLY_RUN = re.compile(r"^(?:https://github\.com/\S+/actions/runs/\d+|\d{6,})
 _NIGHTLY_REPO = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 
 
+def sha_is_on_default_branch(repo: str, sha: str, *, reader: Any = None) -> bool:
+    """True only when a read says ``sha`` is contained in the default branch.
+
+    A failed read is false, so the tracker stays open.
+    """
+    if reader is not None:
+        try:
+            return bool(reader(repo, sha))
+        except (OSError, subprocess.SubprocessError, TypeError, ValueError):
+            return False
+    if _NIGHTLY_REPO.fullmatch(repo or "") is None or _NIGHTLY_SHA.fullmatch(sha or "") is None:
+        return False
+    try:
+        completed = subprocess.run(  # nosec B603 - fixed gh argv, no shell.
+            ["gh", "api", f"repos/{repo}/compare/main...{sha}", "--jq", ".status"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=20,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    if completed.returncode != 0:
+        return False
+    return completed.stdout.strip() in {"behind", "identical"}
+
+
 def _nightly_evidence(cause_on_main: bool, fixing_sha: str, failing_run: str) -> bool:
     return (
         bool(cause_on_main)
@@ -659,6 +686,7 @@ def decide_nightly_failure_close(
     failing_run: str,
     closing_keyword_in_product_pr: bool = False,
     partial_jobs_dispatch: bool = False,
+    branch_reader: Any = None,
 ) -> dict[str, Any]:
     """A product-PR closing keyword and a partial jobs= dispatch do not close the tracker.
 
@@ -676,7 +704,10 @@ def decide_nightly_failure_close(
                 "keyword on a nightly-failure tracker."
             ),
         }
-    evidence = _nightly_evidence(cause_on_main, fixing_sha, failing_run)
+    on_main = False
+    if cause_on_main:
+        on_main = sha_is_on_default_branch(repo, fixing_sha, reader=branch_reader)
+    evidence = _nightly_evidence(on_main, fixing_sha, failing_run)
     if partial_jobs_dispatch and not evidence:
         return {
             "action": "refuse-partial-dispatch",
@@ -730,6 +761,7 @@ def close_nightly_failure_tracker(
     closing_keyword_in_product_pr: bool = False,
     partial_jobs_dispatch: bool = False,
     runner: Any = None,
+    branch_reader: Any = None,
 ) -> dict[str, Any]:
     """Run the nightly close. Tests pass ``runner``; the default is ``gh`` with no shell."""
     decision = decide_nightly_failure_close(
@@ -740,6 +772,7 @@ def close_nightly_failure_tracker(
         failing_run=failing_run,
         closing_keyword_in_product_pr=closing_keyword_in_product_pr,
         partial_jobs_dispatch=partial_jobs_dispatch,
+        branch_reader=branch_reader,
     )
     if decision["action"] != "evidence-close":
         return decision

@@ -182,7 +182,6 @@ def items(name: str) -> dict[str, dict]:
     return latest
 
 
-PARALLEL_WAIVER = "owner-2026-11-22-all-open-issues-one-pr"
 DOING_CAP = 1
 BRANCH_CAP = 1
 OPEN_PR_CAP = 1
@@ -231,16 +230,21 @@ def ledger_wip(document: object) -> dict:
 
 
 def wip_gate(*, doing: int, branches: int, open_prs: int, waiver: str = "") -> dict:
-    """Fail closed over the per-stream caps. One named waiver lifts them."""
-    allowed = waiver == PARALLEL_WAIVER
+    """Fail closed over the per-stream caps.
+
+    ``waiver`` stays in the signature so older callers still run. No string
+    lifts the cap, including a token that used to be printed on the
+    always-loaded card.
+    """
+    ignored = waiver
     reasons: list[str] = []
-    if doing > DOING_CAP and not allowed:
+    if doing > DOING_CAP:
         reasons.append("wip-doing-cap")
-    if branches > BRANCH_CAP and not allowed:
+    if branches > BRANCH_CAP:
         reasons.append("wip-branch-cap")
-    if open_prs > OPEN_PR_CAP and not allowed:
+    if open_prs > OPEN_PR_CAP:
         reasons.append("wip-open-pr-cap")
-    return {"ok": not reasons, "reasons": reasons, "waiverAccepted": allowed}
+    return {"ok": not reasons, "reasons": reasons, "waiverAccepted": bool(ignored) and False}
 
 
 def wip_from_ledger(document: object, *, waiver: str = "") -> dict:

@@ -20,7 +20,7 @@ Sources: Mary and Tom Poppendieck, *Lean Software Development* (seven wastes); D
 
 ## Narrow mega-PR
 
-Group related work only when the group still fits the size policy. The owner-named waiver `owner-2026-11-22-all-open-issues-one-pr` is the token that lifts the doing, branch, and open-PR caps for this parallel wave. No other string does.
+Group related work only when the group still fits the size policy. The doing, branch, and open-PR caps fail closed. No string in this file or in the always-loaded card lifts them.
 
 ## Metric definitions
 

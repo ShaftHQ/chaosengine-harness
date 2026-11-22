@@ -126,9 +126,19 @@ def tool_output_is_data(fenced: str) -> bool:
     )
 
 
-def hidden_instruction_executed(fenced: str) -> bool:
-    """A fenced tool result is data. It is not executed as an instruction."""
-    return not tool_output_is_data(fenced)
+def hidden_instruction_executed(fenced: str, hidden: str = "") -> bool:
+    """True when the text is not fenced data, or the instruction sits outside the fence.
+
+    The guard does not copy ``tool_response`` into ``additionalContext``.
+    Callers that do show tool text use ``fence_tool_output`` first.
+    """
+    if not tool_output_is_data(fenced):
+        return True
+    if not hidden:
+        return False
+    marker = fenced.find("```text\n")
+    found = fenced.find(hidden)
+    return found >= 0 and found < marker
 
 
 def main(argv: list[str] | None = None) -> int:

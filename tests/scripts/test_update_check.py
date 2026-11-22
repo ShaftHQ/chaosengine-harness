@@ -105,7 +105,7 @@ class UpdateCheckTests(unittest.TestCase):
         lifecycle = (ROOT / "hooks" / "lifecycle.py").read_text(encoding="utf-8")
         guard = (ROOT / "hooks" / "guard.py").read_text(encoding="utf-8")
         self.assertIn("session_start_update_check()", lifecycle)
-        self.assertIn("session_start_update_check(", guard)
+        self.assertNotIn("session_start_update_check(", guard)
 
     def test_session_start_reports_a_newer_release_without_changing_files(self):
         version_path = ROOT / "VERSION"

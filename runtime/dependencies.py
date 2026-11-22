@@ -1190,10 +1190,14 @@ def _version_from_output(output: str) -> str | None:
     return match.group(1).replace("_", ".") if match else None
 
 
-_CERT_FAILURE = (
-    "SSL certificate verification failed — on macOS python.org builds run "
-    '"/Applications/Python 3.x/Install Certificates.command", or set SSL_CERT_FILE'
-)
+def _cert_hint() -> str:
+    """The macOS certificate command is only a fix on darwin."""
+    if sys.platform == "darwin":
+        return (
+            " — on macOS python.org builds run "
+            '"/Applications/Python 3.x/Install Certificates.command", or set SSL_CERT_FILE'
+        )
+    return " — set SSL_CERT_FILE to a CA bundle this Python trusts"
 
 
 def _cert_verify_failed(error: BaseException) -> bool:
@@ -1217,10 +1221,7 @@ def _cert_verify_failed(error: BaseException) -> bool:
     return False
 
 
-def _failure_text(error: BaseException) -> str:
-    """Keep the error reason. A certificate failure names the macOS fix."""
-    if _cert_verify_failed(error):
-        return _CERT_FAILURE
+def _failure_detail(error: BaseException) -> str:
     reason = getattr(error, "reason", None)
     if isinstance(reason, BaseException) and reason is not error:
         detail = str(reason).strip()
@@ -1234,6 +1235,16 @@ def _failure_text(error: BaseException) -> str:
     if detail.startswith(name):
         return detail
     return f"{name}: {detail}"
+
+
+def _failure_text(error: BaseException) -> str:
+    """Keep the verifier reason. Name the macOS certificate command only on darwin."""
+    detail = _failure_detail(error)
+    if not _cert_verify_failed(error):
+        return detail
+    if "certificate" not in detail.casefold():
+        detail = "SSL certificate verification failed: " + detail
+    return detail + _cert_hint()
 
 
 def probe_account_dependency(
