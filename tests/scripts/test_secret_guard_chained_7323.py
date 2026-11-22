@@ -30,6 +30,8 @@ def git(cwd: Path, *args: str) -> subprocess.CompletedProcess:
 
 class ChainedSecretGuardTest(unittest.TestCase):
     def setUp(self):
+        self._guard_env = os.environ.get("CHAOS_ENGINE_SECRET_GUARD")
+        os.environ["CHAOS_ENGINE_SECRET_GUARD"] = "1"  # nosec B105 - a switch, not a secret
         self.hooks = load(HOOKS, "git_hooks_7323")
         self.temp = tempfile.TemporaryDirectory()
         self.repo = Path(self.temp.name) / "project"
@@ -44,6 +46,10 @@ class ChainedSecretGuardTest(unittest.TestCase):
         git(self.repo, "config", "core.hooksPath", "tools/git-hooks")
 
     def tearDown(self):
+        if self._guard_env is None:
+            os.environ.pop("CHAOS_ENGINE_SECRET_GUARD", None)
+        else:
+            os.environ["CHAOS_ENGINE_SECRET_GUARD"] = self._guard_env
         self.temp.cleanup()
 
     def test_chained_secret_guard_py_is_not_shimmed_and_commits_work(self):
