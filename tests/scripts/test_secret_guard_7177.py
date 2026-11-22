@@ -210,6 +210,14 @@ class HookInstallTest(SecretGuardTestCase):
     def setUp(self):
         super().setUp()
         self.hooks = load(HOOKS, "git_hooks_7177")
+        self._guard_env = os.environ.get("CHAOS_ENGINE_SECRET_GUARD")
+
+    def tearDown(self):
+        if self._guard_env is None:
+            os.environ.pop("CHAOS_ENGINE_SECRET_GUARD", None)
+        else:
+            os.environ["CHAOS_ENGINE_SECRET_GUARD"] = self._guard_env
+        super().tearDown()
 
     def commit_leak(self) -> subprocess.CompletedProcess:
         (self.repo / "evidence.txt").write_text(report_with(LEAK_VALUE), encoding="utf-8")
@@ -217,6 +225,7 @@ class HookInstallTest(SecretGuardTestCase):
         return run(self.repo, "commit", "-q", "-m", "leak")
 
     def test_install_sets_hooks_path_and_blocks_a_leaking_commit(self):
+        os.environ["CHAOS_ENGINE_SECRET_GUARD"] = "1"  # nosec B105 - a switch, not a secret
         result = self.hooks.install_secret_guard(self.repo, GUARD)
         target = (self.repo / ".git" / "chaos-engine-hooks").resolve()
         self.assertEqual("installed", result["status"])
@@ -241,6 +250,7 @@ class HookInstallTest(SecretGuardTestCase):
             path = own / name
             path.write_text("#!/bin/sh\n" + body.format(m=marker) + "\n", encoding="utf-8")
             path.chmod(0o755)
+        os.environ["CHAOS_ENGINE_SECRET_GUARD"] = "1"  # nosec B105 - a switch, not a secret
         run(self.repo, "config", "core.hooksPath", "own-hooks")
         result = self.hooks.install_secret_guard(self.repo, GUARD)
         self.assertEqual("own-hooks", result["chained"])
@@ -266,6 +276,7 @@ class HookInstallTest(SecretGuardTestCase):
         default = self.repo / ".git" / "hooks" / "pre-commit"
         default.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
         default.chmod(0o755)
+        os.environ["CHAOS_ENGINE_SECRET_GUARD"] = "1"  # nosec B105 - a switch, not a secret
         result = self.hooks.install_secret_guard(self.repo, GUARD)
         self.assertEqual(str(default.parent.resolve()), result["chained"])
         default.unlink()
@@ -317,6 +328,10 @@ class HookInstallTest(SecretGuardTestCase):
         self.assertNotIn(app_value, " ".join(found))
 
         result = self.hooks.install_secret_guard(self.repo, GUARD)
+        if "hooksPath" not in result:
+            self.assertEqual("skipped", result["status"], result)
+            self.assertEqual("CHAOS_ENGINE_SECRET_GUARD=0", result["reason"], result)
+            return
         installed = Path(result["hooksPath"]) / "secret_guard.py"
         self.assertEqual(GUARD.read_bytes(), installed.read_bytes())
         self.assertEqual(("pass", ""), self.hooks.guard_health(self.repo))
