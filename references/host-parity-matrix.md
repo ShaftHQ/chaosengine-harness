@@ -4,9 +4,9 @@ description: Use when Grok or Copilot may not honor an exit-2 hard block and the
 
 # Host Parity Matrix v0
 
-Living adapter-outcome matrix for ChaosEngine across Claude Code, Codex, Grok, Gemini, GitHub Copilot, OpenCode, Cursor, and Grok Bot; independent bots (GPTs and others) follow the Grok Bot column via the bot entry.
+Living adapter-outcome matrix for ChaosEngine across Claude Code, Codex, Grok, Gemini, GitHub Copilot, OpenCode, Cursor, Antigravity, and Grok Bot; independent bots (GPTs and others) follow the Grok Bot column via the bot entry.
 
-Parity means the same workflow *outcomes* on all eight hosts (not UI chrome parity).
+Parity means the same workflow *outcomes* on all nine hosts (not UI chrome parity).
 Machine-checkable capability pins also live in `scripts/ci/agent_harness_parity.json`.
 
 ## Harness parity (permanent)
@@ -44,20 +44,20 @@ Legend: P = parity (outcome available), A = adapter-shaped equivalent, G = gap (
 
 ## Matrix
 
-| Surface | Claude Code | Codex | Grok | Gemini | Copilot | OpenCode | Cursor | Grok Bot |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Install / doctor human UX | P | P | P | P | P | P | P | P |
-| Host onboarding / activation path | A marketplace/plugin | A marketplace/plugin | A file/hook | A file/hook | A file/hook | A AGENTS.md | A AGENTS.md | A bot entry |
-| Router skill (`chaos-engine`) | P | P | P | P | P | P | P | P |
-| Lifecycle hooks | A | A | A | A | A | A | A | G |
-| Exit-2 / blocking denial fidelity | A | A | G | A | G | G | G | G |
-| SessionStart identity and locators / progressive disclosure | A | A | A | A | A | G | A | G |
-| Skills discovery | A | A | A | A | A | A | A | A |
-| Companions (Caveman + Ponytail) | P | P | P | P | P | P | P | P |
-| Self-improve skill (Learning Session) | P | P | P | P | P | P | P | P |
-| Retrieval soft-degrade (Memory/MemPalace/Graphify) | P | P | P | P | P | P | P | P |
-| Work-item to merge playbook | P | P | P | P | P | P | P | P |
-| Learning Session | P | P | P | P | P | P | P | P |
+| Surface | Claude Code | Codex | Grok | Gemini | Copilot | OpenCode | Cursor | Antigravity | Grok Bot |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Install / doctor human UX | P | P | P | P | P | P | P | P | P |
+| Host onboarding / activation path | A marketplace/plugin | A marketplace/plugin | A file/hook | A file/hook | A file/hook | A AGENTS.md | A AGENTS.md | A file/hook | A bot entry |
+| Router skill (`chaos-engine`) | P | P | P | P | P | P | P | P | P |
+| Lifecycle hooks | A | A | A | A | A | A | A | A | G |
+| Exit-2 / blocking denial fidelity | A | A | G | A | G | G | G | G | G |
+| SessionStart identity and locators / progressive disclosure | A | A | A | A | A | G | A | A | G |
+| Skills discovery | A | A | A | A | A | A | A | A | A |
+| Companions (Caveman + Ponytail) | P | P | P | P | P | P | P | P | P |
+| Self-improve skill (Learning Session) | P | P | P | P | P | P | P | P | P |
+| Retrieval soft-degrade (Memory/MemPalace/Graphify) | P | P | P | P | P | P | P | P | P |
+| Work-item to merge playbook | P | P | P | P | P | P | P | P | P |
+| Learning Session | P | P | P | P | P | P | P | P | P |
 
 ## Measured gaps (severity)
 
@@ -74,6 +74,7 @@ Legend: P = parity (outcome available), A = adapter-shaped equivalent, G = gap (
 | GAP-GEMINI-NODE | Gemini | low | Hook launcher needs Node.js; unsupported native events remain explicit capability gaps. | Onboarding card + launch.js. |
 | GAP-OPENCODE-HOOKS | OpenCode | info | The plain JS plugin `.opencode/plugins/chaos-engine-receipt.js` calls `hooks/launch.py`. `tool.execute.before` / `execute.before` throw on deny. `session.idle` is observe-only. `session.created` has no documented context channel, so SessionStart stays G. Exit 2 stays G until a live probe. | `runtime/hook_surfaces.py`; `tests/scripts/test_hook_parity.py`. |
 | GAP-CURSOR-HOOKS | Cursor | info | `.cursor/hooks.json` version 1 calls `hooks/launch.py` for the ten agent events. Deny renders `permission`, `additional_context`, and `followup_message`. `failClosed` is set only on `preToolUse`. Exit 2 stays G until a live probe. One guard run per event stays unclaimed until a posted trace count. | `runtime/hook_surfaces.py`; `tests/scripts/test_hook_parity.py`. |
+| GAP-ANTIGRAVITY-HOOKS | Antigravity (`agy`) | info | `.agents/hooks.json` registers a named `"chaos-engine"` hook calling `hooks/launch.py` (matcher groups for `PreToolUse`/`PostToolUse`, flat arrays for `SessionStart`/`PreInvocation`/`PostInvocation`/`Stop`). Antigravity treats non-zero hook exits as fail-open, so denies emit exit-0 JSON (`decision: "deny"`, `decision: "continue"` + `reason`, or `errorMessage` + `terminationBehavior: "terminate"`). SessionStart/PreInvocation inject context via `injectSteps`. | `runtime/hook_surfaces.py`; `tests/scripts/test_antigravity_support.py`. |
 | GAP-GROKBOT-HOOKS | Grok Bot | medium | Instruction-only agent: auto-loads nothing from the checkout and has no hook runtime. At task start it reads the core card and both companion cards itself, then runs one retrieve. Same receipt substitution; `worktree_overlay.py verify` reports it as instruction-only. | `hosts.INSTRUCTION_ONLY_HOSTS`; research receipt;. |
 | GAP-BOT-ENTRY | Independent bots (GPTs, Claude Projects, others) | medium | No checkout auto-load and no hooks: start from [bot entry](bot-entry.md) (`tool.py entry`, or an exported entry file for bots without repository access). Residual risk: a hookless bot can still submit a person-only assessment if it skips `tool.py ethics-check`. | `hosts.INSTRUCTION_ONLY_HOSTS`; research receipt;. |
 | GAP-GROK-BUNDLED | Grok | info | Grok product bundled skills (pdf/pptx/imagine/game-*) and session GitHub MCP cannot be deleted from the install tree. CE does not vendor them; doctor strips user GitHub MCP when gh is healthy and documents this limit. | prefer-cli-over-mcp. |

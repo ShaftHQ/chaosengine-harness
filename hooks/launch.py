@@ -48,9 +48,24 @@ _E_CODES = {
 }
 
 
-def deny(message: str) -> None:
-    if os.environ.get("CHAOS_ENGINE_HOST", "").strip().lower() == "antigravity":
-        print(json.dumps({"decision": "deny", "reason": message}))
+def _antigravity_deny_payload(message: str, event: str | None) -> dict[str, object]:
+    if event == "PreInvocation":
+        return {
+            "injectSteps": [{"errorMessage": {"userMessage": message}}],
+            "terminationBehavior": "terminate",
+        }
+    if event == "Stop":
+        return {"decision": "continue", "reason": message}
+    if event in {"PostToolUse", "SessionStart", "PostInvocation"}:
+        return {}
+    return {"decision": "deny", "reason": message}
+
+
+def deny(message: str, *, host: str | None = None, event: str | None = None) -> None:
+    resolved_host = (host or os.environ.get("CHAOS_ENGINE_HOST", "")).strip().lower()
+    resolved_event = event if event is not None else os.environ.get("CHAOS_ENGINE_HOOK_EVENT") or None
+    if resolved_host == "antigravity":
+        print(json.dumps(_antigravity_deny_payload(message, resolved_event)))
         raise SystemExit(0)
     print(json.dumps({"decision": "block", "reason": message}))
     raise SystemExit(2)
@@ -115,7 +130,12 @@ def find_guard(data: str | None):
     try:
         if data is None:
             data = sys.stdin.buffer.read().decode("utf-8", "replace").lstrip(chr(65279))
-        hints.append(str(json.loads(data or "{}").get("cwd") or ""))
+        parsed = json.loads(data or "{}")
+        if isinstance(parsed, dict):
+            hints.append(str(parsed.get("cwd") or ""))
+            workspaces = parsed.get("workspacePaths")
+            if isinstance(workspaces, list) and workspaces and isinstance(workspaces[0], str):
+                hints.append(workspaces[0])
     except (OSError, ValueError, AttributeError):
         pass  # bad/missing payload cwd hint; keep walking CLAUDE_PROJECT_DIR only
     for hint in filter(None, hints):
@@ -261,37 +281,8 @@ def _overlay_root(path: pathlib.Path) -> str:
     return str(path.resolve().parents[1])
 
 
-def _antigravity_workspace_cwd(base: pathlib.Path, data: str | None) -> pathlib.Path | None:
-    """Antigravity spawns hooks in `.agents/` while passing the workspace in `cwd`."""
-    if os.environ.get("CHAOS_ENGINE_HOST", "").strip().lower() != "antigravity":
-        return None
-    try:
-        payload = json.loads(data or "{}")
-    except ValueError:
-        payload = {}
-    if isinstance(payload, dict):
-        raw_cwd = payload.get("cwd")
-        if isinstance(raw_cwd, str) and raw_cwd.strip():
-            candidate = pathlib.Path(raw_cwd)
-            if candidate.is_dir():
-                return candidate
-    try:
-        current = pathlib.Path.cwd().resolve()
-    except OSError:
-        return None
-    if current.name == ".agents" and base.is_dir():
-        return base
-    return None
-
-
 def run_guard(base: pathlib.Path, path: pathlib.Path, data: str | None) -> None:
     overlay_root = _overlay_root(path)
-    target_cwd = _antigravity_workspace_cwd(base, data)
-    if target_cwd is not None:
-        try:
-            os.chdir(target_cwd)
-        except OSError:
-            pass
     ptr = base / HOOK_PYTHON_POINTER
     py = (
         ptr.read_text(encoding="utf-8").strip()
@@ -454,16 +445,40 @@ def _session_id(data: str | None) -> str:
     return ""
 
 
-def _project_root(start: pathlib.Path) -> pathlib.Path | None:
-    for candidate in (start, *start.parents):
-        if (candidate / ".chaos-engine" / "install.py").is_file():
-            return candidate
+def _payload_cwd_roots(start: pathlib.Path, data: str | None) -> list[pathlib.Path]:
+    roots: list[pathlib.Path] = [start]
+    try:
+        payload = json.loads(data or "{}")
+    except ValueError:
+        payload = {}
+    if isinstance(payload, dict):
+        raw_cwd = payload.get("cwd")
+        if isinstance(raw_cwd, str) and raw_cwd.strip():
+            roots.append(pathlib.Path(raw_cwd))
+        workspaces = payload.get("workspacePaths")
+        if isinstance(workspaces, list) and workspaces and isinstance(workspaces[0], str) and workspaces[0].strip():
+            roots.append(pathlib.Path(workspaces[0]))
+    return roots
+
+
+def _project_root(start: pathlib.Path, data: str | None = None) -> pathlib.Path | None:
+    for origin in _payload_cwd_roots(start, data):
+        try:
+            candidates = (origin, *origin.parents)
+        except OSError:
+            continue
+        for candidate in candidates:
+            try:
+                if (candidate / ".chaos-engine" / "install.py").is_file():
+                    return candidate
+            except OSError:
+                continue
     return None
 
 
 def _note_project_layer(start: pathlib.Path, data: str | None) -> None:
     session = _session_id(data)
-    root = _project_root(start)
+    root = _project_root(start, data)
     if not session or root is None:
         return
     path = root / ".chaos-engine-state" / "sessions" / f"{session}.layer"
@@ -474,10 +489,20 @@ def _note_project_layer(start: pathlib.Path, data: str | None) -> None:
 
 def _user_should_defer(start: pathlib.Path, data: str | None) -> bool:
     session = _session_id(data)
-    root = _project_root(start)
+    root = _project_root(start, data)
     if not session or root is None:
         return False
     return (root / ".chaos-engine-state" / "sessions" / f"{session}.layer").is_file()
+
+
+def _early_exit_ok(host: str, event: str | None) -> None:
+    """Antigravity requires a JSON object on stdout (and decision on PreToolUse)."""
+    if host == "antigravity":
+        if event == "PreToolUse":
+            print(json.dumps({"decision": "allow"}))
+        else:
+            print("{}")
+    raise SystemExit(0)
 
 
 def _foreign_user_host(adapter: str) -> bool:
@@ -503,10 +528,12 @@ def _user_payload_guard():
 
 
 def main(argv: list[str]) -> None:
-    if sys.version_info < HOOK_PYTHON_FLOOR:
-        deny(PYTHON_UNAVAILABLE)
     host, event, layer = _launch_options(argv)
     os.environ["CHAOS_ENGINE_HOST"] = host
+    if event is not None:
+        os.environ["CHAOS_ENGINE_HOOK_EVENT"] = event
+    if sys.version_info < HOOK_PYTHON_FLOOR:
+        deny(PYTHON_UNAVAILABLE, host=host, event=event)
     data = read_payload(event)
     if data is None:
         try:
@@ -516,9 +543,9 @@ def main(argv: list[str]) -> None:
     append_hook_trace(host, data, event)
     start = usable_cwd()
     if layer == "user" and _foreign_user_host(host):
-        raise SystemExit(0)
+        _early_exit_ok(host, event)
     if layer == "user" and _user_should_defer(start, data):
-        raise SystemExit(0)
+        _early_exit_ok(host, event)
     if layer != "user" and event == "SessionStart":
         _note_project_layer(start, data)
     if not installing(start):
@@ -533,7 +560,11 @@ def main(argv: list[str]) -> None:
         found = _user_payload_guard()
     if found is None:
         start = usable_cwd()
-        deny(GUARD_TEMPORARILY_UNAVAILABLE if installing(start) else GUARD_UNAVAILABLE)
+        deny(
+            GUARD_TEMPORARILY_UNAVAILABLE if installing(start) else GUARD_UNAVAILABLE,
+            host=host,
+            event=event,
+        )
     base, path = found
     data = apply_matchers(path, data, event)
     run_guard(base, path, data)

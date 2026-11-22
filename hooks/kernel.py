@@ -498,8 +498,12 @@ def normalize_event(raw: Mapping[str, object], host: str | None = None) -> HookE
     tool_input = dict(tool_input)
     if "file_path" not in tool_input and "filePath" in tool_input:
         tool_input["file_path"] = tool_input["filePath"]
-    if "file_path" not in tool_input and "Path" in tool_input:
-        tool_input["file_path"] = tool_input["Path"]
+    for alt_path in ("Path", "AbsolutePath", "TargetFile"):
+        if "file_path" not in tool_input and alt_path in tool_input:
+            tool_input["file_path"] = tool_input[alt_path]
+    for alt_dir in ("SearchDirectory", "SearchPath", "DirectoryPath"):
+        if "path" not in tool_input and alt_dir in tool_input:
+            tool_input["path"] = tool_input[alt_dir]
     if "command" not in tool_input and "CommandLine" in tool_input:
         tool_input["command"] = tool_input["CommandLine"]
     if "startLine" not in tool_input and "StartLine" in tool_input:
@@ -743,7 +747,7 @@ def _adapt_antigravity(
         if isinstance(context, str) and context:
             adapted["injectSteps"] = [{"systemMessage": {"systemMessage": context}}]
         return
-    if event_name == "UserPromptSubmit" or native_event == "PreInvocation":
+    if event_name in {"UserPromptSubmit", "PreInvocation"} or native_event == "PreInvocation":
         adapted.clear()
         if decision in {"block", "deny"}:
             adapted["injectSteps"] = [
@@ -753,9 +757,14 @@ def _adapt_antigravity(
         elif isinstance(context, str) and context:
             adapted["injectSteps"] = [{"systemMessage": {"systemMessage": context}}]
         return
-    if native_event == "PostInvocation":
+    if event_name == "PostInvocation" or native_event == "PostInvocation":
         adapted.clear()
-        if isinstance(context, str) and context:
+        if decision in {"block", "deny"}:
+            adapted["injectSteps"] = [
+                {"errorMessage": {"userMessage": str(reason or "Blocked by ChaosEngine.")}}
+            ]
+            adapted["terminationBehavior"] = "terminate"
+        elif isinstance(context, str) and context:
             adapted["injectSteps"] = [{"systemMessage": {"systemMessage": context}}]
         return
     if event_name == "PostToolUse":

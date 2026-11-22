@@ -5103,6 +5103,49 @@ def _decoded_powershell_branch(lines: list[str]) -> list[str] | None:
     return base64.b64decode(match.group(1)).decode("utf-16le").splitlines()
 
 
+def _antigravity_fail_json(event: str | None, reason: str) -> str:
+    if event == "PreInvocation":
+        payload: dict[str, object] = {
+            "injectSteps": [{"errorMessage": {"userMessage": reason}}],
+            "terminationBehavior": "terminate",
+        }
+    elif event == "Stop":
+        payload = {"decision": "continue", "reason": reason}
+    elif event in {"PostToolUse", "SessionStart", "PostInvocation"}:
+        payload = {}
+    else:
+        payload = {"decision": "deny", "reason": reason}
+    return json.dumps(payload, separators=(",", ":"))
+
+
+def _unix_antigravity_command(args: str, event: str | None) -> str:
+    """POSIX sh (`sh -c`) launcher for Antigravity. Fail-closed JSON on exit 0."""
+    missing_json = _antigravity_fail_json(event, f"missing {HOOK_LAUNCH_PY}")
+    no_python_json = _antigravity_fail_json(event, HOOK_LAUNCH_PYTHON_BLOCK)
+    if "'" in missing_json or "'" in no_python_json:
+        raise ValueError("antigravity hook JSON must stay single-quote safe")
+    if event is not None and event.casefold() == "stop":
+        miss = (
+            '[ -n "$d" ]&&[ -f "$d/$h" ]||{ [ -d "$d/.chaos-engine" ]||'
+            '{ echo no-harness-runtime>&2;echo "{}";exit 0;};'
+            f"echo '{missing_json}';exit 0;}}"
+        )
+    else:
+        miss = f'[ -n "$d" ]&&[ -f "$d/$h" ]||{{ echo \'{missing_json}\';exit 0;}}'
+    return (
+        'h=.chaos-engine/hooks/launch.py;d=$(pwd);while [ ! -f "$d/$h" ]&&[ -n "$d" ];do d=${d%/*};done;'
+        '[ -f "$d/$h" ]||{ p=$(git rev-parse --path-format=absolute --git-common-dir 2>&1);p=${p%/.git};'
+        'o=worktree_overlay.py;for n in .chaos-engine chaos-engine .;do for r in runtime/ "";do '
+        '[ -f "$p/$n/$r$o" ]&&python3 "$p/$n/$r$o" adopt&&break 2;done;done;'
+        'd=$(git rev-parse --show-toplevel 2>&1);};'
+        + miss
+        + f';f="$d/$h";a="{args}";'
+        'p=$(command -v python3)&&exec "$p" "$f" $a;'
+        'p=$(command -v py)&&exec "$p" -3 "$f" $a;'
+        f"echo '{no_python_json}';exit 0"
+    )
+
+
 def chaos_guard_locator_command(
     *, windows: bool, host: str, managed_python: Path | None = None, event: str | None = None,
 ) -> str:
@@ -5141,35 +5184,45 @@ def chaos_guard_locator_command(
         # Grok rejects unresolved `$NAME` (#7667); Antigravity runs Windows hooks
         # through `cmd /c` (not PowerShell), so both use the cmd-safe Python walker.
         if host == "antigravity":
-            missing_tail = (
-                "import json;"
-                "print(json.dumps(dict(decision='deny',reason='missing .chaos-engine/hooks/launch.py'))) if f is None else None;"
-                "sys.exit(0 if f is None else subprocess.call([sys.executable,str(f),*sys.argv[1:]]))"
+            encoded = base64.b64encode(
+                _antigravity_fail_json(event, f"missing {HOOK_LAUNCH_PY}").encode("utf-8")
+            ).decode("ascii")
+            script = (
+                "import base64 as B,pathlib as P,shutil,subprocess as S,sys;"
+                "r='.chaos-engine/hooks/launch.py';d=P.Path.cwd();"
+                "W=lambda:next((x/r for x in(d,*d.parents)if(x/r).is_file()),None);"
+                "f=W();g=shutil.which('git')if f is None else '';"
+                "c=S.run([g,'rev-parse','--path-format=absolute','--git-common-dir'],capture_output=True,text=True)if g else None;"
+                "q=P.Path(c.stdout.strip())if c and c.returncode==0 else None;"
+                "q=q.parent if q and q.name=='.git' else q;"
+                "s=next((q/a/b for a in('.chaos-engine','chaos-engine','.')for b in('runtime/worktree_overlay.py','worktree_overlay.py')if q and(q/a/b).is_file()),None);"
+                "S.call([sys.executable,str(s),'adopt'])if s else None;f=W()if f is None else f;"
+                f"print(B.b64decode('{encoded}').decode())if f is None else None;"
+                "sys.exit(0 if f is None else S.call([sys.executable,str(f),*sys.argv[1:]]))"
             )
         else:
-            missing_tail = (
+            script = (
+                "import pathlib,subprocess,sys,shutil;"
+                "r=pathlib.Path('.chaos-engine/hooks/launch.py');"
+                "d=pathlib.Path.cwd();"
+                "f=next((x/r for x in (d,*d.parents) if (x/r).is_file()), None);"
+                "g=shutil.which('git') if f is None else '';"
+                "c=subprocess.run([g,'rev-parse','--path-format=absolute','--git-common-dir'],capture_output=True,text=True) if g else None;"
+                "q=pathlib.Path(c.stdout.strip()) if c is not None and c.returncode==0 else None;"
+                "q=q.parent if q is not None and q.name=='.git' else q;"
+                "s=next((q/a/b for a in('.chaos-engine','chaos-engine','.') for b in('runtime/worktree_overlay.py','worktree_overlay.py') if q and (q/a/b).is_file()),None);"
+                "subprocess.call([sys.executable,str(s),'adopt']) if s else None;"
+                "f=next((x/r for x in (d,*d.parents) if (x/r).is_file()), None) if f is None else f;"
                 "sys.stderr.write('missing .chaos-engine/hooks/launch.py\\n') if f is None else None;"
                 "sys.exit(2 if f is None else subprocess.call([sys.executable,str(f),*sys.argv[1:]]))"
             )
-        script = (
-            "import pathlib,subprocess,sys,shutil;"
-            "r=pathlib.Path('.chaos-engine/hooks/launch.py');"
-            "d=pathlib.Path.cwd();"
-            "f=next((x/r for x in (d,*d.parents) if (x/r).is_file()), None);"
-            "g=shutil.which('git') if f is None else '';"
-            "c=subprocess.run([g,'rev-parse','--path-format=absolute','--git-common-dir'],capture_output=True,text=True) if g else None;"
-            "q=pathlib.Path(c.stdout.strip()) if c is not None and c.returncode==0 else None;"
-            "q=q.parent if q is not None and q.name=='.git' else q;"
-            "s=next((q/a/b for a in('.chaos-engine','chaos-engine','.') for b in('runtime/worktree_overlay.py','worktree_overlay.py') if q and (q/a/b).is_file()),None);"
-            "subprocess.call([sys.executable,str(s),'adopt']) if s else None;"
-            "f=next((x/r for x in (d,*d.parents) if (x/r).is_file()), None) if f is None else f;"
-            + missing_tail
-        )
         if "$" in script:
             raise ValueError("windows cmd walker must stay $-free")
         command = f'py -3 -c "{script}" {args}'
     elif windows:
         command = windows_probe
+    elif host == "antigravity":
+        command = _unix_antigravity_command(args, event)
     else:
         # Copilot CLI runs the unix `command` through PowerShell (#7831). The
         # same string is bash on Linux (#7830). `>` must not name a file.
@@ -5441,13 +5494,25 @@ def installed_hook_drift(project: Path) -> list[dict[str, str]]:
             antigravity_document = json.loads(antigravity_hooks.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError, json.JSONDecodeError):
             antigravity_document = None
+        require_ce = True
+        completion = project / ".chaos-engine-state" / "host-completion.json"
+        if completion.is_file():
+            try:
+                comp_data = json.loads(completion.read_text(encoding="utf-8"))
+                targets = comp_data.get("targets") if isinstance(comp_data, dict) else None
+                if isinstance(targets, list) and targets and "antigravity" not in targets:
+                    require_ce = False
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                pass
         surfaces_path = Path(__file__).resolve().with_name("hook_surfaces.py")
         if surfaces_path.is_file():
             spec = importlib.util.spec_from_file_location("ce_doctor_hook_surfaces", surfaces_path)
             if spec is not None and spec.loader is not None:
                 surfaces = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(surfaces)
-                for reason in surfaces.antigravity_hooks_findings(antigravity_document):
+                for reason in surfaces.antigravity_hooks_findings(
+                    antigravity_document, require_chaos_engine=require_ce
+                ):
                     findings.append(
                         {
                             "kind": "antigravity-hooks",

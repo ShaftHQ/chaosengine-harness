@@ -23,6 +23,9 @@ HOST_IDS = (
     "antigravity",
     "grok-bot",
 )
+HOST_ALIASES = {
+    "agy": "antigravity",
+}
 COMPONENT_NAMES = (
     "memory",
     "mempalace",

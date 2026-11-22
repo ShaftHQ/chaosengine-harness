@@ -343,20 +343,26 @@ def _antigravity_owned(entry: object) -> bool:
     return False
 
 
-def antigravity_hooks_findings(document: object) -> list[str]:
+def antigravity_hooks_findings(
+    document: object, *, require_chaos_engine: bool = True
+) -> list[str]:
     """Doctor checks for .agents/hooks.json named-hook schema and shapes."""
     if not isinstance(document, dict):
         return ["antigravity hooks document is not a JSON object"]
     findings: list[str] = []
+    has_legacy = False
     for event in ANTIGRAVITY_EVENTS:
         legacy = document.get(event)
         if isinstance(legacy, list) and any(_antigravity_owned(item) for item in legacy):
+            has_legacy = True
             findings.append(
                 f"antigravity hooks use legacy top-level event key {event}; "
                 "must be nested under a named hook object (rerun installer)"
             )
             break
     spec = document.get(ANTIGRAVITY_HOOK_NAME)
+    if spec is None and not require_chaos_engine and not has_legacy:
+        return findings
     if not isinstance(spec, dict):
         findings.append(
             f"antigravity hooks missing named '{ANTIGRAVITY_HOOK_NAME}' hook object"
@@ -364,19 +370,27 @@ def antigravity_hooks_findings(document: object) -> list[str]:
         return findings
     for event in ANTIGRAVITY_MATCHER_EVENTS:
         groups = spec.get(event)
-        if not isinstance(groups, list) or not groups or not isinstance(groups[0], dict):
+        if not isinstance(groups, list) or not groups:
             findings.append(f"antigravity hook '{ANTIGRAVITY_HOOK_NAME}' missing {event} matcher group")
             continue
-        if "matcher" not in groups[0] or not isinstance(groups[0].get("hooks"), list):
+        if any(
+            not isinstance(group, dict)
+            or "matcher" not in group
+            or not isinstance(group.get("hooks"), list)
+            for group in groups
+        ):
             findings.append(f"antigravity hook '{ANTIGRAVITY_HOOK_NAME}' {event} must use matcher+hooks")
         elif not any(_antigravity_owned(group) for group in groups):
             findings.append(f"antigravity hook '{ANTIGRAVITY_HOOK_NAME}' {event} does not call hooks/launch.py")
     for event in ANTIGRAVITY_FLAT_EVENTS:
         handlers = spec.get(event)
-        if not isinstance(handlers, list) or not handlers or not isinstance(handlers[0], dict):
+        if not isinstance(handlers, list) or not handlers:
             findings.append(f"antigravity hook '{ANTIGRAVITY_HOOK_NAME}' missing {event} handler list")
             continue
-        if "matcher" in handlers[0] or "hooks" in handlers[0]:
+        if any(
+            not isinstance(handler, dict) or "matcher" in handler or "hooks" in handler
+            for handler in handlers
+        ):
             findings.append(f"antigravity hook '{ANTIGRAVITY_HOOK_NAME}' {event} must be a flat handler list")
         elif not any(_antigravity_owned(handler) for handler in handlers):
             findings.append(f"antigravity hook '{ANTIGRAVITY_HOOK_NAME}' {event} does not call hooks/launch.py")

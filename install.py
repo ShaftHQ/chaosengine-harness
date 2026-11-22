@@ -7867,7 +7867,9 @@ def repair_component(  # noqa: MC0001 - component switch keeps one operator entr
                 capability_policy_digest=repair_capability,
                 account_commands=account_commands,
             )
-            return {"status": "repaired", "component": name, "action": "rebind"}
+            targets = read_completion_targets(project)
+            shims = wire_selected_receipt_shims(project, targets) if targets else wire_receipt_shims(project)
+            return {"status": "repaired", "component": name, "action": "rebind", "receiptShims": shims}
         if name in {"hooks", "skills", "roles", "mcps"}:
             quarantine_orphaned_host_receipt(project)
             host_controller.install(

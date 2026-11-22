@@ -6,6 +6,7 @@ import base64
 import hashlib
 import json
 import os
+import shlex
 import shutil
 import stat
 import sys
@@ -61,7 +62,9 @@ def _skill_text() -> str:
 
 
 def _stable_command(launch: Path, host: str, event: str) -> str:
-    return f"{sys.executable} {launch} {host} {event} --layer user"
+    if os.name == "nt":
+        return f'"{sys.executable}" "{launch}" {host} {event} --layer user'
+    return f"{shlex.quote(sys.executable)} {shlex.quote(str(launch))} {host} {event} --layer user"
 
 
 def _hook_document(command: str) -> str:
@@ -254,13 +257,17 @@ exec python3 "$ROOT/payload/$COMMIT/install.py" "$@"
     return destination
 
 
+_HOST_ALIASES = {"agy": "antigravity"}
+
+
 def _selected_hosts(hosts: list[str] | tuple[str, ...] | None) -> tuple[str, ...]:
     if not hosts:
         return HOSTS
     chosen = []
     for item in hosts:
         for part in str(item).split(","):
-            name = part.strip()
+            raw = part.strip().casefold()
+            name = _HOST_ALIASES.get(raw, raw)
             if name and name not in chosen:
                 chosen.append(name)
     return tuple(chosen)

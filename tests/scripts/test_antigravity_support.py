@@ -107,13 +107,15 @@ class AntigravitySupportTests(unittest.TestCase):
         )
 
     def test_windows_command_is_cmd_safe_not_powershell(self):
-        command = self.hosts.chaos_guard_locator_command(
-            windows=True, host="antigravity", event="PreToolUse"
-        )
-        self.assertNotIn("$a=", command)
-        self.assertNotIn("Get-Command", command)
-        self.assertIn("py -3 -c", command)
-        self.assertIn("antigravity PreToolUse", command)
+        for event in ("PreToolUse", "PostToolUse", "SessionStart", "PreInvocation", "PostInvocation", "Stop"):
+            command = self.hosts.chaos_guard_locator_command(
+                windows=True, host="antigravity", event=event
+            )
+            self.assertNotIn("$a=", command)
+            self.assertNotIn("Get-Command", command)
+            self.assertIn("py -3 -c", command)
+            self.assertIn(f"antigravity {event}", command)
+            self.assertLessEqual(len(command), self.hosts.HOOK_COMMAND_MAX_CHARS)
 
     def test_kernel_normalizes_and_adapts_all_agy_events(self):
         event = self.kernel.normalize_event(
@@ -453,6 +455,194 @@ class AntigravitySupportTests(unittest.TestCase):
             with mock.patch.dict(os.environ, env, clear=True):
                 self.user_layer.uninstall_user_layer(home)
             self.assertFalse(user_hooks.exists())
+
+    def test_user_layer_deferral_from_global_dir_and_valid_json_stdout(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            home = root / "home"
+            project = root / "project"
+            (project / ".chaos-engine").mkdir(parents=True)
+            (project / ".chaos-engine" / "install.py").write_text("# project\n", encoding="utf-8")
+            (project / ".agents").mkdir(parents=True)
+            agy_dir = home / ".gemini" / "config"
+            agy_dir.mkdir(parents=True)
+
+            env = os.environ.copy()
+            env["CHAOS_ENGINE_USER_HOME"] = str(home)
+            env["CHAOS_ENGINE_USER_DIR"] = str(root / "data")
+            env["CHAOS_ENGINE_CONFIG_HOME"] = str(root / "config")
+            env["CHAOS_ENGINE_STATE_DIR"] = str(root / "state")
+            env["CHAOS_ENGINE_CACHE_DIR"] = str(root / "cache")
+            with mock.patch.dict(os.environ, env, clear=True):
+                self.user_layer.install_user_layer(
+                    home=home,
+                    project=project,
+                    source=ROOT,
+                    commit="a" * 40,
+                    hosts=("agy",),
+                    hooks=True,
+                )
+            self.assertTrue((agy_dir / "hooks.json").is_file())
+            layer_marker = project / ".chaos-engine-state" / "sessions" / "conv-defer.layer"
+            layer_marker.parent.mkdir(parents=True)
+            layer_marker.write_text("project\n", encoding="utf-8")
+            launch = root / "data" / "current" / "launch.py"
+
+            # User-layer PreToolUse run from ~/.gemini/config/ must defer and emit {"decision":"allow"}
+            deferred_pre = subprocess.run(
+                [sys.executable, str(launch), "antigravity", "PreToolUse", "--layer", "user"],
+                input=json.dumps(
+                    {
+                        "conversationId": "conv-defer",
+                        "hookEventName": "PreToolUse",
+                        "cwd": str(project),
+                        "toolCall": {
+                            "id": "t1",
+                            "name": "run_command",
+                            "args": {"CommandLine": "rm -rf /"},
+                        },
+                    }
+                ),
+                cwd=agy_dir,
+                capture_output=True,
+                text=True,
+                env=env,
+                check=False,
+            )
+            self.assertEqual(0, deferred_pre.returncode, deferred_pre.stderr)
+            self.assertEqual({"decision": "allow"}, json.loads(deferred_pre.stdout))
+
+            # User-layer SessionStart deferral emits {}
+            deferred_ss = subprocess.run(
+                [sys.executable, str(launch), "antigravity", "SessionStart", "--layer", "user"],
+                input=json.dumps(
+                    {
+                        "conversationId": "conv-defer",
+                        "hookEventName": "SessionStart",
+                        "workspacePaths": [str(project)],
+                    }
+                ),
+                cwd=agy_dir,
+                capture_output=True,
+                text=True,
+                env=env,
+                check=False,
+            )
+            self.assertEqual(0, deferred_ss.returncode, deferred_ss.stderr)
+            self.assertEqual({}, json.loads(deferred_ss.stdout))
+
+    def test_unix_locator_fails_closed_exit_zero_json_when_launcher_missing(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            empty = Path(temporary) / ".agents"
+            empty.mkdir(parents=True)
+            pre_cmd = self.hosts.chaos_guard_locator_command(
+                windows=False, host="antigravity", event="PreToolUse"
+            )
+            res = subprocess.run(
+                ["/bin/sh", "-c", pre_cmd],
+                cwd=empty,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(0, res.returncode, res.stderr)
+            self.assertEqual("deny", json.loads(res.stdout)["decision"])
+
+            pre_inv_cmd = self.hosts.chaos_guard_locator_command(
+                windows=False, host="antigravity", event="PreInvocation"
+            )
+            res_inv = subprocess.run(
+                ["/bin/sh", "-c", pre_inv_cmd],
+                cwd=empty,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(0, res_inv.returncode, res_inv.stderr)
+            self.assertEqual("terminate", json.loads(res_inv.stdout)["terminationBehavior"])
+
+    def test_agy_ide_tool_args_and_aliases_and_foreign_doctor_hooks(self):
+        # AbsolutePath, TargetFile, SearchDirectory normalization
+        view_ev = self.kernel.normalize_event(
+            {
+                "conversationId": "c1",
+                "hookEventName": "PreToolUse",
+                "toolCall": {
+                    "id": "t1",
+                    "name": "view_file",
+                    "args": {"AbsolutePath": "/repo/big.log"},
+                },
+            },
+            "antigravity",
+        )
+        self.assertEqual("Read", view_ev.tool_name)
+        self.assertEqual("/repo/big.log", view_ev.tool_input["file_path"])
+
+        write_ev = self.kernel.normalize_event(
+            {
+                "conversationId": "c1",
+                "hookEventName": "PreToolUse",
+                "toolCall": {
+                    "id": "t2",
+                    "name": "write_to_file",
+                    "args": {"TargetFile": "/repo/app.py"},
+                },
+            },
+            "antigravity",
+        )
+        self.assertEqual("Write", write_ev.tool_name)
+        self.assertEqual("/repo/app.py", write_ev.tool_input["file_path"])
+
+        find_ev = self.kernel.normalize_event(
+            {
+                "conversationId": "c1",
+                "hookEventName": "PreToolUse",
+                "toolCall": {
+                    "id": "t3",
+                    "name": "find_by_name",
+                    "args": {"SearchDirectory": "/repo/src"},
+                },
+            },
+            "antigravity",
+        )
+        self.assertEqual("Glob", find_ev.tool_name)
+        self.assertEqual("/repo/src", find_ev.tool_input["path"])
+
+        # PostInvocation block & direct native event name
+        post_inv_deny = self.kernel.adapt_hook_output(
+            {"decision": "block", "reason": "stop now"}, "PostInvocation", "antigravity"
+        )
+        self.assertEqual("terminate", post_inv_deny["terminationBehavior"])
+        self.assertEqual("stop now", post_inv_deny["injectSteps"][0]["errorMessage"]["userMessage"])
+
+        # agy alias in install_config and guard._INSTALL_HOST_IDS
+        install_config = _load("ce_agy_install_config", ROOT / "runtime" / "install_config.py")
+        guard = _load("ce_agy_guard_alias", ROOT / "hooks" / "guard.py")
+        self.assertIn("antigravity", guard._INSTALL_HOST_IDS)
+        self.assertIn("agy", guard._INSTALL_HOST_IDS)
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            resolved = install_config.resolve_config(
+                project=project,
+                environ={"CHAOS_ENGINE_HOST": "agy", "CHAOS_ENGINE_USER_HOSTS": "agy"},
+                explicit_config=project / "absent.toml",
+            )
+            self.assertEqual(("antigravity",), resolved.values["hosts.enabled"])
+            self.assertEqual(("antigravity",), resolved.values["user_layer.hosts"])
+
+            # Foreign-only .agents/hooks.json with --hosts claude does not emit false doctor finding
+            (project / ".agents").mkdir()
+            (project / ".agents" / "hooks.json").write_text(
+                json.dumps({"my-linter": {"PostToolUse": []}}), encoding="utf-8"
+            )
+            (project / ".chaos-engine-state").mkdir()
+            (project / ".chaos-engine-state" / "host-completion.json").write_text(
+                json.dumps({"schemaVersion": 1, "targets": ["claude"]}), encoding="utf-8"
+            )
+            self.assertEqual([], self.hosts.installed_hook_drift(project))
+
+        # launch.py stays free of os.chdir( (required by host preflight contract)
+        self.assertNotIn("os.chdir(", (ROOT / "hooks" / "launch.py").read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

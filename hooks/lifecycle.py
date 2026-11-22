@@ -204,9 +204,20 @@ def stopped_companion_names(text: str) -> frozenset[str]:
     return frozenset(stopped)
 
 
+def _state_root() -> Path:
+    """Resolve the workspace root so hooks run from `.agents/` never write inside `.agents/`."""
+    try:
+        cwd = Path.cwd()
+    except OSError:
+        return Path(__file__).resolve().parents[2]
+    if cwd.name == ".agents" and (cwd.parent / ".chaos-engine").is_dir():
+        return cwd.parent
+    return cwd
+
+
 def _companion_opt_out_path(session_id: str) -> Path:
     safe = "".join(character for character in str(session_id) if character.isalnum() or character in "-_")[:80]
-    return Path.cwd() / ".chaos-engine-state" / "companion-opt-out" / (safe or "session")
+    return _state_root() / ".chaos-engine-state" / "companion-opt-out" / (safe or "session")
 
 
 def record_companion_opt_out(session_id: str, text: str) -> frozenset[str]:
@@ -270,7 +281,7 @@ def _tool_output_locator() -> str:
     """One stable line when the project store has a row. Absent store adds nothing."""
     with contextlib.suppress(Exception):
         module = _tool_output_store()
-        if module is not None and module.has_row(Path.cwd()):
+        if module is not None and module.has_row(_state_root()):
             return TOOL_OUTPUT_LOCATOR
     return ""
 

@@ -1417,6 +1417,8 @@ _INSTALL_HOST_IDS = frozenset({
     "copilot",
     "opencode",
     "cursor",
+    "antigravity",
+    "agy",
     "grok-bot",
 })
 _STDOUT_REDIRECT_OPS = frozenset({">", ">>", "1>", "1>>", "2>", "2>>", "&>", "&>>"})
@@ -3134,10 +3136,38 @@ def _guarded_event(event: dict, host: str) -> int:
     return _run_event(event, host)
 
 
+def _antigravity_enter_workspace(raw: str) -> None:
+    """Antigravity runs hooks with CWD in `.agents/`; switch to the workspace root."""
+    if os.environ.get("CHAOS_ENGINE_HOST", "").strip().lower() != "antigravity":
+        return
+    try:
+        current = Path.cwd()
+    except OSError:
+        return
+    if current.name != ".agents":
+        return
+    target: Path | None = None
+    try:
+        parsed = json.loads(raw or "{}")
+    except ValueError:
+        parsed = {}
+    if isinstance(parsed, dict):
+        raw_cwd = parsed.get("cwd")
+        if isinstance(raw_cwd, str) and raw_cwd.strip() and Path(raw_cwd).is_dir():
+            target = Path(raw_cwd)
+    if target is None and (current.parent / ".chaos-engine").is_dir():
+        target = current.parent
+    if target is not None:
+        with contextlib.suppress(OSError):
+            os.chdir(target)
+
+
 def main() -> int:
+    raw = sys.stdin.read()
+    _antigravity_enter_workspace(raw)
     callbacks = {event: _guarded_event for event in _lifecycle.LIFECYCLE_EVENTS}
     code = _lifecycle.run_hook_protocol(
-        sys.stdin.read(),
+        raw,
         callbacks,
         normalize=_kernel.normalize_hook_input,
         host_for_input=_kernel.detect_host,

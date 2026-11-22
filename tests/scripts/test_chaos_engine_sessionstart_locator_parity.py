@@ -41,6 +41,13 @@ def unwrap_context(payload: dict) -> str:
     specific = payload.get("hookSpecificOutput")
     if isinstance(specific, dict) and "additionalContext" in specific:
         return str(specific["additionalContext"])
+    steps = payload.get("injectSteps")
+    if isinstance(steps, list) and steps:
+        first = steps[0]
+        if isinstance(first, dict) and isinstance(first.get("systemMessage"), dict):
+            text = first["systemMessage"].get("systemMessage")
+            if isinstance(text, str):
+                return text
     raise AssertionError(f"no additionalContext in {payload!r}")
 
 

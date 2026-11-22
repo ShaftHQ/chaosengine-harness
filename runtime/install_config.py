@@ -21,6 +21,7 @@ try:
         CATALOG,
         CLI_ONLY_KEYS,
         COMPONENT_NAMES,
+        HOST_ALIASES,
         HOST_IDS,
         MERGE_LIST_KEYS,
         SECRET_KEY,
@@ -42,6 +43,7 @@ except ImportError:  # executed from the stage-1 bootstrap embed
         CATALOG,
         CLI_ONLY_KEYS,
         COMPONENT_NAMES,
+        HOST_ALIASES,
         HOST_IDS,
         MERGE_LIST_KEYS,
         SECRET_KEY,
@@ -191,11 +193,16 @@ def _coerce(row: InstallOption, value: object, path: Path) -> object:
     if row.kind == "list":
         if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
             raise ConfigError("CE_CONFIG_INVALID", f"{path}:{row.key}")
+        items = (
+            [HOST_ALIASES.get(item.casefold(), item.casefold()) for item in value]
+            if row.choices == HOST_IDS
+            else list(value)
+        )
         if row.choices:
-            unknown = [item for item in value if item not in row.choices]
+            unknown = [item for item in items if item not in row.choices]
             if unknown:
                 raise ConfigError("CE_CONFIG_INVALID", f"{path}:{row.key}")
-        return tuple(value)
+        return tuple(items)
     raise ConfigError("CE_CONFIG_INVALID", f"{path}:{row.key}")
 
 
@@ -404,6 +411,8 @@ def resolve_config(
         if row.kind == "int":
             env_value = _coerce(row, env_value, Path(f"env:{row.env[0]}"))
         if row.kind == "list" and row.choices:
+            if row.choices == HOST_IDS and isinstance(env_value, (list, tuple)):
+                env_value = tuple(HOST_ALIASES.get(str(item).casefold(), str(item).casefold()) for item in env_value)
             unknown = [item for item in env_value if item not in row.choices]
             if unknown:
                 raise ConfigError("CE_CONFIG_INVALID", f"env:{row.env[0]}")
