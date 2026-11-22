@@ -362,14 +362,13 @@ class RetrieveRouterTest(unittest.TestCase):
             project = Path(temporary)
             (project / "chaos-engine").mkdir()
             (project / "chaos-engine" / "tool.py").write_text("# tool\n", encoding="utf-8")
-            pages = []
+            pages = [{"path": "guides/missing.md", "text": "the palace stores shared memory", "headings": ["Gone"]}]
             for index in range(15):
                 relative = f"guides/palace-{index}.md"
                 path = project / relative
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text("the palace stores shared memory\n", encoding="utf-8")
                 pages.append({"path": relative, "text": "the palace stores shared memory", "headings": ["Palace"]})
-            pages.append({"path": "guides/missing.md", "text": "the palace stores shared memory", "headings": ["Gone"]})
             graph = project / "graphify-out"
             graph.mkdir()
             (graph / "documentation-pages.json").write_text(json.dumps({"pages": pages}), encoding="utf-8")
