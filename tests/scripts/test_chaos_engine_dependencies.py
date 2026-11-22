@@ -3389,5 +3389,20 @@ class DanglingCeUvToolShimsTest(unittest.TestCase):
             self.assertEqual("tool", command[1])
             self.assertEqual("install", command[2])
 
+
+class WindowsUvToolPathTest(unittest.TestCase):
+    def test_windows_tools_dir_and_scripts_launcher(self):
+        module = load_controller()
+        home = Path("C:/Users/a")
+        tools = module.uv_tools_dir_for("nt", {"APPDATA": "C:/Users/a/AppData/Roaming"}, home)
+        self.assertEqual(Path("C:/Users/a/AppData/Roaming/uv/tools"), tools)
+        launcher = module.uv_tool_executable(tools, "mempalace", "mempalace", system="nt")
+        self.assertEqual(tools / "mempalace" / "Scripts" / "mempalace.exe", launcher)
+        self.assertEqual(
+            home / ".local/share/uv/tools",
+            module.uv_tools_dir_for("posix", {}, home),
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -734,6 +734,95 @@ def bind_store_invocation(tool: str, invocation: list[str], project: Path, insta
     return [invocation[0], *stores["inject_graphify_arguments"](invocation[1:], graph_json)]
 
 
+def search_local_tools(query: str, limit: int = 5, root: Path | None = None) -> list[dict]:
+    """Rank harness index, MCP names, and the level-1 catalog. Never more than ``limit``."""
+    import json
+
+    project = Path(root) if root is not None else Path(__file__).resolve().parent
+    tokens = [token for token in re.findall(r"[a-z0-9]+", query.casefold()) if len(token) > 1]
+    documents: list[dict] = []
+    index = project / "harness-index.json"
+    if index.is_file():
+        try:
+            payload = json.loads(index.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            payload = {}
+        for entry in payload.get("entries") or []:
+            if not isinstance(entry, dict):
+                continue
+            text = " ".join(
+                str(entry.get(key) or "") for key in ("name", "description", "path", "kind", "family")
+            )
+            documents.append(
+                {"name": entry.get("name"), "path": entry.get("path"), "source": "harness-index", "text": text}
+            )
+    catalog = project / "references" / "level-1-catalog.md"
+    if not catalog.is_file():
+        catalog = project / ".chaos-engine" / "references" / "level-1-catalog.md"
+    if catalog.is_file():
+        try:
+            lines = catalog.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            lines = []
+        for line in lines:
+            stripped = line.strip()
+            if stripped:
+                documents.append(
+                    {"name": stripped[:80], "path": "references/level-1-catalog.md", "source": "catalog", "text": stripped}
+                )
+    policy = runtime_module(project / "chaos-engine" if (project / "chaos-engine" / "runtime").is_dir() else project, "mcp_policy.py")
+    if not policy.is_file():
+        policy = project / "runtime" / "mcp_policy.py"
+    if policy.is_file():
+        try:
+            namespace = runpy.run_path(str(policy), run_name="_chaos_engine_tool_search")
+        except (OSError, RuntimeError, ValueError):
+            namespace = {}
+        table = namespace.get("EXPECTED_MCP_TOOL_NAMES") or {}
+        if isinstance(table, dict):
+            for server, names in table.items():
+                documents.append({"name": str(server), "path": "runtime/mcp_policy.py", "source": "mcp", "text": str(server)})
+                for name in names or []:
+                    documents.append(
+                        {"name": str(name), "path": "runtime/mcp_policy.py", "source": "mcp", "text": f"{server} {name}"}
+                    )
+    ranked = []
+    for document in documents:
+        folded = str(document["text"]).casefold()
+        score = sum(folded.count(token) for token in tokens)
+        if score <= 0:
+            continue
+        ranked.append((score, {key: value for key, value in document.items() if key != "text"}))
+    ranked.sort(key=lambda item: (-item[0], str(item[1].get("name") or "")))
+    return [row for _score, row in ranked[: max(0, int(limit))]]
+
+
+def tools_command(installed_root: Path, arguments: list[str]) -> int:
+    """`tool.py tools search <query> --limit N`."""
+    import json
+
+    if not arguments or arguments[0] != "search":
+        print("usage: tool.py tools search <query> [--limit N]", file=sys.stderr)
+        return 2
+    limit = 5
+    words: list[str] = []
+    pending = arguments[1:]
+    index = 0
+    while index < len(pending):
+        if pending[index] == "--limit" and index + 1 < len(pending):
+            limit = int(pending[index + 1])
+            index += 2
+            continue
+        words.append(pending[index])
+        index += 1
+    project = installed_root.resolve()
+    if not (project / "harness-index.json").is_file():
+        project = project.parent
+    rows = search_local_tools(" ".join(words), limit=limit, root=project)
+    print(json.dumps(rows[:limit]))
+    return 0
+
+
 def stores_command(installed_root: Path, arguments: list[str]) -> int:
     """Refresh, describe, or schedule the shared MemPalace and Graphify stores."""
     stores = _load_stores(installed_root)
@@ -757,6 +846,13 @@ def stores_command(installed_root: Path, arguments: list[str]) -> int:
         return 0
     if action == "refresh":
         return int(stores["refresh"](project, if_stale="--if-stale" in arguments[1:]))
+    if action == "refresh-registered":
+        return int(stores["refresh_registered"]())
+    if action == "coverage":
+        import json
+
+        print(json.dumps(stores["store_coverage"](project), separators=(",", ":")))
+        return 0
     raise ValueError(f"unsupported stores command: {action}")
 
 
@@ -868,11 +964,27 @@ def script_tool(installed_root: Path, tool: str, arguments: list[str]) -> int:
 
 def _dispatch_core(installed_root: Path, tool: str, arguments: list[str]) -> int | None:
     if tool == "entry":
+        try:
+            stores = _load_stores(installed_root)
+            spawn = stores.get("maybe_spawn_refresh")
+            if callable(spawn):
+                spawn(installed_root.resolve().parent)
+        except (OSError, RuntimeError, ValueError, TypeError):
+            pass
         phrase = " ".join(arg for arg in arguments if arg != "--full")
         print(entry_output(installed_root, full="--full" in arguments, opt_out=phrase), end="")
         return 0
     if tool == "maintain":
+        usage = "usage: tool.py maintain\n"
+        if arguments and arguments[0] in HELP_FLAGS:
+            print(usage, end="")
+            return 0
+        if arguments:
+            print(usage, end="", file=sys.stderr)
+            return 2
         return maintain(installed_root)
+    if tool == "tools":
+        return tools_command(installed_root, arguments)
     if tool == "siblings":
         if not arguments:
             print("usage: tool.py siblings nightly-failure:<workflow>", file=sys.stderr)
@@ -932,7 +1044,14 @@ def _dispatch_process(installed_root: Path, tool: str, arguments: list[str]) -> 
             text=True,
             check=False,
         )
-        sys.stdout.write(completed.stdout)
+        text_out = completed.stdout
+        if os.environ.get("CHAOS_ENGINE_RETRIEVE") == "1" and tool in {"graphify", "mempalace"}:
+            mode = os.environ.get("CHAOS_ENGINE_TOKEN_BUDGET", "balanced").strip().casefold().replace("_", "-")
+            cap = {"ultra-lean": 800, "lean": 800, "balanced": 1500, "default": 1500, "deep": 2500}.get(mode, 1500)
+            raw = text_out.encode("utf-8")
+            if len(raw) > cap:
+                text_out = raw[:cap].decode("utf-8", errors="ignore")
+        sys.stdout.write(text_out)
         sys.stderr.write(completed.stderr)
         if completed.returncode == 0:
             try:

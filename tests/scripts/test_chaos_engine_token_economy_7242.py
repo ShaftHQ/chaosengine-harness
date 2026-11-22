@@ -40,6 +40,24 @@ class TokenEconomyTests(unittest.TestCase):
         shutil.copy(CE / "runtime" / "stores.py", runtime / "stores.py")
         return root
 
+    def test_mempalace_ready_requires_drawers(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            palace = root / "palace"
+            palace.mkdir()
+            (palace / "note.txt").write_text("stray\n", encoding="utf-8")
+            env = {"CHAOS_ENGINE_MEMPALACE": str(palace), "CHAOS_ENGINE_GRAPHIFY_OUT": str(root / "graph")}
+            with unittest.mock.patch.dict(os.environ, env):
+                self.assertEqual(self.economy.MISSING, self.economy.store_states(root)[0])
+            database = palace / "sqlite_exact.sqlite3"
+            connection = __import__("sqlite3").connect(database)
+            connection.execute("create table documents (id integer primary key, body text)")
+            connection.execute("insert into documents (body) values ('x')")
+            connection.commit()
+            connection.close()
+            with unittest.mock.patch.dict(os.environ, env):
+                self.assertEqual("ready", self.economy.store_states(root)[0])
+
     def test_receipt_fields_on_a_fresh_workspace_without_add_ons(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = self._root(Path(tmp))

@@ -46,12 +46,16 @@ def patterns(project: Path) -> dict[str, re.Pattern[str]]:
     return found
 
 
+def sqlite_ro_uri(database: Path) -> str:
+    return f"{Path(database).resolve().as_uri()}?mode=ro"
+
+
 def scan(database: Path, project: Path) -> dict[str, list[str]]:
     """Return {pattern name: [drawer ids]} for every hit not on the allow list."""
     allow = {item.casefold() for item in _lines(project / ALLOW)}
     compiled = patterns(project)
     hits: dict[str, list[str]] = {}
-    connection = sqlite3.connect(f"file:{database.as_posix()}?mode=ro", uri=True)
+    connection = sqlite3.connect(sqlite_ro_uri(database), uri=True)
     try:
         for drawer, text in connection.execute("select id, document from documents"):
             text = str(text or "")

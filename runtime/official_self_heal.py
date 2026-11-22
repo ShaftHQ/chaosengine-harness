@@ -89,8 +89,12 @@ MANAGED_RUNTIME_ITEMS = ("node", "java", "maven")
 MANAGED_RUNTIME_REPAIR_COMPONENT = "tools"
 
 
-def _doctor_cli() -> str:
+def python_cli() -> str:
     return "py -3" if os.name == "nt" else "python3"
+
+
+def _doctor_cli() -> str:
+    return python_cli()
 
 
 def _doctor_command() -> str:

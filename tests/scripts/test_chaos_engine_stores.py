@@ -521,7 +521,12 @@ class SharedStoreTest(unittest.TestCase):
             '{"nodes":[{"id":"foreign"}]}\n', encoding="utf-8"
         )
         self.stores.write_marker(self.primary / "graphify-out", "f" * 40)
-        (palace / self.stores.GENERIC_MARKER).unlink()
+        marker = self.stores.palace_marker_path(palace)
+        if marker.exists():
+            marker.unlink()
+        legacy_marker = palace / self.stores.GENERIC_MARKER
+        if legacy_marker.exists():
+            legacy_marker.unlink()
 
         def full_runner(command, cwd):
             if "extract" in command:
@@ -677,7 +682,7 @@ class SharedStoreTest(unittest.TestCase):
             return original_which(name, *args, **kwargs)
 
         def graph_runner(command, cwd):
-            produced = scratch / "graph-out" / "graphify-out"
+            produced = Path(command[command.index("--out") + 1]) / "graphify-out"
             produced.mkdir(parents=True, exist_ok=True)
             (produced / "graph.json").write_text('{"nodes": [], "edges": []}\n', encoding="utf-8")
             (produced / "manifest.json").write_text("{}\n", encoding="utf-8")
@@ -714,9 +719,11 @@ class SharedStoreTest(unittest.TestCase):
                 revision="c" * 40,
                 invoke=mine_runner,
             )
-        palace_filing = json.loads(
-            (self.stores.resolve_palace(self.primary) / "documentation-pages.json").read_text(encoding="utf-8")
-        )
+        palace = self.stores.resolve_palace(self.primary)
+        sidecar = palace.parent / "mempalace-documentation-pages.json"
+        self.assertTrue(sidecar.is_file(), sidecar)
+        self.assertFalse((palace / "documentation-pages.json").exists())
+        palace_filing = json.loads(sidecar.read_text(encoding="utf-8"))
         self.assertIn("journeys/start.mdx", {page["path"] for page in palace_filing["pages"]})
 
 
@@ -933,6 +940,308 @@ def load_hosts_directory_status(palace: Path) -> dict:
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module.mempalace_directory_status(palace)
+
+
+class StoreHardeningTest(unittest.TestCase):
+    """#164 store integrity and OS parity. Each test names shipped behavior."""
+
+    def setUp(self):
+        self.stores = load_stores()
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def test_sqlite_ro_uri_uses_file_uri_and_closes(self):
+        database = self.tmp / "sqlite_exact.sqlite3"
+        connection = sqlite3.connect(database)
+        connection.execute("create table documents (id integer primary key)")
+        connection.commit()
+        connection.close()
+        uri = self.stores.sqlite_ro_uri(database)
+        self.assertEqual(f"{database.resolve().as_uri()}?mode=ro", uri)
+        self.assertEqual(uri, load_split().sqlite_ro_uri(database))
+        self.assertEqual(uri, load_split_module("mempalace_privacy").sqlite_ro_uri(database))
+        opened = []
+        real = sqlite3.connect
+
+        def wrapped(*args, **kwargs):
+            conn = real(*args, **kwargs)
+            opened.append((args, kwargs, conn))
+            return conn
+
+        with unittest.mock.patch.object(self.stores.sqlite3, "connect", side_effect=wrapped):
+            self.assertEqual(0, self.stores.palace_drawer_count(self.tmp))
+        self.assertEqual(uri, opened[0][0][0])
+        self.assertTrue(opened[0][1].get("uri"))
+        with self.assertRaises(sqlite3.ProgrammingError):
+            opened[0][2].execute("select 1")
+
+    def test_merge_documentation_graph_is_idempotent(self):
+        page = {"path": "guide.md", "headings": ["Guide"], "links": ["other.md"], "text": "Body", "sections": []}
+        graph = self.stores.merge_documentation_graph(self.tmp / "graph.json", {"pages": [page]})
+        again = self.stores.merge_documentation_graph(self.tmp / "graph.json", {"pages": [page]})
+        docs = [node for node in again["nodes"] if str(node.get("id", "")).startswith("docs:")]
+        self.assertEqual(1, len(docs))
+        sources = [edge for edge in again["edges"] if str(edge.get("source", "")).startswith("docs:")]
+        self.assertEqual(len(sources), len({(edge["source"], edge.get("target"), edge.get("kind")) for edge in sources}))
+        self.assertEqual(len(graph["nodes"]), len(again["nodes"]))
+
+    def test_palace_sidecars_leave_the_palace_directory(self):
+        palace = self.tmp / "mempalace"
+        palace.mkdir()
+        legacy_pages = palace / "documentation-pages.json"
+        legacy_pages.write_text('{"pages":[{"path":"old.md"}]}', encoding="utf-8")
+        legacy_marker = palace / self.stores.GENERIC_MARKER
+        legacy_marker.write_text(
+            json.dumps({"schema_version": 1, "indexed_revision": "ab" * 20}),
+            encoding="utf-8",
+        )
+        self.assertEqual("ab" * 20, self.stores.palace_indexed_revision(palace))
+        self.assertFalse(legacy_marker.exists())
+        self.assertTrue((palace.parent / "mempalace-source-revision.json").is_file())
+        self.stores.write_documentation_filing(palace, {"pages": [{"path": "new.md"}]})
+        self.assertFalse(legacy_pages.exists())
+        self.assertTrue((palace.parent / "mempalace-documentation-pages.json").is_file())
+
+    def test_schedule_definitions_are_os_specific(self):
+        argv = ["/usr/bin/python3", "/tmp/My Tools/tool.py", "stores", "refresh-registered"]
+        launchd = self.stores.launchd_program(argv)
+        self.assertEqual(4, launchd.count("<string>"))
+        self.assertIn("<string>/tmp/My Tools/tool.py</string>", launchd)
+        self.assertNotIn("/usr/bin/python3 /tmp", launchd)
+        escaped = self.stores.launchd_program(["/tmp/a&b<c>.py"])
+        self.assertIn("/tmp/a&amp;b&lt;c&gt;.py", escaped)
+        service = self.stores.systemd_unit(argv)
+        self.assertEqual(1, service.count("Description="))
+        self.assertIn('"/tmp/My Tools/tool.py"', service)
+        self.assertIn("stores refresh --if-stale", service)
+        command = self.stores.windows_refresh_cmd(
+            [r"C:\Program Files\Python\python.exe", r"C:\Users\A B\tool.py", "stores", "refresh-registered"]
+        )
+        self.assertIn('"C:\\Program Files\\Python\\python.exe"', command)
+        self.assertIn('"C:\\Users\\A B\\tool.py"', command)
+        self.assertEqual(
+            Path("D:/data/stores-refresh.cmd"),
+            self.stores.windows_schedule_destination(Path("D:/data")),
+        )
+
+    def test_fast_mine_prefix_prefers_structural_python(self):
+        tool = self.tmp / "uv-tools" / "mempalace" / "Scripts"
+        tool.mkdir(parents=True)
+        interpreter = tool / "python.exe"
+        interpreter.write_text("interp", encoding="utf-8")
+        launcher = tool / "mempalace.exe"
+        launcher.write_text("#! /not/used/python\n", encoding="utf-8")
+        with unittest.mock.patch.object(self.stores.os, "name", "nt"):
+            prefix = self.stores.fast_mine_prefix(str(launcher))
+        self.assertEqual(str(interpreter), prefix[0])
+        self.assertTrue(prefix[1].endswith("mempalace_fast_mine.py"))
+        spaced = self.tmp / "Program Files" / "python"
+        spaced.parent.mkdir()
+        spaced.write_text("py", encoding="utf-8")
+        script = self.tmp / "mempalace"
+        script.write_text(f"#!{spaced}\n", encoding="utf-8")
+        prefix = self.stores.fast_mine_prefix(str(script))
+        self.assertEqual(str(spaced), prefix[0])
+
+    def test_windows_spawn_and_stop_do_not_need_posix(self):
+        flags = self.stores.windows_spawn_flags()
+        self.assertEqual(
+            flags,
+            0x00000008 | 0x00000200 | 0x08000000,
+        )
+        self.assertEqual(
+            ["taskkill", "/F", "/T", "/PID", "9"],
+            self.stores.windows_stop_command(9),
+        )
+        kwargs = self.stores.refresh_spawn_kwargs()
+        if os.name == "nt":
+            self.assertIn("creationflags", kwargs)
+            self.assertNotIn("start_new_session", kwargs)
+        else:
+            self.assertTrue(kwargs.get("start_new_session"))
+            self.assertIsNone(self.stores._windows_cpu_ticks(os.getpid()))
+
+    def test_project_relative_casefolds_drive_letters(self):
+        relative = self.stores._project_relative(r"C:\Repo\src\Foo.java", r"c:\repo")
+        self.assertEqual("src/Foo.java", relative)
+        split = load_split()
+        self.assertEqual("src/Foo.java", split.relativize(r"C:\Repo\src\Foo.java"))
+
+    def test_git_diff_disables_quotepath(self):
+        repo = self.tmp / "repo"
+        repo.mkdir()
+        subprocess.run(["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True)
+        subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=repo, check=True)
+        subprocess.run(["git", "config", "user.name", "t"], cwd=repo, check=True)
+        (repo / "a.py").write_text("a\n", encoding="utf-8")
+        subprocess.run(["git", "add", "a.py"], cwd=repo, check=True)
+        subprocess.run(["git", "commit", "-m", "a"], cwd=repo, check=True, capture_output=True)
+        base = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()
+        (repo / "café.py").write_text("c\n", encoding="utf-8")
+        subprocess.run(["git", "add", "café.py"], cwd=repo, check=True)
+        subprocess.run(["git", "commit", "-m", "c"], cwd=repo, check=True, capture_output=True)
+        head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()
+        seen: list[tuple[str, ...]] = []
+        real = self.stores._git
+
+        def spy(cwd, *args):
+            seen.append(args)
+            return real(cwd, *args)
+
+        with unittest.mock.patch.object(self.stores, "_git", side_effect=spy):
+            names = self.stores.incremental_mine_paths(repo, base, head)
+        self.assertEqual(["café.py"], names)
+        self.assertTrue(any("core.quotepath=false" in args for args in seen))
+
+    def test_nongit_full_mine_does_not_rewrite_gitignore(self):
+        snapshot = self.tmp / "snap"
+        (snapshot / "src").mkdir(parents=True)
+        (snapshot / "chaos-engine").mkdir()
+        (snapshot / "src" / "a.py").write_text("x\n", encoding="utf-8")
+        (snapshot / "chaos-engine" / "SKILL.md").write_text("h\n", encoding="utf-8")
+        ignore = snapshot / ".gitignore"
+        ignore.write_text("keep\n", encoding="utf-8")
+        before = ignore.read_bytes()
+        seen = []
+
+        def invoke(command, cwd):
+            seen.append(ignore.read_bytes())
+            return 0
+
+        self.stores._mine_full_tree(snapshot, invoke, ["mempalace", "mine", str(snapshot)])
+        self.assertEqual([before], seen)
+        self.assertEqual(before, ignore.read_bytes())
+
+    def test_refresh_graphify_stages_beside_the_target(self):
+        project = self.tmp / "proj"
+        project.mkdir()
+        target_parent = self.tmp / "out"
+        target_parent.mkdir()
+        staged = []
+
+        def invoke(command, cwd):
+            out = Path(command[command.index("--out") + 1])
+            staged.append(out)
+            produced = out / "graphify-out"
+            produced.mkdir(parents=True)
+            (produced / "graph.json").write_text("{}\n", encoding="utf-8")
+            (produced / "manifest.json").write_text("{}\n", encoding="utf-8")
+            return 0
+
+        with unittest.mock.patch.object(self.stores, "resolve_graph_out", return_value=target_parent / "graphify-out"), \
+             unittest.mock.patch.object(self.stores, "_store_tool", return_value="graphify"), \
+             unittest.mock.patch.object(self.stores, "store_revision", return_value="ab" * 20):
+            self.stores._refresh_graphify(
+                project, snapshot=project, scratch=self.tmp / "scratch", revision="ab" * 20, invoke=invoke
+            )
+        self.assertTrue(staged)
+        self.assertEqual(target_parent, staged[0].parent)
+        self.assertTrue((target_parent / "graphify-out" / "graph.json").is_file())
+
+    def test_store_coverage_and_knowledge_graph_path(self):
+        palace = self.tmp / "mempalace"
+        palace.mkdir()
+        with unittest.mock.patch.object(self.stores, "resolve_palace", return_value=palace), \
+             unittest.mock.patch.object(self.stores, "resolve_graph_out", return_value=self.tmp / "graphify-out"):
+            report = self.stores.store_coverage(self.tmp)
+        self.assertEqual(str(palace / "knowledge_graph.sqlite3"), report["knowledgeGraph"])
+        path = self.stores.ensure_knowledge_graph(palace)
+        self.assertEqual(palace / "knowledge_graph.sqlite3", path)
+        self.assertTrue(path.is_file())
+        self.assertIn("mempalace", report)
+
+    def test_python_cli_follows_the_os(self):
+        with unittest.mock.patch.object(self.stores.os, "name", "nt"):
+            self.assertEqual("py -3", self.stores.python_cli())
+        with unittest.mock.patch.object(self.stores.os, "name", "posix"):
+            self.assertEqual("python3", self.stores.python_cli())
+        dependencies = load_split_module("dependencies")
+        heal = load_split_module("official_self_heal")
+        with unittest.mock.patch.object(dependencies.os, "name", "nt"), \
+             unittest.mock.patch.object(heal.os, "name", "nt"):
+            self.assertEqual("py -3", dependencies.python_cli())
+            self.assertEqual("py -3", heal.python_cli())
+
+    def test_host_excludes_match_dependencies(self):
+        dependencies = load_split_module("dependencies")
+        split = load_split()
+        self.assertEqual(self.stores.HOST_EXCLUDE_PREFIXES, dependencies.HOST_EXCLUDE_PREFIXES)
+        self.assertEqual(self.stores.HOST_EXCLUDE_PREFIXES, split.HOST_EXCLUDE_PREFIXES)
+        self.assertEqual(
+            (".agents/", ".claude/", ".codex/", ".cursor/", ".gemini/", ".github/hooks/", ".grok/", ".opencode/", "plugins/"),
+            self.stores.HOST_EXCLUDE_PREFIXES,
+        )
+
+    def test_harness_class_ignores_identifier_case(self):
+        split = load_split()
+        self.assertFalse(split.is_harness_path("src/OrderService.java"))
+        self.assertFalse(split.is_harness_path("src/order_service.py"))
+        self.assertTrue(split.is_harness_path(".claude/skills/x/SKILL.md"))
+        self.assertTrue(split.is_harness_path("plugins/chaos-engine/plugin.json"))
+        hits = [
+            {"path": "src/OrderService.java", "section": "OrderService", "label": "OrderService"},
+            {"path": "chaos-engine/OrderService.md", "section": "OrderService", "label": "OrderService"},
+        ]
+        kept = split.apply_path_predicate("OrderService", hits)
+        self.assertEqual(
+            {"src/OrderService.java", "chaos-engine/OrderService.md"},
+            {hit["path"] for hit in kept},
+        )
+
+    def test_content_walk_skips_plugin_trees(self):
+        root = self.tmp / "tree"
+        (root / "plugins" / "x").mkdir(parents=True)
+        (root / "src").mkdir()
+        (root / "plugins" / "x" / "a.txt").write_text("a\n", encoding="utf-8")
+        (root / "src" / "b.txt").write_text("b\n", encoding="utf-8")
+        first = self.stores.project_content_revision(root)
+        (root / "plugins" / "x" / "a.txt").write_text("changed\n", encoding="utf-8")
+        self.assertEqual(first, self.stores.project_content_revision(root))
+
+    def test_refresh_prunes_drawers_with_sqlite(self):
+        calls = []
+        project = self.tmp / "proj"
+        project.mkdir()
+        palace = self.tmp / "mempalace"
+        palace.mkdir()
+
+        def invoke(command, cwd):
+            return 0
+
+        with unittest.mock.patch.object(self.stores, "_store_tool", return_value="mempalace"), \
+             unittest.mock.patch.object(self.stores, "resolve_palace", return_value=palace), \
+             unittest.mock.patch.object(self.stores, "fast_mine_prefix", return_value=["mempalace"]), \
+             unittest.mock.patch.object(self.stores, "incremental_mine_paths", return_value=[]), \
+             unittest.mock.patch.object(self.stores, "read_wing", return_value=None), \
+             unittest.mock.patch.object(self.stores, "_prune_palace_drawers", side_effect=lambda cwd: calls.append(cwd), create=True), \
+             unittest.mock.patch.object(self.stores, "store_revision", return_value="ab" * 20):
+            self.stores._refresh_mempalace(
+                project, snapshot=project, primary=project, revision="ab" * 20, invoke=invoke
+            )
+        self.assertEqual([project], calls)
+
+    def test_refresh_registered_command_is_wired(self):
+        self.assertTrue(callable(self.stores.refresh_registered))
+        with unittest.mock.patch.object(self.stores, "_registered_refresh_roots", return_value=[]):
+            self.assertEqual(0, self.stores.refresh_registered())
+
+    def test_wake_locator_is_empty_when_absent(self):
+        wake = load_split_module("wake_pack")
+        self.assertEqual("", wake.session_start_locator(self.tmp))
+        self.assertEqual(0, len(wake.session_start_locator(self.tmp).encode("utf-8")))
+
+
+def load_split():
+    return load_split_module("corpus_split")
+
+
+def load_split_module(name: str):
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(f"ce_{name}_ws2", ROOT / "runtime" / f"{name}.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 if __name__ == "__main__":

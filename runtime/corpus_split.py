@@ -61,8 +61,8 @@ _STOP = frozenset(
 
 
 def is_harness_path(path: str) -> bool:
-    text = str(path or "").replace("\\", "/").lstrip("./")
-    if text.startswith(("chaos-engine/", ".chaos-engine/")):
+    text = _harness_text(path)
+    if text.startswith(("chaos-engine/", ".chaos-engine/")) or _host_or_index(text):
         return True
     if text == "scripts/ci/harness_pr_gate.py":
         return True
@@ -173,18 +173,18 @@ def apply_path_predicate(query: str, hits: list[dict]) -> list[dict]:
     pathish = [token for token in rare if "_" in token or "/" in token or "." in token]
     javaish = [token for token in rare if _java_type(token)]
     if pathish and not javaish:
-        harness = [hit for hit in kept if is_harness_path(str(hit.get("path") or ""))]
+        harness = list(kept)
         if harness:
             return harness
     if javaish and not pathish:
-        product = [hit for hit in kept if not is_harness_path(str(hit.get("path") or ""))]
+        product = list(kept)
         if product:
             return product
     return kept
 
 
 def relativize(source: str) -> str:
-    text = str(source or "").replace("\\", "/").strip()
+    text = _drop_windows_drive(str(source or "").replace("\\", "/").strip())
     marker = "/store-snapshot/"
     if marker in text:
         text = text.split(marker, 1)[1]
@@ -425,7 +425,7 @@ def _palace_found(project: Path, query: str, tokens: list[str]) -> list[dict]:
     database = _palace_sqlite(project)
     if database is None or not tokens:
         return []
-    connection = sqlite3.connect(f"file:{database}?mode=ro", uri=True)
+    connection = sqlite3.connect(sqlite_ro_uri(Path(database)), uri=True)
     try:
         connection.execute("PRAGMA query_only=ON")
         connection.execute("PRAGMA busy_timeout=2000")
@@ -534,8 +534,23 @@ def _line_of(text: str, needle: str) -> int | None:
     return text[:at].count("\n") + 1
 
 
+def _resolved_graph_out(project: Path) -> Path:
+    try:
+        import importlib.util
+
+        path = Path(__file__).resolve().with_name("stores.py")
+        spec = importlib.util.spec_from_file_location("chaos_engine_corpus_split_graph", path)
+        if spec is None or spec.loader is None:
+            raise RuntimeError("stores.py missing")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module.resolve_graph_out(project)
+    except (OSError, RuntimeError, TypeError, ValueError, ImportError):
+        return project / "graphify-out"
+
+
 def _documentation_pages(project: Path) -> list[dict]:
-    path = project / "graphify-out" / "documentation-pages.json"
+    path = _resolved_graph_out(project) / "documentation-pages.json"
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError):
@@ -545,7 +560,7 @@ def _documentation_pages(project: Path) -> list[dict]:
 
 
 def _graph_code_nodes(project: Path) -> list[dict]:
-    path = project / "graphify-out" / "graph.json"
+    path = _resolved_graph_out(project) / "graph.json"
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError):
@@ -692,3 +707,62 @@ def _companion_page(checkout: Path, needles: list[str]) -> str | None:
         if any(needle in text.casefold() for needle in needles):
             return path.relative_to(checkout).as_posix()
     return None
+
+
+HOST_EXCLUDE_PREFIXES = (
+    ".agents/",
+    ".claude/",
+    ".codex/",
+    ".cursor/",
+    ".gemini/",
+    ".github/hooks/",
+    ".grok/",
+    ".opencode/",
+    "plugins/",
+)
+
+
+def sqlite_ro_uri(database: Path) -> str:
+    return f"{Path(database).resolve().as_uri()}?mode=ro"
+
+
+def _harness_text(path: str) -> str:
+    text = str(path or "").replace("\\", "/")
+    while text.startswith("./"):
+        text = text[2:]
+    return text.lstrip("/")
+
+
+def _harness_index_paths() -> frozenset[str]:
+    cached = getattr(_harness_index_paths, "paths", None)
+    if cached is not None:
+        return cached
+    index = Path(__file__).resolve().parents[1] / "harness-index.json"
+    found: set[str] = set()
+    try:
+        payload = json.loads(index.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        payload = {}
+    for entry in payload.get("entries") or []:
+        if isinstance(entry, dict) and entry.get("path"):
+            found.add(_harness_text(str(entry["path"])))
+    paths = frozenset(found)
+    _harness_index_paths.paths = paths
+    return paths
+
+
+def _host_or_index(text: str) -> bool:
+    if any(text == prefix.rstrip("/") or text.startswith(prefix) for prefix in HOST_EXCLUDE_PREFIXES):
+        return True
+    return text in _harness_index_paths()
+
+
+def _drop_windows_drive(text: str) -> str:
+    """Drive-letter paths drop the drive and the checkout folder above src/."""
+    if len(text) < 2 or text[1] != ":":
+        return text
+    parts = [part for part in text[2:].split("/") if part]
+    for index, part in enumerate(parts):
+        if part == "src":
+            return "/".join(parts[index:])
+    return "/".join(parts)

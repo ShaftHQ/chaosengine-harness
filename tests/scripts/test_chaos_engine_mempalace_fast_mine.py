@@ -76,6 +76,27 @@ class FastMineTest(unittest.TestCase):
         self.assertNotIn("9.9.9", self.shim.SUPPORTED_VERSIONS)
         self.assertIn(self.shim.install(), {True, False})
 
+    def test_source_index_does_not_require_a_supported_version(self) -> None:
+        self.shim.ensure_source_file_index(self.db.cursor())
+        self.assertEqual(1, self.db.execute(
+            "SELECT count(*) FROM sqlite_master WHERE name = 'chaos_engine_idx_source_file'").fetchone()[0])
+
+    def test_stores_and_roots_are_cached_per_process(self) -> None:
+        first = self.shim._stores()
+        second = self.shim._stores()
+        self.assertIs(first, second)
+        calls = {"n": 0}
+        real = first.registered_roots
+
+        def counting(start):
+            calls["n"] += 1
+            return real(start)
+
+        first.registered_roots = counting
+        self.shim.cached_registered_roots(first, Path("."))
+        self.shim.cached_registered_roots(first, Path("."))
+        self.assertEqual(1, calls["n"])
+
 
 class FastMinePinTest(unittest.TestCase):
     def test_pinned_mempalace_is_a_supported_shim_version(self) -> None:

@@ -61,7 +61,11 @@ def store_states(project: Path) -> tuple[str, str]:
         graph = stores.resolve_graph_out(project)
     except Exception:  # nosec B110 - receipt must never break entry
         return MISSING, MISSING
-    mem = "ready" if palace.is_dir() and any(palace.iterdir()) else MISSING
+    try:
+        drawers = stores.palace_drawer_count(palace)
+    except (OSError, TypeError, ValueError):
+        drawers = None
+    mem = "ready" if isinstance(drawers, int) and drawers > 0 else MISSING
     gra = "ready" if (graph / "graph.json").is_file() else MISSING
     return mem, gra
 
