@@ -644,6 +644,63 @@ class AntigravitySupportTests(unittest.TestCase):
         # launch.py stays free of os.chdir( (required by host preflight contract)
         self.assertNotIn("os.chdir(", (ROOT / "hooks" / "launch.py").read_text(encoding="utf-8"))
 
+    def test_windows_user_layer_command_is_cmd_and_powershell_safe(self):
+        with mock.patch.object(self.user_layer.os, "name", "nt"):
+            cmd = self.user_layer._stable_command(
+                Path("C:/Users/Jane Doe/AppData/Local/chaos-engine/current/launch.py"),
+                "antigravity",
+                "PreToolUse",
+            )
+        self.assertFalse(cmd.startswith('"'), cmd)
+        self.assertEqual(2, cmd.count('"'), cmd)
+        self.assertIn("py -3 ", cmd)
+        self.assertIn("antigravity PreToolUse --layer user", cmd)
+
+    def test_user_layer_session_start_from_global_config_does_not_pollute_config_dir(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            home = root / "home"
+            project = root / "project"
+            project.mkdir(parents=True)
+            agy_dir = home / ".gemini" / "config"
+            agy_dir.mkdir(parents=True)
+
+            env = os.environ.copy()
+            env["CHAOS_ENGINE_USER_HOME"] = str(home)
+            env["CHAOS_ENGINE_USER_DIR"] = str(root / "data")
+            env["CHAOS_ENGINE_CONFIG_HOME"] = str(root / "config")
+            env["CHAOS_ENGINE_STATE_DIR"] = str(root / "state")
+            env["CHAOS_ENGINE_CACHE_DIR"] = str(root / "cache")
+            with mock.patch.dict(os.environ, env, clear=True):
+                self.user_layer.install_user_layer(
+                    home=home,
+                    project=project,
+                    source=ROOT,
+                    commit="a" * 40,
+                    hosts=("antigravity",),
+                    hooks=True,
+                )
+            launch = root / "data" / "current" / "launch.py"
+            res = subprocess.run(
+                [sys.executable, str(launch), "agy", "SessionStart", "--layer", "user"],
+                input=json.dumps(
+                    {
+                        "conversationId": "conv-global-only",
+                        "hookEventName": "SessionStart",
+                        "workspacePaths": [str(project)],
+                    }
+                ),
+                cwd=agy_dir,
+                capture_output=True,
+                text=True,
+                env=env,
+                check=False,
+            )
+            self.assertEqual(0, res.returncode, res.stderr)
+            out = json.loads(res.stdout)
+            self.assertIn("injectSteps", out)
+            self.assertFalse((agy_dir / ".chaos-engine-state").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -63,7 +63,8 @@ def _skill_text() -> str:
 
 def _stable_command(launch: Path, host: str, event: str) -> str:
     if os.name == "nt":
-        return f'"{sys.executable}" "{launch}" {host} {event} --layer user'
+        # Starts with bare `py` (only 2 quotes total) so both cmd /c and PowerShell parse it.
+        return f'py -3 "{launch}" {host} {event} --layer user'
     return f"{shlex.quote(sys.executable)} {shlex.quote(str(launch))} {host} {event} --layer user"
 
 

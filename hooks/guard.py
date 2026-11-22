@@ -3137,14 +3137,16 @@ def _guarded_event(event: dict, host: str) -> int:
 
 
 def _antigravity_enter_workspace(raw: str) -> None:
-    """Antigravity runs hooks with CWD in `.agents/`; switch to the workspace root."""
+    """Antigravity runs hooks with CWD in `.agents/` or `~/.gemini/config/`; switch to the workspace root."""
     if os.environ.get("CHAOS_ENGINE_HOST", "").strip().lower() != "antigravity":
         return
     try:
         current = Path.cwd()
     except OSError:
         return
-    if current.name != ".agents":
+    in_agents = current.name == ".agents"
+    in_global_config = current.name == "config" and current.parent.name == ".gemini"
+    if not (in_agents or in_global_config):
         return
     target: Path | None = None
     try:
@@ -3155,7 +3157,14 @@ def _antigravity_enter_workspace(raw: str) -> None:
         raw_cwd = parsed.get("cwd")
         if isinstance(raw_cwd, str) and raw_cwd.strip() and Path(raw_cwd).is_dir():
             target = Path(raw_cwd)
-    if target is None and (current.parent / ".chaos-engine").is_dir():
+        if target is None:
+            workspaces = parsed.get("workspacePaths")
+            if isinstance(workspaces, list):
+                for entry in workspaces:
+                    if isinstance(entry, str) and entry.strip() and Path(entry).is_dir():
+                        target = Path(entry)
+                        break
+    if target is None and in_agents and (current.parent / ".chaos-engine").is_dir():
         target = current.parent
     if target is not None:
         with contextlib.suppress(OSError):

@@ -134,8 +134,10 @@ def find_guard(data: str | None):
         if isinstance(parsed, dict):
             hints.append(str(parsed.get("cwd") or ""))
             workspaces = parsed.get("workspacePaths")
-            if isinstance(workspaces, list) and workspaces and isinstance(workspaces[0], str):
-                hints.append(workspaces[0])
+            if isinstance(workspaces, list):
+                for ws in workspaces:
+                    if isinstance(ws, str) and ws.strip():
+                        hints.append(ws)
     except (OSError, ValueError, AttributeError):
         pass  # bad/missing payload cwd hint; keep walking CLAUDE_PROJECT_DIR only
     for hint in filter(None, hints):
@@ -411,10 +413,13 @@ def append_hook_trace(host: str, data: str | None, event: str | None) -> None:
         return
 
 
+_HOST_ALIASES = {"agy": "antigravity"}
+
+
 def _launch_options(argv: list[str]) -> tuple[str, str | None, str | None]:
     if len(argv) < 2 or not re.fullmatch(r"[a-z0-9-]+", argv[1] or ""):
         deny("ChaosEngine launch.py requires host name (e.g. claude)")
-    host = argv[1]
+    host = _HOST_ALIASES.get(argv[1], argv[1])
     event = None
     layer = None
     index = 2
@@ -456,8 +461,10 @@ def _payload_cwd_roots(start: pathlib.Path, data: str | None) -> list[pathlib.Pa
         if isinstance(raw_cwd, str) and raw_cwd.strip():
             roots.append(pathlib.Path(raw_cwd))
         workspaces = payload.get("workspacePaths")
-        if isinstance(workspaces, list) and workspaces and isinstance(workspaces[0], str) and workspaces[0].strip():
-            roots.append(pathlib.Path(workspaces[0]))
+        if isinstance(workspaces, list):
+            for ws in workspaces:
+                if isinstance(ws, str) and ws.strip():
+                    roots.append(pathlib.Path(ws))
     return roots
 
 

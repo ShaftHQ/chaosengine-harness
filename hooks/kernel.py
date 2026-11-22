@@ -410,14 +410,19 @@ class HookEvent:
     timed_out: bool = False
 
 
+_HOST_ALIASES = {"agy": "antigravity"}
+
+
 def detect_host(raw: Mapping[str, object] | None = None) -> str:
     configured = os.environ.get("CHAOS_ENGINE_HOST", "").strip().lower()
+    configured = _HOST_ALIASES.get(configured, configured)
     if configured in HOST_CAPABILITIES:
         return configured
     if os.environ.get("GROK_HOOK_EVENT"):
         return "grok"
     supplied = raw or {}
     declared = str(supplied.get("host") or supplied.get("provider") or "").strip().lower()
+    declared = _HOST_ALIASES.get(declared, declared)
     if declared in HOST_CAPABILITIES:
         return declared
     if str(supplied.get("hook_event_name", "")).startswith(("Before", "After")):

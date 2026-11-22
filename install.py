@@ -7880,7 +7880,10 @@ def repair_component(  # noqa: MC0001 - component switch keeps one operator entr
             )
             payload = {"status": "repaired", "component": name, "action": "rebind"}
             if name == "hooks":
-                payload["receiptShims"] = wire_receipt_shims(project)
+                targets = read_completion_targets(project)
+                payload["receiptShims"] = (
+                    wire_selected_receipt_shims(project, targets) if targets else wire_receipt_shims(project)
+                )
             return payload
         return _repair_dependency_component(
             project,
