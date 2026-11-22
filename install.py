@@ -3090,6 +3090,14 @@ def write_cross_rollback_journal(
     return journal
 
 
+def _images_for_decode(controller, project: Path, images: object) -> object:
+    """Hydrate blob refs when this controller can. An older hosts module stored inline base64."""
+    hydrate = getattr(controller, "_hydrate_image_map", None)
+    if not callable(hydrate):
+        return images
+    return hydrate(project, images)
+
+
 def validate_prior_host_receipt(
     project: Path, controller, raw: bytes, desired_commit: str
 ) -> dict[str, object]:
@@ -3109,10 +3117,10 @@ def validate_prior_host_receipt(
     ):
         raise ValueError("cross-resource rollback journal is invalid")
     controller.decode_images(
-        controller._hydrate_image_map(project, receipt.get("before")), nullable=True
+        _images_for_decode(controller, project, receipt.get("before")), nullable=True
     )
     controller.decode_images(
-        controller._hydrate_image_map(project, receipt.get("after")), nullable=True
+        _images_for_decode(controller, project, receipt.get("after")), nullable=True
     )
     return receipt
 
@@ -3967,8 +3975,8 @@ def rollback(  # noqa: MC0001 - cross-resource rollback is one journaled state m
                     _current_receipt, current_raw = previous_hosts.read_receipt(project)
                     current_images = previous_hosts.current_images(project)
                     prior_after = previous_hosts.decode_images(
-                        previous_hosts._hydrate_image_map(
-                            project, prior_host_receipt_value["after"]
+                        _images_for_decode(
+                            previous_hosts, project, prior_host_receipt_value["after"]
                         ),
                         nullable=True,
                     )
@@ -4075,8 +4083,8 @@ def rollback(  # noqa: MC0001 - cross-resource rollback is one journaled state m
                 pass
             elif prior_host_receipt_value is not None:
                 prior_after = previous_hosts.decode_images(
-                    previous_hosts._hydrate_image_map(
-                        project, prior_host_receipt_value["after"]
+                    _images_for_decode(
+                        previous_hosts, project, prior_host_receipt_value["after"]
                     ),
                     nullable=True,
                 )

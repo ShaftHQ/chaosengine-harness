@@ -987,6 +987,24 @@ module.install_with_dependencies(project, source, "3" * 40)
                     project, hosts, format_only, "1" * 40
                 )
             MODULE.validate_prior_host_receipt(project, hosts, raw, "1" * 40)
+            parsed = json.loads(raw.decode("utf-8"))
+            parsed["before"] = hosts._hydrate_image_map(project, parsed["before"])
+            parsed["after"] = hosts._hydrate_image_map(project, parsed["after"])
+            inline = hosts.receipt_bytes(parsed, project)
+
+            class _OldHosts:
+                SCHEMA_VERSION = hosts.SCHEMA_VERSION
+
+                def host_routes(self):
+                    return hosts.host_routes()
+
+                def receipt_bytes(self, receipt, project):
+                    return hosts.receipt_bytes(receipt, project)
+
+                def decode_images(self, value, *, nullable):
+                    return hosts.decode_images(value, nullable=nullable)
+
+            MODULE.validate_prior_host_receipt(project, _OldHosts(), inline, "1" * 40)
 
     def test_account_rollback_journal_syncs_directory_entries(self):
         with tempfile.TemporaryDirectory() as temporary:
