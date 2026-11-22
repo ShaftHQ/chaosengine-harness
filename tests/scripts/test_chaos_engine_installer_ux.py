@@ -2776,5 +2776,61 @@ class DoctorDigestParity6325Tests(unittest.TestCase):
         self.assertNotIn("hooks", broken)
 
 
+class InstallerPalaceAndIgnoreTests(unittest.TestCase):
+    """#164 install slice: resolved palace and the nine host ignore trees."""
+
+    HOST_TREES = (
+        ".agents/",
+        ".claude/",
+        ".codex/",
+        ".cursor/",
+        ".gemini/",
+        ".github/hooks/",
+        ".grok/",
+        ".opencode/",
+        "plugins/",
+    )
+
+    def test_graphify_ignore_seeds_every_host_tree(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            INSTALL.seed_graphify_ignore(project)
+            lines = (project / ".graphifyignore").read_text(encoding="utf-8").splitlines()
+        for entry in self.HOST_TREES:
+            self.assertIn(entry, lines)
+        for entry in (".chaos-engine/", ".memory/", "graphify-out/"):
+            self.assertIn(entry, lines)
+
+    def test_central_palace_skips_checkout_mempalace(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary) / "consumer"
+            project.mkdir()
+            central = Path(temporary) / "central-palace"
+            central.mkdir()
+            controller = unittest.mock.Mock()
+            controller.mempalace_project_palace.return_value = (
+                project / ".git" / "chaos-engine" / "mempalace"
+            )
+            legacy = "SHA" + "FT_MEMPALACE"
+            with unittest.mock.patch.dict(
+                os.environ, {"CHAOS_ENGINE_MEMPALACE": str(central.resolve())}, clear=False
+            ):
+                os.environ.pop(legacy, None)
+                created = INSTALL.initialize_account_project_palace(project, controller, HOSTS)
+                self.assertFalse(created)
+                self.assertFalse((project / ".chaos-engine-state" / "mempalace").exists())
+                finding = INSTALL._mempalace_sqlite_missing_finding(project)
+        self.assertIsNotNone(finding)
+        self.assertEqual("invalid", finding["status"])
+        self.assertIn("sqlite_exact.sqlite3", finding["detail"])
+
+    def test_research_note_scrubs_the_captured_hostname(self):
+        text = (
+            ROOT / "docs/research/2026-11-21-installer-revamp/research-full.md"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("TheMohie-ROG-Zephyrus-G14-GA401QM-GA401QM", text)
+        self.assertIn("<user>@<host>", text)
+
+
 if __name__ == "__main__":
     unittest.main()

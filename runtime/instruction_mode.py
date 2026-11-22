@@ -245,7 +245,7 @@ def write_report(project: Path) -> Path:
 
 def doctor_row(project: Path) -> dict[str, object]:
     found = conflicts(project) if project.is_dir() else []
-    return {"status": "warn" if found else "pass", "conflicts": len(found)}
+    return {"status": "warn" if found else "pass", "conflicts": len(found), "items": found}
 
 
 def _git(project: Path, *args: str) -> subprocess.CompletedProcess[str]:
