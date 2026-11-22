@@ -2289,6 +2289,317 @@ def cmd_wordcue(args: argparse.Namespace) -> int:
     return report("wordcue", PASS, lines=len(data["lines"]))
 
 
+_PACE_WPS_MAX = 3.5
+_WPM_BAND = (140, 160)
+_SYNC_SECONDS = 0.150
+_SYNC_FRAMES = 3
+_ASPECTS = ("16:9", "9:16")
+
+
+def _review_lines(data: object) -> list | None:
+    if not isinstance(data, dict):
+        return None
+    lines = data.get("lines")
+    return lines if isinstance(lines, list) else None
+
+
+def _word_start(line: dict, label: str) -> float | None:
+    target = label.strip()
+    words = line.get("words")
+    if not target or not isinstance(words, list):
+        return None
+    for item in words:
+        if not isinstance(item, dict):
+            continue
+        text = item.get("text")
+        if isinstance(text, str) and text.strip() == target:
+            return _timing_number(item.get("start"))
+    return None
+
+
+def _word_key(line: dict) -> tuple | None:
+    words = line.get("words")
+    if not isinstance(words, list):
+        return None
+    rows = []
+    for item in words:
+        if not isinstance(item, dict):
+            return None
+        text = item.get("text")
+        start, end = _timing_number(item.get("start")), _timing_number(item.get("end"))
+        if not isinstance(text, str) or start is None or end is None:
+            return None
+        rows.append((text, start, end))
+    return tuple(rows)
+
+
+def _line_clock(line: dict) -> tuple | None:
+    key = _word_key(line)
+    if key is None:
+        return None
+    return (key, line.get("cue_at"), line.get("take"))
+
+
+def within_cue_tolerance(delta: float, fps: float) -> bool:
+    """True when the cue is within 150 ms or within 3 frames, whichever is wider."""
+    if fps <= 0:
+        return False
+    return delta <= _SYNC_SECONDS + 1e-9 or delta <= (_SYNC_FRAMES / fps) + 1e-9
+
+
+def _line_pace(line: object) -> tuple[float, float] | None:
+    if not isinstance(line, dict):
+        return None
+    words = line.get("words")
+    if not isinstance(words, list) or not words:
+        return None
+    starts: list[float] = []
+    ends: list[float] = []
+    for word in words:
+        if not isinstance(word, dict):
+            return None
+        text = word.get("text")
+        start, end = _timing_number(word.get("start")), _timing_number(word.get("end"))
+        if not isinstance(text, str) or not text.strip() or start is None or end is None or not end > start:
+            return None
+        starts.append(start)
+        ends.append(end)
+    span = max(ends) - min(starts)
+    if span <= 0:
+        return None
+    wps = len(starts) / span
+    return wps, wps * 60
+
+
+def narration_pace_report(data: object) -> dict:
+    """Words/s per line (cap 3.5) and wpm against 140–160. Missing timings fail closed."""
+    lines = _review_lines(data)
+    result: dict = {
+        "reasons": [],
+        "wpm": [],
+        "wps": [],
+        "wpm_band": [140, 160],
+        "wps_max": _PACE_WPS_MAX,
+        "lines": [],
+    }
+    if not lines:
+        result["reasons"].append("missing-pace")
+        return result
+    low, high = _WPM_BAND
+    for index, line in enumerate(lines):
+        pace = _line_pace(line)
+        if pace is None:
+            result["reasons"].append("missing-pace")
+            continue
+        wps, wpm = pace
+        result["wps"].append(round(wps, 3))
+        result["wpm"].append(round(wpm, 1))
+        result["lines"].append({"index": index, "wps": round(wps, 3), "wpm": round(wpm, 1)})
+        if wps > _PACE_WPS_MAX + 1e-9:
+            result["reasons"].append("pace-fast")
+        if not (low - 1e-9 <= wpm <= high + 1e-9):
+            result["reasons"].append("pace-band")
+    return result
+
+
+def cue_sync_reasons(data: object) -> list[str]:
+    """Picture cue_at against the named word. Pass within 3 frames or 150 ms."""
+    if not isinstance(data, dict):
+        return ["missing-cue-sync"]
+    fps = _timing_number(data.get("fps"))
+    lines = _review_lines(data)
+    if fps is None or fps <= 0 or not lines:
+        return ["missing-cue-sync"]
+    reasons: list[str] = []
+    for line in lines:
+        if not isinstance(line, dict):
+            reasons.append("missing-cue-sync")
+            continue
+        label = line.get("word")
+        start = _word_start(line, label) if isinstance(label, str) else None
+        cue_at = _timing_number(line.get("cue_at"))
+        if start is None or cue_at is None:
+            reasons.append("missing-cue-sync")
+        elif not within_cue_tolerance(abs(cue_at - start), fps):
+            reasons.append("cue-sync")
+    return reasons
+
+
+def retake_reasons(before: object, after: object, index: object, fps: object) -> list[str]:
+    """One replaced line re-times its cue. Every other line's take and clock stay put."""
+    if not isinstance(before, list) or not isinstance(after, list):
+        return ["missing-retake"]
+    if isinstance(index, bool) or not isinstance(index, int) or not 0 <= index < len(after) or index >= len(before):
+        return ["missing-retake"]
+    if len(before) != len(after):
+        return ["retake-other-moved"]
+    reasons: list[str] = []
+    for pos, (old, new) in enumerate(zip(before, after)):
+        if pos == index:
+            continue
+        old_clock = _line_clock(old) if isinstance(old, dict) else None
+        new_clock = _line_clock(new) if isinstance(new, dict) else None
+        if old_clock is None or new_clock is None or old_clock != new_clock:
+            reasons.append("retake-other-moved")
+    old_line, new_line = before[index], after[index]
+    if not isinstance(old_line, dict) or not isinstance(new_line, dict):
+        return reasons + ["missing-retake"]
+    if _word_key(old_line) == _word_key(new_line):
+        return reasons + ["retake-unchanged"]
+    rate = _timing_number(fps)
+    label = new_line.get("word")
+    start = _word_start(new_line, label) if isinstance(label, str) else None
+    cue_at = _timing_number(new_line.get("cue_at"))
+    if rate is None or rate <= 0 or start is None or cue_at is None or not within_cue_tolerance(abs(cue_at - start), rate):
+        reasons.append("retake-stale-cue")
+    return reasons
+
+
+def _cue_names(line: dict) -> list[str] | None:
+    cues = line.get("cues")
+    if not isinstance(cues, list) or not cues:
+        return None
+    names: list[str] = []
+    for cue in cues:
+        if isinstance(cue, str) and cue.strip():
+            names.append(cue.strip())
+            continue
+        if not isinstance(cue, dict):
+            return None
+        raw = cue.get("name", cue.get("word"))
+        if not isinstance(raw, str) or not raw.strip():
+            return None
+        names.append(raw.strip())
+    return names
+
+
+def orphaned_cue_reasons(data: object) -> list[str]:
+    """A cue whose word is no longer spoken is unresolved and fails review."""
+    lines = _review_lines(data)
+    if not lines:
+        return ["orphaned-cue"]
+    reasons: list[str] = []
+    for line in lines:
+        if not isinstance(line, dict):
+            reasons.append("orphaned-cue")
+            continue
+        names = _cue_names(line)
+        spoken = _spoken_words(line)
+        if names is None or any(name not in spoken for name in names):
+            reasons.append("orphaned-cue")
+    return reasons
+
+
+def format_layout_reasons(data: object) -> list[str]:
+    """16:9 and 9:16 are each laid out. Crop, overflow, or overlap fails that format."""
+    formats = data.get("formats") if isinstance(data, dict) else None
+    if not isinstance(formats, dict):
+        return ["missing-format"]
+    reasons: list[str] = []
+    for name in _ASPECTS:
+        block = formats.get(name)
+        if not isinstance(block, dict):
+            reasons.append(f"missing-format-{name}")
+            continue
+        if block.get("laid_out") is not True or block.get("cropped") is not False:
+            reasons.append(f"cropped-{name}")
+        if block.get("overflow") is not False or block.get("overlap") is not False:
+            reasons.append(f"overflow-{name}")
+    return reasons
+
+
+def _unit_box(box: object) -> bool:
+    if not isinstance(box, dict):
+        return False
+    x, y, width, height = (_timing_number(box.get(key)) for key in ("x", "y", "w", "h"))
+    if None in (x, y, width, height):
+        return False
+    return width > 0 and height > 0 and x >= 0 and y >= 0 and x + width <= 1 and y + height <= 1
+
+
+def hero_anchor_reasons(data: object) -> list[str]:
+    """Hero box sits inside both frames, or the brief waives a piece with no hero."""
+    if not isinstance(data, dict) or "hero" not in data:
+        return ["missing-hero"]
+    hero = data.get("hero")
+    if hero is None:
+        waiver = data.get("hero_waiver")
+        return [] if isinstance(waiver, str) and waiver.strip() else ["missing-hero"]
+    if not isinstance(hero, dict):
+        return ["hero-anchor"]
+    return ["hero-anchor" for name in _ASPECTS if not _unit_box(hero.get(name))]
+
+
+def score_payoff_report(data: object) -> dict:
+    """Payoff window on the score stem. Voice must be louder than the score hit."""
+    empty = {"reasons": ["score-payoff"], "score_db": None, "vo_db": None}
+    if not isinstance(data, dict) or "score_payoff" not in data:
+        return empty
+    window = data.get("score_payoff")
+    if window is None:
+        waiver = data.get("score_waiver")
+        if isinstance(waiver, str) and waiver.strip():
+            return {"reasons": [], "score_db": None, "vo_db": None}
+        return empty
+    if not isinstance(window, dict):
+        return empty
+    start, end = _timing_number(window.get("start")), _timing_number(window.get("end"))
+    score, vo = _timing_number(window.get("score_db")), _timing_number(window.get("vo_db"))
+    result = {"reasons": [], "score_db": score, "vo_db": vo}
+    if start is None or end is None or score is None or vo is None or not end > start or not vo > score:
+        result["reasons"].append("score-payoff")
+    return result
+
+
+def word_review_reasons(data: object) -> dict:
+    """Pace, sync, orphan cues, both layouts, hero, score payoff, and an optional retake."""
+    pace = narration_pace_report(data)
+    payoff = score_payoff_report(data)
+    reasons = list(pace["reasons"])
+    reasons.extend(cue_sync_reasons(data))
+    reasons.extend(orphaned_cue_reasons(data))
+    reasons.extend(format_layout_reasons(data))
+    reasons.extend(hero_anchor_reasons(data))
+    reasons.extend(payoff["reasons"])
+    if isinstance(data, dict) and "retake" in data:
+        block = data.get("retake")
+        if not isinstance(block, dict):
+            reasons.append("missing-retake")
+        else:
+            reasons.extend(retake_reasons(block.get("before"), data.get("lines"), block.get("index"), data.get("fps")))
+    return {
+        "reasons": reasons,
+        "wpm": pace["wpm"],
+        "wps": pace["wps"],
+        "wpm_band": pace["wpm_band"],
+        "wps_max": pace["wps_max"],
+        "score_db": payoff["score_db"],
+        "vo_db": payoff["vo_db"],
+    }
+
+
+def cmd_wordreview(args: argparse.Namespace) -> int:
+    """Measured word-timed review. Prints wpm. Missing evidence fails closed."""
+    raw = Path(args.timings).read_text(encoding="utf-8")
+    if not raw.strip():
+        return report("wordreview", FAIL, reason="empty-file")
+    data = json.loads(raw)
+    review = word_review_reasons(data)
+    details = {
+        "reasons": review["reasons"],
+        "wpm": review["wpm"],
+        "wps": review["wps"],
+        "wpm_band": review["wpm_band"],
+        "wps_max": review["wps_max"],
+        "score_db": review["score_db"],
+        "vo_db": review["vo_db"],
+    }
+    if review["reasons"]:
+        return report("wordreview", FAIL, reason=review["reasons"][0], **details)
+    count = len(data["lines"]) if isinstance(data, dict) and isinstance(data.get("lines"), list) else 0
+    return report("wordreview", PASS, lines=count, **details)
+
+
 AT_RE = re.compile(r"^\s*([A-Za-z_]\w*|-?\d+(?:\.\d+)?)((?:\s*[+-]\s*\d+(?:\.\d+)?)*)\s*$")
 
 
@@ -3027,6 +3338,8 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("timings", help="JSON object with a lines array")
     p = add("wordcue", cmd_wordcue, "take, overflow, scratch name, and cue word; no ASR run")
     p.add_argument("timings", help="JSON object with a lines array")
+    p = add("wordreview", cmd_wordreview, "pace, cue sync, layout, hero, and score payoff")
+    p.add_argument("timings", help="JSON object with lines plus review measurements")
     p = add("revealhold", cmd_revealhold, "last reveal holds before the scene cut")
     p.add_argument("timeline", help="JSON with scenes [{id, start, duration, beats, reveals}]")
     p.add_argument("--html", help="dir of <scene id>.html whose data-at attributes are reveals")

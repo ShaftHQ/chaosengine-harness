@@ -41,6 +41,8 @@ non-commercial licences are refused.
 - A scratch voice used only to time a procedural picture is
   [D24](word-timed-explainer.md). That take is never shipped. A voice that
   is shipped still follows this card.
+- When the picture is word-timed, the take is the clock: one file per line,
+  local word times, and a retake re-times only that line's cue.
 
 ## Workflow
 

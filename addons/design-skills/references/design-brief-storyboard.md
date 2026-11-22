@@ -38,7 +38,9 @@ the product claims will cite (doc URLs, command output, files).
   [D21](explainer-arc.md): `beat` on every scene.
 - When the picture timeline must follow narration word timings, load
   [D24](word-timed-explainer.md) after the lines exist. Skip D24 for edits
-  that are not word-timed.
+  that are not word-timed. Cheap first: approve 2–4 full-size look frames
+  drawn by the piece's own scene code, then the full storyboard, before a
+  full render.
 - Durations add up to the target within 5%. Hand-offs name the next card and
   the asset path it consumes.
 

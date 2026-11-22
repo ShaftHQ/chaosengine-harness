@@ -27,8 +27,9 @@ previous gate fails.
 
 Not a step of this pipeline. When the picture is driven by local narration
 word timings, load [D24](../word-timed-explainer.md) after step 5 and before
-assembly. Gates: `design_qc.py wordtiming timings.json` and
-`design_qc.py wordcue timings.json`. Skip both for every other video.
+assembly. Gates: `design_qc.py wordtiming timings.json`,
+`design_qc.py wordcue timings.json`, and `design_qc.py wordreview timings.json`.
+Skip them for every other video.
 
 ## Working folder
 
