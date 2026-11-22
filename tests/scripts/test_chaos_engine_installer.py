@@ -4063,6 +4063,32 @@ module.install_with_dependencies(project, source, "3" * 40)
             self.assertFalse(project.joinpath(".chaos-engine-hosts.json").exists())
             self.assertFalse(project.joinpath(".agents/skills/chaos-engine/SKILL.md").exists())
 
+    def test_uninstall_checks_restored_images_before_unwiring_chaos_only_hooks(self):
+        # A chaos-only .agents/hooks.json recorded as the before image is restored
+        # by prepare, then unlinked by unwire. The byte check must run first.
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary) / "consumer"
+            project.mkdir()
+            MODULE.install_with_dependencies(
+                project,
+                SOURCE,
+                TEST_COMMIT,
+                provisioner=lambda *_args, **_kwargs: None,
+            )
+            hosts = MODULE.load_installed_controller(project / ".chaos-engine", "hosts")
+            receipt, raw = hosts.read_receipt(project)
+            after = receipt["after"][".agents/hooks.json"]
+            self.assertIsInstance(after, str)
+            document = json.loads(base64.b64decode(after))
+            self.assertEqual({"chaos-engine"}, set(document))
+            receipt["before"][".agents/hooks.json"] = after
+            hosts.write_receipt(project, receipt, raw)
+
+            MODULE.uninstall_with_dependencies(project)
+
+            self.assertFalse(project.joinpath(".chaos-engine").exists())
+            self.assertFalse(project.joinpath(".chaos-engine-hosts.json").exists())
+
     def test_core_uninstall_collision_is_preflighted_before_runtime_removal(self):
         dependency_module = load_module(SOURCE / "runtime" / "dependencies.py")
         with tempfile.TemporaryDirectory() as temporary:

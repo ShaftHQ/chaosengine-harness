@@ -7304,10 +7304,12 @@ def _uninstall_with_dependencies(  # noqa: MC0001 - coordinated host, runtime, a
                     finalize_dependency_tombstone(removing)
                 if runtime.exists():
                     finalize_dependency_tombstone(runtime)
+            if host_controller is not None:
+                host_controller.assert_host_removal_images(project)
             if receipt_shim is not None:
                 unwire_receipt_shims(project, receipt_shim)
             if host_controller is not None:
-                host_controller.finalize_uninstall(project)
+                host_controller.finalize_uninstall(project, images_confirmed=True)
             uninstall(project, _locked=True)
             return
         preserve_owned_edits(project)
@@ -7391,10 +7393,12 @@ def _uninstall_with_dependencies(  # noqa: MC0001 - coordinated host, runtime, a
             controller.finalize_remove(runtime, specification)
         if generation_prepared:
             controller.finalize_generation_remove(project)
+        if host_prepared:
+            host_controller.assert_host_removal_images(project)
         if receipt_shim is not None:
             unwire_receipt_shims(project, receipt_shim)
         if host_prepared:
-            host_controller.finalize_uninstall(project)
+            host_controller.finalize_uninstall(project, images_confirmed=True)
         if consumer is not None:
             # #6237: remove only our marked info/exclude block.
             consumer.remove_exclude(project)

@@ -8719,17 +8719,9 @@ def _remove_uninstalled_receipt_blobs(project: Path, raw: bytes) -> None:
         state.rmdir()
 
 
-def finalize_uninstall(project: Path) -> None:
+def assert_host_removal_images(project: Path) -> None:
     project = project.resolve()
-    receipt_path = project / RECEIPT_NAME
-    validate_path(project, receipt_path)
-    if read_file(project, receipt_path) is None:
-        anchors = host_anchor_paths(project)
-        if len(anchors) == 1 and anchors[0].name.startswith(REMOVING_ANCHOR_PREFIX):
-            anchors[0].unlink()
-            return
-        raise ValueError("ChaosEngine host receipt is missing or invalid")
-    receipt, raw = read_receipt(project)
+    receipt, _ = read_receipt(project)
     if receipt["phase"] != "removing":
         raise ValueError("ChaosEngine host removal is not prepared")
     before = decode_images(receipt["before"], nullable=True)
@@ -8744,6 +8736,23 @@ def finalize_uninstall(project: Path) -> None:
     }
     if observed != expected:
         raise ValueError("ChaosEngine host removal state drift detected")
+
+
+def finalize_uninstall(project: Path, *, images_confirmed: bool = False) -> None:
+    project = project.resolve()
+    receipt_path = project / RECEIPT_NAME
+    validate_path(project, receipt_path)
+    if read_file(project, receipt_path) is None:
+        anchors = host_anchor_paths(project)
+        if len(anchors) == 1 and anchors[0].name.startswith(REMOVING_ANCHOR_PREFIX):
+            anchors[0].unlink()
+            return
+        raise ValueError("ChaosEngine host receipt is missing or invalid")
+    receipt, raw = read_receipt(project)
+    if receipt["phase"] != "removing":
+        raise ValueError("ChaosEngine host removal is not prepared")
+    if not images_confirmed:
+        assert_host_removal_images(project)
     remove_created_directories(project, receipt)
     anchor = host_anchor_path(project)
     if anchor.name.startswith(ACTIVE_ANCHOR_PREFIX):
