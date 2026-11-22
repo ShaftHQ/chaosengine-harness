@@ -356,28 +356,31 @@ def _identity_context_block(base: str, suffix: str = "") -> str:
     return fallback
 
 
-def _note_session_start_update() -> None:
+def _note_session_start_update() -> str:
     """Ask whether a newer release exists. Never block and never rewrite files.
 
     Pytest sets PYTEST_CURRENT_TEST; a real session does not, and that is when
     the check may use the network.
     """
     if os.environ.get("PYTEST_CURRENT_TEST"):
-        return
+        return ""
     path = _overlay_module("update_check.py")
     if not path.is_file():
-        return
+        return ""
     try:
         import importlib.util
 
         spec = importlib.util.spec_from_file_location("ce_update_check", path)
         if spec is None or spec.loader is None:
-            return
+            return ""
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        module.session_start_update_check()
+        status = module.session_start_update_check()
     except Exception:
-        return
+        return ""
+    if isinstance(status, str) and status.startswith("update available:"):
+        return "ChaosEngine " + status
+    return ""
 
 
 def session_start_context(token: str | None, activation: str, session_id: str = "") -> str:
@@ -387,10 +390,12 @@ def session_start_context(token: str | None, activation: str, session_id: str = 
     bullets, or the path locator when the file is missing, unreadable, or the
     body would exceed the byte budget.
     """
-    _note_session_start_update()
+    update_note = _note_session_start_update()
     with contextlib.suppress(Exception):
         stamp_cards_loaded(session_id)
     parts = [f"ChaosEngine: {activation}"]
+    if update_note:
+        parts.append(update_note)
     if token:
         parts.append(f"Token (never track it): {token}")
     stopped = read_stopped_companions(session_id)

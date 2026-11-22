@@ -7,6 +7,7 @@ repository guard stays outside the core and shares no code with it.
 
 from __future__ import annotations
 
+import ast
 import contextlib
 import io
 import json
@@ -19,6 +20,7 @@ import shutil
 import subprocess  # nosec B404 - fixed git argv for toplevel.
 import shlex
 import sys
+import tempfile
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -1190,8 +1192,11 @@ def _merge_command_statements(command: str) -> list[str]:
 
 
 def merge_before_ready_reason(command: str, probe=None) -> str:
-    """Refuse ``gh pr merge`` until every check succeeded and review threads are resolved.
+    """Refuse ``gh pr merge`` until the required checks are ready and review threads are resolved.
 
+    A skipped or neutral check outside the required set does not block. A failed,
+    cancelled, or pending check blocks when it is required and when no check is
+    marked required. An unmarked skip blocks. An empty check list is not success.
     ``--auto`` is not an exception. On a repository with auto-merge disabled
     that flag merges immediately, so a pending check must still deny it.
     """
@@ -1567,7 +1572,496 @@ def wrapped_exec_commands(source: str) -> tuple[str, ...]:
 
 
 def wrapped_exec_call_count(source: str) -> int:
-    return len(re.findall(r"\btools\.exec_command\s*\(", source))
+    return len(re.findall(r"\btools\s*\.\s*exec_command\s*\(", source))
+
+
+_UNINSPECTED_PROCESS = "\x00uninspected-process"
+_INDIRECTION_LIMIT = 4
+_SCRIPT_CAP = 256 * 1024
+_PY_LANGS = frozenset({"python", "python3", "py"})
+_JS_LANGS = frozenset({"node", "deno", "nodejs"})
+_SHELL_LANGS = frozenset({"bash", "sh", "zsh", "pwsh", "powershell"})
+_PY_ARGV = frozenset({"run", "call", "check_call", "check_output", "Popen"})
+_PY_STRING = frozenset({"system", "popen", "getoutput", "getstatusoutput"})
+_PY_VECTOR = frozenset({"execv", "execve", "execvp", "execvpe"})
+_PY_LISTARGS = frozenset({"execl", "execle", "execlp", "execlpe"})
+_HEREDOC_START = re.compile(
+    r"(?P<lang>python3|python|py|node|deno|bash|sh|zsh|pwsh|powershell)\b"
+    r".*?<<-?\s*(?P<quote>['\"]?)(?P<delim>[A-Za-z_][A-Za-z0-9_]*)(?P=quote)\s*$"
+)
+_JS_CALL = re.compile(
+    r"\b(?:execFileSync|execSync|spawnSync|execFile|execaCommandSync|execaCommand|execaSync|execa|spawn|fork|exec)\s*\("
+)
+_DIRECT_TOOLS_CALL = re.compile(r"\s*\.\s*[A-Za-z_$][\w$]*\s*\(")
+
+
+def _mask_js_literals(source: str) -> str:
+    """Blank strings and comments so an identifier scan sees code only."""
+    out: list[str] = []
+    index = 0
+    length = len(source)
+    while index < length:
+        char = source[index]
+        nxt = source[index + 1] if index + 1 < length else ""
+        if char == "/" and nxt == "/":
+            while index < length and source[index] != "\n":
+                out.append(" ")
+                index += 1
+            continue
+        if char == "/" and nxt == "*":
+            while index + 1 < length and not (source[index] == "*" and source[index + 1] == "/"):
+                out.append("\n" if source[index] == "\n" else " ")
+                index += 1
+            out.extend("  ")
+            index = min(length, index + 2)
+            continue
+        if char in {"'", '"', "`"}:
+            quote = char
+            out.append(" ")
+            index += 1
+            while index < length:
+                if source[index] == "\\":
+                    out.append(" ")
+                    index += 1
+                    if index < length:
+                        out.append(" ")
+                        index += 1
+                    continue
+                if source[index] == quote:
+                    out.append(" ")
+                    index += 1
+                    break
+                out.append("\n" if source[index] == "\n" else " ")
+                index += 1
+            continue
+        out.append(char)
+        index += 1
+    return "".join(out)
+
+
+def _indirect_tools_use(source: str) -> bool:
+    """True when ``tools`` or ``ALL_TOOLS`` is not a direct ``tools.name(`` call."""
+    if not source:
+        return False
+    masked = _mask_js_literals(source)
+    if re.search(r"\bALL_TOOLS\b", masked):
+        return True
+    for match in re.finditer(r"\btools\b", masked):
+        if _DIRECT_TOOLS_CALL.match(masked[match.end() :]) is None:
+            return True
+    return False
+
+
+def _literals_guarded(strings: list[str]) -> bool:
+    folded = {item.casefold() for item in strings}
+    blob = "\n".join(folded)
+    if "git" in folded and folded & {"push", "reset", "merge"}:
+        return True
+    if "gh" in folded and "merge" in folded:
+        return True
+    if "rm" in folded and folded & {"-r", "-rf", "-fr", "--recursive"}:
+        return True
+    if re.search(r"\bgit\s+(?:push|reset|merge)\b", blob):
+        return True
+    if re.search(r"\bgh\s+pr\s+merge\b", blob):
+        return True
+    if re.search(r"\brm\s+(?:-r|-rf|-fr|--recursive)\b", blob):
+        return True
+    return False
+
+
+def _literal_str(node: ast.AST) -> str | None:
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    return None
+
+
+def _literal_argv(node: ast.AST) -> list[str] | None:
+    if not isinstance(node, (ast.List, ast.Tuple)):
+        return None
+    items: list[str] = []
+    for elt in node.elts:
+        text = _literal_str(elt)
+        if text is None:
+            return None
+        items.append(text)
+    return items
+
+
+def _py_call_kind(func: ast.AST) -> str | None:
+    if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name):
+        owner, name = func.value.id, func.attr
+        if owner == "subprocess" and name in _PY_ARGV:
+            return "argv"
+        if owner == "subprocess" and name in {"getoutput", "getstatusoutput"}:
+            return "string"
+        if owner == "os" and name in _PY_STRING:
+            return "string"
+        if owner == "os" and name in _PY_VECTOR:
+            return "vector"
+        if owner == "os" and name in _PY_LISTARGS:
+            return "listargs"
+        return None
+    if isinstance(func, ast.Name) and func.id in _PY_ARGV:
+        return "argv"
+    return None
+
+
+def _py_literal_command(node: ast.Call, kind: str) -> str | None:
+    if not node.args:
+        return None
+    first = node.args[0]
+    if kind == "string":
+        return _literal_str(first)
+    if kind == "argv":
+        argv = _literal_argv(first)
+        if argv is not None:
+            return shlex.join(argv) if argv else ""
+        return _literal_str(first)
+    if kind == "vector" and len(node.args) >= 2:
+        argv = _literal_argv(node.args[1])
+        return shlex.join(argv) if argv else None
+    if kind == "listargs":
+        parts: list[str] = []
+        for arg in node.args:
+            text = _literal_str(arg)
+            if text is None:
+                return None
+            parts.append(text)
+        return shlex.join(parts) if parts else None
+    return None
+
+
+def _python_process_commands(source: str) -> tuple[tuple[str, ...], bool]:
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return (), False
+    commands: list[str] = []
+    hidden = False
+    literals = [
+        node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+    ]
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        kind = _py_call_kind(node.func)
+        if kind is None:
+            continue
+        command = _py_literal_command(node, kind)
+        if command is None:
+            hidden = hidden or _literals_guarded(literals)
+        elif command:
+            commands.append(command)
+    return tuple(commands), hidden
+
+
+def _skip_js_ws(source: str, index: int) -> int:
+    while index < len(source) and source[index] in " \t\r\n":
+        index += 1
+    return index
+
+
+def _read_js_string(source: str, index: int) -> tuple[str | None, int]:
+    quote = source[index]
+    index += 1
+    chars: list[str] = []
+    while index < len(source):
+        char = source[index]
+        if char == "\\":
+            if index + 1 >= len(source):
+                return None, index + 1
+            chars.append(source[index + 1])
+            index += 2
+            continue
+        if char == quote:
+            text = "".join(chars)
+            if quote == "`" and "${" in text:
+                return None, index + 1
+            return text, index + 1
+        chars.append(char)
+        index += 1
+    return None, index
+
+
+def _read_js_array(source: str, index: int) -> tuple[list[str] | None, int]:
+    index += 1
+    items: list[str] = []
+    while index < len(source):
+        index = _skip_js_ws(source, index)
+        if index < len(source) and source[index] == "]":
+            return items, index + 1
+        if index >= len(source) or source[index] not in "'\"`":
+            return None, index
+        text, index = _read_js_string(source, index)
+        if text is None:
+            return None, index
+        items.append(text)
+        index = _skip_js_ws(source, index)
+        if index < len(source) and source[index] == ",":
+            index += 1
+    return None, index
+
+
+def _read_js_value(source: str, index: int) -> tuple[object, int]:
+    index = _skip_js_ws(source, index)
+    if index >= len(source):
+        return None, index
+    char = source[index]
+    if char in "'\"`":
+        text, index = _read_js_string(source, index)
+        return text, index
+    if char == "[":
+        return _read_js_array(source, index)
+    return None, index
+
+
+def _js_string_literals(source: str) -> list[str]:
+    found: list[str] = []
+    index = 0
+    while index < len(source):
+        if source[index] in "'\"`":
+            text, index = _read_js_string(source, index)
+            if text:
+                found.append(text)
+            continue
+        index += 1
+    return found
+
+
+def _js_command_from(name: str, first: object, second: object) -> str | None:
+    shell_names = {"execSync", "exec", "execaCommand", "execaCommandSync"}
+    if name in shell_names and isinstance(first, str):
+        return first
+    if isinstance(first, list):
+        return shlex.join(first) if first else ""
+    if isinstance(first, str) and isinstance(second, list):
+        return shlex.join([first, *second])
+    if isinstance(first, str) and name in {"spawn", "spawnSync", "execFile", "execFileSync", "fork", "execa", "execaSync"}:
+        return first
+    return None
+
+
+def _js_process_commands(source: str) -> tuple[tuple[str, ...], bool]:
+    commands: list[str] = []
+    hidden = False
+    literals = _js_string_literals(source)
+    for match in _JS_CALL.finditer(source):
+        name = match.group(0).split("(", 1)[0]
+        first, index = _read_js_value(source, match.end())
+        second = None
+        comma = _skip_js_ws(source, index)
+        if comma < len(source) and source[comma] == ",":
+            second, _index = _read_js_value(source, comma + 1)
+        command = _js_command_from(name, first, second)
+        if command is None:
+            if _literals_guarded(literals):
+                hidden = True
+        elif command:
+            commands.append(command)
+    return tuple(commands), hidden
+
+
+def _flag_value(arguments: list[str], flags: tuple[str, ...]) -> str | None:
+    short_c = "-c" in flags
+    index = 0
+    while index < len(arguments):
+        arg = arguments[index]
+        if arg in flags:
+            return arguments[index + 1] if index + 1 < len(arguments) else None
+        for flag in flags:
+            if flag.startswith("--") and arg.startswith(flag + "="):
+                return arg.split("=", 1)[1]
+        if (
+            short_c
+            and arg.startswith("-")
+            and not arg.startswith("--")
+            and arg not in {"-", "-c"}
+            and "c" in arg[1:]
+        ):
+            return arguments[index + 1] if index + 1 < len(arguments) else None
+        index += 1
+    return None
+
+
+def _positional_script(arguments: list[str], value_flags: tuple[str, ...]) -> str | None:
+    index = 0
+    while index < len(arguments):
+        arg = arguments[index]
+        if arg == "--":
+            nxt = arguments[index + 1] if index + 1 < len(arguments) else ""
+            return nxt or None
+        if arg == "-":
+            return None
+        if arg.startswith("-"):
+            bare = arg.split("=", 1)[0]
+            if bare in value_flags and "=" not in arg:
+                index += 2
+                continue
+            index += 1
+            continue
+        return arg
+    return None
+
+
+def _path_within(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return False
+    return True
+
+
+def _read_script(script: str, cwd: Path) -> str | None:
+    if not script or script == "-" or script.startswith("-"):
+        return None
+    path = Path(script)
+    if not path.is_absolute():
+        path = cwd / path
+    try:
+        resolved = path.resolve()
+        roots = [cwd.resolve(), Path(tempfile.gettempdir()).resolve()]
+    except OSError:
+        return None
+    for key in ("TMPDIR", "TEMP", "TMP"):
+        value = os.environ.get(key, "").strip()
+        if not value:
+            continue
+        try:
+            roots.append(Path(value).resolve())
+        except OSError:
+            continue
+    if not resolved.is_file() or not any(_path_within(resolved, root) for root in roots):
+        return None
+    try:
+        if resolved.stat().st_size > _SCRIPT_CAP:
+            return None
+        return resolved.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+
+
+def _heredoc_segments(command: str) -> list[tuple[str, str]]:
+    lines = command.splitlines()
+    found: list[tuple[str, str]] = []
+    index = 0
+    while index < len(lines):
+        match = _HEREDOC_START.search(lines[index])
+        if match is None:
+            index += 1
+            continue
+        delim = match.group("delim")
+        body: list[str] = []
+        index += 1
+        while index < len(lines) and lines[index].strip() != delim:
+            body.append(lines[index])
+            index += 1
+        found.append((match.group("lang"), "\n".join(body)))
+        index += 1
+    return found
+
+
+def _code_bodies(command: str, cwd: Path) -> list[tuple[str, str, str]]:
+    bodies: list[tuple[str, str, str]] = []
+    heredocs = _heredoc_segments(command)
+    for lang, body in heredocs:
+        kind = "shell" if lang in _SHELL_LANGS else "code"
+        bodies.append((lang, body, kind))
+    parsed = tokens(command)
+    if not parsed:
+        return bodies
+    head, arguments = command_head(parsed)
+    lang = head.removesuffix(".exe")
+    if lang not in _PY_LANGS | _JS_LANGS | _SHELL_LANGS:
+        return bodies
+    if lang in _PY_LANGS:
+        code = _flag_value(arguments, ("-c",))
+        if code is not None:
+            return [*bodies, (lang, code, "code")]
+        if heredocs:
+            return bodies
+        script = _positional_script(arguments, ("-W", "-X", "-m", "-Q"))
+        text = _read_script(script, cwd) if script else None
+        if text is not None:
+            bodies.append((lang, text, "code"))
+        return bodies
+    if lang == "deno":
+        if arguments and arguments[0] == "eval":
+            rest = arguments[2:] if len(arguments) > 1 and arguments[1] == "--" else arguments[1:]
+            for arg in rest:
+                if not arg.startswith("-"):
+                    return [*bodies, (lang, arg, "code")]
+        return bodies
+    if lang in _JS_LANGS:
+        code = _flag_value(arguments, ("-e", "--eval"))
+        if code is not None:
+            return [*bodies, (lang, code, "code")]
+        if heredocs:
+            return bodies
+        script = _positional_script(arguments, ("-r", "--require"))
+        text = _read_script(script, cwd) if script else None
+        if text is not None:
+            bodies.append(("node", text, "code"))
+        return bodies
+    code = _flag_value(arguments, ("-c", "--command", "-Command", "-C"))
+    if code is not None:
+        return [*bodies, (lang, code, "shell")]
+    if heredocs:
+        return bodies
+    script = _flag_value(arguments, ("-File", "-f")) if lang in {"pwsh", "powershell"} else None
+    if script is None:
+        script = _positional_script(arguments, ())
+    text = _read_script(script, cwd) if script else None
+    if text is not None:
+        bodies.append((lang, text, "shell"))
+    return bodies
+
+
+def _language_commands(lang: str, body: str) -> tuple[tuple[str, ...], bool]:
+    if lang in _PY_LANGS:
+        return _python_process_commands(body)
+    if lang in _JS_LANGS:
+        return _js_process_commands(body)
+    return (body,) if body.strip() else (), False
+
+
+def _nested_commands(command: str, cwd: Path, depth: int) -> tuple[list[str], bool]:
+    if depth >= _INDIRECTION_LIMIT or not command.strip():
+        return [], False
+    found: list[str] = []
+    hidden = False
+    for lang, body, kind in _code_bodies(command, cwd):
+        if kind == "shell":
+            found.append(body)
+            inner, nested_hidden = _nested_commands(body, cwd, depth + 1)
+            found.extend(inner)
+            hidden = hidden or nested_hidden
+            continue
+        extracted, nested_hidden = _language_commands(lang, body)
+        hidden = hidden or nested_hidden
+        for item in extracted:
+            found.append(item)
+            inner, item_hidden = _nested_commands(item, cwd, depth + 1)
+            found.extend(inner)
+            hidden = hidden or item_hidden
+    return found, hidden
+
+
+def _inspected_commands(commands: tuple[str, ...], cwd: Path) -> tuple[str, ...]:
+    """Commands plus static inner commands. Nothing here is executed."""
+    extra: list[str] = []
+    hidden = False
+    for command in commands:
+        if command == _UNINSPECTED_PROCESS:
+            continue
+        inner, command_hidden = _nested_commands(command, cwd, 0)
+        extra.extend(inner)
+        hidden = hidden or command_hidden
+    if hidden:
+        extra.append(_UNINSPECTED_PROCESS)
+    return tuple(dict.fromkeys((*commands, *extra)))
 
 
 def functions_exec_source(tool_input: object) -> str:
@@ -1617,6 +2111,8 @@ def _tool_result_failed(event_name: str, result: object) -> bool:
 
 
 def _command_is_destructive(command: str) -> bool:
+    if command == _UNINSPECTED_PROCESS:
+        return True
     folded = command.casefold()
     broad_remove = (
         "remove-item" in folded
@@ -2110,8 +2606,10 @@ def _open_pull_request_reason(session_id: str, event: dict) -> str:
     return (
         "Delivery is not complete while the pull request is open. "
         "Babysit it until merged: classify the release note, then merge with "
-        "gh pr merge --merge only after the reviews are done, their comments "
-        "are applied, and every CI check on that head has finished successfully. "
+        "gh pr merge --squash only after the reviews are done and their comments "
+        "are applied. A skipped or neutral check outside the required set does not block. "
+        "A failed, cancelled, or pending check blocks when it is required and when no check is marked required. "
+        "An unmarked skip blocks. An empty check list is not success. "
         "A pending check is not success. Do not merge while a check is still "
         "running, including with --auto. Watch with "
         "scripts/agents/watch_pr_checks.py --until-merged. "
@@ -2221,21 +2719,24 @@ def _uninspectable_functions_call(
     tool_name: str, tool_input: object, functions_source: str,
     functions_direct: str, commands: tuple[str, ...],
 ) -> bool:
-    return bool(
-        tool_name == "functions.exec"
-        and not functions_direct
-        and (
-            not isinstance(tool_input, (str, dict))
-            or (isinstance(tool_input, dict) and not functions_source)
-            or wrapped_exec_call_count(functions_source) != len(commands)
-        )
-    )
+    if tool_name != "functions.exec" or functions_direct:
+        return False
+    if not isinstance(tool_input, (str, dict)):
+        return True
+    if isinstance(tool_input, dict) and not functions_source:
+        return True
+    if _indirect_tools_use(functions_source):
+        return True
+    return wrapped_exec_call_count(functions_source) != len(commands)
 
 
 def _command_guard_state(
     event: dict, event_name: str, commands: tuple[str, ...], tool_name: str, tool_input: object,
     functions_source: str, functions_direct: str, session_id: str,
 ) -> tuple[bool, bool, str]:
+    project = Path(str(event.get("cwd") or Path.cwd()))
+    original = commands
+    commands = _inspected_commands(commands, project)
     receipt_command = any(reflection_recovery(candidate) for candidate in commands)
     if event_name == "PostToolUse" and not receipt_command:
         _record_observed_pull_request_merge(event, commands, session_id)
@@ -2279,7 +2780,7 @@ def _command_guard_state(
     if event_name == "PreToolUse" and checkpoint and not receipt_command and (mutation or unchanged_test):
         return receipt_command, mutation, checkpoint_reason(checkpoint, session_id)
     uninspectable = _uninspectable_functions_call(
-        tool_name, tool_input, functions_source, functions_direct, commands
+        tool_name, tool_input, functions_source, functions_direct, original
     )
     project = Path(str(event.get("cwd") or Path.cwd()))
     reason = _destructive_scope_reason(commands, project, uninspectable)
@@ -2996,6 +3497,58 @@ def _session_end_retrospective(event: dict, event_name: str) -> int | None:
     return 0
 
 
+def _read_installed_version(cwd: Path) -> str:
+    for candidate in (cwd / "VERSION", Path(__file__).resolve().parents[1] / "VERSION"):
+        try:
+            text = candidate.read_text(encoding="utf-8").strip()
+        except OSError:
+            continue
+        if text:
+            return text
+    return ""
+
+
+def _release_fetcher(installed: str):
+    """Local pin only. No network. An unset pin reports the installed version."""
+
+    def fetcher():
+        feed = os.environ.get("CHAOS_ENGINE_RELEASE_FEED", "").strip()
+        if feed:
+            payload = Path(feed).read_text(encoding="utf-8")
+            try:
+                return json.loads(payload)
+            except json.JSONDecodeError:
+                return payload.strip()
+        pinned = os.environ.get("CHAOS_ENGINE_RELEASE_VERSION", "").strip()
+        if pinned:
+            return pinned
+        return installed
+
+    return fetcher
+
+
+def _release_check_notice(cwd: Path) -> str:
+    path = _overlay_module("update_check.py")
+    if not path.is_file():
+        return ""
+    try:
+        spec = importlib.util.spec_from_file_location("chaos_engine_update_check", path)
+        if spec is None or spec.loader is None:
+            return ""
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        installed = _read_installed_version(cwd)
+        confirm = os.environ.get("CHAOS_ENGINE_APPLY_UPDATE", "").strip() == "1"
+        result = module.session_start_update_check(_release_fetcher(installed), installed, confirm)
+    except Exception:
+        return ""
+    if isinstance(result, str) and (
+        result.startswith("update available:") or result.startswith("update confirmed:")
+    ):
+        return "ChaosEngine update check: " + result
+    return ""
+
+
 def _session_start_output(event: dict, event_name: str, session_id: str, token) -> int | None:
     if event_name == "SessionStart":
         _prepare_scratch(event)
@@ -3029,6 +3582,9 @@ def _session_start_output(event: dict, event_name: str, session_id: str, token) 
             follow = session_scratch.prevention_followup(Path(str(event.get("cwd") or Path.cwd())))
             if follow:
                 context = f"{context}\n\n{follow}"
+    notice = _release_check_notice(Path(str(event.get("cwd") or Path.cwd())))
+    if notice:
+        context = f"{context}\n\n{notice}"
     print(json.dumps({"additionalContext": context}))
     _mark_entry_injected(session_id)
     return 0
@@ -3125,8 +3681,15 @@ def _guarded_event(event: dict, host: str) -> int:
     """#7251: the delete guard runs first on PreToolUse, session-independent like R8."""
     if isinstance(event, dict) and str(event.get("hook_event_name") or event.get("hookEventName") or "") == "PreToolUse":
         tool_input = event.get("tool_input", {})
-        commands = _event_commands(str(event.get("tool_name", "")), tool_input)
-        reason = delete_guard_reason(commands, Path(str(event.get("cwd") or Path.cwd())))
+        cwd = Path(str(event.get("cwd") or Path.cwd()))
+        commands = tuple(
+            command
+            for command in _inspected_commands(
+                _event_commands(str(event.get("tool_name", "")), tool_input), cwd
+            )
+            if command != _UNINSPECTED_PROCESS
+        )
+        reason = delete_guard_reason(commands, cwd)
         if reason:
             return _deny(event, "PreToolUse", str(event.get("tool_name", "")), reason)
     return _run_event(event, host)

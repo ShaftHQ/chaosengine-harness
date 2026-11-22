@@ -198,6 +198,17 @@ class MergeGateTests(unittest.TestCase):
         snapshot = ready(checks=[{"name": "installer", "status": "IN_PROGRESS", "conclusion": "SUCCESS"}])
         self.assertIn("has not finished", self.reason("gh pr merge 86 --merge --auto", snapshot))
 
+    def test_guard_merge_instruction_uses_squash_and_the_required_set(self):
+        text = (ROOT / "hooks" / "guard.py").read_text(encoding="utf-8")
+        self.assertNotIn("every CI check", text)
+        self.assertNotIn("gh pr merge --merge only", text)
+        self.assertNotIn("Never squash", text)
+        self.assertIn("gh pr merge --squash", text)
+        self.assertIn("outside the required set does not block", text)
+        self.assertIn("when no check is marked required", text)
+        self.assertIn("An unmarked skip blocks", text)
+        self.assertIn("An empty check list is not success", text)
+
     def test_standard_text_keeps_sequential_reviews_and_forbids_early_merge(self):
         cycle = (ROOT / "references" / "delivery-cycle.md").read_text(encoding="utf-8")
         skill = (ROOT / "skills" / "chaos-engine" / "SKILL.md").read_text(encoding="utf-8")
