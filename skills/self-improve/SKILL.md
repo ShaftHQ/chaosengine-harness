@@ -16,7 +16,7 @@ Lean CE-native skill informed by Task Observer methodology
 
 ## When
 
-- **Primary:** root-owned Learning Session after every final delivery (owner approval, publish done, final PR merged), automatic: lessons diff against the skills, one spec issue, ONE PR (`skip-release-notes`, auto-merge MERGE) babysat to merged.
+- **Primary:** root-owned Learning Session after every final delivery (owner approval, publish done, final PR merged), automatic: lessons diff against the skills, one spec issue, ONE PR (`skip-release-notes`, MERGE method) babysat to merged. Never arm `gh pr merge --auto`.
 - **Secondary:** explicit operator request mid-session.
 - **Not:** every casual turn, and never the Learning Session PR's own merge.
 - A lesson already shipped in the delivery pull request is not a new issue. Finalize with nothing durable.
@@ -30,7 +30,7 @@ without inventing a second incident for the same success signal.
 A project lesson updates that adopter's specialized instructions (pack,
 profile, or project rules) for token use, accuracy, or performance in the
 learning change. A harness lesson is redacted and filed on the configured
-upstream (`scripts/ci/chaos-engine-upstream.txt` or
+upstream (`scripts/ci/chaos-engine-upstream.txt` external-example or
 `CHAOS_ENGINE_UPSTREAM_REPO`) with the user's `gh` account only after machine
 consent. `python3 .chaos-engine/runtime/learning_session.py consent allow` records
 the standing approval. `consent deny` stops it. Unknown consent asks once,
@@ -147,7 +147,7 @@ a duplicate.
 
 - **Upstream:** a ChaosEngine change (skills, hooks, installer, roles, identity,
   companions, or overlay references). File it on the configured upstream
-  repository (`scripts/ci/chaos-engine-upstream.txt` or
+  repository (`scripts/ci/chaos-engine-upstream.txt` external-example or
   `CHAOS_ENGINE_UPSTREAM_REPO`).
 - **Private:** a change only for the project that uses ChaosEngine (product
   code, project rules, or adopter workflow). File it on that project's

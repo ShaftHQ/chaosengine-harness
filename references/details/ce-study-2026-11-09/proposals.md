@@ -6,10 +6,10 @@ Twenty-nine repositories, one note each. No thirtieth repository. No third-party
 
 | Change | Path |
 | --- | --- |
-| Continuous-improvement principle | `chaos-engine/identity.md` (Principles only; Truth block unchanged) |
-| Published Grok identity | `.grok/rules/identity.md` via `chaos-engine/grok_model_load.py` |
-| Monthly cadence | `chaos-engine/references/details/ce-study-2026-11-09/cadence.md` |
-| Notes and this list | `chaos-engine/references/details/ce-study-2026-11-09/` |
+| Continuous-improvement principle | `identity.md` (Principles only; Truth block unchanged) |
+| Published Grok identity | `.grok/rules/identity.md` via `runtime/grok_model_load.py` |
+| Monthly cadence | `references/details/ce-study-2026-11-09/cadence.md` |
+| Notes and this list | `references/details/ce-study-2026-11-09/` |
 
 ## Follow-up issues
 

@@ -10,7 +10,7 @@
 
 | Id | Card | Module |
 | --- | --- | --- |
-| WoW | [ways-of-working](../references/details/ce-rules-2026-10-31-7/ways-of-working.md) | `scripts/ci/file_claim_lock.py` |
+| WoW | [ways-of-working](../references/details/ce-rules-2026-10-31-7/ways-of-working.md) | `scripts/ci/file_claim_lock.py` (external-example) |
 | Memory | [memory-full-dump](../references/details/ce-rules-2026-10-31-7/memory-full-dump.md) | [memory_full_dump.py](../rules/memory_full_dump.py) |
 | L65-fu+L73 | design lesson `motion-graphics-gate` | [motion_graphics_gate.py](../addons/design-skills/scripts/motion_graphics_gate.py) |
 | L66 | [web-ui-gate](../references/details/ce-rules-2026-10-31-7/web-ui-gate.md) | [web_ui_gate.py](../rules/web_ui_gate.py) |

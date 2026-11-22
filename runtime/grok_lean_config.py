@@ -1,4 +1,4 @@
-"""Installer-owned lean Grok user config (#5802/#5803/#5805).
+"""Installer-owned lean Grok user config.
 
 Merges ChaosEngine-owned spans into ``~/.grok/config.toml`` (or ``$GROK_HOME``)
 without clobbering foreign keys. Uninstall removes only the CE marker span.

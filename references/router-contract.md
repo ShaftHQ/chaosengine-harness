@@ -84,9 +84,8 @@ would start without ChaosEngine.
    first, reconcile the other, and push once. That push starts CI and review
    2 together. Do not start both reviewers in one step. Neither reviewer is
    the author ([delivery cycle](delivery-cycle.md)).
-   Run two independent adversarial reviews before orchestrator sign-off.
-   Do not merge until those reviews are done, their comments are applied, and
-   the required checks have passed. This repository merges with `gh pr merge --squash`.
+   Ordinary reversible changes get one fresh-context adversarial review. Public-contract or hard-to-reverse changes get two independent adversarial reviews before orchestrator sign-off, one after another.
+   Never arm `gh pr merge --auto`. Merge with `gh pr merge --squash` only after required checks are green and review threads are resolved.
    A skipped or neutral check outside the required set does not block.
    A failed, cancelled, or pending check blocks when it is required and when
    no check is marked required. An unmarked skip blocks.
@@ -147,8 +146,8 @@ Validation scope (balanced default): tests created or edited by the task plus
 directly impacted tests; the owner may pick only tests created or edited, or
 the full suite. Directly impacted tests include every test that references a
 type the change edits, replaces, or stops calling (mocks included): find them
-with `git grep -l TypeName -- '*/src/test/*'`. Review is the two adversarial
-reviews in [delivery cycle](delivery-cycle.md). Details:
+with `git grep -l TypeName -- '*/src/test/*'`. Review follows the floor in
+[delivery cycle](delivery-cycle.md): one fresh-context adversarial review, or two when the change is public-contract or hard-to-reverse. Details:
 [work-github-planning](work-github-planning.md).
 
 When a CI job fails, inspect the failing job and isolate its exact failing
@@ -218,7 +217,7 @@ For issue-to-merged-PR work, use the [GitHub playbook](work-github-playbook.md).
 Do not confuse a diff with an outcome: run the real affected flow, review the
 actual diff, and keep external actions within granted authority.
 
-Opening a PR does not end the duty. Arm auto-merge once terminal assurance passes
+Opening a PR does not end the duty. Never arm `gh pr merge --auto`. After required checks are green, review threads are resolved,
 and the tracker or epic's initial scope is complete (every in-scope sub-issue merged
 or explicitly dropped on the tracker; no dropped FR/SC),
 then make one blocking wait per push (`gh pr checks --watch --fail-fast`, or
@@ -244,8 +243,7 @@ the final report:
 1. Diff the session lessons (STATUS log, review log, failures, workarounds)
    against the existing skills and references; drop every duplicate.
 2. File one spec issue (problem, evidence, rule, acceptance criteria, test).
-3. Open ONE pull request with the `skip-release-notes` label, auto-merge with
-   the MERGE method, and babysit it to merged.
+3. Open ONE pull request with the `skip-release-notes` label, using the MERGE method, and babysit it to merged. Never arm `gh pr merge --auto`.
 4. When nothing new survives the diff, write one line in the final report
    naming the file that already holds each lesson. No issue, no PR.
 

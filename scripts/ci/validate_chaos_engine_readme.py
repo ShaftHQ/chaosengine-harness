@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import importlib.util
 import json
 import re
 import sys
@@ -496,7 +497,19 @@ def validate(root: Path = ROOT) -> list[str]:
     for retired in ("memory load", "mempalace wake-up"):
         if retired in lowered:
             errors.append(f"retired startup retrieval language remains: {retired}")
+    errors.extend(_ghost_findings(root))
     return errors
+
+
+def _ghost_findings(root: Path) -> list[str]:
+    """Load the sibling checker without requiring the package on sys.path."""
+    sibling = Path(__file__).resolve().parent / "validate_agent_guidance.py"
+    spec = importlib.util.spec_from_file_location("ce_guidance_ghosts", sibling)
+    if spec is None or spec.loader is None:
+        return ["ghost checker missing"]
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.ghost_findings(root)
 
 
 def write_generated(root: Path = ROOT) -> None:

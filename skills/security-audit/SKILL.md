@@ -9,7 +9,7 @@ permissions:
 
 # Security audit
 
-On demand only. This skill is not part of the always-loaded router.
+Route row; load this body on demand. Do not paste the body into the always-loaded card.
 
 License check 2026-11-10: the studied Cloudflare skill was MIT. This file is original and does not copy that skill.
 

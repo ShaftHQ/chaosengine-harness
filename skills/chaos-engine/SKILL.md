@@ -9,8 +9,7 @@ license: MIT
 
 # ChaosEngine
 
-Core card for every host and main thread; delegates load the
-[delegate card](../../references/delegate-card.md). Identity: [identity](../../identity.md).
+Core card. Delegates load the [delegate card](../../references/delegate-card.md). Identity: [identity](../../identity.md).
 
 ## Iron laws
 
@@ -20,13 +19,9 @@ Core card for every host and main thread; delegates load the
 2. Evidence over inference. Inspect or run before claiming.
 3. Never weaken, delete, or rewrite a test to reach green. New behavior starts
    with a red test; if test and requirement disagree, stop and say which is wrong.
-4. Smallest correct change, industry-standard output. Complete implementation
-   before its consolidated Check phase.
+4. Smallest correct change. Complete it before consolidated Check.
 5. Never claim a check you did not run.
-6. Finish before starting: pull-based flow, WIP limits, explicit Definition of
-   Done ([kanban](../kanban/SKILL.md)). Every finding ends fixed in this
-   delivery or filed as an issue; filing is allowed only when it is outside
-   scope and not critical, blocker, or high severity.
+6. Finish before starting. WIP limits and Definition of Done ([kanban](../kanban/SKILL.md)). File a finding only when it is outside scope and not critical, blocker, or high.
 7. Safety and ethics control: preserve user work and secrets; irreversible or
    externally visible actions need explicit owner authority
    ([ethics card](../../companions/ethics-card.md)).
@@ -56,7 +51,7 @@ Re-triage when a premise is false. Before a broad search, run one
 
 ## Plan, then go
 
-Ask only what sources cannot answer. [delivery ledger](../../references/bot-entry.md#delivery-ledger) first (WIP limit). After approval, go unattended; stop for an owner decision or a contradicting request.
+After plan approval, routine in-scope work goes unattended. Stop for an owner decision or a contradicting request. Ledger: [delivery ledger](../../references/bot-entry.md#delivery-ledger).
 
 ## Implement
 
@@ -65,10 +60,11 @@ Companions at task start via `tool.py entry` ([bot entry](../../references/bot-e
 ## Check and deliver
 
 - One Check: new, edited, and impacted tests.
-- Architect, at most 3 PDCA, then review 1 with the self-accept push (delivery-cycle.md). Do not start both reviewers in one step.
+- At most 3 local PDCA loops, then review 1 with the self-accept push (delivery-cycle.md). Do not start both reviewers in one step.
+- Ordinary reversible: one fresh-context adversarial review. Public-contract or hard-to-reverse: two, one after another.
+- Two failed attempts on one approach: step back and re-plan.
 - Merge after those reviews, applied comments, and green CI. A pending check is not success.
-- Babysit every pull request: no retry cap. Stop and report a true external blocker.
-  Repeat-fail PDCA (bot-entry).
+- Babysit an open pull request until merged, or until `blocking: unverifiable`.
 - Status reports are always a Markdown table: deltas, at most 15 lines.
   `tool.py usage`.
 - Learning Session after every final delivery. Never local queues.
@@ -86,6 +82,7 @@ Companions at task start via `tool.py entry` ([bot entry](../../references/bot-e
 | architect | design, API, risk, review | [SKILL.md](../architect/SKILL.md) |
 | Git cleanup | dirty worktree or stray branches | [SKILL.md](../git-cleanup/SKILL.md) |
 | CI | slow merges, CI | [SKILL.md](../ci-cd/SKILL.md) |
+| Security audit | audit a repository we own | [SKILL.md](../security-audit/SKILL.md) |
 | Zero-LLM first | install, doctor, repair by script | [zero-llm-catalog.md](../../references/zero-llm-catalog.md) |
 | Heal | drifted or unhealthy install | [heal-route.md](../../references/heal-route.md) |
 | Level-1 catalog | secondary skill or tool needed | [level-1-catalog.md](../../references/level-1-catalog.md) |
