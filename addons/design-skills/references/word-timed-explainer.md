@@ -37,7 +37,27 @@ pipeline, D08 motion tokens, D17 voice production, or the D21 arc.
    non-empty `text`, a `words` array of `{text, start, end}` with `end`
    greater than `start`, a `picture` string, the `take` file name, the
    spoken `word` that cue hits, and `overflow: false` only after a measured
-   fit. `"draft": true` is a timing pass, not a master.
+   fit. `"draft": true` is a timing pass, not a master. For `wordreview`,
+   the same file also carries `fps`, `cue_at` and `cues` on each line,
+   `formats` with a `16:9` and a `9:16` block, `hero` (or `"hero": null`
+   plus `hero_waiver`) and `score_payoff` (or `"score_payoff": null` plus
+   `score_waiver`). A waiver without the explicit `null` fails closed.
+   Minimal draft that passes all three gates:
+
+   ```json
+   {"draft": true, "fps": 30,
+    "lines": [{"text": "Fluent waits poll", "picture": "poll loop",
+      "take": "vo/01.scratch.wav", "word": "poll", "cue_at": 0.9,
+      "cues": ["poll"], "overflow": false,
+      "words": [{"text": "Fluent", "start": 0.0, "end": 0.4},
+                {"text": "waits", "start": 0.4, "end": 0.8},
+                {"text": "poll", "start": 0.9, "end": 1.2}]}],
+    "formats": {
+      "16:9": {"laid_out": true, "cropped": false, "overflow": false, "overlap": false},
+      "9:16": {"laid_out": true, "cropped": false, "overflow": false, "overlap": false}},
+    "hero": null, "hero_waiver": "no hero in this piece",
+    "score_payoff": null, "score_waiver": "no score bed"}
+   ```
 4. Rebuild the one canvas from that file. Change a line by replacing its
    take, re-timing that line, and rebuilding so only that cue moves.
 5. Lay out 16:9 and 9:16 as two compositions. Caption from the same words.
