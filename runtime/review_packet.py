@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import re
 
+from runtime.review_contract import classify_unbound_example
+
 CHECKLIST = (
     "missing tests",
     "hidden scope",
@@ -93,7 +95,29 @@ def review_sequence(rounds: int) -> tuple[str, ...]:
 
 
 def is_pass(review: dict) -> bool:
-    """LGTM without the checklist and a SHA is not a PASS."""
+    """LGTM without the checklist and a SHA is not a PASS.
+
+    When old_refused, new_allows, and brief_names_example are bools,
+    classify_unbound_example runs. A regression fail is appended once to
+    unbound_findings and is_pass returns False.
+    """
+    regression = False
+    if isinstance(review, dict):
+        keys = ("old_refused", "new_allows", "brief_names_example")
+        if all(isinstance(review.get(key), bool) for key in keys):
+            classified = classify_unbound_example(
+                old_refused=review["old_refused"],
+                new_allows=review["new_allows"],
+                brief_names_example=review["brief_names_example"],
+            )
+            if classified.get("heading") == "regression" and classified.get("verdict") == "fail":
+                regression = True
+                findings = review.get("unbound_findings")
+                if not isinstance(findings, list):
+                    findings = []
+                    review["unbound_findings"] = findings
+                if classified not in findings:
+                    findings.append(classified)
     if not isinstance(review, dict) or str(review.get("verdict", "")).upper() != "PASS":
         return False
     if len(str(review.get("sha") or "")) < 7:
@@ -102,7 +126,9 @@ def is_pass(review: dict) -> bool:
     if not isinstance(cited, list):
         return False
     folded = {str(item).casefold() for item in cited}
-    return all(item in folded for item in CHECKLIST)
+    if not all(item in folded for item in CHECKLIST):
+        return False
+    return not regression
 
 
 def bounded_round(
