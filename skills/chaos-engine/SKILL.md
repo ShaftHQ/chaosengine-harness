@@ -51,7 +51,7 @@ Re-triage when a premise is false. Before a broad search, run one
 
 ## Plan, then go
 
-After plan approval, routine in-scope work goes unattended. Stop for an owner decision or a contradicting request. A decision the owner already closed with "you decide" or "do not ask again" is not reopened ([consult-first](../../references/consult-first.md)). Ledger: [delivery ledger](../../references/bot-entry.md#delivery-ledger).
+After plan approval, routine in-scope work goes unattended. Stop for an owner decision or a contradicting request. Ledger: [delivery ledger](../../references/bot-entry.md#delivery-ledger).
 
 ## Implement
 
@@ -105,8 +105,6 @@ Companions at task start via `tool.py entry` ([bot entry](../../references/bot-e
 | Durable jobs | outlives the session | [durable-jobs.md](../../references/durable-jobs.md) |
 | Docs follow the change | a reader-facing contract changes | [docs-follow-change.md](../../references/docs-follow-change.md) |
 <!-- HARNESS-ROUTES:END -->
-
-When cards disagree, [delivery-cycle](../../references/delivery-cycle.md) wins on review and merge, [kanban](../kanban/SKILL.md) wins on WIP, the [ethics card](../../companions/ethics-card.md) wins on irreversible or outbound actions, and this card wins on routing; deeper file wins on its own topic.
 
 ## Catalog
 
