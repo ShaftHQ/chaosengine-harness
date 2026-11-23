@@ -4008,7 +4008,8 @@ def _system_ca_context() -> ssl.SSLContext | None:
                 continue
         blob = b"".join(chunks)
         if b"BEGIN CERTIFICATE" in blob:
-            context.load_verify_locations(cadata=blob)
+            # Bytes cadata is DER. PEM from `security -p` must be str.
+            context.load_verify_locations(cadata=blob.decode("ascii"))
             loaded = True
     else:
         for candidate in (
