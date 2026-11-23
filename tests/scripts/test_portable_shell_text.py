@@ -110,6 +110,5 @@ class PortableShellTextTest(unittest.TestCase):
     def test_agents_skill_path_count_is_four(self):
         text = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
         self.assertEqual(4, text.count("skills/chaos-engine/SKILL.md"))
-        self.assertIn("repository copy of that skill", text)
-        self.assertIn("Read one skill, not both.", text)
+        self.assertIn("Read one of those, not both.", text)
         self.assertIn(".chaos-engine/identity.md", text)

@@ -90,6 +90,21 @@ class PrBodyPreflightTest(unittest.TestCase):
         self.guard._checkout_branch = lambda: "ChaosEngine/example"
         self.assertEqual("", self.guard._pr_body_block((f"gh pr create -H github.com --body {body}",)))
 
+    def test_global_gh_flags_do_not_skip_the_head_gate(self) -> None:
+        body = (
+            "'<!-- chaos-engine:agentic -->\n## Plan\nsteps\n"
+            "retrieve: mempalace used\n\n## Riskiest assumption\nN/A'"
+        )
+        host = f"gh -H github.com pr create --head cursor/evil --body {body}"
+        reason = self.guard._pr_body_block((host,))
+        self.assertIn("cursor/", reason)
+        repo = f"gh --repo ShaftHQ/chaosengine-harness pr create --head cursor/evil --body {body}"
+        self.assertIn("cursor/", self.guard._pr_body_block((repo,)))
+        allowed = f"gh --hostname github.com pr create --head ChaosEngine/example --body {body}"
+        self.assertEqual("", self.guard._pr_body_block((allowed,)))
+        equals = f"gh --hostname=github.com pr create --head cursor/evil --body {body}"
+        self.assertIn("cursor/", self.guard._pr_body_block((equals,)))
+
     def test_missing_plan_or_receipt_is_blocked(self) -> None:
         no_plan = "gh pr create --body '<!-- chaos-engine:agentic -->\nretrieve: mempalace used\n\n## Riskiest assumption\nN/A'"
         self.assertIn("`## Plan`", self.guard._pr_body_block((no_plan,)))

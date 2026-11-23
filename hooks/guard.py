@@ -595,12 +595,13 @@ def _pr_body_block(commands: tuple[str, ...]) -> str:
     for command in commands:
         for statement in _shell_statements(command):
             head, arguments = command_head(shell_tokens(statement))
-            if head != "gh" or arguments[:2] not in (["pr", "create"], ["pr", "edit"]):
+            verb = _gh_pr_verb(arguments) if head == "gh" else None
+            if verb not in {"create", "edit"}:
                 continue
             body = _pr_body_argument(arguments)
             branch = (
                 _pr_create_branch(arguments)
-                if arguments[1] == "create" and body is not None
+                if verb == "create" and body is not None
                 else None
             )
             errors = _assumption_errors(body, branch=branch) if body is not None else []
@@ -617,18 +618,22 @@ _OPEN_PR_ACTIONS = frozenset({"create", "ready", "reopen"})
 _OPEN_PR_GH_TIMEOUT_SECONDS = 10
 
 
-_GH_VALUE_FLAGS = frozenset({"-R", "--repo", "-h", "--hostname"})
+_GH_VALUE_FLAGS = frozenset({"-R", "--repo", "-h", "-H", "--hostname"})
 _OPEN_PR_PAGE = 100
 _OPEN_PR_PAGE_CAP = 1000
 
 
-def _open_pr_verb(arguments: list[str] | tuple[str, ...]) -> str | None:
-    """Return create|ready|reopen when `pr` is the gh subcommand, after global flags."""
+def _gh_pr_verb(arguments: list[str] | tuple[str, ...]) -> str | None:
+    """Token after ``pr``, once global flags are skipped.
+
+    ``-H`` and ``--hostname`` take a host. ``--hostname=github.com`` does not
+    consume the next token. ``-H`` is never the pull-request ``--head``.
+    """
     tokens = list(arguments)
     index = 0
     while index < len(tokens):
         token = tokens[index]
-        if token in _GH_VALUE_FLAGS:
+        if "=" not in token and token in _GH_VALUE_FLAGS:
             index += 2
             continue
         if token.startswith("-"):
@@ -636,9 +641,14 @@ def _open_pr_verb(arguments: list[str] | tuple[str, ...]) -> str | None:
             continue
         if token != "pr":
             return None
-        verb = tokens[index + 1] if index + 1 < len(tokens) else ""
-        return verb if verb in _OPEN_PR_ACTIONS else None
+        return tokens[index + 1] if index + 1 < len(tokens) else None
     return None
+
+
+def _open_pr_verb(arguments: list[str] | tuple[str, ...]) -> str | None:
+    """Return create|ready|reopen when `pr` is the gh subcommand, after global flags."""
+    verb = _gh_pr_verb(arguments)
+    return verb if verb in _OPEN_PR_ACTIONS else None
 
 
 def _open_pr_action(commands: tuple[str, ...]) -> bool:
