@@ -34,10 +34,10 @@ session or watchdog reads the lease instead of guessing.
 
 | Command | Effect |
 | --- | --- |
-| `tool.py job start NAME [--heartbeat 30] [--stale S] [--part-dir D]... [--max-runs 3] -- CMD...` | Detach a supervisor (`setsid`; Windows detached process group) that runs CMD in its own process group and heartbeats the lease. Refused (exit 3) while the lease is live. |
-| `tool.py job status NAME [--json]` | `live`, `stale`, `done`, `failed`, `stopped` or `absent`, plus heartbeat age and last step. Exit 0 live/done, 3 stale, 4 failed, 5 stopped, 6 absent. |
+| `tool.py job start NAME [--heartbeat 30] [--stale S] [--idle-timeout S] [--watch-log P]... [--part-dir D]... [--max-runs 3] -- CMD...` | Detach a supervisor (`setsid`; Windows detached process group) that runs CMD in its own process group and heartbeats the lease. Refused (exit 3) while the lease is live. `--idle-timeout` marks the run `stalled` when work goes quiet. |
+| `tool.py job status NAME [--json]` | `live`, `stale`, `stalled`, `done`, `failed`, `stopped` or `absent`, plus heartbeat age and last step. Exit 0 live/done, 3 stale/stalled, 4 failed, 5 stopped, 6 absent. |
 | `tool.py job wait NAME [--timeout 540] [--tail 5]` | Block until the job is not live, then print the status line and the last log lines. Exit as `status`, or 7 when still live at the timeout. Use it instead of polling loops; keep the timeout under the host's tool-call limit. |
-| `tool.py job resume NAME` | Watchdog entry. No-op while live or done, and after an owner's `stop`. A stale or failed run restarts with the recorded command, at most `--max-runs` times in total. |
+| `tool.py job resume NAME` | Watchdog entry. No-op while live or done, and after an owner's `stop`. A stale, stalled, or failed run restarts with the recorded command, at most `--max-runs` times in total. |
 | `tool.py job stop NAME` | Terminate the whole run and record `stopped`. |
 | `tool.py job checkpoint NAME STEP [--note T]` / `--check` | Record a finished step, or exit 0 only if STEP is recorded (skip it on resume). |
 
@@ -57,6 +57,20 @@ failed or finished run first kills every surviving process of that run, found
 by the run id that every child inherits (this catches children of dead parents
 that left the process group). It then deletes `*.part` files under the run's
 `--part-dir`s. A live job's files are never touched.
+
+## Idle timeout
+
+`--idle-timeout S` is a separate watchdog from the heartbeat. The supervisor
+stays `live` while it heartbeats, but it marks the job `stalled` (exit 3) when
+`output.log`, `checkpoint.jsonl`, and every `--watch-log` path are unchanged
+for S seconds. S must be positive. A relative `--watch-log` path is resolved
+against the job's cwd. Size or mtime on any of those files counts as activity,
+including a `tool.py job checkpoint` append.
+
+On stall the supervisor records `stall_reason`, `stalled_tail` (the last log
+lines), and `stalled_tree` (live PIDs and commands), then terminates the child
+process group. `tool.py job resume` starts the next run with the same
+`--idle-timeout` and `--watch-log` values, until `--max-runs`.
 
 ## Atomic outputs
 
@@ -84,6 +98,15 @@ cd "$PROJECT" && python3 .chaos-engine/tool.py job resume render
 - Cron, every 10 minutes:
   `*/10 * * * * cd "$PROJECT" && python3 .chaos-engine/tool.py job resume render >> .chaos-engine-state/jobs/watchdog.log 2>&1`
 - Agent routine: run `tool.py job status render --json`. Report only on a
-  change to `done`, `failed` or `stopped`, or on a "needs a human" line from
+  change to `done`, `failed`, `stalled` or `stopped`, or on a "needs a human" line from
   `resume`. Otherwise run `tool.py job resume render` and stay silent. Never
   kill by process name, and never start a second copy "to be safe".
+
+## Watchdog timers and background daemons
+
+- Always pair long-running unattended background tasks with a bounded wall-clock
+  timeout and a watchdog wakeup timer (`schedule` with `TimerCondition=<taskId>`)
+  so a wedged process wakes the agent for triage or recovery instead of stalling
+  overnight.
+- Never spawn local services via `nohup ... &` inside a short-lived command tool
+  call. Use host daemon mode or `tool.py job start`.

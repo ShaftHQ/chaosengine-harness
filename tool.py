@@ -35,6 +35,12 @@ FETCH_RETRY_BASE_SECONDS = 1.0
 
 DEFAULT_BRANCH_FALLBACKS = ("main", "master")
 HELP_FLAGS = frozenset({"--help", "-h", "help"})
+UPGRADE_USAGE = (
+    "usage: tool.py upgrade [--branch BRANCH] [--repository OWNER/REPO] "
+    "[--yes] [--allow-dirty] [bootstrap flags...]\n"
+    "\n"
+    "Upgrade the installed ChaosEngine overlay in place via bootstrap.py."
+)
 _CAPTURE_STORES = frozenset({"mempalace", "graphify"})
 
 
@@ -485,9 +491,60 @@ def maintain(installed_root: Path, *, runner=subprocess.run) -> int:
     return 0
 
 
+def upgrade(installed_root: Path, arguments: list[str], *, runner=subprocess.run) -> int:
+    """`tool.py upgrade`: reinstall the installed overlay in place via bootstrap.py (#184)."""
+    if arguments and arguments[0] in HELP_FLAGS:
+        print(UPGRADE_USAGE)
+        return 0
+
+    def given(flag: str) -> bool:
+        prefix = flag + "="
+        return flag in arguments or any(item.startswith(prefix) for item in arguments)
+
+    resolved = installed_root.resolve()
+    project = shared_project_root(
+        resolved.parent if resolved.name in {".chaos-engine", "chaos-engine"} else resolved
+    )
+    bootstrap = installed_root / "bootstrap.py"
+    if not bootstrap.is_file():
+        bootstrap = project / ".chaos-engine" / "bootstrap.py"
+    if not bootstrap.is_file():
+        bootstrap = Path(__file__).resolve().parent / "bootstrap.py"
+    if not bootstrap.is_file():
+        print("upgrade: bootstrap.py not found", file=sys.stderr)
+        return 1
+    import json
+
+    source: dict = {}
+    try:
+        payload = json.loads((installed_root / "manifest.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        payload = None
+    if isinstance(payload, dict) and isinstance(payload.get("source"), dict):
+        source = payload["source"]
+    try:
+        repository, branch = recorded_source(source, project)
+    except (OSError, ValueError, subprocess.CalledProcessError):
+        repository, branch = "", ""
+    if not repository:
+        repository = os.environ.get("CHAOS_ENGINE_REPOSITORY") or "ShaftHQ/chaosengine-harness"
+    if not branch:
+        branch = os.environ.get("CHAOS_ENGINE_BRANCH") or "main"
+    cmd = [sys.executable, str(bootstrap)]
+    if not given("--project"):
+        cmd.extend(["--project", str(project)])
+    if not given("--repository") and not given("--source"):
+        cmd.extend(["--repository", repository])
+    if not given("--branch") and not given("--commit"):
+        cmd.extend(["--branch", branch])
+    cmd.extend(arguments)
+    completed = runner(cmd, cwd=project, check=False)  # nosec B603 - fixed bootstrap argv, no shell.
+    return int(completed.returncode)
+
+
 def tool_help_text() -> str:
     """One usage text for every host. There is no per-host help."""
-    names = ", ".join(sorted(TOOLS | {"retrieve", "entry", "maintain", "job", "checkpoint", "resume", "delete-check", "backups-watch", "pre-done", "force-push-approve", "output-search", "output-resume", "output-stats", "output-purge", "ethics-check", "supply-chain", "ce-version"}))
+    names = ", ".join(sorted(TOOLS | {"retrieve", "entry", "maintain", "upgrade", "job", "checkpoint", "resume", "delete-check", "backups-watch", "pre-done", "force-push-approve", "output-search", "output-resume", "output-stats", "output-purge", "ethics-check", "supply-chain", "ce-version"}))
     return (
         "usage: tool.py <tool|retrieve> [args...]\n"
         "       tool.py --help\n"
@@ -503,6 +560,9 @@ def tool_help_text() -> str:
         "maintain (after each delivery: fast-forward, reinstall, doctor, refresh, reload):\n"
         "  tool.py maintain\n"
         "\n"
+        "upgrade (installed overlay in place via bootstrap.py):\n"
+        "  tool.py upgrade [--branch BRANCH] [--repository OWNER/REPO] [--yes] [--allow-dirty]\n"
+        "\n"
         "siblings (nightly trackers that share a signature, before triage):\n"
         "  tool.py siblings nightly-failure:<workflow>\n"
         "\n"
@@ -515,8 +575,8 @@ def tool_help_text() -> str:
         "  tool.py stores status\n"
         "\n"
         "job (long work that outlives the session; one worker per job; references/durable-jobs.md):\n"
-        "  tool.py job start NAME [--heartbeat S] [--stale S] [--part-dir D]... -- CMD...\n"
-        "  tool.py job status NAME [--json]  (exit 0 live/done, 3 stale, 4 failed, 5 stopped, 6 absent)\n"
+        "  tool.py job start NAME [--heartbeat S] [--stale S] [--idle-timeout S] [--watch-log P]... [--part-dir D]... -- CMD...\n"
+        "  tool.py job status NAME [--json]  (exit 0 live/done, 3 stale/stalled, 4 failed, 5 stopped, 6 absent)\n"
         "  tool.py job wait NAME [--timeout S] [--tail N]  (block until not live; 7 = still live)\n"
         "  tool.py job resume NAME  (watchdog: no-op while live or done)\n"
         "  tool.py job stop NAME\n"
@@ -988,6 +1048,8 @@ def _dispatch_core(installed_root: Path, tool: str, arguments: list[str]) -> int
             print(usage, end="", file=sys.stderr)
             return 2
         return maintain(installed_root)
+    if tool == "upgrade":
+        return upgrade(installed_root, arguments)
     if tool == "tools":
         return tools_command(installed_root, arguments)
     if tool == "siblings":
