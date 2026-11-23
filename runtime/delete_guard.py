@@ -462,8 +462,8 @@ def _pattern_regex(pattern: str) -> re.Pattern:
 
 
 def allow_listed(path: Path, project: Path | None = None) -> bool:
-    text = str(path)
-    return any(_pattern_regex(pattern).match(text) for pattern in _patterns(project))
+    text = str(path).replace("\\", "/")
+    return any(_pattern_regex(pattern.replace("\\", "/")).match(text) for pattern in _patterns(project))
 
 
 def _blob_bytes(top: Path, rev: str, relative: str) -> bytes | None:

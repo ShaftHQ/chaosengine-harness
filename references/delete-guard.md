@@ -47,8 +47,9 @@ Defaults: the system temp dir; `~/.cache`; `__pycache__`, `.pytest_cache`,
 (`render`, `renders`, `out`, `frames`, `clips` under a path segment containing
 `video`). Add patterns, one per line, to `.chaos-engine-state/delete-allow.txt`
 in the project or home dir (`**/` spans directories, `*` stays in one).
-Patterns are matched against the resolved absolute path, so a filename
-alone never matches; use `**/filename`.
+Allow patterns are compared with forward slashes on every OS. Patterns are
+matched against the resolved absolute path after `\` is normalized to `/`,
+so a filename alone never matches; `**/filename` is the portable form.
 
 ## Owner override
 

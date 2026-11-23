@@ -340,6 +340,73 @@ class StopOnceTest(unittest.TestCase):
         self.assertIn("Delete guard", removed.stdout)
         self.assertIn("`/`", removed.stdout)
 
+    def test_edit_hook_graphify_retrieve_is_not_broad_scope_and_skipped_receipt_counts(self):
+        command = 'python3 .chaos-engine/tool.py retrieve --store graphify "impact of this edit"'
+        missing = "Impact receipt missing for this task area."
+        with tempfile.TemporaryDirectory() as temporary:
+            environment = _env(temporary)
+            project = Path(temporary) / "proj"
+            tool = project / ".chaos-engine" / "tool.py"
+            tool.parent.mkdir(parents=True)
+            tool.write_text(HIDDEN, encoding="utf-8")
+            target = project / "src" / "Scratch.java"
+            target.parent.mkdir(parents=True)
+            target.write_text("class Scratch {}\n", encoding="utf-8")
+            allowed = _run(
+                {
+                    "hook_event_name": "PreToolUse",
+                    "tool_name": "Bash",
+                    "cwd": str(project),
+                    "session_id": "edit-retrieve",
+                    "tool_input": {"command": command},
+                },
+                environment,
+            )
+            justify = _load("ce_justify_179", JUSTIFICATION)
+            bare = Path(temporary) / "bare"
+            bare.mkdir()
+            (bare / "src").mkdir()
+            (bare / "src" / "Scratch.java").write_text("class Scratch {}\n", encoding="utf-8")
+            before = justify.impact_edit_block_reason(
+                project=bare,
+                event_name="PreToolUse",
+                tool_name="Edit",
+                session_id="edit-retrieve",
+                tool_input={"file_path": "src/Scratch.java"},
+            )
+            justify.record_store_outcome(
+                project,
+                "graphify",
+                "skipped",
+                "impact of this edit",
+                "",
+                "no-rare-token",
+            )
+            after = justify.impact_edit_block_reason(
+                project=project,
+                event_name="PreToolUse",
+                tool_name="Edit",
+                session_id="edit-retrieve",
+                tool_input={"file_path": "src/Scratch.java"},
+            )
+            broader = _run(
+                {
+                    "hook_event_name": "PreToolUse",
+                    "tool_name": "Bash",
+                    "cwd": str(project),
+                    "session_id": "edit-broader",
+                    "tool_input": {"command": command + " && git reset --hard HEAD"},
+                },
+                environment,
+            )
+        self.assertIn(command, justify.IMPACT_EDIT_BLOCK)
+        self.assertEqual(0, allowed.returncode, allowed.stdout + allowed.stderr)
+        self.assertNotIn("ChaosEngine rejected destructive broad scope.", allowed.stdout)
+        self.assertEqual("block", json.loads(broader.stdout).get("decision"), broader.stdout)
+        self.assertIn("ChaosEngine rejected destructive broad scope.", broader.stdout)
+        self.assertIn(missing, before or "")
+        self.assertIsNone(after)
+
 
 if __name__ == "__main__":
     unittest.main()

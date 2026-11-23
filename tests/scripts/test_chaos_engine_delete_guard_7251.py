@@ -138,6 +138,23 @@ class DeleteGuardTest(unittest.TestCase):
             for path in refused:
                 self.assertFalse(GUARD.allow_listed(Path(path)), path)
 
+    def test_windows_backslash_path_matches_forward_slash_allow_patterns(self):
+        literal = "D:\\Code\\proj\\src\\Scratch.java"
+        self.assertNotIn("/", literal)
+        self.assertIn("\\", literal)
+        path = Path(literal)
+        state = self.repo / ".chaos-engine-state"
+        state.mkdir()
+        allow = state / "delete-allow.txt"
+        for pattern in ("**/Scratch.java", "**/src/Scratch.java", "**Scratch.java", "**\\src\\Scratch.java"):
+            allow.write_text(pattern + "\n", encoding="utf-8")
+            self.assertTrue(GUARD.allow_listed(path, self.repo), pattern)
+        allow.write_text("**/Other.java\n", encoding="utf-8")
+        self.assertFalse(GUARD.allow_listed(path, self.repo))
+        docs = (CORE / "references" / "delete-guard.md").read_text(encoding="utf-8")
+        self.assertIn("forward slashes on every OS", docs)
+        self.assertIn("`**/filename` is the portable form", docs)
+
     def test_python_rmtree_literal_checked_and_computed_refused(self):
         (self.repo / "d").mkdir()
         (self.repo / "d" / "f").write_text("f", encoding="utf-8")
