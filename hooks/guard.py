@@ -2004,6 +2004,53 @@ def _is_project_tool_py(script: str, cwd: Path) -> bool:
     return False
 
 
+def _is_verified_project_install_sh(script: str, cwd: Path) -> bool:
+    """True for this tree's install.sh whose only delete is the bootstrap work dir."""
+    raw = Path(script)
+    if not raw.is_absolute():
+        raw = cwd / raw
+    try:
+        if raw.is_symlink():
+            return False
+    except OSError:
+        return False
+    resolved = _script_path(script, cwd)
+    if resolved is None:
+        return False
+    located = False
+    for root in _install_roots(cwd):
+        try:
+            overlay = (root / ".chaos-engine" / "install.sh").resolve()
+            source = (root / "install.sh").resolve()
+        except OSError:
+            continue
+        if resolved == overlay and (root / ".chaos-engine" / "bootstrap.py").is_file():
+            located = True
+            break
+        if (
+            resolved == source
+            and (root / "bootstrap.py").is_file()
+            and (root / "hooks" / "guard.py").is_file()
+        ):
+            located = True
+            break
+    if not located:
+        return False
+    text = _read_script(script, cwd)
+    if (
+        not text
+        or 'work="$(mktemp -d "${TMPDIR:-/tmp}/chaos-engine-bootstrap-XXXXXX")"' not in text
+    ):
+        return False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if re.search(r"\b(?:rm|unlink|shred|rmtree)\b", stripped) and stripped != 'rm -rf "$work"':
+            return False
+    return True
+
+
 def _read_script(script: str, cwd: Path) -> str | None:
     if not script or script == "-" or script.startswith("-"):
         return None
@@ -2105,6 +2152,8 @@ def _code_bodies(command: str, cwd: Path) -> list[tuple[str, str, str]]:
     script = _flag_value(arguments, ("-File", "-f")) if lang in {"pwsh", "powershell"} else None
     if script is None:
         script = _positional_script(arguments, ())
+    if script and lang in SHELLS and _is_verified_project_install_sh(script, cwd):
+        return bodies
     text = _read_script(script, cwd) if script else None
     if text is not None:
         bodies.append((lang, text, "shell"))
