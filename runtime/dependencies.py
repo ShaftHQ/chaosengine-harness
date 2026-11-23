@@ -2228,16 +2228,7 @@ def _remove_empty_mempalace_previous(parent: Path) -> list[str]:
     return removed
 
 
-def _stderr_note(message: str) -> None:
-    """An active installer reporter keeps the line on the step, not above the header."""
-    reporter = getattr(sys.stderr, "_reporter", None)
-    if reporter is not None and not callable(getattr(reporter, "detail", None)):
-        reporter.detail = message
-        trace = getattr(reporter, "trace", None)
-        if callable(trace):
-            trace(message)
-        return
-    print(message, file=sys.stderr)
+_stderr_note = _stores_namespace("_chaos_engine_stores_stderr_note")["_stderr_note"]
 
 
 def apply_nested_repository_excludes(project: Path) -> list[str]:
