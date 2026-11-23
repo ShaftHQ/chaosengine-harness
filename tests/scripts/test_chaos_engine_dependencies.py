@@ -345,8 +345,9 @@ class ChaosEngineDependenciesTest(unittest.TestCase):
         )
         self.assertEqual(
             [[
-                "/user/bin/uv", "tool", "install", "--force", "--python", "3.14.2", "--with",
-                *graphify["with"], graphify["package"],
+                "/user/bin/uv", "tool", "install", "--force", "--python", "3.14.2",
+                *[flag for extra in graphify["with"] for flag in ("--with", extra)],
+                graphify["package"],
             ]],
             plan["graphify"],
         )
@@ -600,8 +601,9 @@ class ChaosEngineDependenciesTest(unittest.TestCase):
         # #7557: installed always passes --force (same contract as upgraded/repaired).
         self.assertEqual(
             [[
-                "/user/bin/uv", "tool", "install", "--force", "--python", "3.14.2", "--with",
-                *graphify["with"], "graphifyy==0.9.53",
+                "/user/bin/uv", "tool", "install", "--force", "--python", "3.14.2",
+                *[flag for extra in graphify["with"] for flag in ("--with", extra)],
+                "graphifyy==0.9.53",
             ]],
             first_plan["graphify"],
         )
