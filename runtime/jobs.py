@@ -7,9 +7,9 @@ keeps a lease (PID, process group, command, heartbeat) and a step checkpoint
 log, so any later session or watchdog can tell live from stale without a doc
 mtime or ``pgrep``. A live lease means nobody starts a second worker.
 
-    tool.py job start NAME [--heartbeat S] [--stale S] [--part-dir D]... [--max-runs N] -- CMD...
-    tool.py job status NAME [--json]   exit 0 live/done, 3 stale, 4 failed, 5 stopped, 6 absent
-    tool.py job resume NAME            no-op while live or done; restarts a stale/failed run
+    tool.py job start NAME [--heartbeat S] [--stale S] [--idle-timeout S] [--watch-log P]... [--part-dir D]... [--max-runs N] -- CMD...
+    tool.py job status NAME [--json]   exit 0 live/done, 3 stale/stalled, 4 failed, 5 stopped, 6 absent
+    tool.py job resume NAME            no-op while live or done; restarts a stale/stalled/failed run
     tool.py job stop NAME
     tool.py job checkpoint NAME STEP [--note TEXT] [--check]
 
@@ -44,7 +44,7 @@ RUN_ENV = "CHAOS_ENGINE_JOB_RUN"
 NAME_ENV = "CHAOS_ENGINE_JOB"
 ROOT_ENV = "CHAOS_ENGINE_JOBS_DIR"
 PART_SUFFIX = ".part"
-EXIT = {"live": 0, "done": 0, "stale": 3, "failed": 4, "stopped": 5, "absent": 6}
+EXIT = {"live": 0, "done": 0, "stale": 3, "stalled": 3, "failed": 4, "stopped": 5, "absent": 6}
 STILL_LIVE = 7  # `wait` timed out while the job is live
 REFUSED = 3
 
@@ -284,11 +284,11 @@ def clean_parts(part_dirs: list[str], cwd: str | None) -> list[str]:
 # ------------------------------------------------------------------- the lease
 
 def classify(lease: dict | None, now: float | None = None) -> str:
-    """live | stale | done | failed | stopped | absent. Never reads a doc mtime."""
+    """live | stale | stalled | done | failed | stopped | absent. Never reads a doc mtime."""
     if not lease:
         return "absent"
     state = lease.get("state")
-    if state in {"done", "failed", "stopped"}:
+    if state in {"done", "failed", "stopped", "stalled"}:
         return str(state)
     now = time.time() if now is None else now
     heartbeat = float(lease.get("heartbeat_at") or 0)
@@ -324,8 +324,15 @@ def describe(name: str, directory: Path, now: float | None = None) -> dict:
     if lease:
         report.update({
             key: lease.get(key)
-            for key in ("pid", "child_pid", "command", "cwd", "exit_code", "runs", "run_id", "log")
+            for key in (
+                "pid", "child_pid", "command", "cwd", "exit_code", "runs", "run_id", "log",
+                "idle_timeout_s", "watch_logs", "last_activity_at", "stall_reason",
+                "stalled_tree", "stalled_tail",
+            )
         })
+        activity = lease.get("last_activity_at")
+        if isinstance(activity, (int, float)) and not isinstance(activity, bool):
+            report["idle_age_s"] = round(now - float(activity), 1)
         if lease.get("heartbeat_at"):
             report["heartbeat_age_s"] = round(now - float(lease["heartbeat_at"]), 1)
         if lease.get("started_at"):
@@ -347,7 +354,10 @@ def status_line(report: dict) -> str:
     checkpoint = report.get("last_checkpoint")
     if checkpoint:
         parts.append(f"last step {checkpoint.get('step')!r}")
-    return ", ".join(parts)
+    line = ", ".join(parts)
+    if report.get("state") == "stalled" and report.get("stall_reason"):
+        line += f" ({report['stall_reason']})"
+    return line
 
 
 # ------------------------------------------------------------------ operations
@@ -379,7 +389,10 @@ def take_over(directory: Path, lease: dict | None, part_dirs: list[str]) -> dict
 
 
 def launch(root: Path, name: str, command: list[str], *, cwd: str, heartbeat: float, stale: float | None,
-           part_dirs: list[str], max_runs: int, runs: int) -> dict:
+           part_dirs: list[str], max_runs: int, runs: int, idle_timeout: float | None = None,
+           watch_logs: list[str] | None = None) -> dict:
+    if idle_timeout is not None and idle_timeout <= 0:
+        raise ValueError("--idle-timeout must be positive")
     directory = job_dir(root, name)
     run_id = uuid.uuid4().hex
     log = directory / "output.log"
@@ -390,6 +403,8 @@ def launch(root: Path, name: str, command: list[str], *, cwd: str, heartbeat: fl
         "heartbeat_s": heartbeat, "stale_s": stale or heartbeat * STALE_FACTOR,
         "max_runs": max_runs, "runs": runs, "started_at": now, "heartbeat_at": now,
         "pid": None, "child_pid": None, "pgid": None, "exit_code": None, "ended_at": None, "log": str(log),
+        "idle_timeout_s": idle_timeout, "watch_logs": list(watch_logs or []),
+        "last_activity_at": now, "stall_reason": None, "stalled_tree": None, "stalled_tail": None,
     }
     write_json(directory / "lease.json", lease)
     supervisor = _spawn_supervisor(root, name, run_id, cwd, log)
@@ -408,9 +423,12 @@ def launch(root: Path, name: str, command: list[str], *, cwd: str, heartbeat: fl
 
 def start(root: Path, name: str, command: list[str], *, cwd: str | None = None,
           heartbeat: float = DEFAULT_HEARTBEAT, stale: float | None = None,
-          part_dirs: list[str] | None = None, max_runs: int = DEFAULT_MAX_RUNS) -> tuple[int, str]:
+          part_dirs: list[str] | None = None, max_runs: int = DEFAULT_MAX_RUNS,
+          idle_timeout: float | None = None, watch_logs: list[str] | None = None) -> tuple[int, str]:
     if not command:
         return 2, "job start: give the command after --"
+    if idle_timeout is not None and idle_timeout <= 0:
+        raise ValueError("--idle-timeout must be positive")
     directory = job_dir(root, name)
     with start_lock(directory):
         lease = read_lease(directory)
@@ -420,7 +438,8 @@ def start(root: Path, name: str, command: list[str], *, cwd: str | None = None,
         cleanup = take_over(directory, lease, list(part_dirs or []))
         lease = launch(root, name, list(command), cwd=str(Path(cwd or os.getcwd()).resolve()),
                        heartbeat=heartbeat, stale=stale, part_dirs=list(part_dirs or []),
-                       max_runs=max_runs, runs=1)
+                       max_runs=max_runs, runs=1, idle_timeout=idle_timeout,
+                       watch_logs=list(watch_logs or []))
     return 0, _started_text(name, lease, state, cleanup)
 
 
@@ -445,7 +464,9 @@ def resume(root: Path, name: str, *, force: bool = False) -> tuple[int, str]:
         lease = launch(root, name, list(lease["command"]), cwd=str(lease.get("cwd") or os.getcwd()),
                        heartbeat=float(lease.get("heartbeat_s") or DEFAULT_HEARTBEAT),
                        stale=float(lease.get("stale_s") or 0) or None,
-                       part_dirs=list(lease.get("part_dirs") or []), max_runs=max_runs, runs=runs + 1)
+                       part_dirs=list(lease.get("part_dirs") or []), max_runs=max_runs, runs=runs + 1,
+                       idle_timeout=lease.get("idle_timeout_s"),
+                       watch_logs=list(lease.get("watch_logs") or []))
     return 0, _started_text(name, lease, state, cleanup)
 
 
@@ -466,7 +487,7 @@ def stop(root: Path, name: str) -> tuple[int, str]:
         lease = read_lease(directory)
         if not lease:
             return EXIT["absent"], f"job {name}: absent"
-        if classify(lease) in {"done", "failed", "stopped"} and not run_members(str(lease.get("run_id") or "")):
+        if classify(lease) in {"done", "failed", "stopped", "stalled"} and not run_members(str(lease.get("run_id") or "")):
             return 0, status_line(describe(name, directory))
         update_lease(directory, state="stopped", ended_at=time.time())
         killed = kill_run(lease)
@@ -526,6 +547,58 @@ def checkpoint(root: Path, name: str, step: str, note: str = "", check: bool = F
     return 0, ""
 
 
+def _activity_signature(directory: Path, lease: dict[str, object]) -> tuple[tuple[str, int, int], ...]:
+    """Size and mtime of output.log, checkpoint.jsonl, and each watched log."""
+    cwd = Path(str(lease.get("cwd") or "."))
+    paths = [directory / "output.log", directory / "checkpoint.jsonl"]
+    for raw in lease.get("watch_logs") or []:
+        path = Path(str(raw))
+        paths.append(path if path.is_absolute() else cwd / path)
+    signature: list[tuple[str, int, int]] = []
+    for path in paths:
+        try:
+            stat = path.stat()
+        except OSError:
+            signature.append((str(path), -1, -1))
+        else:
+            signature.append((str(path), stat.st_size, stat.st_mtime_ns))
+    return tuple(signature)
+
+
+def _proc_command(pid: int) -> str:
+    try:
+        raw = Path(f"/proc/{pid}/cmdline").read_bytes()
+    except OSError:
+        raw = b""
+    text = raw.replace(b"\0", b" ").decode("utf-8", "replace").strip()
+    if text:
+        return text
+    try:
+        return Path(f"/proc/{pid}/comm").read_text(encoding="utf-8", errors="replace").strip()
+    except OSError:
+        return ""
+
+
+def capture_process_tree(child_pid: int, run_id: str) -> list[dict[str, object]]:
+    """Live child plus run members. ``cmd`` comes from /proc when that directory exists."""
+    ordered: list[int] = []
+    seen: set[int] = set()
+    for pid in (child_pid, *run_members(run_id)):
+        if isinstance(pid, int) and pid > 0 and pid not in seen and pid_alive(pid):
+            seen.add(pid)
+            ordered.append(pid)
+    if not Path("/proc").is_dir():
+        return [{"pid": pid} for pid in ordered]
+    tree: list[dict[str, object]] = []
+    for pid in ordered:
+        entry: dict[str, object] = {"pid": pid}
+        cmd = _proc_command(pid)
+        if cmd:
+            entry["cmd"] = cmd
+        tree.append(entry)
+    return tree
+
+
 def supervise(root: Path, name: str) -> int:
     """Detached supervisor: run the command, heartbeat the lease, record the end."""
     directory = job_dir(root, name)
@@ -557,16 +630,45 @@ def supervise(root: Path, name: str) -> int:
     signal.signal(signal.SIGTERM, on_term)
     update_lease(directory, pid=os.getpid(), child_pid=child.pid, pgid=child.pid, heartbeat_at=time.time())
     heartbeat = float(lease.get("heartbeat_s") or DEFAULT_HEARTBEAT)
+    idle_timeout_raw = lease.get("idle_timeout_s")
+    idle_timeout = float(idle_timeout_raw) if idle_timeout_raw is not None else None
+    poll_s = min(heartbeat, max(0.05, idle_timeout / 4.0)) if idle_timeout else heartbeat
+    last_sig = _activity_signature(directory, lease)
+    last_activity_mono = time.monotonic()
+    last_activity_wall = time.time()
     while True:
         try:
-            code = child.wait(timeout=heartbeat)
+            code = child.wait(timeout=poll_s)
             break
         except subprocess.TimeoutExpired:
-            current = read_lease(directory) or {}
+            current = read_lease(directory) or lease
             if current.get("run_id") != run_id or current.get("state") != "running":
                 on_term(None, None)
                 continue
-            update_lease(directory, heartbeat_at=time.time())
+            sig = _activity_signature(directory, current)
+            now_wall = time.time()
+            if sig != last_sig:
+                last_sig = sig
+                last_activity_mono = time.monotonic()
+                last_activity_wall = now_wall
+            if idle_timeout is not None and (time.monotonic() - last_activity_mono) >= idle_timeout:
+                tree = capture_process_tree(child.pid, str(current.get("run_id") or ""))
+                tail = log_tail(current, 20)
+                reason = f"no output or checkpoint for {idle_timeout:g}s"
+                print(f"job {name}: stalled ({reason})", file=sys.stderr, flush=True)
+                kill_run(current, grace=min(2.0, heartbeat))
+                try:
+                    child.wait(timeout=1.0)
+                except subprocess.TimeoutExpired:
+                    pass
+                update_lease(
+                    directory, state="stalled",
+                    exit_code=child.returncode if child.returncode is not None else -signal.SIGTERM,
+                    ended_at=time.time(), heartbeat_at=time.time(), last_activity_at=last_activity_wall,
+                    stall_reason=reason, stalled_tree=tree, stalled_tail=tail,
+                )
+                return 0
+            update_lease(directory, heartbeat_at=now_wall, last_activity_at=last_activity_wall)
     current = read_lease(directory) or {}
     if current.get("run_id") == run_id:
         state = "stopped" if stopping["flag"] or current.get("state") == "stopped" else (
@@ -585,11 +687,15 @@ def build_parser() -> argparse.ArgumentParser:
     begin.add_argument("name")
     begin.add_argument("--heartbeat", type=float, default=DEFAULT_HEARTBEAT, help="seconds between heartbeats")
     begin.add_argument("--stale", type=float, help=f"heartbeat age that makes the lease stale (default {STALE_FACTOR}x)")
+    begin.add_argument("--idle-timeout", type=float, default=None,
+                       help="seconds without output or checkpoint before marking stalled")
+    begin.add_argument("--watch-log", action="append", default=[],
+                       help="extra log path whose mtime/size counts as activity")
     begin.add_argument("--part-dir", action="append", default=[], help="dir whose *.part files a takeover deletes")
     begin.add_argument("--max-runs", type=int, default=DEFAULT_MAX_RUNS, help="resume gives up after this many runs")
     begin.add_argument("--cwd", help="working directory of the command")
-    for action, text in (("status", "live|stale|done|failed|stopped|absent"),
-                         ("resume", "no-op while live or done; restart a stale or failed run once"),
+    for action, text in (("status", "live|stale|stalled|done|failed|stopped|absent"),
+                         ("resume", "no-op while live or done; restart a stale, stalled, or failed run"),
                          ("stop", "terminate the whole run and record stopped")):
         sub = commands.add_parser(action, help=text)
         sub.add_argument("name")
@@ -632,7 +738,8 @@ def main(argv: list[str] | None = None) -> int:
             return code
         if arguments.action == "start":
             code, text = start(root, arguments.name, command, cwd=arguments.cwd, heartbeat=arguments.heartbeat,
-                               stale=arguments.stale, part_dirs=arguments.part_dir, max_runs=arguments.max_runs)
+                               stale=arguments.stale, part_dirs=arguments.part_dir, max_runs=arguments.max_runs,
+                               idle_timeout=arguments.idle_timeout, watch_logs=arguments.watch_log)
         elif arguments.action == "resume":
             code, text = resume(root, arguments.name, force=arguments.force)
         elif arguments.action == "stop":

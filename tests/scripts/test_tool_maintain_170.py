@@ -5,6 +5,9 @@ from __future__ import annotations
 import importlib.util
 import io
 import json
+import subprocess
+import sys
+import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
@@ -92,6 +95,121 @@ class ToolSearchTest(unittest.TestCase):
             code = tool.tools_command(ROOT, ["search", "skill", "--limit", "5"])
         self.assertEqual(0, code)
         self.assertLessEqual(len(json.loads(stdout.getvalue())), 5)
+
+
+class UpgradeCommandTest(unittest.TestCase):
+    def setUp(self):
+        self.tool = load_tool()
+
+    def test_upgrade_help_exits_0_and_does_not_invoke_bootstrap(self):
+        runner = mock.Mock(side_effect=AssertionError("bootstrap should not run"))
+        for flag in ("--help", "-h", "help"):
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                code = self.tool.upgrade(ROOT, [flag], runner=runner)
+            self.assertEqual(0, code, flag)
+            self.assertIn("usage: tool.py upgrade", stdout.getvalue())
+            self.assertEqual("", stderr.getvalue())
+        with mock.patch.object(self.tool.subprocess, "run", side_effect=AssertionError("subprocess.run")):
+            for flag in ("--help", "-h"):
+                stdout, stderr = io.StringIO(), io.StringIO()
+                with redirect_stdout(stdout), redirect_stderr(stderr):
+                    code = self.tool._dispatch_core(ROOT, "upgrade", [flag])
+                self.assertEqual(0, code, flag)
+                self.assertIn("usage: tool.py upgrade", stdout.getvalue())
+                self.assertEqual("", stderr.getvalue())
+
+    def test_upgrade_invokes_bootstrap_and_propagates_exit_code(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp)
+            installed = project / ".chaos-engine"
+            installed.mkdir()
+            bootstrap = installed / "bootstrap.py"
+            bootstrap.write_text("#!/usr/bin/env python3\n", encoding="utf-8")
+            (installed / "manifest.json").write_text(
+                json.dumps({"source": {"repository": "ShaftHQ/chaosengine-harness", "branch": "dev"}}),
+                encoding="utf-8",
+            )
+            runner = mock.Mock(return_value=subprocess.CompletedProcess(args=[], returncode=7))
+            code = self.tool.upgrade(
+                installed,
+                ["--branch", "main", "--yes", "--allow-dirty"],
+                runner=runner,
+            )
+            self.assertEqual(7, code)
+            runner.assert_called_once_with(
+                [
+                    sys.executable,
+                    str(bootstrap),
+                    "--project",
+                    str(project.resolve()),
+                    "--repository",
+                    "ShaftHQ/chaosengine-harness",
+                    "--branch",
+                    "main",
+                    "--yes",
+                    "--allow-dirty",
+                ],
+                cwd=project.resolve(),
+                check=False,
+            )
+
+    def test_upgrade_defaults_to_recorded_source_or_default_repository_and_branch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp)
+            installed = project / ".chaos-engine"
+            installed.mkdir()
+            bootstrap = installed / "bootstrap.py"
+            bootstrap.write_text("#!/usr/bin/env python3\n", encoding="utf-8")
+            (installed / "manifest.json").write_text(
+                json.dumps({"source": {"repository": "Acme/custom-harness", "branch": "release"}}),
+                encoding="utf-8",
+            )
+            runner = mock.Mock(return_value=subprocess.CompletedProcess(args=[], returncode=0))
+            code = self.tool.upgrade(installed, ["--yes"], runner=runner)
+            self.assertEqual(0, code)
+            runner.assert_called_once_with(
+                [
+                    sys.executable,
+                    str(bootstrap),
+                    "--project",
+                    str(project.resolve()),
+                    "--repository",
+                    "Acme/custom-harness",
+                    "--branch",
+                    "release",
+                    "--yes",
+                ],
+                cwd=project.resolve(),
+                check=False,
+            )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp)
+            installed = project / ".chaos-engine"
+            installed.mkdir()
+            bootstrap = installed / "bootstrap.py"
+            bootstrap.write_text("#!/usr/bin/env python3\n", encoding="utf-8")
+            runner = mock.Mock(return_value=subprocess.CompletedProcess(args=[], returncode=0))
+            with mock.patch.dict(self.tool.os.environ, {}, clear=False):
+                self.tool.os.environ.pop("CHAOS_ENGINE_REPOSITORY", None)
+                self.tool.os.environ.pop("CHAOS_ENGINE_BRANCH", None)
+                code = self.tool.upgrade(installed, [], runner=runner)
+            self.assertEqual(0, code)
+            runner.assert_called_once_with(
+                [
+                    sys.executable,
+                    str(bootstrap),
+                    "--project",
+                    str(project.resolve()),
+                    "--repository",
+                    "ShaftHQ/chaosengine-harness",
+                    "--branch",
+                    "main",
+                ],
+                cwd=project.resolve(),
+                check=False,
+            )
 
 
 if __name__ == "__main__":
