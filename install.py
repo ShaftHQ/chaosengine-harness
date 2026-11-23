@@ -4794,7 +4794,7 @@ def wire_selected_receipt_shims(project: Path, targets: tuple[str, ...]) -> dict
 def apply_install_host_completion(
     project: Path, targets: tuple[str, ...] | None
 ) -> dict[str, str]:
-    """Unattended keeps PATH/marker shim wiring. A target set wires only itself."""
+    """Unattended keeps PATH/marker shim wiring. A target set wires only itself, then restores receipt-owned shim files such as .agents/hooks.json."""
     if targets is None:
         clear_completion_targets(project)
         wired = wire_receipt_shims(project)

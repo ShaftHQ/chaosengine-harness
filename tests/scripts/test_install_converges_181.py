@@ -60,9 +60,25 @@ class InstallConverges181Tests(unittest.TestCase):
             project = Path(temporary) / "checkout"
             project.mkdir()
             specification = json.loads((ROOT / "dependencies.json").read_text(encoding="utf-8"))
+
+            def _refuse_plugin_activation(*_args, **_kwargs):
+                raise AssertionError(
+                    "install_with_dependencies called activate_detected_plugins under pytest"
+                )
+
+            real_load = INSTALL.load_installed_controller
+
+            def _load_installed_controller(installed_root, name):
+                controller = real_load(installed_root, name)
+                if name == "hosts":
+                    controller.activate_detected_plugins = _refuse_plugin_activation
+                return controller
+
             with mock.patch.object(
                 INSTALL, "load_dependency_controller", return_value=_account_controller(specification)
-            ), mock.patch.object(INSTALL.shutil, "which", return_value=None):
+            ), mock.patch.object(INSTALL.shutil, "which", return_value=None), mock.patch.object(
+                INSTALL, "load_installed_controller", side_effect=_load_installed_controller
+            ):
                 INSTALL.install_with_dependencies(
                     project, ROOT, COMMIT, with_maven_tools=False
                 )

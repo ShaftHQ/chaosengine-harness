@@ -32,6 +32,7 @@ _DROP = (
 )
 # bootstrap.IMPLICIT_CLIENT_SIGNALS. Pop before the overlay so a parent
 # CURSOR_AGENT cannot combine with the fixture's CODEX_HOME.
+# Set when absent so the pop is observed without a parent shell signal.
 _CLIENT_SIGNAL_NAMES = tuple(name for name, _host in load().IMPLICIT_CLIENT_SIGNALS)
 
 
@@ -47,6 +48,8 @@ def _isolated(home: Path, data: Path):
         "COPILOT_HOME": str(home / ".copilot"),
         "GROK_HOME": str(home / ".grok"),
     }
+    if "CURSOR_AGENT" not in os.environ:
+        os.environ["CURSOR_AGENT"] = "1"
     saved = {
         key: os.environ.get(key)
         for key in set(overlay) | set(_DROP) | set(_CLIENT_SIGNAL_NAMES)
