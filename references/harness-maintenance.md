@@ -6,8 +6,11 @@ Install, `maintain` recovery and harness-edit checks for bots that start from
 ## Install
 
 - Fresh clone: install from a copy of its own `chaos-engine/` kept outside
-  the project (source and project must be disjoint), pinned to HEAD:
-  `cp -r chaos-engine ../ce-src && python3 chaos-engine/install.py install --project . --source ../ce-src --commit "$(git rev-parse HEAD)"` (repo-only: run in the source checkout)
+  the project (source and project must be disjoint), pinned to HEAD.
+  Copy, then install. Do not join the commands with `&&` (PowerShell 5.1 rejects it).
+  POSIX: `cp -r chaos-engine ../ce-src` then `python3 chaos-engine/install.py install --project . --source ../ce-src --commit "$(git rev-parse HEAD)"`.
+  Windows: `Copy-Item -Recurse chaos-engine ..\ce-src` then `py -3 chaos-engine/install.py install --project . --source ..\ce-src --commit (git rev-parse HEAD)`.
+  Repo-only: run in the source checkout. Elsewhere, spell `python3` as `py -3` on Windows.
   (add `--with-<add-on>` flags as needed; `install.py addons --project .`
   lists them). Expect a few minutes for the first store index.
 - Linked worktree: install in the primary checkout, then

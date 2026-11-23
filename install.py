@@ -203,7 +203,7 @@ def extract_repair_components_from_text(text: str) -> list[str]:
 INSTALL_ROLLBACK_RELATIVE = ".chaos-engine-state/install-rollback.json"
 
 
-# #6216: branch-agnostic doctor fallback when a status carries no fix-next.
+# #6216: doctor fallback when a status carries no fix-next.
 # PowerShell 5.1 rejects && and @{upstream}. Two lines, origin/main.
 DESYNC_FIX_NEXT_FALLBACK = (
     "git fetch origin main\n"
