@@ -2227,6 +2227,18 @@ def _remove_empty_mempalace_previous(parent: Path) -> list[str]:
     return removed
 
 
+def _stderr_note(message: str) -> None:
+    """An active installer reporter keeps the line on the step, not above the header."""
+    reporter = getattr(sys.stderr, "_reporter", None)
+    if reporter is not None and not callable(getattr(reporter, "detail", None)):
+        reporter.detail = message
+        trace = getattr(reporter, "trace", None)
+        if callable(trace):
+            trace(message)
+        return
+    print(message, file=sys.stderr)
+
+
 def apply_nested_repository_excludes(project: Path) -> list[str]:
     """Keep nested repositories/worktrees out of the mine (installer-owned config only)."""
     nested = _stores_namespace("_chaos_engine_stores_nested")["nested_repository_roots"](project)
@@ -2239,9 +2251,11 @@ def apply_nested_repository_excludes(project: Path) -> list[str]:
     text = configuration.read_text(encoding="utf-8")
     if missing_owned_mempalace_excludes(project):
         if nested:
-            print("chaos-engine: mempalace.yaml still lacks owned exclude_patterns after merge; "
-                  "add exclude_patterns for nested repositories to keep them out of the index: "
-                  + ", ".join(f"{path}/**" for path in nested), file=sys.stderr)
+            _stderr_note(
+                "chaos-engine: mempalace.yaml still lacks owned exclude_patterns after merge; "
+                "add exclude_patterns for nested repositories to keep them out of the index: "
+                + ", ".join(f"{path}/**" for path in nested)
+            )
         return nested
     lines = text.splitlines()
     if MEMPALACE_NESTED_MARKER in lines:
@@ -2996,9 +3010,8 @@ def _run_account_mempalace_setup(
         stdin = subprocess.DEVNULL if action == "init" else None
         if action == "mine" and background_mine:
             if apply_owned_mempalace_excludes(project):
-                print(
-                    "chaos-engine: merged missing MemPalace owned exclude_patterns into mempalace.yaml",
-                    file=sys.stderr,
+                _stderr_note(
+                    "chaos-engine: merged missing MemPalace owned exclude_patterns into mempalace.yaml"
                 )
             start_background_mempalace_mine(
                 command, project, extra_environment=environment,
@@ -3007,9 +3020,8 @@ def _run_account_mempalace_setup(
             continue
         if action == "mine":
             if apply_owned_mempalace_excludes(project):
-                print(
-                    "chaos-engine: merged missing MemPalace owned exclude_patterns into mempalace.yaml",
-                    file=sys.stderr,
+                _stderr_note(
+                    "chaos-engine: merged missing MemPalace owned exclude_patterns into mempalace.yaml"
                 )
             _run_transient_mempalace_mine(
                 command, project, runner=runner, extra_environment=environment
@@ -3025,9 +3037,8 @@ def _run_account_mempalace_setup(
             )
         if action in {"init", "mine"}:
             if apply_owned_mempalace_excludes(project):
-                print(
-                    "chaos-engine: merged missing MemPalace owned exclude_patterns into mempalace.yaml",
-                    file=sys.stderr,
+                _stderr_note(
+                    "chaos-engine: merged missing MemPalace owned exclude_patterns into mempalace.yaml"
                 )
             mark_mempalace_project_setup(project)
 

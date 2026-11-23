@@ -4797,9 +4797,13 @@ def apply_install_host_completion(
     """Unattended keeps PATH/marker shim wiring. A target set wires only itself."""
     if targets is None:
         clear_completion_targets(project)
-        return wire_receipt_shims(project)
-    record_completion_targets(project, targets)
-    return wire_selected_receipt_shims(project, targets)
+        wired = wire_receipt_shims(project)
+    else:
+        record_completion_targets(project, targets)
+        wired = wire_selected_receipt_shims(project, targets)
+    # Completion unwire removes receipt-owned shim paths such as .agents/hooks.json.
+    _restore_receipt_owned_shim_files(project)
+    return wired
 
 
 def _restore_receipt_owned_shim_files(project: Path) -> None:
@@ -5373,6 +5377,9 @@ def install_with_dependencies(  # noqa: MC0001 - owned resources share one compe
         clear_install_rollback(project)
         if not _running_under_tests():
             refresh_stale_graph(project)
+            # Doctor runs before the one-liner's client step, and a cursor-only
+            # selection never activates Claude or Codex. Register them here.
+            host_controller.activate_detected_plugins(project, which=shutil.which)
         return target
 
 

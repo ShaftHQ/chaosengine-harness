@@ -1463,6 +1463,18 @@ def _store_argv(executable: str, args: list[str]) -> list[str]:
     return [executable, *args]
 
 
+def _stderr_note(message: str, *, flush: bool = False) -> None:
+    """An active installer reporter keeps the line on the step, not above the header."""
+    reporter = getattr(sys.stderr, "_reporter", None)
+    if reporter is not None and not callable(getattr(reporter, "detail", None)):
+        reporter.detail = message
+        trace = getattr(reporter, "trace", None)
+        if callable(trace):
+            trace(message)
+        return
+    print(message, file=sys.stderr, flush=flush)
+
+
 def _refresh_graphify(
     cwd: Path,
     *,
@@ -1486,9 +1498,8 @@ def _refresh_graphify(
     produced = staging / "graphify-out"
     try:
         incremental = _seed_incremental_graph(snapshot, target, produced, revision)
-        print(
+        _stderr_note(
             f"stores: graphify {'incremental' if incremental else 'full'} extract",
-            file=sys.stderr,
             flush=True,
         )
         _run(

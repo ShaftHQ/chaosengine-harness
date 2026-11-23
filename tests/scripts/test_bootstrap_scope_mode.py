@@ -30,6 +30,9 @@ _DROP = (
     "CHAOS_ENGINE_JSON",
     "CHAOS_ENGINE_QUIET",
 )
+# bootstrap.IMPLICIT_CLIENT_SIGNALS. Pop before the overlay so a parent
+# CURSOR_AGENT cannot combine with the fixture's CODEX_HOME.
+_CLIENT_SIGNAL_NAMES = tuple(name for name, _host in load().IMPLICIT_CLIENT_SIGNALS)
 
 
 @contextmanager
@@ -44,9 +47,12 @@ def _isolated(home: Path, data: Path):
         "COPILOT_HOME": str(home / ".copilot"),
         "GROK_HOME": str(home / ".grok"),
     }
-    saved = {key: os.environ.get(key) for key in set(overlay) | set(_DROP)}
+    saved = {
+        key: os.environ.get(key)
+        for key in set(overlay) | set(_DROP) | set(_CLIENT_SIGNAL_NAMES)
+    }
     try:
-        for key in _DROP:
+        for key in (*_DROP, *_CLIENT_SIGNAL_NAMES):
             os.environ.pop(key, None)
         os.environ.update(overlay)
         yield
