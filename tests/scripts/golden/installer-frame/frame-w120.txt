@@ -3,7 +3,7 @@
    ▗▄▄▄▄▟      ChaosEngine 0.4.20261115.5
  ▗▟██████▐█▙▖    Project    /tmp/ce-frame-project
 ▟██▀    █▞▀▀▀    Source     ShaftHQ/chaosengine-harness@main
-██▌   ▟▙ ██▌
+██▌   ▟▙ ██▌   CHAOS ENGINE
 ██▌   ▝▀ █▄▄
 ▜██▄    █  ▄▄
  ▝▜██████▐██▀
@@ -22,9 +22,9 @@
    ▗▄▄▄▄▟      ChaosEngine 0.4.20261115.5
  ▗▟██████▐█▙▖    Project    /tmp/ce-frame-project
 ▟██▀    █▞▀▀▀    Source     ShaftHQ/chaosengine-harness@main
-██▌   ▟▙ ██▌     Commit     abababababab…
+██▌   ▟▙ ██▌   CHAOS ENGINE
 ██▌   ▝▀ █▄▄
-▜██▄    █  ▄▄
+▜██▄    █  ▄▄    Commit     abababababab…
  ▝▜██████▐██▀
    ▝▀▀▀▀▛
 
@@ -41,9 +41,9 @@
    ▗▄▄▄▄▟      ChaosEngine 0.4.20261115.5
  ▗▟██████▐█▙▖    Project    /tmp/ce-frame-project
 ▟██▀    █▞▀▀▀    Source     ShaftHQ/chaosengine-harness@main
-██▌   ▟▙ ██▌     Commit     abababababab…
+██▌   ▟▙ ██▌   CHAOS ENGINE
 ██▌   ▝▀ █▄▄
-▜██▄    █  ▄▄
+▜██▄    █  ▄▄    Commit     abababababab…
  ▝▜██████▐██▀
    ▝▀▀▀▀▛
 
@@ -59,9 +59,9 @@
    ▗▄▄▄▄▟      ChaosEngine 0.4.20261115.5
  ▗▟██████▐█▙▖    Project    /tmp/ce-frame-project
 ▟██▀    █▞▀▀▀    Source     ShaftHQ/chaosengine-harness@main
-██▌   ▟▙ ██▌     Commit     abababababab…
+██▌   ▟▙ ██▌   CHAOS ENGINE
 ██▌   ▝▀ █▄▄
-▜██▄    █  ▄▄
+▜██▄    █  ▄▄    Commit     abababababab…
  ▝▜██████▐██▀
    ▝▀▀▀▀▛
 
@@ -79,9 +79,9 @@
    ▗▄▄▄▄▟      ChaosEngine 0.4.20261115.5
  ▗▟██████▐█▙▖    Project    /tmp/ce-frame-project
 ▟██▀    █▞▀▀▀    Source     ShaftHQ/chaosengine-harness@main
-██▌   ▟▙ ██▌     Commit     abababababab…
+██▌   ▟▙ ██▌   CHAOS ENGINE
 ██▌   ▝▀ █▄▄
-▜██▄    █  ▄▄
+▜██▄    █  ▄▄    Commit     abababababab…
  ▝▜██████▐██▀
    ▝▀▀▀▀▛
 
@@ -99,9 +99,9 @@
    ▗▄▄▄▄▟      ChaosEngine 0.4.20261115.5
  ▗▟██████▐█▙▖    Project    /tmp/ce-frame-project
 ▟██▀    █▞▀▀▀    Source     ShaftHQ/chaosengine-harness@main
-██▌   ▟▙ ██▌     Commit     abababababab…
+██▌   ▟▙ ██▌   CHAOS ENGINE
 ██▌   ▝▀ █▄▄
-▜██▄    █  ▄▄
+▜██▄    █  ▄▄    Commit     abababababab…
  ▝▜██████▐██▀
    ▝▀▀▀▀▛
 
@@ -117,9 +117,9 @@
    ▗▄▄▄▄▟      ChaosEngine 0.4.20261115.5
  ▗▟██████▐█▙▖    Project    /tmp/ce-frame-project
 ▟██▀    █▞▀▀▀    Source     ShaftHQ/chaosengine-harness@main
-██▌   ▟▙ ██▌     Commit     abababababab…
+██▌   ▟▙ ██▌   CHAOS ENGINE
 ██▌   ▝▀ █▄▄
-▜██▄    █  ▄▄
+▜██▄    █  ▄▄    Commit     abababababab…
  ▝▜██████▐██▀
    ▝▀▀▀▀▛
 
@@ -135,9 +135,9 @@
    ▗▄▄▄▄▟      ChaosEngine 0.4.20261115.5
  ▗▟██████▐█▙▖    Project    /tmp/ce-frame-project
 ▟██▀    █▞▀▀▀    Source     ShaftHQ/chaosengine-harness@main
-██▌   ▟▙ ██▌     Commit     abababababab…
+██▌   ▟▙ ██▌   CHAOS ENGINE
 ██▌   ▝▀ █▄▄
-▜██▄    █  ▄▄
+▜██▄    █  ▄▄    Commit     abababababab…
  ▝▜██████▐██▀
    ▝▀▀▀▀▛
 
@@ -156,9 +156,9 @@ injected-provision-note
    ▗▄▄▄▄▟      ChaosEngine 0.4.20261115.5
  ▗▟██████▐█▙▖    Project    /tmp/ce-frame-project
 ▟██▀    █▞▀▀▀    Source     ShaftHQ/chaosengine-harness@main
-██▌   ▟▙ ██▌     Commit     abababababab…
+██▌   ▟▙ ██▌   CHAOS ENGINE
 ██▌   ▝▀ █▄▄
-▜██▄    █  ▄▄
+▜██▄    █  ▄▄    Commit     abababababab…
  ▝▜██████▐██▀
    ▝▀▀▀▀▛
 
@@ -177,9 +177,9 @@ injected-provision-note
    ▗▄▄▄▄▟      ChaosEngine 0.4.20261115.5
  ▗▟██████▐█▙▖    Project    /tmp/ce-frame-project
 ▟██▀    █▞▀▀▀    Source     ShaftHQ/chaosengine-harness@main
-██▌   ▟▙ ██▌     Commit     abababababab…
+██▌   ▟▙ ██▌   CHAOS ENGINE
 ██▌   ▝▀ █▄▄
-▜██▄    █  ▄▄
+▜██▄    █  ▄▄    Commit     abababababab…
  ▝▜██████▐██▀
    ▝▀▀▀▀▛
 
@@ -196,9 +196,9 @@ injected-provision-note
    ▗▄▄▄▄▟      ChaosEngine 0.4.20261115.5
  ▗▟██████▐█▙▖    Project    /tmp/ce-frame-project
 ▟██▀    █▞▀▀▀    Source     ShaftHQ/chaosengine-harness@main
-██▌   ▟▙ ██▌     Commit     abababababab…
+██▌   ▟▙ ██▌   CHAOS ENGINE
 ██▌   ▝▀ █▄▄
-▜██▄    █  ▄▄
+▜██▄    █  ▄▄    Commit     abababababab…
  ▝▜██████▐██▀
    ▝▀▀▀▀▛
 
@@ -216,9 +216,9 @@ injected-provision-note
    ▗▄▄▄▄▟      ChaosEngine 0.4.20261115.5
  ▗▟██████▐█▙▖    Project    /tmp/ce-frame-project
 ▟██▀    █▞▀▀▀    Source     ShaftHQ/chaosengine-harness@main
-██▌   ▟▙ ██▌     Commit     abababababab…
+██▌   ▟▙ ██▌   CHAOS ENGINE
 ██▌   ▝▀ █▄▄
-▜██▄    █  ▄▄
+▜██▄    █  ▄▄    Commit     abababababab…
  ▝▜██████▐██▀
    ▝▀▀▀▀▛
 

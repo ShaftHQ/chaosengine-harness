@@ -5,6 +5,7 @@
 █▌ ▝▀▐█▘
 ▜█▄  ▛█▙
  ▝▀▀▀▌▀
+CHAOS ENGINE
 ChaosEngine 0.4.20261115.5
   Project    /tmp/ce-frame-project
   Source     ShaftHQ/chaosengine-harness@main
@@ -24,6 +25,7 @@ ChaosEngine 0.4.20261115.5
 █▌ ▝▀▐█▘
 ▜█▄  ▛█▙
  ▝▀▀▀▌▀
+CHAOS ENGINE
 ChaosEngine 0.4.20261115.5
   Project    /tmp/ce-frame-project
   Source     ShaftHQ/chaosengine-harness@main
@@ -44,6 +46,7 @@ ChaosEngine 0.4.20261115.5
 █▌ ▝▀▐█▘
 ▜█▄  ▛█▙
  ▝▀▀▀▌▀
+CHAOS ENGINE
 ChaosEngine 0.4.20261115.5
   Project    /tmp/ce-frame-project
   Source     ShaftHQ/chaosengine-harness@main
@@ -63,6 +66,7 @@ ChaosEngine 0.4.20261115.5
 █▌ ▝▀▐█▘
 ▜█▄  ▛█▙
  ▝▀▀▀▌▀
+CHAOS ENGINE
 ChaosEngine 0.4.20261115.5
   Project    /tmp/ce-frame-project
   Source     ShaftHQ/chaosengine-harness@main
@@ -84,6 +88,7 @@ ChaosEngine 0.4.20261115.5
 █▌ ▝▀▐█▘
 ▜█▄  ▛█▙
  ▝▀▀▀▌▀
+CHAOS ENGINE
 ChaosEngine 0.4.20261115.5
   Project    /tmp/ce-frame-project
   Source     ShaftHQ/chaosengine-harness@main
@@ -105,6 +110,7 @@ ChaosEngine 0.4.20261115.5
 █▌ ▝▀▐█▘
 ▜█▄  ▛█▙
  ▝▀▀▀▌▀
+CHAOS ENGINE
 ChaosEngine 0.4.20261115.5
   Project    /tmp/ce-frame-project
   Source     ShaftHQ/chaosengine-harness@main
@@ -124,6 +130,7 @@ ChaosEngine 0.4.20261115.5
 █▌ ▝▀▐█▘
 ▜█▄  ▛█▙
  ▝▀▀▀▌▀
+CHAOS ENGINE
 ChaosEngine 0.4.20261115.5
   Project    /tmp/ce-frame-project
   Source     ShaftHQ/chaosengine-harness@main
@@ -143,6 +150,7 @@ ChaosEngine 0.4.20261115.5
 █▌ ▝▀▐█▘
 ▜█▄  ▛█▙
  ▝▀▀▀▌▀
+CHAOS ENGINE
 ChaosEngine 0.4.20261115.5
   Project    /tmp/ce-frame-project
   Source     ShaftHQ/chaosengine-harness@main
@@ -165,6 +173,7 @@ injected-provision-note
 █▌ ▝▀▐█▘
 ▜█▄  ▛█▙
  ▝▀▀▀▌▀
+CHAOS ENGINE
 ChaosEngine 0.4.20261115.5
   Project    /tmp/ce-frame-project
   Source     ShaftHQ/chaosengine-harness@main
@@ -187,6 +196,7 @@ injected-provision-note
 █▌ ▝▀▐█▘
 ▜█▄  ▛█▙
  ▝▀▀▀▌▀
+CHAOS ENGINE
 ChaosEngine 0.4.20261115.5
   Project    /tmp/ce-frame-project
   Source     ShaftHQ/chaosengine-harness@main
@@ -207,6 +217,7 @@ injected-provision-note
 █▌ ▝▀▐█▘
 ▜█▄  ▛█▙
  ▝▀▀▀▌▀
+CHAOS ENGINE
 ChaosEngine 0.4.20261115.5
   Project    /tmp/ce-frame-project
   Source     ShaftHQ/chaosengine-harness@main
@@ -228,6 +239,7 @@ injected-provision-note
 █▌ ▝▀▐█▘
 ▜█▄  ▛█▙
  ▝▀▀▀▌▀
+CHAOS ENGINE
 ChaosEngine 0.4.20261115.5
   Project    /tmp/ce-frame-project
   Source     ShaftHQ/chaosengine-harness@main

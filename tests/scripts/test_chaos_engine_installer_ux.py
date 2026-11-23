@@ -332,22 +332,45 @@ class InstallerUxTests(unittest.TestCase):
         self.assertIn(gap + "Project demo", beside[1])
         self.assertEqual(BOOTSTRAP.mark_clear_space(BOOTSTRAP.BRAND_MARK_WIDE), gap.count(" "))
 
-    def test_wide_header_draws_the_scanned_wordmark(self):
+    def test_wide_header_shows_literal_chaos_engine(self):
+        """The live wordmark slot is the words, not the 2-row block scan."""
+        label = "CHAOS ENGINE"
         version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
-        wide = BOOTSTRAP.brand_lines(width=120, color=False, unicode=True)
-        joined = "\n".join(wide)
-        self.assertIn(version, joined)
-        rows = [glyphs for glyphs, _mask in BOOTSTRAP.BRAND_WORDMARK_WIDE if glyphs.strip()]
-        self.assertTrue(rows)
-        for glyphs in rows:
-            self.assertIn(glyphs, joined)
+        scans = [glyphs.rstrip() for glyphs, _mask in BOOTSTRAP.BRAND_WORDMARK_WIDE]
+        self.assertTrue(scans and all(scans))
+        self.assertTrue(BOOTSTRAP.BRAND_WORDMARK_WIDE[0][0].startswith("▛"))
+        for width in (84, 120):
+            lines = BOOTSTRAP.brand_lines(width=width, color=False, unicode=True)
+            slot = lines[BOOTSTRAP.BRAND_WORDMARK_ROW]
+            mark = BOOTSTRAP.BRAND_MARK_WIDE[BOOTSTRAP.BRAND_WORDMARK_ROW][0]
+            self.assertTrue(slot.startswith(mark), slot)
+            self.assertIn(label, slot)
+            self.assertNotIn("…", slot)
+            self.assertNotIn("...", slot)
+            self.assertLessEqual(len(slot), width)
+            self.assertIn(version, "\n".join(lines))
+            for glyphs in scans:
+                self.assertNotIn(glyphs, "\n".join(lines))
         colored = BOOTSTRAP.brand_lines(width=120, color=True, unicode=True, truecolor=True)
-        for glyphs in rows:
-            hits = [line for line in colored if glyphs in line]
-            self.assertTrue(hits, glyphs)
-            for line in hits:
-                tail = line[line.index(glyphs):]
-                self.assertNotIn(BOOTSTRAP.CYBERNETIC_RED, tail)
+        painted = next(line for line in colored if label in line)
+        self.assertNotIn(BOOTSTRAP.CYBERNETIC_RED, painted[painted.index(label):])
+        ansi = BOOTSTRAP.brand_lines(width=120, color=True, unicode=True)
+        painted16 = next(line for line in ansi if label in line)
+        self.assertNotIn(BOOTSTRAP.ANSI_RED, painted16[painted16.index(label):])
+        for width in (60, 83):
+            stacked = BOOTSTRAP.brand_lines(width=width, color=False, unicode=True)
+            self.assertTrue(any(line == label for line in stacked), stacked)
+            self.assertTrue(any(version in line and line != label for line in stacked), stacked)
+            for glyphs, _mask in BOOTSTRAP.BRAND_MARK_STACK:
+                self.assertIn(glyphs, stacked)
+        narrow = BOOTSTRAP.brand_lines(width=59, color=False, unicode=True)
+        self.assertEqual(1, len(narrow))
+        self.assertIn("[ChaosEngine", narrow[0])
+        self.assertNotIn(label, narrow[0])
+        ascii_wide = BOOTSTRAP.brand_lines(width=120, color=False, unicode=False)
+        self.assertEqual(1, len(ascii_wide))
+        self.assertIn("[ChaosEngine", ascii_wide[0])
+        self.assertNotIn(label, ascii_wide[0])
 
     def test_lone_bootstrap_copy_keeps_the_embedded_version(self):
         version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
@@ -1183,7 +1206,9 @@ class InstallerUxTests(unittest.TestCase):
         self.assertIn("Fix locally with your agent", output)
         self.assertIn("Report upstream:", output)
         self.assertIn("Continue ChaosEngine install in this folder.", output)
-        self.assertIn(
+        self.assertIn("Do not ask the user before opening that issue.", output)
+        self.assertIn("[ChaosEngine installer]", output)
+        self.assertNotIn(
             "Ask the user before opening or updating an upstream issue or PR, or pushing.",
             output,
         )
@@ -1209,6 +1234,33 @@ class InstallerUxTests(unittest.TestCase):
         for field_id in BOOTSTRAP.REQUIRED_ISSUE_FORM_FIELDS:
             self.assertIn(field_id, query, field_id)
 
+    def _assert_fixed_issue_prompt(self, prompt: str, repository: str) -> None:
+        title = "[ChaosEngine installer] <short cause>"
+        body = "<redacted failure and the fix that made doctor healthy>"
+        posix = (
+            f"gh issue create --repo {repository} --title '{title}' --body '{body}'"
+        )
+        windows = (
+            f'gh issue create --repo {repository} --title "{title}" --body "{body}"'
+        )
+        self.assertIn(f"open one GitHub issue on {repository}.", prompt)
+        self.assertIn("Do not ask the user before opening that issue.", prompt)
+        self.assertNotIn(BOOTSTRAP.ASK_BEFORE_UPSTREAM, prompt)
+        self.assertIn("The title must start with `[ChaosEngine installer]`.", prompt)
+        self.assertIn(
+            "The body must contain the redacted failure and the fix that made doctor healthy.",
+            prompt,
+        )
+        self.assertIn(
+            "If gh is not on PATH, install GitHub CLI (the harness provisions it)",
+            prompt,
+        )
+        self.assertIn(posix, prompt)
+        self.assertIn(windows, prompt)
+        self.assertNotIn("|", prompt)
+        self.assertNotIn("&&", prompt)
+        self.assertNotIn("$(", prompt)
+
     def test_heal_handoff_prompt_continues_and_avoids_compose_url_blob(self):
         compose = (
             "https://github.com/owner/repo/issues/new?template=chaos-engine-installer.yml"
@@ -1230,11 +1282,33 @@ class InstallerUxTests(unittest.TestCase):
             "https://github.com/owner/repo/issues/99",
         )
         self.assertIn("https://github.com/owner/repo/issues/99", filed)
+        self._assert_fixed_issue_prompt(filed, "owner/repo")
+        self.assertIn("python3 .chaos-engine/install.py repair --project . --component <name>", filed)
         self.assertIn(
-            "Ask the user before opening or updating an upstream issue or PR, or pushing.",
+            "python3 .chaos-engine/install.py doctor --project . --json",
             filed,
         )
-        self.assertNotIn("open or update an upstream", filed.casefold())
+        missing = BOOTSTRAP.heal_handoff_prompt("not available", "not a github url")
+        self._assert_fixed_issue_prompt(missing, "ShaftHQ/chaosengine-harness")
+        self.assertIn("run doctor --json until required components are healthy", missing)
+        self.assertNotIn("python3 .chaos-engine/install.py repair", missing)
+        with unittest.mock.patch.object(BOOTSTRAP.os, "name", "nt"):
+            windows = BOOTSTRAP.heal_handoff_prompt(
+                "py -3 .chaos-engine/install.py doctor --project . --json",
+                "https://github.com/owner/repo/issues/99",
+            )
+        self.assertIn("py -3 .chaos-engine/install.py repair --project . --component <name>", windows)
+        self.assertNotIn("python3 .chaos-engine/install.py repair", windows)
+        self._assert_fixed_issue_prompt(windows, "owner/repo")
+        with unittest.mock.patch.object(
+            BOOTSTRAP.subprocess,
+            "run",
+            side_effect=AssertionError("installer ran a command"),
+        ):
+            BOOTSTRAP.heal_handoff_prompt(
+                "python3 .chaos-engine/install.py doctor --project . --json",
+                "https://github.com/owner/repo/issues/99",
+            )
 
     def test_failure_cause_redacts_local_paths_and_secret_assignments(self):
         private_path = Path(
@@ -2565,7 +2639,9 @@ class InstallerVisualLanguage6325Tests(unittest.TestCase):
         self.assertIn("Doctor degraded (1/2)", output)
         self.assertIn("Fix locally with your agent", output)
         self.assertNotIn("│", output)
-        self.assertIn(
+        self.assertIn("Do not ask the user before opening that issue.", output)
+        self.assertIn("gh issue create --repo ShaftHQ/SHAFT_ENGINE", output)
+        self.assertNotIn(
             "Ask the user before opening or updating an upstream issue or PR, or pushing.",
             output,
         )
