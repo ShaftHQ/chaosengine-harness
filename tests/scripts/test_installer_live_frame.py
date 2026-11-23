@@ -208,8 +208,8 @@ def test_live_frame_screen_after_each_transition(width: int) -> None:
         index for index, line in enumerate(stray.splitlines()) if line == _header_lines(stray)[0]
     )
     assert note_at < header_at
-    wide = UI.BRAND_MARK_WIDE[0][0]
-    stack = UI.BRAND_MARK_STACK[0][0]
+    wide = UI.BRAND_MARK_WIDE[0][0].rstrip()
+    stack = UI.BRAND_MARK_STACK[0][0].rstrip()
     final = shots[-1][1]
     if width >= 84:
         assert any(line.startswith(wide) for line in final.splitlines())

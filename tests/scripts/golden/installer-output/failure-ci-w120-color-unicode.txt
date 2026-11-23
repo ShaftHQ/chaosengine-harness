@@ -1,11 +1,11 @@
-   ▄▄▄▄▄█       ChaosEngine 0.4.20261115.5
- ▄███████▐██▄     Project    <project>
-███▛▘   █▟▜██     Source     ShaftHQ/chaosengine-harness@main
-███   ██▞███ 
-███   ▀▀▚███ 
-███▙▖   █▚▄▄▄
- ▀███████▐██▛
-   ▀▀▀▀▀█    
+   ▗▄▄▄▄▟      ChaosEngine 0.4.20261115.5
+ ▗▟██████▐█▙▖    Project    <project>
+▟██▀    █▞▀▀▀    Source     ShaftHQ/chaosengine-harness@main
+██▌   ▟▙ ██▌ 
+██▌   ▝▀ █▄▄ 
+▜██▄    █  ▄▄
+ ▝▜██████▐██▀
+   ▝▀▀▀▀▛    
 [1/3] DONE  Resolve source
 [2/3] FAIL  Download source
 

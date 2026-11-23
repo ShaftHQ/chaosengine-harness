@@ -1,13 +1,13 @@
 ===== start
 
-   ▄▄▄▄▄█       ChaosEngine 0.4.20261115.5
- ▄███████▐██▄     Project    /tmp/ce-frame-project
-███▛▘   █▟▜██     Source     ShaftHQ/chaosengine-harness@main
-███   ██▞███
-███   ▀▀▚███
-███▙▖   █▚▄▄▄
- ▀███████▐██▛
-   ▀▀▀▀▀█
+   ▗▄▄▄▄▟      ChaosEngine 0.4.20261115.5
+ ▗▟██████▐█▙▖    Project    /tmp/ce-frame-project
+▟██▀    █▞▀▀▀    Source     ShaftHQ/chaosengine-harness@main
+██▌   ▟▙ ██▌
+██▌   ▝▀ █▄▄
+▜██▄    █  ▄▄
+ ▝▜██████▐██▀
+   ▝▀▀▀▀▛
 
   [⠋] Resolve source          running
       └─ 0/6 · Elapsed 00:00
@@ -19,14 +19,14 @@
 
 ===== note-commit
 
-   ▄▄▄▄▄█       ChaosEngine 0.4.20261115.5
- ▄███████▐██▄     Project    /tmp/ce-frame-project
-███▛▘   █▟▜██     Source     ShaftHQ/chaosengine-harness@main
-███   ██▞███      Commit     abababababab…
-███   ▀▀▚███
-███▙▖   █▚▄▄▄
- ▀███████▐██▛
-   ▀▀▀▀▀█
+   ▗▄▄▄▄▟      ChaosEngine 0.4.20261115.5
+ ▗▟██████▐█▙▖    Project    /tmp/ce-frame-project
+▟██▀    █▞▀▀▀    Source     ShaftHQ/chaosengine-harness@main
+██▌   ▟▙ ██▌     Commit     abababababab…
+██▌   ▝▀ █▄▄
+▜██▄    █  ▄▄
+ ▝▜██████▐██▀
+   ▝▀▀▀▀▛
 
   [⠋] Resolve source          running
       └─ 0/6 · Elapsed 00:00
@@ -38,14 +38,14 @@
 
 ===== complete-resolve
 
-   ▄▄▄▄▄█       ChaosEngine 0.4.20261115.5
- ▄███████▐██▄     Project    /tmp/ce-frame-project
-███▛▘   █▟▜██     Source     ShaftHQ/chaosengine-harness@main
-███   ██▞███      Commit     abababababab…
-███   ▀▀▚███
-███▙▖   █▚▄▄▄
- ▀███████▐██▛
-   ▀▀▀▀▀█
+   ▗▄▄▄▄▟      ChaosEngine 0.4.20261115.5
+ ▗▟██████▐█▙▖    Project    /tmp/ce-frame-project
+▟██▀    █▞▀▀▀    Source     ShaftHQ/chaosengine-harness@main
+██▌   ▟▙ ██▌     Commit     abababababab…
+██▌   ▝▀ █▄▄
+▜██▄    █  ▄▄
+ ▝▜██████▐██▀
+   ▝▀▀▀▀▛
 
   [✓] Resolve source          00:00
   [·] Download source
@@ -56,14 +56,14 @@
 
 ===== begin-download
 
-   ▄▄▄▄▄█       ChaosEngine 0.4.20261115.5
- ▄███████▐██▄     Project    /tmp/ce-frame-project
-███▛▘   █▟▜██     Source     ShaftHQ/chaosengine-harness@main
-███   ██▞███      Commit     abababababab…
-███   ▀▀▚███
-███▙▖   █▚▄▄▄
- ▀███████▐██▛
-   ▀▀▀▀▀█
+   ▗▄▄▄▄▟      ChaosEngine 0.4.20261115.5
+ ▗▟██████▐█▙▖    Project    /tmp/ce-frame-project
+▟██▀    █▞▀▀▀    Source     ShaftHQ/chaosengine-harness@main
+██▌   ▟▙ ██▌     Commit     abababababab…
+██▌   ▝▀ █▄▄
+▜██▄    █  ▄▄
+ ▝▜██████▐██▀
+   ▝▀▀▀▀▛
 
   [✓] Resolve source          00:00
   [⠏] Download source         running
@@ -76,14 +76,14 @@
 
 ===== detail
 
-   ▄▄▄▄▄█       ChaosEngine 0.4.20261115.5
- ▄███████▐██▄     Project    /tmp/ce-frame-project
-███▛▘   █▟▜██     Source     ShaftHQ/chaosengine-harness@main
-███   ██▞███      Commit     abababababab…
-███   ▀▀▚███
-███▙▖   █▚▄▄▄
- ▀███████▐██▛
-   ▀▀▀▀▀█
+   ▗▄▄▄▄▟      ChaosEngine 0.4.20261115.5
+ ▗▟██████▐█▙▖    Project    /tmp/ce-frame-project
+▟██▀    █▞▀▀▀    Source     ShaftHQ/chaosengine-harness@main
+██▌   ▟▙ ██▌     Commit     abababababab…
+██▌   ▝▀ █▄▄
+▜██▄    █  ▄▄
+ ▝▜██████▐██▀
+   ▝▀▀▀▀▛
 
   [✓] Resolve source          00:00
   [⠏] Download source         running
@@ -96,14 +96,14 @@
 
 ===== complete-download
 
-   ▄▄▄▄▄█       ChaosEngine 0.4.20261115.5
- ▄███████▐██▄     Project    /tmp/ce-frame-project
-███▛▘   █▟▜██     Source     ShaftHQ/chaosengine-harness@main
-███   ██▞███      Commit     abababababab…
-███   ▀▀▚███
-███▙▖   █▚▄▄▄
- ▀███████▐██▛
-   ▀▀▀▀▀█
+   ▗▄▄▄▄▟      ChaosEngine 0.4.20261115.5
+ ▗▟██████▐█▙▖    Project    /tmp/ce-frame-project
+▟██▀    █▞▀▀▀    Source     ShaftHQ/chaosengine-harness@main
+██▌   ▟▙ ██▌     Commit     abababababab…
+██▌   ▝▀ █▄▄
+▜██▄    █  ▄▄
+ ▝▜██████▐██▀
+   ▝▀▀▀▀▛
 
   [✓] Resolve source          00:00
   [✓] Download source         00:00
@@ -114,14 +114,14 @@
 
 ===== complete-core
 
-   ▄▄▄▄▄█       ChaosEngine 0.4.20261115.5
- ▄███████▐██▄     Project    /tmp/ce-frame-project
-███▛▘   █▟▜██     Source     ShaftHQ/chaosengine-harness@main
-███   ██▞███      Commit     abababababab…
-███   ▀▀▚███
-███▙▖   █▚▄▄▄
- ▀███████▐██▛
-   ▀▀▀▀▀█
+   ▗▄▄▄▄▟      ChaosEngine 0.4.20261115.5
+ ▗▟██████▐█▙▖    Project    /tmp/ce-frame-project
+▟██▀    █▞▀▀▀    Source     ShaftHQ/chaosengine-harness@main
+██▌   ▟▙ ██▌     Commit     abababababab…
+██▌   ▝▀ █▄▄
+▜██▄    █  ▄▄
+ ▝▜██████▐██▀
+   ▝▀▀▀▀▛
 
   [✓] Resolve source          00:00
   [✓] Download source         00:00
@@ -132,14 +132,14 @@
 
 ===== provision-detail
 
-   ▄▄▄▄▄█       ChaosEngine 0.4.20261115.5
- ▄███████▐██▄     Project    /tmp/ce-frame-project
-███▛▘   █▟▜██     Source     ShaftHQ/chaosengine-harness@main
-███   ██▞███      Commit     abababababab…
-███   ▀▀▚███
-███▙▖   █▚▄▄▄
- ▀███████▐██▛
-   ▀▀▀▀▀█
+   ▗▄▄▄▄▟      ChaosEngine 0.4.20261115.5
+ ▗▟██████▐█▙▖    Project    /tmp/ce-frame-project
+▟██▀    █▞▀▀▀    Source     ShaftHQ/chaosengine-harness@main
+██▌   ▟▙ ██▌     Commit     abababababab…
+██▌   ▝▀ █▄▄
+▜██▄    █  ▄▄
+ ▝▜██████▐██▀
+   ▝▀▀▀▀▛
 
   [✓] Resolve source          00:00
   [✓] Download source         00:00
@@ -153,14 +153,14 @@
 ===== stray-stderr
 injected-provision-note
 
-   ▄▄▄▄▄█       ChaosEngine 0.4.20261115.5
- ▄███████▐██▄     Project    /tmp/ce-frame-project
-███▛▘   █▟▜██     Source     ShaftHQ/chaosengine-harness@main
-███   ██▞███      Commit     abababababab…
-███   ▀▀▚███
-███▙▖   █▚▄▄▄
- ▀███████▐██▛
-   ▀▀▀▀▀█
+   ▗▄▄▄▄▟      ChaosEngine 0.4.20261115.5
+ ▗▟██████▐█▙▖    Project    /tmp/ce-frame-project
+▟██▀    █▞▀▀▀    Source     ShaftHQ/chaosengine-harness@main
+██▌   ▟▙ ██▌     Commit     abababababab…
+██▌   ▝▀ █▄▄
+▜██▄    █  ▄▄
+ ▝▜██████▐██▀
+   ▝▀▀▀▀▛
 
   [✓] Resolve source          00:00
   [✓] Download source         00:00
@@ -174,14 +174,14 @@ injected-provision-note
 ===== shrink
 injected-provision-note
 
-   ▄▄▄▄▄█       ChaosEngine 0.4.20261115.5
- ▄███████▐██▄     Project    /tmp/ce-frame-project
-███▛▘   █▟▜██     Source     ShaftHQ/chaosengine-harness@main
-███   ██▞███      Commit     abababababab…
-███   ▀▀▚███
-███▙▖   █▚▄▄▄
- ▀███████▐██▛
-   ▀▀▀▀▀█
+   ▗▄▄▄▄▟      ChaosEngine 0.4.20261115.5
+ ▗▟██████▐█▙▖    Project    /tmp/ce-frame-project
+▟██▀    █▞▀▀▀    Source     ShaftHQ/chaosengine-harness@main
+██▌   ▟▙ ██▌     Commit     abababababab…
+██▌   ▝▀ █▄▄
+▜██▄    █  ▄▄
+ ▝▜██████▐██▀
+   ▝▀▀▀▀▛
 
   [✓] Resolve source          00:00
   [✓] Download source         00:00
@@ -193,14 +193,14 @@ injected-provision-note
 ===== grow
 injected-provision-note
 
-   ▄▄▄▄▄█       ChaosEngine 0.4.20261115.5
- ▄███████▐██▄     Project    /tmp/ce-frame-project
-███▛▘   █▟▜██     Source     ShaftHQ/chaosengine-harness@main
-███   ██▞███      Commit     abababababab…
-███   ▀▀▚███
-███▙▖   █▚▄▄▄
- ▀███████▐██▛
-   ▀▀▀▀▀█
+   ▗▄▄▄▄▟      ChaosEngine 0.4.20261115.5
+ ▗▟██████▐█▙▖    Project    /tmp/ce-frame-project
+▟██▀    █▞▀▀▀    Source     ShaftHQ/chaosengine-harness@main
+██▌   ▟▙ ██▌     Commit     abababababab…
+██▌   ▝▀ █▄▄
+▜██▄    █  ▄▄
+ ▝▜██████▐██▀
+   ▝▀▀▀▀▛
 
   [✓] Resolve source          00:00
   [✓] Download source         00:00
@@ -213,14 +213,14 @@ injected-provision-note
 ===== fail
 injected-provision-note
 
-   ▄▄▄▄▄█       ChaosEngine 0.4.20261115.5
- ▄███████▐██▄     Project    /tmp/ce-frame-project
-███▛▘   █▟▜██     Source     ShaftHQ/chaosengine-harness@main
-███   ██▞███      Commit     abababababab…
-███   ▀▀▚███
-███▙▖   █▚▄▄▄
- ▀███████▐██▛
-   ▀▀▀▀▀█
+   ▗▄▄▄▄▟      ChaosEngine 0.4.20261115.5
+ ▗▟██████▐█▙▖    Project    /tmp/ce-frame-project
+▟██▀    █▞▀▀▀    Source     ShaftHQ/chaosengine-harness@main
+██▌   ▟▙ ██▌     Commit     abababababab…
+██▌   ▝▀ █▄▄
+▜██▄    █  ▄▄
+ ▝▜██████▐██▀
+   ▝▀▀▀▀▛
 
   [✓] Resolve source          00:00
   [✓] Download source         00:00

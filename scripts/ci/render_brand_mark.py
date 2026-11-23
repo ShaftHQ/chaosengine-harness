@@ -25,6 +25,9 @@ END = "# <<< generated: brand_mark\n"
 WIDE = (8, 13)
 STACK = (5, 8)
 SAMPLES = 3
+# Majority of the 3x3 sample. One armour hit is not coverage: it fattens the
+# stroke until the gates weld to the spine and to each other.
+COVERAGE = SAMPLES * SAMPLES // 2 + 1
 
 # UL=1, UR=2, LL=4, LR=8. One code point per occupied 2x2 cell.
 QUADS = {
@@ -186,12 +189,10 @@ def raster(layers: list[tuple[str, list]], rows: int, cols: int) -> tuple[tuple[
                         kind = layer_kind
                 if kind:
                     hits[kind] += 1
-        if hits["core"] > hits["armour"]:
+        if hits["core"] >= COVERAGE and hits["core"] > hits["armour"]:
             return "c"
-        if hits["armour"]:
+        if hits["armour"] >= COVERAGE:
             return "a"
-        if hits["core"]:
-            return "c"
         return " "
 
     pixels = [[paint(px, py) for px in range(px_w)] for py in range(px_h)]
@@ -206,20 +207,19 @@ def raster(layers: list[tuple[str, list]], rows: int, cols: int) -> tuple[tuple[
                 pixels[row * 2 + 1][col * 2],
                 pixels[row * 2 + 1][col * 2 + 1],
             )
-            bits = 0
             votes = {"c": 0, "a": 0}
+            for sample in block:
+                if sample != " ":
+                    votes[sample] += 1
+            # One foreground colour per cell: keep only the winning layer's
+            # quadrants, so red never spills onto the spine or the gates.
+            kind = "c" if votes["c"] and votes["c"] >= votes["a"] else "a"
+            bits = 0
             for sample, weight in zip(block, (0x1, 0x2, 0x4, 0x8)):
-                if sample == " ":
-                    continue
-                bits |= weight
-                votes[sample] += 1
+                if sample == kind:
+                    bits |= weight
             glyphs.append(QUADS[bits])
-            if bits == 0:
-                mask.append(" ")
-            elif votes["c"] >= votes["a"] and votes["c"]:
-                mask.append("c")
-            else:
-                mask.append(" ")
+            mask.append("c" if bits and kind == "c" else " ")
         table.append(("".join(glyphs), "".join(mask)))
     if not any("c" in mask for _glyphs, mask in table):
         raise SystemExit(f"core disappeared at {rows}x{cols}")

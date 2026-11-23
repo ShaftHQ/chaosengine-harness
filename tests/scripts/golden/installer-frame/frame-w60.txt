@@ -1,10 +1,10 @@
 ===== start
 
- ▄▄▄▄▙▄▖
-██▛▀▀███
-██ ▐█▜█▌
-██▙▄▄███
- ▀▀▀▀▛▀▘
+ ▗▄▄▄▌▖
+▟█▀  ▙▀▀
+█▌ ▝▀▐█▘
+▜█▄  ▛█▙
+ ▝▀▀▀▌▀
 ChaosEngine 0.4.20261115.5
   Project    /tmp/ce-frame-project
   Source     ShaftHQ/chaosengine-harness@main
@@ -19,11 +19,11 @@ ChaosEngine 0.4.20261115.5
 
 ===== note-commit
 
- ▄▄▄▄▙▄▖
-██▛▀▀███
-██ ▐█▜█▌
-██▙▄▄███
- ▀▀▀▀▛▀▘
+ ▗▄▄▄▌▖
+▟█▀  ▙▀▀
+█▌ ▝▀▐█▘
+▜█▄  ▛█▙
+ ▝▀▀▀▌▀
 ChaosEngine 0.4.20261115.5
   Project    /tmp/ce-frame-project
   Source     ShaftHQ/chaosengine-harness@main
@@ -39,11 +39,11 @@ ChaosEngine 0.4.20261115.5
 
 ===== complete-resolve
 
- ▄▄▄▄▙▄▖
-██▛▀▀███
-██ ▐█▜█▌
-██▙▄▄███
- ▀▀▀▀▛▀▘
+ ▗▄▄▄▌▖
+▟█▀  ▙▀▀
+█▌ ▝▀▐█▘
+▜█▄  ▛█▙
+ ▝▀▀▀▌▀
 ChaosEngine 0.4.20261115.5
   Project    /tmp/ce-frame-project
   Source     ShaftHQ/chaosengine-harness@main
@@ -58,11 +58,11 @@ ChaosEngine 0.4.20261115.5
 
 ===== begin-download
 
- ▄▄▄▄▙▄▖
-██▛▀▀███
-██ ▐█▜█▌
-██▙▄▄███
- ▀▀▀▀▛▀▘
+ ▗▄▄▄▌▖
+▟█▀  ▙▀▀
+█▌ ▝▀▐█▘
+▜█▄  ▛█▙
+ ▝▀▀▀▌▀
 ChaosEngine 0.4.20261115.5
   Project    /tmp/ce-frame-project
   Source     ShaftHQ/chaosengine-harness@main
@@ -79,11 +79,11 @@ ChaosEngine 0.4.20261115.5
 
 ===== detail
 
- ▄▄▄▄▙▄▖
-██▛▀▀███
-██ ▐█▜█▌
-██▙▄▄███
- ▀▀▀▀▛▀▘
+ ▗▄▄▄▌▖
+▟█▀  ▙▀▀
+█▌ ▝▀▐█▘
+▜█▄  ▛█▙
+ ▝▀▀▀▌▀
 ChaosEngine 0.4.20261115.5
   Project    /tmp/ce-frame-project
   Source     ShaftHQ/chaosengine-harness@main
@@ -100,11 +100,11 @@ ChaosEngine 0.4.20261115.5
 
 ===== complete-download
 
- ▄▄▄▄▙▄▖
-██▛▀▀███
-██ ▐█▜█▌
-██▙▄▄███
- ▀▀▀▀▛▀▘
+ ▗▄▄▄▌▖
+▟█▀  ▙▀▀
+█▌ ▝▀▐█▘
+▜█▄  ▛█▙
+ ▝▀▀▀▌▀
 ChaosEngine 0.4.20261115.5
   Project    /tmp/ce-frame-project
   Source     ShaftHQ/chaosengine-harness@main
@@ -119,11 +119,11 @@ ChaosEngine 0.4.20261115.5
 
 ===== complete-core
 
- ▄▄▄▄▙▄▖
-██▛▀▀███
-██ ▐█▜█▌
-██▙▄▄███
- ▀▀▀▀▛▀▘
+ ▗▄▄▄▌▖
+▟█▀  ▙▀▀
+█▌ ▝▀▐█▘
+▜█▄  ▛█▙
+ ▝▀▀▀▌▀
 ChaosEngine 0.4.20261115.5
   Project    /tmp/ce-frame-project
   Source     ShaftHQ/chaosengine-harness@main
@@ -138,11 +138,11 @@ ChaosEngine 0.4.20261115.5
 
 ===== provision-detail
 
- ▄▄▄▄▙▄▖
-██▛▀▀███
-██ ▐█▜█▌
-██▙▄▄███
- ▀▀▀▀▛▀▘
+ ▗▄▄▄▌▖
+▟█▀  ▙▀▀
+█▌ ▝▀▐█▘
+▜█▄  ▛█▙
+ ▝▀▀▀▌▀
 ChaosEngine 0.4.20261115.5
   Project    /tmp/ce-frame-project
   Source     ShaftHQ/chaosengine-harness@main
@@ -160,11 +160,11 @@ ChaosEngine 0.4.20261115.5
 ===== stray-stderr
 injected-provision-note
 
- ▄▄▄▄▙▄▖
-██▛▀▀███
-██ ▐█▜█▌
-██▙▄▄███
- ▀▀▀▀▛▀▘
+ ▗▄▄▄▌▖
+▟█▀  ▙▀▀
+█▌ ▝▀▐█▘
+▜█▄  ▛█▙
+ ▝▀▀▀▌▀
 ChaosEngine 0.4.20261115.5
   Project    /tmp/ce-frame-project
   Source     ShaftHQ/chaosengine-harness@main
@@ -182,11 +182,11 @@ ChaosEngine 0.4.20261115.5
 ===== shrink
 injected-provision-note
 
- ▄▄▄▄▙▄▖
-██▛▀▀███
-██ ▐█▜█▌
-██▙▄▄███
- ▀▀▀▀▛▀▘
+ ▗▄▄▄▌▖
+▟█▀  ▙▀▀
+█▌ ▝▀▐█▘
+▜█▄  ▛█▙
+ ▝▀▀▀▌▀
 ChaosEngine 0.4.20261115.5
   Project    /tmp/ce-frame-project
   Source     ShaftHQ/chaosengine-harness@main
@@ -202,11 +202,11 @@ ChaosEngine 0.4.20261115.5
 ===== grow
 injected-provision-note
 
- ▄▄▄▄▙▄▖
-██▛▀▀███
-██ ▐█▜█▌
-██▙▄▄███
- ▀▀▀▀▛▀▘
+ ▗▄▄▄▌▖
+▟█▀  ▙▀▀
+█▌ ▝▀▐█▘
+▜█▄  ▛█▙
+ ▝▀▀▀▌▀
 ChaosEngine 0.4.20261115.5
   Project    /tmp/ce-frame-project
   Source     ShaftHQ/chaosengine-harness@main
@@ -223,11 +223,11 @@ ChaosEngine 0.4.20261115.5
 ===== fail
 injected-provision-note
 
- ▄▄▄▄▙▄▖
-██▛▀▀███
-██ ▐█▜█▌
-██▙▄▄███
- ▀▀▀▀▛▀▘
+ ▗▄▄▄▌▖
+▟█▀  ▙▀▀
+█▌ ▝▀▐█▘
+▜█▄  ▛█▙
+ ▝▀▀▀▌▀
 ChaosEngine 0.4.20261115.5
   Project    /tmp/ce-frame-project
   Source     ShaftHQ/chaosengine-harness@main
