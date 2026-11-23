@@ -105,6 +105,18 @@
         "--version"
       ]
     },
+    "gh": {
+      "minimumVersion": "2.105.0",
+      "executables": [
+        "gh"
+      ],
+      "provider": "github-cli-release",
+      "stableChannel": "https://api.github.com/repos/cli/cli/releases/latest",
+      "probe": [
+        "gh",
+        "--version"
+      ]
+    },
     "maven-tools-mcp": {
       "minimumVersion": "3.2.0",
       "executables": [],
@@ -159,6 +171,9 @@
     "python": {
       "version": "3.11",
       "provider": "uv-managed"
+    },
+    "gh": {
+      "version": "2.105.0"
     },
     "node": {
       "version": "26.13.1",
