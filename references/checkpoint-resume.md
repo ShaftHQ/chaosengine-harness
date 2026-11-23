@@ -68,3 +68,5 @@ by name.
 ## Per-task budget override (L80)
 
 `--kind test-run` → 90 min budget (default 35). Explicit `--minutes` wins.
+A test-run step that is not done must pass `--next` containing `methods:`, `hypothesis:`, and `command:`, each followed by non-whitespace. A missing label is printed to stderr, no ledger row is written, and the checkpoint exits non-zero. `resume` still prints `Resume at:` plus that `--next`, so the open methods, hypothesis, and exact command are the resume line.
+`classify_surefire` returns one `CLASSIFIED` line with the Surefire counts only when the runner exit is 0, the device is present, and every non-pass result is a skip whose message has a whole-token id (letters then digits, bounded by non-alphanumerics, such as `G54` in `BLOCKED G54`; `G54extra` does not count). It returns `FAILED` when the summary is absent, the exit is non-zero, the device is lost, there is a failure or error, or any skip is unclassified.
