@@ -25,7 +25,11 @@ When the owner says not to ask again, or closes a decision with "you decide",
 do not reopen it. Dispatch a read-only consultant subagent for the remaining
 ambiguity and proceed on its guidance. This does not cover an irreversible or
 externally visible action; those still need explicit owner approval
-([ethics card](../companions/ethics-card.md)).
+([ethics card](../companions/ethics-card.md)). When cards disagree,
+[delivery-cycle](delivery-cycle.md) wins on review and merge,
+[kanban](../skills/kanban/SKILL.md) wins on WIP, the ethics card wins on
+irreversible or outbound actions, and the ChaosEngine skill wins on routing.
+The deeper file wins on its own topic.
 
 ## Full pass
 
