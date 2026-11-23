@@ -85,6 +85,12 @@ TEST_RUN_CMD_RE = re.compile(
 TEST_RUN_ABUSE_CLASSES = frozenset({
     "cleanup", "pr", "design", "docs", "review", "chore", "release",
 })
+_SUREFIRE_SUMMARY_RE = re.compile(
+    r"Tests run: (\d+), Failures: (\d+), Errors: (\d+), Skipped: (\d+)"
+)
+# Whole token: letters then digits, bounded by a non-alphanumeric. G54extra is not one.
+_SKIP_ID_RE = re.compile(r"(?<![A-Za-z0-9])[A-Za-z]+[0-9]+(?![A-Za-z0-9])")
+_TEST_RUN_NEXT_LABELS = ("methods:", "hypothesis:", "command:")
 MISSING_NEXT = "(missing: rerun checkpoint with --next \"<exact next step>\")"
 STOP_NOW = "stop: push WIP, checkpoint --next, end turn"
 OWNER_FINISH_CONTINUE = (
@@ -861,6 +867,26 @@ def open_tasks() -> list[str]:
     return names
 
 
+def classify_surefire(log: str, exit_code: int, *, lost_device: bool = False) -> str:
+    """One line: CLASSIFIED plus Surefire counts, or FAILED.
+
+    Exit 0, device present, and every non-pass a classified skip (or no non-pass).
+    A skip is classified only by a whole-token id in the log. Fewer ids than skips,
+    a missing summary, failures, errors, a non-zero exit, or a lost device is FAILED.
+    """
+    text = log or ""
+    found = list(_SUREFIRE_SUMMARY_RE.finditer(text))
+    if not found:
+        return "FAILED no Surefire summary"
+    summary = found[-1]
+    failures, errors, skipped = (int(summary.group(i)) for i in (2, 3, 4))
+    counts = summary.group(0)
+    ids = len(_SKIP_ID_RE.findall(_SUREFIRE_SUMMARY_RE.sub(" ", text)))
+    if lost_device or exit_code != 0 or failures > 0 or errors > 0 or ids < skipped:
+        return f"FAILED {counts}"
+    return f"CLASSIFIED {counts}"
+
+
 def checkpoint_step(ns: argparse.Namespace) -> int:
     """Record a step; an in-flight (non-done) step needs a spec on disk first (exit 4)."""
     spec = find_spec(ns.task, ns.spec) if ns.step != DONE else None
@@ -868,6 +894,16 @@ def checkpoint_step(ns: argparse.Namespace) -> int:
         print(SPEC_REFUSAL.format(task=ns.task, default=spec_dir() / f"spec-{ns.task}.md"), file=sys.stderr)
         return 4
     kind = getattr(ns, "kind", "") or ""
+    if ns.step != DONE and str(kind).strip().casefold() == "test-run":
+        missing = [
+            label
+            for label in _TEST_RUN_NEXT_LABELS
+            if re.search(re.escape(label) + r"\s*\S", ns.next_action or "") is None
+        ]
+        if missing:
+            for label in missing:
+                print(f"{ns.task}: test-run --next missing {label}", file=sys.stderr)
+            return 2
     workdir = getattr(ns, "workdir", "") or ""
     if workdir:
         reason, refused = volatile_reason(workdir)
