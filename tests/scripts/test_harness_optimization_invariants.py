@@ -1,0 +1,84 @@
+"""Always-loaded size, one-hop skill links, and merge-policy contradictions."""
+
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "scripts" / "ci"))
+
+import harness_reachability as reach  # noqa: E402
+
+CORE = "skills/chaos-engine/SKILL.md"
+INSTALLER_SENTENCE = (
+    "If the pull-request diff touches `install.py`, `bootstrap.py`, "
+    "`runtime/dependencies.py`, `install.sh`, or `install.ps1`, a failed, "
+    "cancelled, or pending `installer-contract` check blocks squash-merge "
+    "even when another required check is green."
+)
+
+
+def _text(relative: str) -> str:
+    return (ROOT / relative).read_text(encoding="utf-8")
+
+
+def test_every_skill_is_one_hop_from_the_core_card_and_the_walk_is_clean() -> None:
+    core = ROOT / CORE
+    text = core.read_text(encoding="utf-8")
+    linked = set()
+    for raw in reach.MARKDOWN_LINK.findall(text):
+        target = raw.strip().strip("<>").split("#", 1)[0]
+        if not target or reach.URI_SCHEME.match(target):
+            continue
+        resolved = (core.parent / target).resolve()
+        try:
+            linked.add(resolved.relative_to(ROOT.resolve()).as_posix())
+        except ValueError:
+            continue
+    skills = sorted(
+        path.relative_to(ROOT).as_posix()
+        for path in (ROOT / "skills").glob("*/SKILL.md")
+    )
+    assert skills
+    missing = [path for path in skills if path != CORE and path not in linked]
+    assert missing == []
+    reached, broken = reach.link_walk(ROOT, CORE)
+    assert broken == []
+    assert set(skills) <= reached
+
+
+def test_core_card_and_always_loaded_budget_stay_under_ceiling() -> None:
+    assert len((ROOT / CORE).read_bytes()) <= 7168
+    budget = json.loads((ROOT / "always-loaded-budget.json").read_text(encoding="utf-8"))
+    assert budget["bytes"] < 17501
+
+
+def test_merge_queue_enqueues_without_a_strategy_flag() -> None:
+    text = _text("references/delivery-cycle.md")
+    assert "merge_queue" in text
+    assert "pass no strategy flag (`--merge`, `--squash`, or `--rebase`)" in text
+    assert "gh pr merge --squash" in text
+    assert "gh pr merge --merge" not in text
+    assert "Never arm `gh pr merge --auto`" in text
+
+
+def test_installer_contract_blocks_squash_merge_for_installer_paths() -> None:
+    text = _text("references/delivery-cycle.md")
+    assert INSTALLER_SENTENCE in text
+
+
+def test_permanent_rules_have_no_merge_contradiction_or_stale_headroom_footnote() -> None:
+    text = _text("references/permanent-rules.md")
+    for line in text.splitlines():
+        if "MERGE method" in line:
+            assert "--squash" not in line
+    assert "Headroom installs by default" not in text
+
+
+def test_default_reviewer_is_not_hardcoded_to_grok() -> None:
+    text = _text("references/delivery-cycle.md")
+    assert "The default reviewer is the same local Grok path" not in text
+    assert "grok" not in text.casefold()
+    assert "any AI client" in text

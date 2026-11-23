@@ -1,13 +1,10 @@
 # Delegate card
 
-Load this instead of the full router when a role adapter dispatches you.
-The parent owns routing, planning, and any triggered Learning Session.
+Load this instead of the full router when a role adapter dispatches you. The parent owns routing, planning, and any triggered Learning Session.
 
 ## Covenant
 
-Work only inside the bounded specification. Preserve user work, public API,
-secrets, and safety. Ethics EC1-EC8 in the
-[router contract](router-contract.md#ethical-conduct) stay controlling.
+Work only inside the bounded specification. Preserve user work, public API, secrets, and safety. Ethics EC1-EC8 in the [router contract](router-contract.md#ethical-conduct) stay controlling.
 
 ## Bigger picture first
 
@@ -26,15 +23,11 @@ Load [retrieve-first](retrieve-first.md) before task-specific discovery. You mis
 
 ## Your one duty
 
-Your role adapter names exactly one duty (orchestrator, implementer,
-reviewer, tester, or mechanical helper; see [roles](roles.md)). Do that one
-duty and nothing adjacent.
+Your role adapter names exactly one duty (orchestrator, implementer, reviewer, tester, or mechanical helper; see [roles](roles.md)). Do that one duty and nothing adjacent.
 
 ## Shared git state
 
-Never run mutating `git stash` in a worktree (R8): the stash is shared
-across worktrees. Commit to your branch; for baselines use
-`git worktree add --detach <dir> <base-ref>`.
+Never run mutating `git stash` in a worktree (R8): the stash is shared across worktrees. Commit to your branch; for baselines use `git worktree add --detach <dir> <base-ref>`.
 
 ## Policy paths
 
@@ -42,11 +35,8 @@ After install, hosts load `.chaos-engine/`. This source checkout stays synced vi
 
 ## Stop on ambiguity
 
-Stop and report when the specification is ambiguous, a premise is false, a
-test and the requirement disagree, or the work would leave your scope. Do not
-guess and do not widen scope.
+Stop and report when the specification is ambiguous, a premise is false, a test and the requirement disagree, or the work would leave your scope. Do not guess and do not widen scope.
 
 ## Report
 
-Return one short report: outcome, files touched, exact checks run with
-results, anything not done, and open risks. No raw transcripts.
+Return one short report: outcome, files touched, exact checks run with results, anything not done, and open risks. No raw transcripts.

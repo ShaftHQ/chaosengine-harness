@@ -9,7 +9,7 @@ Assistant memory keeps only this pointer: "Follow the ChaosEngine core card
 | Rule | CE home |
 | --- | --- |
 | One portable implementation for every host; a new rule is one parity row | [host-parity-matrix](host-parity-matrix.md) |
-| Learning Session after every final delivery (owner approval, publish done, final PR merged), automatic: lessons diff, one spec issue, ONE PR (`skip-release-notes`, MERGE method) babysat to merged. Never arm `gh pr merge --auto`. Merge with `gh pr merge --squash` only after required checks are green and review threads are resolved. Nothing new = one report line | [router contract](router-contract.md#learning-session) |
+| Learning Session after every final delivery (owner approval, publish done, final PR merged), automatic: lessons diff, one spec issue, ONE PR (`skip-release-notes`) babysat to merged. When the base branch ruleset includes a `merge_queue` rule, enqueue with `gh pr merge` and pass no strategy flag (`--merge`, `--squash`, or `--rebase`). Otherwise merge with `gh pr merge --squash` only after required checks are green and review threads are resolved. Never arm `gh pr merge --auto`. Nothing new = one report line | [router contract](router-contract.md#learning-session) |
 | No traffic proxy of any kind (Headroom-style included); nothing installs one by default | [no-proxy](no-proxy.md) |
 | Token optimization is Kanban eliminate-waste | [eliminate-waste](eliminate-waste.md) |
 | Retrieve before read, once per task area; harness files are exempt | [retrieve-first](retrieve-first.md) |
@@ -35,16 +35,13 @@ Assistant memory keeps only this pointer: "Follow the ChaosEngine core card
 | Delegates load the delegate card, not the router | [delegate card](delegate-card.md) |
 | Repository changes are not done until pushed, a pull request is open, and that pull request is merged to the default branch | [delivery phase gates](delivery-phase-gates.md) |
 | Owner autonomy: routine in-scope work proceeds after plan approval; irreversible, destructive, paid-campaign, or externally visible actions still need explicit owner approval | [kanban](../skills/kanban/SKILL.md) |
-| Single thread by default; delegate only when the owner enables delegation | [delegation](delegation.md) |
+| Single thread by default; delegate when the owner enables delegation, or when a bounded read-only firewall/consultant is authorized ([consult-first](consult-first.md), [context firewall](context-firewall.md)) | [delegation](delegation.md) |
 | Default delivery is a small vertical slice (~90 changed lines or a named size_waiver). One grouped pull request is allowed when an epic or batch waiver names it | [kanban](../skills/kanban/SKILL.md) |
 | After each delivery run `tool.py maintain` (fast-forward keeping edits, reinstall, doctor, refresh, reload) | [kanban](../skills/kanban/SKILL.md) |
 | Status reports are tables | [core card](../skills/chaos-engine/SKILL.md) |
-| Each pull request carries exactly one release-note label and merges with `gh pr merge --squash`; static analysis blocks | [static-analysis gate](static-analysis-gate.md) |
+| Each pull request carries exactly one release-note label and uses the merge rule above; static analysis blocks | [static-analysis gate](static-analysis-gate.md) |
 | Work in the agent's own sandbox when cost is equal; the owner workstation only runs the final install and doctor | [task isolation](task-isolation.md) |
 | Short messages; no duplicate verification; one cheap call per status check | [CI status economy](ci-status-economy.md) |
 | Retrieve and load companion cards at task start; store runs stop only on a stall, never a fixed timeout | [retrieve-first](retrieve-first.md) |
 | The chaos-engine skill forbids a maven repository that returns 200 for any coordinate other than the intended artifact; a repository that 404s every other coordinate stays allowed | [permanent rules](permanent-rules.md) |
 | Non-TTY shells: always pass a path to `rg` (it otherwise waits on stdin) | [eliminate-waste](eliminate-waste.md) |
-
-Stale memory corrected by this sweep: "Headroom installs by default" is
-false; the no-proxy rule forbids it.

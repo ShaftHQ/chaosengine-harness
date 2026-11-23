@@ -75,28 +75,28 @@ SKILLS = (
      "review, pull rule, Definition of Done, findings fixed or filed.", "delivery"),
     ("architect", "portable", "skills/architect/SKILL.md",
      "Use for design-level judgement: requirements, quality attributes, trade-offs, ADR, contracts, resilience, security, observability, refactor, debug, review, debt.", "delivery"),
-    # On demand only: reached through the level-1 catalog, never the always-loaded route table.
+    # On demand: one grouped core-card row. Bodies stay unloaded until that route matches.
     ("technical-presentations", "portable", "skills/technical-presentations/SKILL.md",
      "Use when planning, building, refactoring, or reviewing technical talks or training decks: "
      "story arc, claim titles, visual evidence, code slides, checkpoints. On demand only.", "on-demand"),
-    # On demand only: linked from bot-entry, iterative-flow and multi-agent-pdca done/handoff paths.
+    # On demand: linked from the core card, bot-entry, and done/handoff paths.
     ("pre-done-self-review", "portable", "skills/pre-done-self-review/SKILL.md",
      "Use before claiming Done, signing off, or handing off: reconcile every item. "
      "On demand only.", "on-demand"),
-    # On demand only: reached through the level-1 catalog when applying for a job.
+    # On demand: core-card group row when applying for a job.
     ("job-apply", "portable", "skills/job-apply/SKILL.md",
      "Use when applying for a job. Default is draft only. A recorded owner standing send permission that names the channel class may send only after the shared gate passes on the exact final text.",
      "on-demand"),
-    # On demand only: reached through the level-1 catalog when searching for jobs.
+    # On demand: core-card group row when searching for jobs.
     ("job-search", "portable", "skills/job-search/SKILL.md",
      "Use when searching for jobs: two-channel discovery, eligibility-first filter, "
      "verify work mode on the job page, End-key scroll, share-profile approval gate, "
      "and tracker hygiene. On demand only.", "on-demand"),
-    # On demand only: reached through the level-1 catalog for multi-channel applications.
+    # On demand: core-card group row for multi-channel applications.
     ("job-applications", "portable", "skills/job-applications/SKILL.md",
      "Use when applying to jobs for the user by email, LinkedIn, or an ATS form.",
      "on-demand"),
-    # On demand only: source-of-truth docs, status vocabulary, journey maps (#7726).
+    # On demand: source-of-truth docs, status vocabulary, journey maps (#7726).
     ("docs-hygiene", "portable", "skills/docs-hygiene/SKILL.md",
      "Use when editing source-of-truth docs or status tables: three sources, "
      "Done / In progress / Not started, and live hour formulas. On demand only.",
@@ -317,11 +317,32 @@ ROUTER_USE = {
 # On-demand skills that still get one always-loaded route row. Family stays on-demand.
 ROUTED_ON_DEMAND = frozenset({"security-audit"})
 
+# Remaining on-demand skills: one compact core-card row, still not loaded until used.
+ON_DEMAND_GROUP = (
+    "docs-hygiene",
+    "job-applications",
+    "job-apply",
+    "job-search",
+    "learn-from-external-harnesses",
+    "pre-done-self-review",
+    "technical-presentations",
+)
+
 
 LOCAL_LLM_SKILLS = frozenset({
     "local-runtimes", "local-agency", "omniroute", "freetoken", "colibri",
     "local-openai-compat", "local-coding-delegate",
 })
+
+
+def _on_demand_group_row(index: dict) -> str:
+    by_name = {entry["name"]: entry for entry in index["entries"]}
+    links = []
+    for name in ON_DEMAND_GROUP:
+        entry = by_name[name]
+        href = "../" + entry["path"][len("skills/"):]
+        links.append(f"[{name}]({href})")
+    return "| On demand | named skill | " + ", ".join(links) + " |"
 
 
 def render_route_table(index: dict) -> str:
@@ -340,9 +361,14 @@ def render_route_table(index: dict) -> str:
             for entry in sorted(local, key=lambda entry: entry["name"] != "local-runtimes")
         )
         lines.append(f"| Local LLM | local runtime or agents | {links} |")
+    grouped = _on_demand_group_row(index)
+    emitted = False
     for entry in selected:
         if entry in local:
             continue
+        if not emitted and entry.get("family") == "reference":
+            lines.append(grouped)
+            emitted = True
         path = entry["path"]
         filename = path.rsplit("/", 1)[-1]
         href = "../" + path[len("skills/"):] if path.startswith("skills/") else "../../" + path
@@ -359,6 +385,8 @@ def render_route_table(index: dict) -> str:
             "security-audit": "Security audit",
         }.get(entry["name"], entry["name"])
         lines.append(f"| {label} | {use} | [{filename}]({href}) |")
+    if not emitted:
+        lines.append(grouped)
     return "\n".join(lines)
 
 

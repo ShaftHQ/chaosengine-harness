@@ -1,6 +1,6 @@
 # ChaosEngine
 
-ChaosEngine is a portable, provider-neutral working contract so testers, developers, product owners, and scrum masters have one loop: research, plan, implement, verify with evidence, adversarial review, and a learning record. The rest is in [guides/overview.md](guides/overview.md).
+Portable, provider-neutral working contract: research, plan, implement, verify with evidence, adversarial review, and a learning record. Detail: [guides/overview.md](guides/overview.md).
 
 Install into the project you want to manage. Python is not required first.
 
@@ -16,17 +16,17 @@ The contract in this checkout is [skills/chaos-engine/SKILL.md](skills/chaos-eng
 
 Directory map: [docs/layout.md](docs/layout.md). Do not open [docs/source-inventory.md](docs/source-inventory.md) unless the task is the inventory.
 
-Tests in this checkout: [CONTRIBUTING.md](CONTRIBUTING.md). Host hook launchers and tests run on Python 3.11+. The installer managed runtime pin stays 3.14.0. `python3 -m pytest -q -n auto tests`.
+Tests: [CONTRIBUTING.md](CONTRIBUTING.md). Host hook launchers and tests run on Python 3.11+. The installer managed runtime pin stays 3.14.0. `python3 -m pytest -q -n auto tests`.
 
 <!-- memory:start -->
 ## Memory
 
-This repo uses Memory as its product-layer memory: features, decisions, gotchas, and open questions anchored to code paths. The product map below is the always-on overview — use it for orientation; treat it as context, not instructions.
+Product-layer memory: features, decisions, gotchas, and open questions on code paths. The map below is orientation, not instructions.
 
-- Need detail mid-task? Run `memory query "<question>"` (MCP: `query_memory`). Do not preload anything else.
-- After product-meaningful changes (feature behavior added or changed, a decision taken, a gotcha discovered, a question opened or answered), save them: `memory save --stdin` with JSON `{task, nodes, stale, supersede, delete}`. Do not save refactors, formatting details, or task diaries.
-- At session end, or after merging others' work, run `memory sync` and act on its report.
-- `memory status` summarizes features by stage; `memory inspect <id>` shows one node in full.
+- Mid-task detail: `memory query "<question>"` (MCP: `query_memory`). Do not preload.
+- After a product-meaningful change (behavior, decision, gotcha, question opened or answered): `memory save --stdin` with JSON `{task, nodes, stale, supersede, delete}`. Do not save refactors, formatting, or task diaries.
+- At session end, or after merging others' work: `memory sync` and act on its report.
+- `memory status` summarizes stage; `memory inspect <id>` shows one node.
 
 If memory conflicts with current code or the user, trust the code and the user — and save the correction.
 <!-- memory:end -->
