@@ -640,7 +640,7 @@
       "path": "references/context-firewall.md"
     },
     {
-      "description": "Use when repeated session traces show the git-tracked overlay should change; tune the harness in the repo, never under `~/.grok/skills`.",
+      "description": "Use when repeated session traces show the git-tracked overlay should change; tune the harness in the repo, never under a user-home skill directory (`~/.grok/skills` is one host example).",
       "family": "reference",
       "hosts": {
         "antigravity": "catalog",

@@ -65,7 +65,6 @@ Companions at task start via `tool.py entry` ([bot entry](../../references/bot-e
 | Git cleanup | dirty worktree or stray branches | [SKILL.md](../git-cleanup/SKILL.md) |
 | CI | slow merges, CI | [SKILL.md](../ci-cd/SKILL.md) |
 | Security audit | audit a repository we own | [SKILL.md](../security-audit/SKILL.md) |
-| On demand | named skill | [docs-hygiene](../docs-hygiene/SKILL.md), [job-applications](../job-applications/SKILL.md), [job-apply](../job-apply/SKILL.md), [job-search](../job-search/SKILL.md), [learn-from-external-harnesses](../learn-from-external-harnesses/SKILL.md), [pre-done-self-review](../pre-done-self-review/SKILL.md), [technical-presentations](../technical-presentations/SKILL.md) |
 | Zero-LLM first | install, doctor, repair by script | [zero-llm-catalog.md](../../references/zero-llm-catalog.md) |
 | Heal | drifted or unhealthy install | [heal-route.md](../../references/heal-route.md) |
 | Level-1 catalog | secondary skill or tool needed | [level-1-catalog.md](../../references/level-1-catalog.md) |

@@ -24,26 +24,38 @@ def _text(relative: str) -> str:
     return (ROOT / relative).read_text(encoding="utf-8")
 
 
-def test_every_skill_is_one_hop_from_the_core_card_and_the_walk_is_clean() -> None:
+def test_every_skill_is_linked_from_the_entry_point_and_the_walk_is_clean() -> None:
     core = ROOT / CORE
-    text = core.read_text(encoding="utf-8")
-    linked = set()
-    for raw in reach.MARKDOWN_LINK.findall(text):
+    index = json.loads((ROOT / "harness-index.json").read_text(encoding="utf-8"))
+    by_path = {entry["path"]: entry for entry in index["entries"]}
+    core_links = set()
+    for raw in reach.MARKDOWN_LINK.findall(core.read_text(encoding="utf-8")):
         target = raw.strip().strip("<>").split("#", 1)[0]
         if not target or reach.URI_SCHEME.match(target):
             continue
         resolved = (core.parent / target).resolve()
         try:
-            linked.add(resolved.relative_to(ROOT.resolve()).as_posix())
+            core_links.add(resolved.relative_to(ROOT.resolve()).as_posix())
         except ValueError:
             continue
+    assert "references/level-1-catalog.md" in core_links
+    assert "references/catalog.md" in core_links
+    l1_text = _text("references/level-1-catalog.md")
+    cat_text = _text("references/catalog.md")
     skills = sorted(
         path.relative_to(ROOT).as_posix()
         for path in (ROOT / "skills").glob("*/SKILL.md")
     )
     assert skills
-    missing = [path for path in skills if path != CORE and path not in linked]
-    assert missing == []
+    for path in skills:
+        if path == CORE:
+            continue
+        entry = by_path[path]
+        if entry.get("family") != "on-demand" or entry["name"] == "security-audit":
+            assert path in core_links, f"core skill missing from SKILL.md: {path}"
+        else:
+            assert f"../{path}" in l1_text, f"on-demand skill missing from level-1-catalog.md: {path}"
+            assert f"../{path}" in cat_text, f"on-demand skill missing from catalog.md: {path}"
     reached, broken = reach.link_walk(ROOT, CORE)
     assert broken == []
     assert set(skills) <= reached

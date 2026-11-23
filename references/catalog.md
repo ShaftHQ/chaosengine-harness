@@ -46,7 +46,7 @@ routes are reached through `local-runtimes`; roles through their adapters.
 | Heal | Use when a drifted install, wiped runtime, or unhealthy doctor must be repaired by file path. | `references/heal-route.md` | [route](../references/heal-route.md) |
 | Level-1 catalog | Use when a task needs a secondary skill or tool beyond the core router. The list stays short and sorted. | `references/level-1-catalog.md` | [route](../references/level-1-catalog.md) |
 | Context firewall | Use when research or a multi-file explore should run in an isolated subagent so the parent stays small. | `references/context-firewall.md` | [route](../references/context-firewall.md) |
-| harness-learn | Use when repeated session traces show the git-tracked overlay should change; tune the harness in the repo, never under `~/.grok/skills`. | `references/harness-learn.md` | [route](../references/harness-learn.md) |
+| harness-learn | Use when repeated session traces show the git-tracked overlay should change; tune the harness in the repo, never under a user-home skill directory (`~/.grok/skills` is one host example). | `references/harness-learn.md` | [route](../references/harness-learn.md) |
 | design-loop | Use when a design document needs write-review-revise rounds until zero open review issues remain. | `references/design-loop.md` | [route](../references/design-loop.md) |
 | deep-research | Use when a question needs bounded parallel research with verification and a cited final report. | `references/deep-research.md` | [route](../references/deep-research.md) |
 | ui-delivery | Use when a change touches user-visible UI, layout, styling, or themes: red-then-green e2e, measured geometry, viewport x theme matrix. | `references/ui-delivery.md` | [route](../references/ui-delivery.md) |

@@ -28,6 +28,7 @@ sorted. Each row is a name, ≤2-line Use-when, and a path — no workflow dumps
 | Design-turn contract | Verbatim CE_BRIEF_LOCATORS + host reject gates for local design/spec turns | [`../skills/local-agency/references/design-turn-contract.md`](../skills/local-agency/references/design-turn-contract.md) |
 | Dispatch CE brief | `dispatch.py brief` / `--with-ce-brief` / chat system brief | [`../skills/local-agency/scripts/dispatch.py`](../skills/local-agency/scripts/dispatch.py) |
 | Docs follow the change | A command, flag, default, or other reader-facing contract changed, including earlier in the session | [`docs-follow-change.md`](docs-follow-change.md) |
+| Docs hygiene | Source-of-truth docs, status vocabulary, live hour formulas, full journeys, delete-guard upstream | [`../skills/docs-hygiene/SKILL.md`](../skills/docs-hygiene/SKILL.md) |
 | Draft skill PR gate | Opt-in eval-gated draft skill PRs; default OFF | [`draft-skill-pr.md`](draft-skill-pr.md) |
 | Durable jobs | Long work outlives the session; lease, heartbeat, one worker per job | [`durable-jobs.md`](durable-jobs.md) |
 | Eliminate waste | A hop, retry, or duplicate tool does not change the next decision | [`eliminate-waste.md`](eliminate-waste.md) |
@@ -45,6 +46,10 @@ sorted. Each row is a name, ≤2-line Use-when, and a path — no workflow dumps
 | Host parity / GAP-EXIT2 | Host deny fidelity differs (Grok/Copilot); compensating UX checklist | [`host-parity-matrix.md`](host-parity-matrix.md) |
 | ICM Architect | Design/restructure ICM workspaces (advisory companion) | [`icm-architect.md`](icm-architect.md) |
 | Insight extract | Success/failure pair insights with ExpeL vote lifecycle | [`insight-extract.md`](insight-extract.md) |
+| Job applications | Channel routing for that same apply job: email, LinkedIn, and ATS. Same send authority | [`../skills/job-applications/SKILL.md`](../skills/job-applications/SKILL.md) |
+| Job apply | Research, gate, and cover draft for one application. Send authority is outbound-send.md | [`../skills/job-apply/SKILL.md`](../skills/job-apply/SKILL.md) |
+| Job search | Search for jobs: two-channel discovery, eligibility filter, End-key scroll, share-profile gate | [`../skills/job-search/SKILL.md`](../skills/job-search/SKILL.md) |
+| Learn from external harnesses | Deep pass over one external harness: inventory the local registry, map each idea, and file a ticket | [`../skills/learn-from-external-harnesses/SKILL.md`](../skills/learn-from-external-harnesses/SKILL.md) |
 | Learn traces | Portable /learn map-reduce-verify; host TUI optional | [`learn-traces.md`](learn-traces.md) |
 | Local OpenAI-compat | Optional Ollama / LM Studio / llamacpp OpenAI-compat peers; never CE-installed; not OmniRoute/FreeToken plugins | [`../skills/local-openai-compat/SKILL.md`](../skills/local-runtimes/references/local-openai-compat.md) · guide (repo-only `chaos-engine/guides/local-openai-compat.md`) |
 | Memory provenance | Origin + trust on learned items; quarantine untrusted until verified | [`memory-provenance.md`](memory-provenance.md) |
@@ -52,6 +57,7 @@ sorted. Each row is a name, ≤2-line Use-when, and a path — no workflow dumps
 | No proxy | A task would install or wrap a traffic proxy; never install one | [`no-proxy.md`](no-proxy.md) |
 | OmniRoute | Optional local transport; never required for canonical workflows | [`../skills/omniroute/SKILL.md`](../skills/local-runtimes/references/omniroute.md) |
 | Outbound send | Draft only unless a recorded standing send permission names the channel and the shared gate passes | [`outbound-send.md`](outbound-send.md) |
+| Pre-done self-review | Before Done, sign-off, or handoff: rules reconciled, gaps cite rule + alternative, views match the table | [`../skills/pre-done-self-review/SKILL.md`](../skills/pre-done-self-review/SKILL.md) |
 | Prefer CLI over MCP | CLI when both exist; `gh` when configured; no default GitHub MCP | [`prefer-cli-over-mcp.md`](prefer-cli-over-mcp.md) |
 | Profile slow installs | Install/upgrade times creep across dirs; profile_installs.py | [`profile-slow-installs.md`](profile-slow-installs.md) |
 | Prompt evolution | Prompt or skill text accepted only after a passing harness eval report | [`prompt-evolution.md`](prompt-evolution.md) |

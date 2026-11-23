@@ -162,7 +162,7 @@ ROUTES = (
     ("Context firewall", "references/context-firewall.md",
      "Use when research or a multi-file explore should run in an isolated subagent so the parent stays small."),
     ("harness-learn", "references/harness-learn.md",
-     "Use when repeated session traces show the git-tracked overlay should change; tune the harness in the repo, never under `~/.grok/skills`."),
+     "Use when repeated session traces show the git-tracked overlay should change; tune the harness in the repo, never under a user-home skill directory (`~/.grok/skills` is one host example)."),
     ("design-loop", "references/design-loop.md",
      "Use when a design document needs write-review-revise rounds until zero open review issues remain."),
     ("deep-research", "references/deep-research.md",
@@ -317,32 +317,11 @@ ROUTER_USE = {
 # On-demand skills that still get one always-loaded route row. Family stays on-demand.
 ROUTED_ON_DEMAND = frozenset({"security-audit"})
 
-# Remaining on-demand skills: one compact core-card row, still not loaded until used.
-ON_DEMAND_GROUP = (
-    "docs-hygiene",
-    "job-applications",
-    "job-apply",
-    "job-search",
-    "learn-from-external-harnesses",
-    "pre-done-self-review",
-    "technical-presentations",
-)
-
 
 LOCAL_LLM_SKILLS = frozenset({
     "local-runtimes", "local-agency", "omniroute", "freetoken", "colibri",
     "local-openai-compat", "local-coding-delegate",
 })
-
-
-def _on_demand_group_row(index: dict) -> str:
-    by_name = {entry["name"]: entry for entry in index["entries"]}
-    links = []
-    for name in ON_DEMAND_GROUP:
-        entry = by_name[name]
-        href = "../" + entry["path"][len("skills/"):]
-        links.append(f"[{name}]({href})")
-    return "| On demand | named skill | " + ", ".join(links) + " |"
 
 
 def render_route_table(index: dict) -> str:
@@ -361,14 +340,9 @@ def render_route_table(index: dict) -> str:
             for entry in sorted(local, key=lambda entry: entry["name"] != "local-runtimes")
         )
         lines.append(f"| Local LLM | local runtime or agents | {links} |")
-    grouped = _on_demand_group_row(index)
-    emitted = False
     for entry in selected:
         if entry in local:
             continue
-        if not emitted and entry.get("family") == "reference":
-            lines.append(grouped)
-            emitted = True
         path = entry["path"]
         filename = path.rsplit("/", 1)[-1]
         href = "../" + path[len("skills/"):] if path.startswith("skills/") else "../../" + path
@@ -385,8 +359,6 @@ def render_route_table(index: dict) -> str:
             "security-audit": "Security audit",
         }.get(entry["name"], entry["name"])
         lines.append(f"| {label} | {use} | [{filename}]({href}) |")
-    if not emitted:
-        lines.append(grouped)
     return "\n".join(lines)
 
 
