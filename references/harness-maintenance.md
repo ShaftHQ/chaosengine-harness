@@ -5,6 +5,8 @@ Install, `maintain` recovery and harness-edit checks for bots that start from
 
 ## Install
 
+`<python>` is `py -3` on Windows and `python3` on Linux/macOS.
+
 - Fresh clone: install from a copy of its own `chaos-engine/` kept outside
   the project (source and project must be disjoint), pinned to HEAD.
   Copy, then install. Do not join the commands with `&&` (PowerShell 5.1 rejects it).

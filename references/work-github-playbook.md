@@ -15,11 +15,9 @@ Program: epic plus native sub-issues; one orchestrator; local implementers; two 
 
 ## 4. Implement, check, review, deliver
 
-Rule every open design choice on the issue before the first implementing commit;
-a ticket that reaches code still choosing between candidate fixes converts that
-choice into review rounds. Before committing any subagent's work: Before reviewing or shipping any nontrivial diff, file deferred/out-of-scope/adjacent-finding/follow-up items.
+Rule every open design choice on the issue before the first implementing commit. A ticket that reaches code still choosing between candidate fixes converts that choice into review rounds. Before committing any subagent's work, and before reviewing or shipping any nontrivial diff, file deferred/out-of-scope/adjacent-finding/follow-up items.
 
-Complete approved scope. Run the local tests, self-accept, then push and start adversarial review 1 together ([delivery cycle](delivery-cycle.md)). Fix whichever of review 1 and CI returns first. Wait for the other, reconcile, and push once. That push starts CI and adversarial review 2 together. Do not start both reviewers in one step. A CI-only repair on the final watch does not start a third reviewer. Arm `gh pr merge --auto` only when the platform queues the merge until required checks succeed. When that arm would merge immediately, watch until the required checks pass and no review thread is unresolved, then `gh pr merge --squash`. This repository allows only squash merges. A skipped or neutral check outside the required set does not block. A failed, cancelled, or pending check blocks when it is required and when no check is marked required. An unmarked skip blocks. An empty check list is not success. A pending check is not success. Triage automated CI, annotations, bots, and PR comments; batch-fix applicable findings.
+Complete approved scope. Run the local tests, self-accept, then follow [delivery cycle](delivery-cycle.md): review 1 with the push, reconcile, then review 2. Do not start both reviewers in one step. A CI-only repair on the final watch does not start a third reviewer. Squash, auto-merge, and the required-check gate are in [§7](#7-push-pr-green-merge-compact). Triage automated CI, annotations, bots, and PR comments; batch-fix applicable findings.
 Never push one tip per micro-fix when fresh-installer paths are implicated ([how](tip-churn-preflight.md)).
 Do not stop behavior work for per-step commits, tests, reviews, PR-body updates, or delivery receipts.
 
@@ -78,23 +76,11 @@ require their own PR ([docs follow the change](docs-follow-change.md)).
 
 ## 6. Terminal Learning Session
 
-Collect durable findings during work, but route them through exactly one root-owned
-Learning Session after every final delivery (approval, publish, final merge), unasked, before the final report.
-Delegates and intermediate pushes never start another session.
-When reflection is required, put the changed approach and focused proof on the
-tracker before resuming. The hook never writes issues; the agent files leftover
-risks and out-of-scope items with `gh` after duplicate search, then records
-those URLs on the terminal receipt. After delivery, a session over one hour
-records its terminal reflection receipt before the Learning Session.
+Learning Session after every final delivery (approval, publish, final merge), unasked, before the final report. Exactly one root-owned session. Delegates and intermediate pushes never start another. Collect durable findings during work and route them there. When reflection is required, put the changed approach and focused proof on the tracker before resuming. The hook never writes issues; the agent files leftover risks and out-of-scope items with `gh` after duplicate search, then records those URLs on the terminal receipt. After delivery, a session over one hour records its terminal reflection receipt before the Learning Session.
 
 ### Learned-lessons workflow
 
-1. Collect receipts from the root session and every delegate created during the
-   runtime. Examine durable costs, decisions, structural changes, procedure gaps,
-   and deliberately deferred work. Explicitly look for ways to improve
-   effectiveness, efficiency, token use, commands that failed, paths that became
-   dead ends, retrieval or memory use, skill gaps, and research gaps. A clean run
-   still receives this search; `no-durable` is the honest result when it finds none.
+1. Collect receipts from the root session and every delegate. Examine costs, decisions, structural changes, procedure gaps, deferred work, failed commands, dead ends, retrieval or memory use, and skill or research gaps. A clean run still gets this search; `no-durable` is the honest empty result.
 2. Classify each knowledge result with the entrypoint's Learning Session table and
    use exactly one knowledge destination.
 3. Separately classify actionability as `fixed-now`, `existing`, `new`,
@@ -152,7 +138,7 @@ request was already open, and a session that only pushes new commits.
 `delivery-status` does not clear the block. A delivery goal keeps babysitting
 until that merge.
 When attendance is fully unattended (default) or the owner says babysit and merge it when green, follow this PR-merger
-(arm auto-merge, watch, fix, confirm). Merge only once that exact head is green and the required reviews have passed, not while the pull request is still a draft or the head is red. A pending check is not success. `gh pr merge` is refused until then, including when `--auto` is present: on a repository with auto-merge disabled that flag merges immediately and is not a queue. Bundled `pr-babysit` forbids merge;
+(arm auto-merge, watch, fix, confirm). Arm `gh pr merge --auto` only when the platform queues the merge until required checks succeed. Merge only once that exact head is green and the required reviews have passed, not while the pull request is still a draft or the head is red. A pending check is not success. `gh pr merge` is refused until then, including when `--auto` is present: on a repository with auto-merge disabled that flag merges immediately and is not a queue. Bundled `pr-babysit` forbids merge;
 do not copy that rule into ChaosEngine and do not edit the bundled skill in place.
 
 This repository allows only squash merges (`gh pr merge --squash`).
@@ -160,7 +146,9 @@ Merge commits and rebase merges are disabled.
 
 After **you** merge a PR that changes `chaos-engine/`, rebuild the
 live overlay from the new `origin/<default>` on the **primary checkout**:
-`git fetch origin <default> && git merge --ff-only origin/<default>`, then
+Run each command on its own line. Do not join them with `&&` (PowerShell 5.1 rejects it).
+`git fetch origin <default>`
+`git merge --ff-only origin/<default>`
 `python3 .chaos-engine/bootstrap.py --project . --repository <configured-upstream> --branch <default>`
 and `python3 .chaos-engine/install.py doctor --project . --agent-summary`. Reload host hooks and skills before the next turn so work builds on the merge. Do not call
 `install.py install` without `--source` and `--commit`. Replace

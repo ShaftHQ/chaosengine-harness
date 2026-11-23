@@ -4,6 +4,8 @@ description: Use when CLI and MCP both fit the same job; prefer the CLI, and gh 
 
 # Prefer CLI over MCP
 
+`<python>` is `py -3` on Windows and `python3` on Linux/macOS.
+
 Permanent. One owner per job. When a CLI exists and is configured, do not
 call the equivalent MCP. MCP schemas tax every turn; CLIs are in training
 data and compose with `jq` / `rg`.
@@ -32,8 +34,8 @@ docs path. Do not load a user-home `find-docs` skill.
 
 ## User-home skills
 
-Do not install colliding skills under `~/.claude/skills`, `~/.agents/skills`,
-`~/.codex/skills`, or `~/.grok/skills`. The overlay under `.chaos-engine/`
+Do not install colliding skills under a user-home skill directory. Host examples: `~/.claude/skills`, `~/.agents/skills`,
+`~/.codex/skills`, and `~/.grok/skills`. The overlay under `.chaos-engine/`
 is the only honored skill tree.
 
 ## Grok bundled skills and session GitHub MCP

@@ -4,7 +4,9 @@ Never delete work that exists nowhere else. CLI hosts run the check in the
 PreToolUse hook (`hooks/guard.py`, via [delete_guard.py](../runtime/delete_guard.py)); hookless bots run
 `python3 .chaos-engine/tool.py delete-check <paths>` or
 `tool.py delete-check --command "<shell command>"` before every delete and stop
-on a non-zero exit.
+on a non-zero exit. That `tool.py delete-check` call is the OS-neutral rule.
+`rm -rf` below is the POSIX example of the inner command; on Windows pass
+`Remove-Item -Recurse -Force` the same way.
 
 
 Install and doctor logs belong under `<project>/.chaos-engine-state/logs/` via [`session_logs.py`](../runtime/session_logs.py). Recording them on the session created-paths manifest lets cleanup-at-close self-delete those logs without an owner code.

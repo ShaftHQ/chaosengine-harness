@@ -63,3 +63,7 @@ This does not replace a partition or a boundary on an input. It adds the case th
 A changed test names one oracle: specified, derived, metamorphic, differential, or human.
 Three reruns that disagree are flake (`rerun-to-flake` in `runtime/sdlc_flows.py`).
 Completion reports keep a requirement, check, and result row.
+
+## Records
+
+[test-plan.md](test-docs/test-plan.md), [completion-report.md](test-docs/completion-report.md), [incident-report.md](test-docs/incident-report.md).

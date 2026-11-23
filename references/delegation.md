@@ -2,16 +2,6 @@
 
 Cloud implementers write code directly; local runtimes are optional for narrow mechanical or offline jobs, and a local runtime never reviews its own diff.
 
-## Contents
-
-- [Capability levels](#capability-levels)
-- [Research / explore firewall](#research--explore-firewall)
-- [Main-thread duties](#main-thread-duties)
-- [Orchestrator duties](#orchestrator-duties)
-- [Independent adversarial review](#independent-adversarial-review)
-- [Delegate covenant](#delegate-covenant)
-- [Returned-work review](#returned-work-review)
-
 Default is single-thread: the main agent does the work itself. Delegate only
 when the owner enables delegation for the session or project.
 
@@ -118,22 +108,7 @@ or adjacent prose with blocker notes, HEAD SHA, and root-learning handoff
 
 ## Independent adversarial review
 
-The [delivery cycle](delivery-cycle.md) starts adversarial review 1 with the
-push of the self-accepted head. CI and review 1 run together. Fix whichever
-returns first, wait for the other, reconcile, and push once. That push starts
-CI and adversarial review 2 together. Do not start both reviewers in one step.
-Do not merge
-until those reviews are done, their comments are applied, and the required
-checks have passed. This repository merges with `gh pr merge --squash`.
-A skipped or neutral check outside the required set does not block.
-A failed, cancelled, or pending check blocks when it is required and when
-no check is marked required. An unmarked skip blocks.
-An empty check list is not success. A pending check is not success. An unchanged head
-gets at most two reviews. Never review
-individual implementation steps. A pull request that changes an existing test
-contract, or whose CI does not run the changed surface
-([UI delivery](ui-delivery.md)), does not skip that pair.
-Time pressure never skips this pair.
+Follow [delivery cycle](delivery-cycle.md) for review 1 with the self-accept push, the reconcile push that starts review 2, the required-check merge rule, and `gh pr merge --squash` in this repository. Do not start both reviewers in one step. An unchanged head gets at most two reviews. Never review individual implementation steps. A pull request that changes an existing test contract, or whose CI does not run the changed surface ([UI delivery](ui-delivery.md)), does not skip that pair. Time pressure never skips this pair.
 Independence:
 
 - The reviewer is a **separate agent instance, never the author** of the work.

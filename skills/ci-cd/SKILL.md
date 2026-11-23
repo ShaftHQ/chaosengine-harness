@@ -13,7 +13,6 @@ permissions:
 
 # CI/CD tiers and PR merge time
 
-Learned in a large monorepo: the median open→merge time was about 30 minutes, and the gate took 6–11 minutes.
 Fix the loop first, then the slowest leg.
 
 ## Targets (evidence)

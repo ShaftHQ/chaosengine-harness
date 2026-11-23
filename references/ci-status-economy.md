@@ -1,25 +1,6 @@
 # CI status economy
 
-Learned in coalesce wave: babysit, process-owner, and parent turns burned tokens re-reading unchanged CI state. This policy is portable. Codex, Claude, Grok CLI, Gemini, Copilot, and Grok Bot share it; no host-only memory exception.
-
-## Contents
-
-- [Agent Plugin Live Acceptance dispatch](#agent-plugin-live-acceptance-dispatch)
-- [Wait by event wake, never by LLM poll](#wait-by-event-wake-never-by-llm-poll)
-- [A green check can hide failing tests](#a-green-check-can-hide-failing-tests)
-- [A late label can leave a cancelled required check](#a-late-label-can-leave-a-cancelled-required-check)
-- [A registry 404 for a published artifact is infrastructure first](#a-registry-404-for-a-published-artifact-is-infrastructure-first)
-- [An upstream "latest" lists a version before its platform asset](#an-upstream-latest-lists-a-version-before-its-platform-asset)
-- [Merge queue and same-account pull requests](#merge-queue-and-same-account-pull-requests)
-- [A rerun replays the old event](#a-rerun-replays-the-old-event)
-- [Release watch](#release-watch)
-- [Gate and CI pitfalls](#gate-and-ci-pitfalls)
-- [Digest only](#digest-only)
-- [One status channel](#one-status-channel)
-- [Fingerprint-first failed logs](#fingerprint-first-failed-logs)
-- [Known fingerprints](#known-fingerprints)
-- [Executor prompt schema](#executor-prompt-schema)
-- [Related](#related)
+Do not re-read unchanged CI state. Codex, Claude, Grok CLI, Gemini, Copilot, and Grok Bot share this policy; no host-only memory exception.
 
 ## Agent Plugin Live Acceptance dispatch
 
@@ -80,24 +61,10 @@ command, 404 mark); the candidate install still runs.
 
 ## Merge queue and same-account pull requests
 
-- With a merge queue, null `autoMergeRequest` does not mean the pull request
-  left the queue. `AWAITING_CHECKS` on `mergeQueueEntry` means it is already
-  queued. Read that entry's `headCommit.oid` (the synthetic merge-group SHA),
-  not the pull request head SHA. Do not dequeue it to force checks to start.
-- The Dependabot schedule is read-only. It does not dequeue and it does not
-  re-arm. A missing required check (`PR Gate Summary` or `Release-note governance`)
-  on that synthetic SHA is a visible diagnostic failure. A maintainer enqueues
-  by hand until a verified head-bound opt-in exists. A manual removal stays
-  authoritative for that head. Do not treat an API error as an empty run list,
-  and do not treat an abandoned or cancelled installer result as success.
-- GitHub refuses an approval from the account that authored the PR. When a
-  bot pushes as the owner's account, don't retry the approval. Rely on the
-  required checks and the merge queue, and say in the report that no
-  approval was given.
-- If GitHub suspends a bot machine account, keep working: commit locally
-  with the bot identity, and the owner's account pushes and opens the PR.
-  This is current practice; don't create a replacement bot account to get
-  around the suspension.
+- Null `autoMergeRequest` does not mean the pull request left the queue. `AWAITING_CHECKS` on `mergeQueueEntry` means it is queued. Read `headCommit.oid` (synthetic merge-group SHA), not the pull request head. Do not dequeue it to force checks to start.
+- The Dependabot schedule is read-only. It does not dequeue or re-arm. A missing required check (`PR Gate Summary` or `Release-note governance`) on that synthetic SHA is a visible failure. A maintainer enqueues by hand until a verified head-bound opt-in exists. A manual removal stays authoritative for that head. An API error is not an empty run list. An abandoned or cancelled installer result is not success.
+- GitHub refuses an approval from the PR author account. When a bot pushes as the owner, do not retry the approval. Rely on required checks and the merge queue, and say that no approval was given.
+- If GitHub suspends a bot machine account, commit locally with the bot identity and let the owner's account push and open the PR. Do not create a replacement bot account.
 
 ## A rerun replays the old event
 
@@ -120,6 +87,8 @@ reads as if the workflow file were broken. The workflow is fine: wait for the
 run to finish (or `gh run cancel <run-id>`), then rerun.
 
 ## Release watch
+
+[Release watch](#release-watch).
 
 - A release-prep PR opened by the workflow gets no PR Gate checks
   (`GITHUB_TOKEN` events start no workflows). If it shows no PR Gate checks,
@@ -156,8 +125,7 @@ run to finish (or `gh run cancel <run-id>`), then rerun.
 - `python3 -I -m unittest` cannot import the repo's `tests` package (`-I`
   drops the cwd); run the test file by path with `python3 -I`, or set
   `PYTHONPATH=.` where `-I` is not needed.
-- Join preflight and push with `&&` under `set -o pipefail`, never `;`: a
-  failed preflight must not push.
+- Run preflight, then push only after it succeeds. Do not join with `;`. Bash and zsh may use `&&` under `set -o pipefail`. PowerShell 5.1 has no `&&`: use separate lines and stop when preflight fails.
 - Verify a workflow fix with `workflow_dispatch` on the branch before merging;
   a targeted dispatch (named jobs and tests) is minutes, not a nightly.
 - Windows `mvn` in pwsh is `mvn.cmd` through `cmd.exe` (8191-character command
@@ -223,10 +191,10 @@ run to finish (or `gh run cancel <run-id>`), then rerun.
 
 ## Executor prompt schema
 
-Task / executor / `codex exec` prompts carry a pointer plus the delta slice only; lint with `executor_brief.py lint` (cap 4096 inline bytes; no completed todos from another wave).
+Task / executor / `codex exec` prompts carry a pointer plus the delta slice only; lint with `executor_brief.py lint` (cap 4096 inline bytes; no completed todos from another wave). `<temp-dir>` is the system temp directory.
 
 ```text
-brief_path: /tmp/<wave>/brief.md
+brief_path: <temp-dir>/<wave>/brief.md
 goal: <one sentence>
 constraints: <budgets, forbidden paths>
 files: <paths this slice may touch>

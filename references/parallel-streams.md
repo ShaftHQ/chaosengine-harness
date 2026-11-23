@@ -125,11 +125,7 @@ profiles); those refuse even with an owner code. Hygiene refuses `never-touch-pa
 
 ## Design-kind WIP (same-kind batch = conflict)
 
-A design **conflict** is not only file overlap. Batching several items of the
-**same kind** (video, podcast chapter, image, website change) while one shared
-defect is still unknown multiplies rejects: one bad caption/template/gate rule
-fails the whole batch (wasted tokens and wall time). Treat that like a path
-conflict.
+A design conflict is not only file overlap. Several items of the same kind (video, podcast chapter, image, website change) while one shared defect is unknown multiply rejects. Treat that like a path conflict.
 
 Rules:
 
@@ -184,8 +180,8 @@ npm, uv, gradle, m2, ChaosEngine cache/share). When a cache is over cap:
 - If a **tool-native** prune exists (`pip cache purge`, `uv cache prune`,
   `yarn cache clean`, `npm cache clean --force`), run `prune_cache(name)`.
 - If no native prune exists (gradle / m2 / CE share), **report only** and route
-  regenerable reclaim through [delete-check](delete-check-discipline.md) — never
-  invent `rm -rf` inside the guard.
+  regenerable reclaim through [delete-check](delete-check-discipline.md). The portable delete is `tool.py delete-check`. Never
+  invent `rm -rf` (POSIX) or `Remove-Item -Recurse -Force` (Windows) inside the guard.
 - Never-touch paths refuse prune even when over cap.
 
 ## Own scratch TTL
