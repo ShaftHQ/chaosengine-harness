@@ -204,7 +204,11 @@ INSTALL_ROLLBACK_RELATIVE = ".chaos-engine-state/install-rollback.json"
 
 
 # #6216: branch-agnostic doctor fallback when a status carries no fix-next.
-DESYNC_FIX_NEXT_FALLBACK = "git fetch origin && git merge --ff-only @{upstream}"
+# PowerShell 5.1 rejects && and @{upstream}. Two lines, origin/main.
+DESYNC_FIX_NEXT_FALLBACK = (
+    "git fetch origin main\n"
+    "git merge --ff-only origin/main"
+)
 
 
 def legacy_capability_policy() -> dict[str, dict[str, str]]:
@@ -10229,13 +10233,15 @@ def detect_project_chaos_engine_source(project: Path) -> Path | None:
 
 def _local_source_required_message() -> str:
     """#7487: name the local-source flags; a bare --commit is not enough."""
+    command = _doctor_python_cli()
     return (
         "install needs --source <repo>/chaos-engine --commit <40-hex-sha>, "
         "or --source <root> when that root contains install.py and VERSION, "
         "or --from-bundle. "
         "Example (detached source worktree): "
-        "git worktree add -f --detach ../ce-src <sha> && "
-        "python3 chaos-engine/install.py install --project . --consumer "
+        "git worktree add -f --detach ../ce-src <sha>\n"
+        + command
+        + " chaos-engine/install.py install --project . --consumer "
         "--source ../ce-src/chaos-engine --commit <sha>. "
         "After install, doctor/tool use .chaos-engine/install.py."
     )

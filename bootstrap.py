@@ -6401,7 +6401,7 @@ def _publish_heal_handoff(
         reporter.complete("Activate clients", remaining=())
     except Exception:
         clients = {"clients": {}}
-    prefix = installer_cli_prefix(project) or "python3 .chaos-engine/install.py"
+    prefix = installer_cli_prefix(project) or _installer_cli_text()
     fields = installer_issue_fields(
         "CE-INSTALL-FAILED",
         health_error,
@@ -6792,7 +6792,7 @@ def parser() -> argparse.ArgumentParser:
         "CHAOS_ENGINE_ADDONS=a,b). The one-liner reidentifies a project pack: "
         "the pack home gets that distribution, a matching project gets its user "
         "skills, and every other project stays portable. "
-        "Uninstall remains: python3 .chaos-engine/install.py uninstall --project ."
+        "Uninstall remains: " + _installer_cli_text() + " uninstall --project ."
     )
     return result
 
@@ -6807,13 +6807,18 @@ def installer_user_guide_url(repository: str) -> str:
     return f"https://{owner}.github.io/docs/agentic/chaos-engine"
 
 
+def _installer_cli_text() -> str:
+    """User-visible install.py command. Windows spells the launcher py -3."""
+    command = "py -3" if os.name == "nt" else "python3"
+    return f"{command} .chaos-engine/install.py"
+
+
 def installer_cli_prefix(project: Path | None = None) -> str | None:
     root = Path(project) if project is not None else Path.cwd()
     cli = root / ".chaos-engine" / "install.py"
     if not cli.is_file():
         return None
-    command = "py -3" if os.name == "nt" else "python3"
-    return f"{command} .chaos-engine/install.py"
+    return _installer_cli_text()
 
 
 def failed_install_result(error: BaseException) -> dict[str, str]:
@@ -7117,7 +7122,9 @@ def next_fix_hint(code: str, error: BaseException, prefix: str | None) -> str:
         ),
         (
             code == "CE-GITHUB-RATE-LIMIT",
-            'export GITHUB_TOKEN="$(gh auth token)" (or GH_TOKEN, or run '
+            'export GITHUB_TOKEN="$(gh auth token)" '
+            "(PowerShell: $env:GITHUB_TOKEN = gh auth token) "
+            "(or GH_TOKEN, or run "
             f"`gh auth login`), {rerun}",
         ),
         (
@@ -7136,7 +7143,7 @@ def next_fix_hint(code: str, error: BaseException, prefix: str | None) -> str:
         (
             "maven tools" in cause
             and any(token in cause for token in ("checksum", "crc", "receipt validation")),
-            f"run `{prefix or 'python3 .chaos-engine/install.py'} repair --project . "
+            f"run `{prefix or _installer_cli_text()} repair --project . "
             "--component maven-tools-mcp` (discards the corrupt cached JAR, then reuses "
             "a healthy version or reinstalls), then rerun doctor.",
         ),
