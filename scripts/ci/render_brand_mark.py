@@ -8,6 +8,7 @@ checked-in table drifts from this script.
 from __future__ import annotations
 
 import argparse
+import math
 import re
 import struct
 import sys
@@ -17,7 +18,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SVG = ROOT / "assets" / "brand" / "symbol-primary.svg"
+LOCKUP_LIGHT = ROOT / "assets" / "brand" / "lockup-light.svg"
+LOCKUP_DARK = ROOT / "assets" / "brand" / "lockup-dark.svg"
 TARGET = ROOT / "runtime" / "ce_ui.py"
+# Wordmark strokes. Neither colour is the core, and neither is blue or cyan.
+_ARMOUR_STROKE = {"#10141C", "#F2F7FF"}
+_NUMBER = r"-?(?:\d+(?:\.\d+)?|\.\d+)"
 START = "# >>> generated: brand_mark\n"
 END = "# <<< generated: brand_mark\n"
 # Rows, columns. Cell aspect is 1:2, so screen ratio is cols / (rows * 2).
@@ -50,13 +56,21 @@ QUADS = {
 }
 
 
-def parse_path(body: str) -> list[list[tuple[float, float]]]:
+def parse_path(body: str, *, min_points: int = 3) -> list[list[tuple[float, float]]]:
+    """Filled symbol paths need 3 points. Wordmark strokes also keep a single segment."""
     tokens = re.findall(r"[MLHVZ]|-?\d+(?:\.\d+)?", body)
     subpaths: list[list[tuple[float, float]]] = []
     current: list[tuple[float, float]] = []
     index = 0
     cx = cy = 0.0
     start = (0.0, 0.0)
+
+    def flush() -> None:
+        nonlocal current
+        if len(current) >= min_points:
+            subpaths.append(current)
+        current = []
+
     while index < len(tokens):
         command = tokens[index]
         if command not in "MLHVZ":
@@ -65,13 +79,10 @@ def parse_path(body: str) -> list[list[tuple[float, float]]]:
         if command == "Z":
             if current and current[-1] != start:
                 current.append(start)
-            if len(current) >= 3:
-                subpaths.append(current)
-            current = []
+            flush()
             continue
         if command == "M":
-            if len(current) >= 3:
-                subpaths.append(current)
+            flush()
             cx = float(tokens[index])
             cy = float(tokens[index + 1])
             index += 2
@@ -100,8 +111,7 @@ def parse_path(body: str) -> list[list[tuple[float, float]]]:
             cy = float(tokens[index])
             index += 1
             current.append((cx, cy))
-    if len(current) >= 3:
-        subpaths.append(current)
+    flush()
     return subpaths
 
 
@@ -242,7 +252,204 @@ def assert_samples(layers: list[tuple[str, list]]) -> None:
             raise SystemExit(f"sample {(x, y)} is {kind or 'empty'}, expected {wanted or 'empty'}")
 
 
-def render_text(wide: tuple, stack: tuple) -> str:
+def _group_transform(attrs: str) -> tuple[float, float, float, float]:
+    translate = re.search(rf"translate\(\s*({_NUMBER})(?:[\s,]+({_NUMBER}))?\s*\)", attrs)
+    scale = re.search(rf"scale\(\s*({_NUMBER})(?:[\s,]+({_NUMBER}))?\s*\)", attrs)
+    tx = float(translate.group(1)) if translate else 0.0
+    ty = float(translate.group(2) or 0.0) if translate else 0.0
+    if scale is None:
+        sx = sy = 1.0
+    else:
+        sx = float(scale.group(1))
+        sy = float(scale.group(2) or sx)
+    return tx, ty, sx, sy
+
+
+def _symbol_group_transform(text: str) -> tuple[float, float, float, float]:
+    for match in re.finditer(r"<g\b([^>]*)>", text):
+        attrs = match.group(1)
+        if "wordmark" in attrs or "transform" not in attrs:
+            continue
+        return _group_transform(attrs)
+    raise SystemExit("lockup symbol group has no transform")
+
+
+def _wordmark_paths(text: str) -> tuple[str, ...]:
+    match = re.search(r'<g id="wordmark"[^>]*>(.*?)</g>', text)
+    if match is None:
+        raise SystemExit("lockup has no wordmark group")
+    return tuple(re.findall(r'\sd="([^"]+)"', match.group(1)))
+
+
+def load_wordmark(text: str) -> tuple[list[list[tuple[float, float]]], float]:
+    """Wordmark strokes in lockup space. The background rect is not a path, so it is not ink."""
+    match = re.search(r'<g id="wordmark"([^>]*)>(.*?)</g>', text)
+    if match is None:
+        raise SystemExit("lockup has no wordmark group")
+    attrs, body = match.group(1), match.group(2)
+    fill = re.search(r'\bfill="([^"]+)"', attrs)
+    stroke = re.search(r'\bstroke="(#[0-9A-Fa-f]{6})"', attrs)
+    width = re.search(r'\bstroke-width="(\d+(?:\.\d+)?)"', attrs)
+    if fill is None or fill.group(1) != "none" or stroke is None or width is None:
+        raise SystemExit("wordmark must be an unfilled armour stroke")
+    color = stroke.group(1).upper()
+    if color not in _ARMOUR_STROKE:
+        raise SystemExit(f"wordmark stroke is not armour: {color}")
+    tx, ty, _sx, _sy = _group_transform(attrs)
+    polys: list[list[tuple[float, float]]] = []
+    for path in re.findall(r'\sd="([^"]+)"', body):
+        for sub in parse_path(path, min_points=2):
+            polys.append([(point[0] + tx, point[1] + ty) for point in sub])
+    if not polys:
+        raise SystemExit("wordmark has no stroke paths")
+    return polys, float(width.group(1))
+
+
+def _segment_hits(
+    start: tuple[float, float],
+    end: tuple[float, float],
+    half: float,
+    x0: float,
+    y0: float,
+    x1: float,
+    y1: float,
+) -> bool:
+    """Square-capped stroke segment versus one quadrant. A shared edge counts as ink."""
+    ax, ay = start
+    bx, by = end
+    dx, dy = bx - ax, by - ay
+    length = math.hypot(dx, dy)
+    if length == 0.0:
+        return ax + half >= x0 and ax - half <= x1 and ay + half >= y0 and ay - half <= y1
+    ux, uy = dx / length, dy / length
+    px, py = -uy * half, ux * half
+    cax, cay = ax - ux * half, ay - uy * half
+    cbx, cby = bx + ux * half, by + uy * half
+    corners = (
+        (cax + px, cay + py),
+        (cax - px, cay - py),
+        (cbx - px, cby - py),
+        (cbx + px, cby + py),
+    )
+    rect = ((x0, y0), (x1, y0), (x1, y1), (x0, y1))
+    for axis_x, axis_y in ((1.0, 0.0), (0.0, 1.0), (ux, uy), (-uy, ux)):
+        projected = [point[0] * axis_x + point[1] * axis_y for point in corners]
+        other = [point[0] * axis_x + point[1] * axis_y for point in rect]
+        if max(projected) < min(other) or max(other) < min(projected):
+            return False
+    return True
+
+
+def _stroke_hits(
+    polys: list[list[tuple[float, float]]],
+    half: float,
+    x0: float,
+    y0: float,
+    x1: float,
+    y1: float,
+) -> bool:
+    for poly in polys:
+        for index in range(len(poly) - 1):
+            if _segment_hits(poly[index], poly[index + 1], half, x0, y0, x1, y1):
+                return True
+    return False
+
+
+def wordmark_span(
+    symbol_layers: list,
+    polys: list[list[tuple[float, float]]],
+    stroke: float,
+    transform: tuple[float, float, float, float],
+) -> tuple[int, int]:
+    """Symbol rows the lockup wordmark overlaps. Row 0 stays free for the version."""
+    _tx, ty, _sx, sy = transform
+    if sy == 0:
+        raise SystemExit("symbol scale is zero")
+    half = stroke / 2.0
+    ys = [point[1] for poly in polys for point in poly]
+    top = min(ys) - half
+    bottom = max(ys) + half
+    _left, ink_top, _right, ink_bottom = ink_box(symbol_layers)
+    rows = WIDE[0]
+    ink_h = ink_bottom - ink_top
+    ink_w = _right - _left
+    box_h = float(rows * 2)
+    scale = min(float(WIDE[1]) / ink_w, box_h / ink_h)
+    pad_y = (box_h - ink_h * scale) / 2.0
+
+    def py_of(lock_y: float) -> float:
+        user_y = (lock_y - ty) / sy
+        return pad_y + (user_y - ink_top) * scale
+
+    row0 = math.floor(py_of(top) / 2.0)
+    row1 = math.floor((py_of(bottom) - 1e-9) / 2.0)
+    if row1 < row0 or row0 < 0 or row1 >= rows:
+        raise SystemExit(f"wordmark rows {row0}-{row1} fall outside the wide mark")
+    if row0 == 0:
+        raise SystemExit("wordmark occupies row 0, which holds the version")
+    return row0, row1 - row0 + 1
+
+
+def raster_wordmark(
+    polys: list[list[tuple[float, float]]],
+    stroke: float,
+    rows: int,
+    cols: int,
+) -> tuple[tuple[str, str], ...]:
+    """Letterbox the stroked wordmark. A quadrant is armour when the stroke crosses it.
+
+    The symbol's majority rule would drop these strokes: they are thinner than a cell.
+    The mask stays blank so the core colour cannot paint the wordmark.
+    """
+    half = stroke / 2.0
+    xs = [point[0] for poly in polys for point in poly]
+    ys = [point[1] for poly in polys for point in poly]
+    left, top = min(xs) - half, min(ys) - half
+    right, bottom = max(xs) + half, max(ys) + half
+    ink_w = right - left
+    ink_h = bottom - top
+    if ink_w <= 0 or ink_h <= 0:
+        raise SystemExit("wordmark ink box is empty")
+    px_w = cols * 2
+    px_h = rows * 2
+    table = []
+    for row in range(rows):
+        glyphs = []
+        for col in range(cols):
+            bits = 0
+            for dy, dx, weight in ((0, 0, 0x1), (0, 1, 0x2), (1, 0, 0x4), (1, 1, 0x8)):
+                px = col * 2 + dx
+                py = row * 2 + dy
+                x0 = left + px / px_w * ink_w
+                x1 = left + (px + 1) / px_w * ink_w
+                y0 = top + py / px_h * ink_h
+                y1 = top + (py + 1) / px_h * ink_h
+                if _stroke_hits(polys, half, x0, y0, x1, y1):
+                    bits |= weight
+            glyphs.append(QUADS[bits])
+        text = "".join(glyphs)
+        table.append((text, " " * len(text)))
+    if not any(glyph != " " for glyphs, _mask in table for glyph in glyphs):
+        raise SystemExit("wordmark scan is blank")
+    return tuple(table)
+
+
+def scan_wordmark(
+    symbol_layers: list,
+    lockup_text: str,
+) -> tuple[tuple[tuple[str, str], ...], int]:
+    polys, stroke = load_wordmark(lockup_text)
+    row, height = wordmark_span(symbol_layers, polys, stroke, _symbol_group_transform(lockup_text))
+    half = stroke / 2.0
+    xs = [point[0] for poly in polys for point in poly]
+    ys = [point[1] for poly in polys for point in poly]
+    ink_w = (max(xs) + half) - (min(xs) - half)
+    ink_h = (max(ys) + half) - (min(ys) - half)
+    cols = max(1, round((ink_w / ink_h) * height * 2))
+    return raster_wordmark(polys, stroke, height, cols), row
+
+
+def render_text(wide: tuple, stack: tuple, wordmark: tuple, wordmark_row: int) -> str:
     lines = [
         START.rstrip("\n"),
         "# Scan of assets/brand/symbol-primary.svg. Regenerate: python3 scripts/ci/render_brand_mark.py",
@@ -255,6 +462,12 @@ def render_text(wide: tuple, stack: tuple) -> str:
     for glyphs, mask in stack:
         lines.append(f"    ({glyphs!r}, {mask!r}),")
     lines.append(")")
+    lines.append("# Wordmark scan of assets/brand/lockup-light.svg. Strokes are armour, not the core.")
+    lines.append("BRAND_WORDMARK_WIDE = (")
+    for glyphs, mask in wordmark:
+        lines.append(f"    ({glyphs!r}, {mask!r}),")
+    lines.append(")")
+    lines.append(f"BRAND_WORDMARK_ROW = {wordmark_row}")
     lines.append(END.rstrip("\n"))
     return "\n".join(lines) + "\n"
 
@@ -274,7 +487,15 @@ def splice(source: str, block: str) -> str:
 
 
 def build() -> tuple[str, tuple, tuple]:
-    layers = load_layers(SVG.read_text(encoding="utf-8"))
+    symbol_text = SVG.read_text(encoding="utf-8")
+    light = LOCKUP_LIGHT.read_text(encoding="utf-8")
+    dark = LOCKUP_DARK.read_text(encoding="utf-8")
+    for path in re.findall(r'\sd="([^"]+)"', symbol_text):
+        if path not in light or path not in dark:
+            raise SystemExit("lockup is missing a symbol path")
+    if _wordmark_paths(light) != _wordmark_paths(dark):
+        raise SystemExit("lockup wordmark paths differ")
+    layers = load_layers(symbol_text)
     assert_samples(layers)
     wide = raster(layers, *WIDE)
     stack = raster(layers, *STACK)
@@ -286,7 +507,8 @@ def build() -> tuple[str, tuple, tuple]:
             raise SystemExit(
                 f"mark {rows}x{cols} aspect {ratio:.3f} is more than 10% from the symbol {ink:.3f}"
             )
-    return render_text(wide, stack), wide, stack
+    wordmark, wordmark_row = scan_wordmark(layers, light)
+    return render_text(wide, stack, wordmark, wordmark_row), wide, stack
 
 
 def _png(width: int, height: int, rgb: bytes) -> bytes:

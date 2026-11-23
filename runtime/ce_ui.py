@@ -107,6 +107,12 @@ BRAND_MARK_STACK = (
     ('▜█▄  ▛█▙', '        '),
     (' ▝▀▀▀▌▀ ', '        '),
 )
+# Wordmark scan of assets/brand/lockup-light.svg. Strokes are armour, not the core.
+BRAND_WORDMARK_WIDE = (
+    ('▛▀▀▐▙▟▌ ▟▜▖▐▛▀▜▐██▛  ██▛▝█▄█▝▛▀▀▐▌▐█▟▌▐██', '                                         '),
+    ('▙▄▄▐▛▜▌▐▛▀█▐▙▄▟▗███  ██▙ ▌▜█▗▙██▐▌▐▛█▌▐██', '                                         '),
+)
+BRAND_WORDMARK_ROW = 3
 # <<< generated: brand_mark
 
 # Cybernetic Red #FF3B4D. Truecolor paints only the mark core with this RGB.
