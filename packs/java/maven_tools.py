@@ -647,8 +647,12 @@ def ensure_managed_maven(
                     "available to verify managed Maven; set JAVA_HOME to a JDK 25+ "
                     "home or install the managed Temurin JDK"
                 )
-            raise ValueError("existing managed Maven tree is invalid")
-        return mvn.resolve()
+            # The managed root is ours. A link or reparse point is left in place.
+            if is_link_or_reparse(root) or not root.is_dir():
+                raise ValueError("existing managed Maven tree is invalid")
+            shutil.rmtree(root)
+        else:
+            return mvn.resolve()
     _materialize_runtime(
         module,
         artifact,
