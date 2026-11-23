@@ -49,6 +49,24 @@ def test_glued_token_is_not_classified():
     assert "FAILED" in result
 
 
+def test_id_outside_skip_line_is_failed():
+    log = _SUMMARY + "\nBLOCKED G54extra\nRunning Test1\n"
+    result = _classify(log, 0)
+    assert "FAILED" in result
+
+
+def test_id_on_skip_phrase_is_classified():
+    result = _classify(_SUMMARY + "\ncom.example.Test1 skipped because flaky\n", 0)
+    assert result.startswith("CLASSIFIED")
+    assert "FAILED" not in result
+
+
+def test_bare_skip_ignores_id_on_another_line():
+    log = _SUMMARY + "\nskipped because flaky\nRunning Test1\n"
+    result = _classify(log, 0)
+    assert "FAILED" in result
+
+
 def test_missing_summary_is_failed():
     result = _classify("BLOCKED G54\n", 0)
     assert "FAILED" in result

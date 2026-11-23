@@ -90,6 +90,8 @@ _SUREFIRE_SUMMARY_RE = re.compile(
 )
 # Whole token: letters then digits, bounded by a non-alphanumeric. G54extra is not one.
 _SKIP_ID_RE = re.compile(r"(?<![A-Za-z0-9])[A-Za-z]+[0-9]+(?![A-Za-z0-9])")
+# After the Surefire summary is removed, ids count only on these lines.
+_SKIP_LINE_RE = re.compile(r"(?i)skipped|\bBLOCKED\b")
 _TEST_RUN_NEXT_LABELS = ("methods:", "hypothesis:", "command:")
 MISSING_NEXT = "(missing: rerun checkpoint with --next \"<exact next step>\")"
 STOP_NOW = "stop: push WIP, checkpoint --next, end turn"
@@ -871,8 +873,9 @@ def classify_surefire(log: str, exit_code: int, *, lost_device: bool = False) ->
     """One line: CLASSIFIED plus Surefire counts, or FAILED.
 
     Exit 0, device present, and every non-pass a classified skip (or no non-pass).
-    A skip is classified only by a whole-token id in the log. Fewer ids than skips,
-    a missing summary, failures, errors, a non-zero exit, or a lost device is FAILED.
+    A skip is classified only by a whole-token id on a skip message. Fewer ids
+    than skips, a missing summary, failures, errors, a non-zero exit, or a lost
+    device is FAILED.
     """
     text = log or ""
     found = list(_SUREFIRE_SUMMARY_RE.finditer(text))
@@ -881,7 +884,9 @@ def classify_surefire(log: str, exit_code: int, *, lost_device: bool = False) ->
     summary = found[-1]
     failures, errors, skipped = (int(summary.group(i)) for i in (2, 3, 4))
     counts = summary.group(0)
-    ids = len(_SKIP_ID_RE.findall(_SUREFIRE_SUMMARY_RE.sub(" ", text)))
+    body = _SUREFIRE_SUMMARY_RE.sub(" ", text)
+    skip_text = "\n".join(line for line in body.splitlines() if _SKIP_LINE_RE.search(line))
+    ids = len(_SKIP_ID_RE.findall(skip_text))
     if lost_device or exit_code != 0 or failures > 0 or errors > 0 or ids < skipped:
         return f"FAILED {counts}"
     return f"CLASSIFIED {counts}"
