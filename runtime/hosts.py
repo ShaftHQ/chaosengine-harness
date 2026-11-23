@@ -1546,6 +1546,8 @@ def _create_missing_external_sqlite(palace: Path) -> None:
         return
     try:
         _write_empty_exact_sqlite(database)
+    except FileExistsError:
+        return  # O_EXCL lost; another process owns sqlite_exact and its sidecars.
     except (OSError, sqlite3.Error, ValueError):
         _drop_created_exact_sqlite(database)
         return
@@ -6369,6 +6371,9 @@ def gitignore_content(before: bytes | None) -> bytes:
         "!.agents/skills/chaos-engine/\n!.agents/skills/chaos-engine/**\n"
         "!.claude/\n!.claude/**\n.claude/settings.local.json\n!.codex/\n!.codex/**\n"
         "!.grok/\n!.grok/hooks/\n!.grok/hooks/*.json\n"
+        ".grok/rules/session-scratch.md\n"
+        ".claude/**/__pycache__/\n"
+        ".codex/**/__pycache__/\n"
         ".grok/rules/*.md\n"
         "/secrets.properties\n"
         "src/main/resources/properties/secrets.properties\n"
