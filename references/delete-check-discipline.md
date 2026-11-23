@@ -32,7 +32,9 @@ Hookless bots load this via [bot entry](bot-entry.md) and the
 Lesson: backup dir = push (a local backup is not safe until remote-backed).
 
 Cleanup that used a bare `rm -rf` in a worktree with no CE overlay bypassed the
-guard entirely. Doctor + delete-check in the **same** tree is the only safe
+guard entirely. `rm -rf` is the POSIX example of a delete. The OS-neutral rule
+on every host is `tool.py delete-check` before the delete (`Remove-Item -Recurse -Force`
+on Windows is the same check). Doctor + delete-check in the **same** tree is the only safe
 path.
 
 ## Check

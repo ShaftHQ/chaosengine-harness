@@ -95,19 +95,4 @@ This prune is part of the skill, not a second skill.
 
 ## Worked example (github/spec-kit)
 
-Pin: `https://github.com/github/spec-kit` @ `2ee2b1e8005905db05f5717300a469b3068b908f` (release v1.4.0; MIT).
-
-Local inventory first: a work-item skill already requires the same Spec Kit *headings*; an identity/principles file already plays the constitution role; plan-before-edit and a pre-done review already exist; a shallow earlier study note already said "do not vendor." Those are **already-have** or prior **reject** rows, not a reason to skip a deeper pass.
-
-Sample mapping after a deep read:
-
-- Ticket headings (FR, SC, stories): **already-have**.
-- specify, plan, tasks, implement order: **already-have**.
-- Converge (inventory FR/SC against the current codebase; checkboxes are not evidence): **improve-existing** (extend the pre-done review, no new tree).
-- Cross-artifact analyze (duplication, coverage gaps, inconsistency): **improve-existing**, read-only.
-- Bounded clarify with answers written back into the work item: **improve-existing**.
-- Constitution Check table on the plan, citing the live principles file: **improve-existing**; reject a second constitution document.
-- `specify` CLI, `.specify/`, MCP server, host-integration pack, workflow engine, copied long command prompts: **reject**.
-- A reusable learn-from-external-harnesses procedure: **new**, only if §6 gates pass.
-
-The deliverable of that pass is the tracked adoption issue, not a vendored clone.
+Pin: `https://github.com/github/spec-kit` @ `2ee2b1e8005905db05f5717300a469b3068b908f` (v1.4.0, MIT). Inventory local owners first. Headings, specify/plan/tasks/implement, and constitution-shaped principles are **already-have**. Converge, cross-artifact analyze, bounded clarify, and a constitution check that cites the live principles file are **improve-existing**. `specify` CLI, `.specify/`, an MCP server, a host pack, a workflow engine, and copied prompts are **reject**. A new skill is **new** only when §6 passes. Deliver the tracked adoption issue, not a vendored clone.

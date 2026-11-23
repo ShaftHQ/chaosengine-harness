@@ -30,8 +30,10 @@ A first-ever run is step/curate, never auto-delete. See
 
 ## Portable /learn (every host)
 
+`<python>` is `py -3` on Windows and `python3` on Linux/macOS. Commands below spell `python3`; substitute `py -3` on Windows.
+
 Installed path only (`.chaos-engine`). Never treat source `chaos-engine/` as the
-runtime install.
+runtime install. Write targets are git-tracked overlay paths, never a user-home skill directory. `~/.grok/skills` is one host example, beside `~/.claude/skills`, `~/.codex/skills`, and `~/.agents/skills`.
 
 Runner modules: [`learn_traces.py`](../runtime/learn_traces.py) (CLI + collect) and
 [`learn_traces_mrv.py`](../runtime/learn_traces_mrv.py) (map-reduce-verify file contract).
@@ -83,4 +85,4 @@ policy lives here + the runner under `.chaos-engine`.
 | Gemini | Same CLI when session trees exist. |
 
 Do not copy a host TUI workflow into this tree. Do not write learned skills under
-`~/.grok/skills`. Do not require `~/.grok/bundled/skills/learn`.
+`~/.grok/skills` or any other user-home skill directory (`~/.claude/skills`, `~/.codex/skills`, `~/.agents/skills`). Do not require `~/.grok/bundled/skills/learn`.

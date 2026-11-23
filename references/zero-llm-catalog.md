@@ -7,6 +7,8 @@ description: Use when install, doctor, or repair can run as a script before any 
 Deterministic ChaosEngine paths that never require an LLM. Prefer these before
 opening a host chat. Companion guidance: [script-first](script-first.md).
 
+`<python>` is `py -3` on Windows and `python3` on Linux/macOS. Rows below spell `python3`; substitute `py -3` on Windows.
+
 | Path | Command / entry | Proves / repairs |
 | --- | --- | --- |
 | Install / upgrade | One-liners in INSTALL.md (repo-only `chaos-engine/INSTALL.md`) | Fresh or upgraded payload + healthy doctor |
@@ -60,15 +62,12 @@ opening a host chat. Companion guidance: [script-first](script-first.md).
 | Meta-optimize review | [`meta_optimize.py`](../runtime/meta_optimize.py) `review`/`cadence` | Periodic aggregation of significance + learning metrics + compress proposals; not continuous |
 | Draft skill PR gate | [`draft_skill_pr.py`](../runtime/draft_skill_pr.py) `status`/`prepare`/`open` | Opt-in draft PRs only; default OFF; never auto-merge |
 | Learn-traces collect | [`learn_traces.py`](../runtime/learn_traces.py) `collect --out <dir>` | Portable session-trace run dir |
-| Learn-traces portable /learn | [`learn_traces.py`](../runtime/learn_traces.py) + [`learn_traces_mrv.py`](../runtime/learn_traces_mrv.py) `learn --out <dir>` | Map-reduce-verify file contract → `report.md` + git-tracked `actions.json`; never `~/.grok/skills` |
+| Learn-traces portable /learn | [`learn_traces.py`](../runtime/learn_traces.py) + [`learn_traces_mrv.py`](../runtime/learn_traces_mrv.py) `learn --out <dir>` | Map-reduce-verify file contract → `report.md` + git-tracked `actions.json`; never a user-home skill directory (`~/.grok/skills`, `~/.claude/skills`, `~/.codex/skills`, `~/.agents/skills`) |
 | Deep-research scaffold | [`deep_research.py`](../runtime/deep_research.py) `init --query … --out <dir>` | Portable research run dir; phases are host agents |
 
 ## Notes
 
-`--fix-next-only` lets scripts scrape repair actions without parsing the
-full human doctor essay or invoking a model. The eval runner exercises
-fixture tasks under simulated hook runners; failures ratchet into hooks/skills
-per [eval-parity-fixtures](eval-parity-fixtures.md).
+`--fix-next-only` prints repair lines only. The eval runner exercises fixture tasks under simulated hook runners; failures ratchet into hooks, skills, or the matrix ([eval-parity-fixtures](eval-parity-fixtures.md)).
 
 
 ## CLI-over-MCP iron law

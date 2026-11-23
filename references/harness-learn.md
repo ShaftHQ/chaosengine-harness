@@ -1,14 +1,16 @@
 ---
 name: harness-learn
-description: Use when repeated session traces show the git-tracked overlay should change; tune the harness in the repo, never under `~/.grok/skills`.
+description: Use when repeated session traces show the git-tracked overlay should change; tune the harness in the repo, never under a user-home skill directory (`~/.grok/skills` is one host example).
 ---
 
 # Harness learn
 
 Portable contract for tuning a git-tracked ChaosEngine overlay from repeated
 session traces. Host-native collectors, TUI workflows, and `GROK_HOME` scripts
-stay on that host. Do not install duplicates under `~/.grok/skills`. Do not
+stay on that host. Do not install duplicates under `~/.grok/skills`. The same ban covers every user-home skill directory (`~/.claude/skills`, `~/.codex/skills`, `~/.agents/skills`, and the equivalent on any other host). Do not
 edit bundled or plugin skills in place.
+
+`<python>` is `py -3` on Windows and `python3` on Linux/macOS. Commands below spell `python3`; substitute `py -3` on Windows.
 
 ## Use when
 
@@ -38,5 +40,5 @@ Portable invocation (installed `.chaos-engine` only):
 `python3 .chaos-engine/runtime/learn_traces.py learn --out <run-dir>`
 
 That writes `report.md` + `actions.json` aimed at git-tracked overlay PRs, not
-`~/.grok/skills`. Host slash `/learn` adapters are thin pointers to the same
+a user-home skill directory. `~/.grok/skills` is one host example, beside `~/.claude/skills`, `~/.codex/skills`, and `~/.agents/skills`. Host slash `/learn` adapters are thin pointers to the same
 command; they must not vendor a TUI workflow into the overlay.

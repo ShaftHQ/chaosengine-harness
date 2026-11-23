@@ -59,6 +59,20 @@ Legend: P = parity (outcome available), A = adapter-shaped equivalent, G = gap (
 | Work-item to merge playbook | P | P | P | P | P | P | P | P | P |
 | Learning Session | P | P | P | P | P | P | P | P | P |
 
+## Universal / Any AI Client
+
+The nine named hosts are not the whole set. Any other AI client uses the same outcomes through a capability tier, not a vendor column. Examples: Windsurf, Cline, Roo Code, Aider, Zed, JetBrains Junie, Kiro, Amazon Q, Continue, OpenHands, a generic CLI or chat agent, and future clients.
+
+| Tier | Capability | Do |
+| --- | --- | --- |
+| Tier 1 (Native hooks + shell) | Lifecycle hooks and a shell | Wire host hooks to `.chaos-engine/hooks/kernel.py`. Run `tool.py` directly. |
+| Tier 2 (Instruction discovery + shell, no native hooks) | Loads project instructions and can run a shell; no hook runtime | Load `AGENTS.md`, then `.chaos-engine/skills/chaos-engine/SKILL.md`. Self-enforce `tool.py entry`, `tool.py retrieve`, `tool.py delete-check`, `tool.py pre-done`, `tool.py dod`. |
+| Tier 3 (Prompt/chat-only, no shell) | Prompt or chat only | Read `.chaos-engine/skills/chaos-engine/SKILL.md`, `identity.md`, and `companions/*.md`. Emit structured patches and a manual verification checklist. |
+
+| Surface | Universal / Any AI Client |
+| --- | --- |
+| Lifecycle hooks and `tool.py` | Tier 1: wire `hooks/kernel.py` and run the CLI. Tier 2: self-enforce the five `tool.py` commands above. Tier 3: read the skill, identity, and companions; emit patches plus a manual checklist. |
+
 ## Measured gaps (severity)
 
 | ID | Host(s) | Severity | Gap | Evidence / next |

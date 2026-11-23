@@ -136,13 +136,5 @@ this skill when the adopter names OpenCode or “local agents”.
 ## Related
 
 - Guide: local-agency.md (repo-only `chaos-engine/guides/local-agency.md`)
-- FreeToken: [freetoken](../local-runtimes/references/freetoken.md)
-- Local OpenAI-compat: [local-openai-compat](../local-runtimes/references/local-openai-compat.md)
-- OmniRoute (explicit cloud only): [omniroute](../local-runtimes/references/omniroute.md)
-- Identity push-back: [identity-push-back.md](../../references/identity-push-back.md)
-- Coach loop: [coach-loop.md](references/coach-loop.md)
-- When to use local: [when-to-use-local.md](references/when-to-use-local.md)
-- Design-turn contract: [design-turn-contract.md](references/design-turn-contract.md)
-- Design-turn gate: [`design_turn_gate.py`](scripts/design_turn_gate.py)
-- Parent ROG Shell playbook: [parent-rog-shell.md](references/parent-rog-shell.md)
-- Parent ROG Shell assert smoke: [test_assert_parent_rog_shell.py](scripts/tests/test_assert_parent_rog_shell.py)
+- [freetoken](../local-runtimes/references/freetoken.md), [omniroute](../local-runtimes/references/omniroute.md), [identity-push-back.md](../../references/identity-push-back.md)
+- Parent ROG Shell playbook: [parent-rog-shell.md](references/parent-rog-shell.md). Assert smoke: [test_assert_parent_rog_shell.py](scripts/tests/test_assert_parent_rog_shell.py)

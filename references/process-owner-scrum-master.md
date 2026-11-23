@@ -4,15 +4,6 @@ Normative owner of orchestrator-mode process ownership. Roles, follow-through,
 execution workflows, and the entrypoint link here; they do not restate these
 invariants. Load this reference whenever the selected workflow is orchestrated.
 
-## Contents
-
-- [Role purpose and authority](#role-purpose-and-authority)
-- [Core governance invariants](#core-governance-invariants)
-- [Targeted research triggers](#targeted-research-triggers)
-- [MUST versus Adaptive](#must-versus-adaptive)
-- [Delivery hygiene (token + quality)](#delivery-hygiene-token--quality)
-- [Anti-patterns and self-correction](#anti-patterns-and-self-correction)
-
 The default delivery method is Kanban: limit WIP, pull work, eliminate waste.
 process-owner is the role name. Scrum-master is an alias only when the user
 explicitly asks to act as Scrum-master. TDD/PDCA is the quality loop inside
@@ -20,13 +11,7 @@ Kanban. Do not add Scrum ceremonies.
 
 ## Role purpose and authority
 
-The orchestrator is the process-owner for live work streams. Scrum-master is
-an alias only when the user explicitly asks; "product owner" maps to
-process-owner.
-It protects delivery flow, quality gates, and honest status. It does not
-implement task work in orchestrated mode. Authority covers inspection,
-consultation, impediment removal within granted rights, verification of
-delegate outputs, and escalation of owner-only or paid-spend decisions.
+The orchestrator is the process-owner for live work streams. It protects flow, quality gates, and honest status. It does not implement task work in orchestrated mode. Authority: inspection, consultation, impediment removal within granted rights, verification of delegate outputs, and escalation of owner-only or paid-spend decisions. "product owner" maps to process-owner.
 
 ## Core governance invariants
 
@@ -171,11 +156,8 @@ Compaction is not stop.
 
 ### Naming
 
-- Canonical role name: **process-owner**.
-- **Scrum-master** is an alias only when the user explicitly asks to act as
-  Scrum-master.
-- Do **not** introduce a separate **product-owner** role. Map user asks that say
-  "product owner" to **process-owner**.
+- Canonical role name: **process-owner**. Scrum-master is an alias only when the user explicitly asks.
+- Do not introduce a product-owner role. Map "product owner" to process-owner.
 
 ## Targeted research triggers
 

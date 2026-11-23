@@ -79,8 +79,9 @@ loses only the step in flight:
 
 - Python: `with atomic_output(path) as part: part.write_bytes(data)`, using
   `atomic_output` from [`jobs.py`](../runtime/jobs.py).
-- Shell: `cmd > out.mp4.part && mv out.mp4.part out.mp4` (for ffmpeg, add
-  `-f mp4` because the `.part` name hides the format).
+- Shell (two lines; do not join with `&&` — PowerShell 5.1 rejects it). Run the rename only after the write succeeds. For ffmpeg, add `-f mp4` because the `.part` name hides the format.
+  `cmd > out.mp4.part`
+  `mv out.mp4.part out.mp4`
 
 The job command must be incremental: on restart it skips steps whose output
 or checkpoint exists. Resume never redoes finished work by itself.
@@ -92,11 +93,13 @@ command per job, from the directory that started it (`$PROJECT` below), and
 never launches the pipeline directly:
 
 ```bash
-cd "$PROJECT" && python3 .chaos-engine/tool.py job resume render
+cd "$PROJECT"
+python3 .chaos-engine/tool.py job resume render
 ```
 
-- Cron, every 10 minutes:
-  `*/10 * * * * cd "$PROJECT" && python3 .chaos-engine/tool.py job resume render >> .chaos-engine-state/jobs/watchdog.log 2>&1`
+- Cron, every 10 minutes (`*/10 * * * *`), same two commands, log appended. Do not join them with `&&`.
+  `cd "$PROJECT"`
+  `python3 .chaos-engine/tool.py job resume render >> .chaos-engine-state/jobs/watchdog.log 2>&1`
 - Agent routine: run `tool.py job status render --json`. Report only on a
   change to `done`, `failed`, `stalled` or `stopped`, or on a "needs a human" line from
   `resume`. Otherwise run `tool.py job resume render` and stay silent. Never

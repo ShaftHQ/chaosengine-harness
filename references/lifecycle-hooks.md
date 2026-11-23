@@ -30,6 +30,16 @@ Cursor, OpenCode, and Antigravity register the documented events through
 `runtime/hook_surfaces.py`. They are hook hosts. Grok Bot stays
 instruction-only. Skill bodies stay one source under `.chaos-engine/skills/`.
 
+## Universal / Any AI Client
+
+Any AI client beyond the nine named hosts (Windsurf, Cline, Roo Code, Aider, Zed, JetBrains Junie, Kiro, Amazon Q, Continue, OpenHands, a generic CLI or chat agent, or a future client) picks a capability tier. Tiers are not vendor names. See [Host Parity Matrix](host-parity-matrix.md).
+
+| Tier | Capability | Do |
+| --- | --- | --- |
+| Tier 1 (Native hooks + shell) | Lifecycle hooks and a shell | Wire host hooks to `.chaos-engine/hooks/kernel.py`. Run `tool.py` directly. |
+| Tier 2 (Instruction discovery + shell, no native hooks) | Instruction discovery and a shell; no hook runtime | Load `AGENTS.md`, then `.chaos-engine/skills/chaos-engine/SKILL.md`. Self-enforce `tool.py entry`, `tool.py retrieve`, `tool.py delete-check`, `tool.py pre-done`, `tool.py dod`. |
+| Tier 3 (Prompt/chat-only, no shell) | Prompt or chat only | Read `.chaos-engine/skills/chaos-engine/SKILL.md`, `identity.md`, and `companions/*.md`. Emit structured patches and a manual verification checklist. |
+
 ## Required events
 
 Every installed host that can run project hooks must register the same
