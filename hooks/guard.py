@@ -2007,7 +2007,9 @@ def _is_project_tool_py(script: str, cwd: Path) -> bool:
 def _is_verified_project_install_sh(script: str, cwd: Path) -> bool:
     """True for this tree's install.sh whose only delete is the bootstrap work dir.
 
-    A non-comment shell pipe, ``git clean``, or ``find`` ``-delete``/``-exec``/``-execdir`` is not that script.
+    A non-comment pipe into a shell (optional path prefix or ``.exe``), ``git clean``
+    with global options before ``clean``, or ``find`` ``-delete``/``-exec``/``-execdir``
+    is not that script.
     """
     raw = Path(script)
     if not raw.is_absolute():
@@ -2052,8 +2054,8 @@ def _is_verified_project_install_sh(script: str, cwd: Path) -> bool:
         if re.search(r"\b(?:rm|unlink|shred|rmtree)\b", stripped) and stripped != 'rm -rf "$work"':
             return False
         if re.search(
-            r"\|\s*(?:bash|sh|zsh|dash|pwsh|powershell)\b"
-            r"|\bgit\s+clean\b"
+            r"\|\s*(?:\S*[/\\])?(?:powershell|pwsh|bash|zsh|dash|sh)(?:\.exe)?\b"
+            r"|\bgit\b(?:\s+\S+)*\s+clean\b"
             r"|\bfind\b.*(?:-delete|-execdir|-exec)\b",
             stripped,
         ):
