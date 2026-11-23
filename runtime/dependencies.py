@@ -801,6 +801,29 @@ def dangling_ce_uv_tool_shims(
     return found
 
 
+def _python_series_at_least(version: str, major: int, minor: int) -> bool:
+    match = re.match(r"v?(\d+)\.(\d+)", version.strip())
+    if match is None:
+        return False
+    return (int(match.group(1)), int(match.group(2))) >= (major, minor)
+
+
+def _mempalace_interpreter_pin(version: str, host: tuple[str, str]) -> str:
+    """MemPalace on macOS x86_64 stays on CPython 3.13 when the pin is 3.14+.
+
+    onnxruntime, which chromadb imports, publishes no cp314 wheel for that
+    pair. No network call and no wheel probe: the platform pair is the decision.
+    """
+    system, machine = host[0], host[1]
+    if system.casefold() != "darwin":
+        return version
+    if machine.casefold() not in {"x86_64", "i386"}:
+        return version
+    if not _python_series_at_least(version, 3, 14):
+        return version
+    return "3.13"
+
+
 def account_tool_plan(
     project: Path,
     specification: dict[str, object],
@@ -808,10 +831,16 @@ def account_tool_plan(
     actions: dict[str, str],
     executables: dict[str, str],
     resolved_versions: dict[str, str | None] | None = None,
+    platform_pair: tuple[str, str] | None = None,
 ) -> dict[str, list[list[str]]]:
     """Render user-scope tool commands; project initialization is a separate phase."""
     del project
     validate_runtime_specification(specification)
+    host_platform = (
+        platform_pair
+        if platform_pair is not None
+        else (sys.platform, platform.machine())
+    )
     uv = executables["uv"]
     npm = executables["npm"]
 
@@ -837,7 +866,11 @@ def account_tool_plan(
                     raise ValueError("account tool install requires the resolved Python version")
                 # Pin the interpreter. An unpinned install follows the newest CPython ABI,
                 # and chromadb/onnxruntime have no wheel for that ABI (#6780).
-                python_pin = ["--python", python_version]
+                # macOS x86_64 has no cp314 onnxruntime wheel, so MemPalace uses 3.13 (#196).
+                pinned = python_version.strip()
+                if name == "mempalace":
+                    pinned = _mempalace_interpreter_pin(pinned, host_platform)
+                python_pin = ["--python", pinned]
             return [[
                 uv, "tool", "install", *force, *python_pin, *options,
                 resolved_package(name, package, "=="),
@@ -1437,6 +1470,71 @@ def _stamp_unusable_probe(
         record["executable"] = path
 
 
+def _under_account_node_root(executable: Path) -> bool:
+    resolved = executable.resolve()
+    for root in account_runtime_roots("node"):
+        try:
+            if resolved.is_relative_to(root.resolve()):
+                return True
+        except (OSError, ValueError):
+            continue
+    return False
+
+
+def _managed_node_launcher_pair(node_executable: str) -> tuple[Path, Path] | None:
+    """npm and npx beside a Node that lives under the account Node root."""
+    node_path = Path(node_executable)
+    if not _under_account_node_root(node_path):
+        return None
+    npm_name, npx_name = ("npm.cmd", "npx.cmd") if os.name == "nt" else ("npm", "npx")
+    parent = node_path.parent
+    return parent / npm_name, parent / npx_name
+
+
+def _bind_managed_node_siblings(
+    commands: dict[str, str], components: dict[str, dict[str, object]]
+) -> None:
+    """Record the managed Node's npm and npx. A missing sibling fails closed."""
+    node = commands.get("node")
+    if not isinstance(node, str) or not node:
+        return
+    pair = _managed_node_launcher_pair(node)
+    if pair is None:
+        return
+    npm, npx = pair
+    if not npm.is_file() or not npx.is_file():
+        raise ValueError("installed Node account runtime is incomplete")
+    commands["npm"] = str(npm.resolve())
+    commands["npx"] = str(npx.resolve())
+    node_record = components.get("node")
+    if not isinstance(node_record, dict):
+        return
+    siblings = node_record.get("siblings")
+    if not isinstance(siblings, dict):
+        siblings = {}
+        node_record["siblings"] = siblings
+    siblings["node"] = commands["node"]
+    siblings["npm"] = commands["npm"]
+    siblings["npx"] = commands["npx"]
+
+
+def _published_command_versions(
+    components: dict[str, dict[str, object]],
+) -> dict[str, str]:
+    versions: dict[str, str] = {}
+    for component_name, component in components.items():
+        version = component.get("version")
+        if not isinstance(version, str) or not version:
+            continue
+        versions[component_name] = version
+        siblings = component.get("siblings")
+        if isinstance(siblings, dict):
+            for command_name in siblings:
+                if isinstance(command_name, str):
+                    versions[command_name] = version
+    return versions
+
+
 def discover_account_commands(
     specification: dict[str, object], *, preferred_commands: dict[str, str] | None = None,
     which=shutil.which, runner=subprocess.run
@@ -1513,18 +1611,8 @@ def discover_account_commands(
             "executable": sibling_paths[primary],
             "siblings": sibling_paths,
         }
-    versions: dict[str, str] = {}
-    for component_name, component in components.items():
-        version = component.get("version")
-        if not isinstance(version, str) or not version:
-            continue
-        versions[component_name] = version
-        siblings = component.get("siblings")
-        if isinstance(siblings, dict):
-            for command_name in siblings:
-                if isinstance(command_name, str):
-                    versions[command_name] = version
-    publish_user_tool_paths(commands, versions)
+    _bind_managed_node_siblings(commands, components)
+    publish_user_tool_paths(commands, _published_command_versions(components))
     return components, commands
 
 
@@ -3160,6 +3248,9 @@ def _reprobe_managed_account_runtimes(
             npm=str(managed_npm.resolve()),
             npx=str(managed_npx.resolve()),
         )
+        # Discovery already published the PATH pair. Rewrite the receipt with
+        # the managed siblings before a later step can fail closed.
+        publish_user_tool_paths(commands, _published_command_versions(local))
     missing = [
         name for name in ("uv", "python", "node", "java")
         if local.get(name, {}).get("healthy") is not True
