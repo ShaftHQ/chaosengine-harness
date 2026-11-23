@@ -1589,7 +1589,7 @@ def missing_hosts_receipt_recovery_status(project: Path) -> dict[str, object]:
                     "`.chaos-engine/` is present but `.chaos-engine-hosts.json` is "
                     "missing (kept core after a provision failure); rerun the "
                     "ChaosEngine install one-liner or "
-                    "`python3 .chaos-engine/install.py repair --project . --component hosts` "
+                    f"`{_doctor_python_cli()} .chaos-engine/install.py repair --project . --component hosts` "
                     "to bind hosts from the current core"
                 ),
             }
@@ -1824,7 +1824,7 @@ def wiped_runtime_recovery_status(project: Path) -> dict[str, object]:
                 "detail": (
                     "`.chaos-engine-dependencies.json` is missing; rerun the "
                     "ChaosEngine install one-liner (or "
-                    "`python3 .chaos-engine/install.py install` from a source "
+                    f"`{_doctor_python_cli()} .chaos-engine/install.py install` from a source "
                     "checkout) to restore the dependency receipt and runtime"
                 ),
             },
@@ -1861,7 +1861,7 @@ def upgrade_host_receipt_drift_status(project: Path) -> dict[str, object]:
                     "host receipt/anchors drifted from the installed core while "
                     "`.chaos-engine/` and `.chaos-engine-dependencies.json` remain; "
                     "rerun the ChaosEngine install one-liner or "
-                    "`python3 .chaos-engine/install.py repair --project . --component hosts` "
+                    f"`{_doctor_python_cli()} .chaos-engine/install.py repair --project . --component hosts` "
                     "to quarantine the stale receipt and rebind hosts (foreign MCP kept)"
                 ),
             }
@@ -4727,6 +4727,9 @@ def wire_receipt_shims(project: Path, *, which=None) -> dict[str, str]:
         else:
             module.install(project, host)
             result[host] = "wired"
+    # Shim writers use Path.write_text. On Windows that expands newlines, and a
+    # path rewrite after the receipt is sealed is host adapter drift (#192).
+    _restore_receipt_owned_shim_files(project)
     return result
 
 
@@ -4788,6 +4791,7 @@ def wire_selected_receipt_shims(project: Path, targets: tuple[str, ...]) -> dict
         else:
             module.install(project, host)
             result[host] = "wired"
+    _restore_receipt_owned_shim_files(project)
     return result
 
 
@@ -4815,7 +4819,12 @@ def _restore_receipt_owned_shim_files(project: Path) -> None:
         return
     if not isinstance(managed, (tuple, list, set, frozenset)):
         return
-    owned = [item for item in RECEIPT_SHIM_TARGETS.values() if item in managed]
+    tracked = _consumer_tracked_shim_targets(project)
+    owned = [
+        item
+        for item in RECEIPT_SHIM_TARGETS.values()
+        if item in managed and item not in tracked
+    ]
     if not owned:
         return
     try:
@@ -5529,7 +5538,7 @@ def apply_plugin_client_health(
             if "detail" not in components["plugins"]:
                 components["plugins"]["detail"] = (
                     "Detected client marketplace/plugin activation is unhealthy. "
-                    "Run `python3 .chaos-engine/install.py repair --project . "
+                    f"Run `{_doctor_python_cli()} .chaos-engine/install.py repair --project . "
                     "--component plugins`, restart the client, then rerun doctor."
                 )
 
@@ -6802,8 +6811,8 @@ def apply_companion_and_identity_doctor(result: dict, project: Path) -> None:
             }
             continue
         # Heal failed — agentic handoff with official install command, not bare doctor choreography.
-        doctor = "python3 .chaos-engine/install.py doctor --project ."
-        repair = "python3 .chaos-engine/install.py repair --project . --component plugins"
+        doctor = f"{_doctor_python_cli()} .chaos-engine/install.py doctor --project ."
+        repair = f"{_doctor_python_cli()} .chaos-engine/install.py repair --project . --component plugins"
         # Portable tree must not embed origin repo URLs (forbiddenTokens).
         oneliner = "the ChaosEngine install one-liner from INSTALL.md"
         handoff_dir = project / ".chaos-engine-state"
@@ -8006,7 +8015,7 @@ def _require_overlay_tool(result: dict, project: Path) -> None:
     components[".chaos-engine/tool.py"] = {
         "status": "recovery-required",
         "detail": ".chaos-engine/tool.py missing",
-        "fixNext": "python3 .chaos-engine/install.py repair --project .",
+        "fixNext": f"{_doctor_python_cli()} .chaos-engine/install.py repair --project .",
     }
 
 
@@ -9134,7 +9143,7 @@ def _mempalace_sqlite_missing_finding(project: Path) -> dict[str, object] | None
     return {
         "status": "invalid",
         "detail": "MemPalace palace is missing sqlite_exact.sqlite3 (L84)",
-        "fixNext": "python3 .chaos-engine/install.py repair --project . --component mempalace",
+        "fixNext": f"{_doctor_python_cli()} .chaos-engine/install.py repair --project . --component mempalace",
     }
 
 
@@ -9157,7 +9166,7 @@ def _mempalace_empty_previous_finding(project: Path) -> dict[str, object] | None
     return {
         "status": "degraded",
         "detail": "Empty mempalace.previous-* left behind: " + ", ".join(empties),
-        "fixNext": "python3 .chaos-engine/install.py repair --project . --component mempalace",
+        "fixNext": f"{_doctor_python_cli()} .chaos-engine/install.py repair --project . --component mempalace",
     }
 
 
@@ -9269,7 +9278,7 @@ def _ce_version_after_upgrade_finding(
         "installedVersion": left,
         "intendedVersion": right,
         "taskImpact": "required",
-        "fixNext": "python3 .chaos-engine/install.py repair --project .",
+        "fixNext": f"{_doctor_python_cli()} .chaos-engine/install.py repair --project .",
     }
 
 
@@ -9293,7 +9302,7 @@ def _mempalace_empty_finding(
     return {
         "status": "degraded",
         "detail": "MemPalace palace has zero drawers; retrieval returns nothing",
-        "fixNext": "python3 .chaos-engine/install.py repair --project . --component mempalace",
+        "fixNext": f"{_doctor_python_cli()} .chaos-engine/install.py repair --project . --component mempalace",
     }
 
 
