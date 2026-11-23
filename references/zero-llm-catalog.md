@@ -10,6 +10,7 @@ opening a host chat. Companion guidance: [script-first](script-first.md).
 | Path | Command / entry | Proves / repairs |
 | --- | --- | --- |
 | Install / upgrade | One-liners in INSTALL.md (repo-only `chaos-engine/INSTALL.md`) | Fresh or upgraded payload + healthy doctor |
+| In-place upgrade | `python3 .chaos-engine/tool.py upgrade [--branch main] [--yes] [--allow-dirty]` | Canonical guard-safe in-place upgrade; does not pipe a remote shell |
 | Human doctor | `python3 .chaos-engine/install.py doctor --project .` | Component health + fix-next lines |
 | Fix-next only | `python3 .chaos-engine/install.py doctor --project . --fix-next-only` | Prints only actionable repair lines (exit 0 if none) |
 | Component repair | `python3 .chaos-engine/install.py repair --project . --component <id>` | Targeted quarantine/republish without full wipe |

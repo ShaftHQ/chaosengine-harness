@@ -23,7 +23,10 @@ points here; do not require plugin activation to heal.
    `status --digest` carries the same row as doctor.
 4. Official install one-liner from `chaos-engine/INSTALL.md` (repo-only) for missing
    core, wiped runtime, or multi-component drift
-5. Installer rewrite contract:
+5. Canonical guard-safe in-place upgrade (does not inline `install.sh`, so the
+   delete guard does not treat its bootstrap `rm` as an unknown target):
+   `python3 .chaos-engine/tool.py upgrade [--branch main] [--yes] [--allow-dirty]`
+6. Installer rewrite contract:
    [`installer-program.md`](installer-program.md) (deterministic merge,
    success-with-agent-prompt, agentic one-liner) and
    [`installer-program-executable-spec.md`](installer-program-executable-spec.md)

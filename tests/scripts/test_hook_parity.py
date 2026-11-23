@@ -333,6 +333,180 @@ class HookParityTests(unittest.TestCase):
             self.assertIn("invalid JSON", missing_launch.stdout)
             self.assertNotIn("allowed", missing_launch.stdout)
 
+    def test_multi_source_hook_documents_and_user_layer_deferral_trace(self):
+        # 1. Verify every generated project hook document registers at most one
+        # ChaosEngine launch.py entry per lifecycle event (#106, #108).
+        cursor_doc = self.surfaces.cursor_hooks_document()
+        for event, entries in cursor_doc["hooks"].items():
+            launch_entries = [
+                e for e in entries if isinstance(e, dict) and "hooks/launch.py" in str(e.get("command", ""))
+            ]
+            self.assertEqual(1, len(launch_entries), f"cursor {event}: {entries}")
+
+        agy_doc = self.surfaces.antigravity_hooks_document()
+        agy_spec = agy_doc["chaos-engine"]
+        for event, entries in agy_spec.items():
+            if event in self.surfaces.ANTIGRAVITY_MATCHER_EVENTS:
+                commands = [
+                    h.get("command", "")
+                    for group in entries
+                    if isinstance(group, dict)
+                    for h in group.get("hooks", [])
+                    if isinstance(h, dict)
+                ]
+            else:
+                commands = [h.get("command", "") for h in entries if isinstance(h, dict)]
+            launch_cmds = [c for c in commands if "hooks/launch.py" in str(c)]
+            self.assertEqual(1, len(launch_cmds), f"antigravity {event}: {entries}")
+
+        for host_name in ("claude", "grok"):
+            doc = json.loads(self.hosts.lifecycle_hooks_document(host_name).decode("utf-8"))
+            for event, groups in doc["hooks"].items():
+                commands = [
+                    h.get("command", "")
+                    for group in groups
+                    if isinstance(group, dict)
+                    for h in group.get("hooks", [])
+                    if isinstance(h, dict)
+                ]
+                launch_cmds = [c for c in commands if "hooks/launch.py" in str(c)]
+                self.assertEqual(1, len(launch_cmds), f"{host_name} {event}: {groups}")
+
+        copilot_doc = json.loads(self.hosts.copilot_hooks_document().decode("utf-8"))
+        for event, entries in copilot_doc["hooks"].items():
+            launch_entries = [
+                e for e in entries if isinstance(e, dict) and "hooks/launch.py" in str(e.get("bash", ""))
+            ]
+            self.assertEqual(1, len(launch_entries), f"copilot {event}: {entries}")
+
+        # 2. Simulate a host firing hooks/launch.py with CE_HOOK_TRACE across
+        # project hook and --layer user (including foreign host env and active
+        # project layer markers).
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            hooks_dir = project / ".chaos-engine" / "hooks"
+            hooks_dir.mkdir(parents=True, exist_ok=True)
+            (project / ".chaos-engine" / "install.py").write_text("# install\n", encoding="utf-8")
+            (hooks_dir / ".layer").write_text("project\n", encoding="utf-8")
+            guard_hits = project / "guard-hits.log"
+            (hooks_dir / "guard.py").write_text(
+                textwrap.dedent(
+                    f"""\
+                    import json, sys
+                    raw = sys.stdin.read()
+                    with open({str(guard_hits)!r}, "a", encoding="utf-8") as fh:
+                        fh.write(raw.strip() + "\\n")
+                    print(json.dumps({{"decision": "allow"}}))
+                    """
+                ),
+                encoding="utf-8",
+            )
+            sessions_dir = project / ".chaos-engine-state" / "sessions"
+            sessions_dir.mkdir(parents=True, exist_ok=True)
+            (sessions_dir / "sess-108.layer").write_text("project\n", encoding="utf-8")
+
+            payload = json.dumps(
+                {
+                    "hook_event_name": "PreToolUse",
+                    "session_id": "sess-108",
+                    "tool_use_id": "call-108",
+                    "tool_name": "Bash",
+                    "tool_input": {"command": "git status"},
+                    "cwd": str(project),
+                }
+            )
+            project_trace = project / "project-trace.log"
+            base_env = os.environ.copy()
+            base_env.pop("GROK_HOOK_EVENT", None)
+            base_env.pop("CLAUDE_CODE_ENTRYPOINT", None)
+            base_env.pop("CURSOR_TRACE_ID", None)
+            base_env["CE_HOOK_TRACE"] = str(project_trace)
+
+            # Project hook fires and executes guard once.
+            proj_res = subprocess.run(
+                [sys.executable, str(ROOT / "hooks" / "launch.py"), "claude", "PreToolUse"],
+                input=payload,
+                capture_output=True,
+                text=True,
+                cwd=project,
+                env=base_env,
+                check=False,
+            )
+            self.assertEqual(0, proj_res.returncode, proj_res.stderr)
+            self.assertEqual({"decision": "allow"}, json.loads(proj_res.stdout))
+            self.assertEqual(1, len(project_trace.read_text(encoding="utf-8").splitlines()))
+            self.assertEqual(1, len(guard_hits.read_text(encoding="utf-8").splitlines()))
+
+            # User-layer duplicate for active project session defers cleanly (exit 0, 0 extra guard runs).
+            user_res = subprocess.run(
+                [sys.executable, str(ROOT / "hooks" / "launch.py"), "claude", "PreToolUse", "--layer", "user"],
+                input=payload,
+                capture_output=True,
+                text=True,
+                cwd=project,
+                env=base_env,
+                check=False,
+            )
+            self.assertEqual(0, user_res.returncode, user_res.stderr)
+            self.assertEqual("", user_res.stdout.strip())
+            self.assertEqual(1, len(guard_hits.read_text(encoding="utf-8").splitlines()))
+
+            # Foreign host env (GROK_HOOK_EVENT / CURSOR_TRACE_ID) on user layer also defers cleanly.
+            for env_key, env_val in (("GROK_HOOK_EVENT", "PreToolUse"), ("CURSOR_TRACE_ID", "trace-1")):
+                foreign_env = dict(base_env)
+                foreign_env[env_key] = env_val
+                foreign_payload = json.dumps(
+                    {
+                        "hook_event_name": "PreToolUse",
+                        "session_id": "sess-unmarked",
+                        "tool_use_id": "call-foreign",
+                        "tool_name": "Bash",
+                        "tool_input": {"command": "git status"},
+                        "cwd": str(project),
+                    }
+                )
+                foreign_res = subprocess.run(
+                    [sys.executable, str(ROOT / "hooks" / "launch.py"), "claude", "PreToolUse", "--layer", "user"],
+                    input=foreign_payload,
+                    capture_output=True,
+                    text=True,
+                    cwd=project,
+                    env=foreign_env,
+                    check=False,
+                )
+                self.assertEqual(0, foreign_res.returncode, foreign_res.stderr)
+                self.assertEqual("", foreign_res.stdout.strip())
+                self.assertEqual(1, len(guard_hits.read_text(encoding="utf-8").splitlines()))
+
+        # 3. Verify Cursor preToolUse and stop payloads normalize and render accurately.
+        cursor_pre = self.kernel.normalize_event(
+            {
+                "hook_event_name": "preToolUse",
+                "conversation_id": "conv-106",
+                "tool_call_id": "tc-106",
+                "tool_name": "Shell",
+                "tool_input": {"command": "echo ok"},
+            },
+            "cursor",
+        )
+        self.assertEqual("PreToolUse", cursor_pre.name)
+        self.assertEqual("conv-106", cursor_pre.session_id)
+        self.assertEqual("tc-106", cursor_pre.tool_call_id)
+        self.assertEqual(
+            {"permission": "deny", "user_message": "blocked", "agent_message": "blocked"},
+            self.kernel.adapt_hook_output({"decision": "block", "reason": "blocked"}, "PreToolUse", "cursor"),
+        )
+        cursor_stop = self.kernel.normalize_event(
+            {"hook_event_name": "stop", "conversation_id": "conv-106"},
+            "cursor",
+        )
+        self.assertEqual("Stop", cursor_stop.name)
+        rendered_stop = self.kernel.adapt_hook_output(
+            {"decision": "block", "reason": "continue working"}, "Stop", "cursor"
+        )
+        self.assertEqual("continue working", rendered_stop["followup_message"])
+        self.assertIn("additional_context", rendered_stop)
+
 
 class RetrieveGateTests(unittest.TestCase):
     @classmethod
