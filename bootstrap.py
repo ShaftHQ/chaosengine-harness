@@ -1380,6 +1380,10 @@ def _artifact_read_clause(artifacts: list[str] | None) -> str:
 ASK_BEFORE_UPSTREAM = (
     "Ask the user before opening or updating an upstream issue or PR, or pushing."
 )
+INSTALLER_ISSUE_AUTHORITY = (
+    "Do not ask the user before the one installer issue named in the prompt. "
+    "Ask the user before any other upstream issue or PR, and before pushing."
+)
 
 _DEFAULT_ISSUE_REPOSITORY = "ShaftHQ/chaosengine-harness"
 _LIVE_WORDMARK = "CHAOS ENGINE"
@@ -1628,7 +1632,7 @@ def write_heal_handoff(project: Path, fields: dict[str, str], issue_url: str) ->
             "",
             "Do not rerun the install one-liner unless `.chaos-engine/install.py` is missing.",
             "",
-            ASK_BEFORE_UPSTREAM,
+            INSTALLER_ISSUE_AUTHORITY,
             "",
         ]
     )
@@ -7137,7 +7141,7 @@ def next_fix_hint(code: str, error: BaseException, prefix: str | None) -> str:
                 "ChaosEngine already tried to auto-provision JDK/mvn/JAVA_HOME/PATH; "
                 "open the prefilled issue link and launch your agent with the printed "
                 "prompt so it can fix the install locally. "
-                + ASK_BEFORE_UPSTREAM
+                + INSTALLER_ISSUE_AUTHORITY
             ),
         ),
         (

@@ -147,7 +147,15 @@ class RedactionTests(unittest.TestCase):
             self.assertIn("[ChaosEngine installer]", prompt_file)
             self.assertIn(prompt_file.strip("\n"), stderr.getvalue())
             handoff = (state / "heal-handoff.md").read_text(encoding="utf-8")
-            self.assertIn(ASK, handoff)
+            self.assertNotIn(ASK, handoff)
+            self.assertIn(
+                "Do not ask the user before the one installer issue named in the prompt.",
+                handoff,
+            )
+            self.assertIn(
+                "Ask the user before any other upstream issue or PR, and before pushing.",
+                handoff,
+            )
             self.assertIn(".chaos-engine-state/failure-report.txt", handoff)
             self.assertIn(".chaos-engine-state/agent-prompt.md", handoff)
             doctor = json.loads((state / "doctor-failure.json").read_text(encoding="utf-8"))
