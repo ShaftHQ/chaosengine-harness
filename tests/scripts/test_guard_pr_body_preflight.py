@@ -74,6 +74,22 @@ class PrBodyPreflightTest(unittest.TestCase):
         self.assertEqual("", self.guard._pr_body_block(("gh pr create --fill",)))
         self.assertEqual("", self.guard._pr_body_block(("gh pr create --body-file /no/such/file",)))
 
+    def test_gh_hostname_flag_is_not_the_head_branch(self) -> None:
+        body = (
+            "'<!-- chaos-engine:agentic -->\n## Plan\nsteps\n"
+            "retrieve: mempalace used\n\n## Riskiest assumption\nN/A'"
+        )
+        command = f"gh -H github.com pr create --head ChaosEngine/example --body {body}"
+        self.assertEqual("", self.guard._pr_body_block((command,)))
+        _exe, arguments = self.guard.command_head(self.guard.shell_tokens(command))
+        self.assertEqual("ChaosEngine/example", self.guard._pr_head_argument(arguments))
+        equals = command.replace("--head ChaosEngine/example", "--head=ChaosEngine/example", 1)
+        _exe, equals_arguments = self.guard.command_head(self.guard.shell_tokens(equals))
+        self.assertEqual("ChaosEngine/example", self.guard._pr_head_argument(equals_arguments))
+        self.assertIsNone(self.guard._pr_head_argument(["-H", "github.com", "pr", "create"]))
+        self.guard._checkout_branch = lambda: "ChaosEngine/example"
+        self.assertEqual("", self.guard._pr_body_block((f"gh pr create -H github.com --body {body}",)))
+
     def test_missing_plan_or_receipt_is_blocked(self) -> None:
         no_plan = "gh pr create --body '<!-- chaos-engine:agentic -->\nretrieve: mempalace used\n\n## Riskiest assumption\nN/A'"
         self.assertIn("`## Plan`", self.guard._pr_body_block((no_plan,)))

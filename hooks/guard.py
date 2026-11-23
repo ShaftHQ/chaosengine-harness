@@ -518,11 +518,14 @@ def _pr_body_argument(arguments: list[str]) -> str | None:
 
 
 def _pr_head_argument(arguments: list[str]) -> str | None:
-    """Last ``--head`` or ``-H`` value; None when the command passes neither."""
+    """Last ``--head`` value, including ``--head=name``; None when it is absent.
+
+    ``-H`` is ``gh``'s hostname flag, not the pull-request head.
+    """
     head = None
     for index, item in enumerate(arguments):
         flag, _, inline = item.partition("=")
-        if flag not in {"--head", "-H"}:
+        if flag != "--head":
             continue
         if inline:
             head = inline
@@ -552,7 +555,7 @@ def _checkout_branch() -> str:
 
 
 def _pr_create_branch(arguments: list[str]) -> str:
-    """``--head``/``-H`` when ``gh pr create`` passes it, otherwise the checkout branch."""
+    """``--head`` when ``gh pr create`` passes it, otherwise the checkout branch."""
     head = _pr_head_argument(arguments)
     if head is not None and head.strip():
         return head.strip()
@@ -587,7 +590,7 @@ def _pr_body_block(commands: tuple[str, ...]) -> str:
     CI's PR Body guard rejects a missing or link-free section, and a rerun keeps the
     old event body, so a fix then costs a push and a full CI round trip.
     ``gh pr create`` also refuses a head ``branch_prefix_errors`` rejects: ``--head``
-    or ``-H`` when passed, otherwise the checkout branch. Edit cannot change the head.
+    when passed, otherwise the checkout branch. Edit cannot change the head.
     """
     for command in commands:
         for statement in _shell_statements(command):
