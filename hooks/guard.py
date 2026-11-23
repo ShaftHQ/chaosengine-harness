@@ -517,7 +517,49 @@ def _pr_body_argument(arguments: list[str]) -> str | None:
     return body
 
 
-def _assumption_errors(body: str) -> list[str]:
+def _pr_head_argument(arguments: list[str]) -> str | None:
+    """Last ``--head`` or ``-H`` value; None when the command passes neither."""
+    head = None
+    for index, item in enumerate(arguments):
+        flag, _, inline = item.partition("=")
+        if flag not in {"--head", "-H"}:
+            continue
+        if inline:
+            head = inline
+            continue
+        if index + 1 < len(arguments):
+            head = arguments[index + 1]
+    return head
+
+
+def _checkout_branch() -> str:
+    """Current checkout branch. Empty when git cannot name it."""
+    git = shutil.which("git")
+    if git is None:
+        return ""
+    try:
+        completed = subprocess.run(  # nosec B603 - absolute git from which, fixed argv.
+            [git, "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return ""
+    if completed.returncode != 0:
+        return ""
+    return completed.stdout.strip()
+
+
+def _pr_create_branch(arguments: list[str]) -> str:
+    """``--head``/``-H`` when ``gh pr create`` passes it, otherwise the checkout branch."""
+    head = _pr_head_argument(arguments)
+    if head is not None and head.strip():
+        return head.strip()
+    return _checkout_branch()
+
+
+def _assumption_errors(body: str, *, branch: str | None = None) -> list[str]:
     mindset = _overlay_module("harness_mindset.py")
     spec = importlib.util.spec_from_file_location("chaos_engine_pr_body_mindset", mindset)
     if not mindset.is_file() or spec is None or spec.loader is None:
@@ -530,8 +572,11 @@ def _assumption_errors(body: str) -> list[str]:
         marker = [] if module.is_agentic(body) else [
             f"agent PR body is missing the `{module.AGENTIC_MARKER}` marker (it identifies agentic PRs)"
         ]
-        return list(module.assumption_section_errors(body)) + marker + list(
+        errors = list(module.assumption_section_errors(body)) + marker + list(
             module.plan_receipt_errors(body + "\n" + module.AGENTIC_MARKER))
+        if branch is not None:
+            errors.extend(module.branch_prefix_errors(branch, agentic=module.is_agentic(body)))
+        return errors
     except Exception:  # nosec B110 - an unavailable checker must not block PR creation.
         return []
 
@@ -541,6 +586,8 @@ def _pr_body_block(commands: tuple[str, ...]) -> str:
 
     CI's PR Body guard rejects a missing or link-free section, and a rerun keeps the
     old event body, so a fix then costs a push and a full CI round trip.
+    ``gh pr create`` also refuses a head ``branch_prefix_errors`` rejects: ``--head``
+    or ``-H`` when passed, otherwise the checkout branch. Edit cannot change the head.
     """
     for command in commands:
         for statement in _shell_statements(command):
@@ -548,7 +595,12 @@ def _pr_body_block(commands: tuple[str, ...]) -> str:
             if head != "gh" or arguments[:2] not in (["pr", "create"], ["pr", "edit"]):
                 continue
             body = _pr_body_argument(arguments)
-            errors = _assumption_errors(body) if body is not None else []
+            branch = (
+                _pr_create_branch(arguments)
+                if arguments[1] == "create" and body is not None
+                else None
+            )
+            errors = _assumption_errors(body, branch=branch) if body is not None else []
             if errors:
                 return (
                     "PR body would fail the CI PR Body guard: " + errors[0] + ". It needs `## Riskiest assumption` "

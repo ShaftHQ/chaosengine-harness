@@ -38,9 +38,41 @@ class PrBodyPreflightTest(unittest.TestCase):
             body = Path(temporary, "good.md")
             body.write_text("<!-- chaos-engine:agentic -->\nx\n\n## Plan\nspec-x.md\n\nretrieve: mempalace used\nretrieve: graphify skipped index is stale\n\n"
                             "## Riskiest assumption\nThat y. Targeted test: `test_y`.\n", encoding="utf-8")
-            self.assertEqual("", self.guard._pr_body_block((f"gh pr create --body-file {body}",)))
-        self.assertEqual("", self.guard._pr_body_block(
-            ("gh pr create --body '<!-- chaos-engine:agentic -->\n## Plan\nsteps\nretrieve: mempalace used\n\n## Riskiest assumption\nN/A'",)))
+            self.assertEqual("", self.guard._pr_body_block(
+                (f"gh pr create --head ChaosEngine/example --body-file {body}",)))
+        self.assertEqual("", self.guard._pr_body_block((
+            "gh pr create --head ChaosEngine/example --body "
+            "'<!-- chaos-engine:agentic -->\n## Plan\nsteps\nretrieve: mempalace used\n\n## Riskiest assumption\nN/A'",
+        )))
+
+    def test_agentic_create_rejects_foreign_head(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            body = Path(temporary, "good.md")
+            body.write_text(
+                "<!-- chaos-engine:agentic -->\nx\n\n## Plan\nspec-x.md\n\nretrieve: mempalace used\n"
+                "retrieve: graphify skipped index is stale\n\n"
+                "## Riskiest assumption\nThat y. Targeted test: `test_y`.\n",
+                encoding="utf-8",
+            )
+            reason = self.guard._pr_body_block((f"gh pr create --head fix/example --body-file {body}",))
+        self.assertIn("ChaosEngine/<short-slug>", reason)
+        self.assertIn("fix/example", reason)
+
+    def test_agentic_create_without_head_reads_checkout_branch(self) -> None:
+        self.guard._checkout_branch = lambda: "fix/example"
+        command = (
+            "gh pr create --body '<!-- chaos-engine:agentic -->\n## Plan\nsteps\n"
+            "retrieve: mempalace used\n\n## Riskiest assumption\nN/A'"
+        )
+        reason = self.guard._pr_body_block((command,))
+        self.assertIn("ChaosEngine/<short-slug>", reason)
+        self.assertIn("fix/example", reason)
+        edit = command.replace("gh pr create", "gh pr edit 5", 1)
+        self.assertEqual("", self.guard._pr_body_block((edit,)))
+        headed_edit = edit.replace("gh pr edit 5", "gh pr edit 5 --head fix/example", 1)
+        self.assertEqual("", self.guard._pr_body_block((headed_edit,)))
+        self.assertEqual("", self.guard._pr_body_block(("gh pr create --fill",)))
+        self.assertEqual("", self.guard._pr_body_block(("gh pr create --body-file /no/such/file",)))
 
     def test_missing_plan_or_receipt_is_blocked(self) -> None:
         no_plan = "gh pr create --body '<!-- chaos-engine:agentic -->\nretrieve: mempalace used\n\n## Riskiest assumption\nN/A'"
