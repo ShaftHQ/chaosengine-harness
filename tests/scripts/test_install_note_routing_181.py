@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import io
+import os
 import sys
 import tempfile
 import unittest
@@ -15,6 +16,18 @@ ROOT = Path(__file__).resolve().parents[2]
 NOTE = "chaos-engine: merged missing MemPalace owned exclude_patterns into mempalace.yaml"
 LACKS = "mempalace.yaml still lacks owned exclude_patterns after merge"
 GRAPHIFY = "stores: graphify full extract"
+INDEX_MODE = (
+    "chaos-engine: MemPalace index mode=incremental "
+    "reason=reusing index with 1 drawers"
+)
+PRUNE_SKIPPED = "chaos-engine: MemPalace prune skipped: locked"
+PRUNED = (
+    "chaos-engine: MemPalace pruned 4 drawers from 2 "
+    "deleted or excluded sources"
+)
+INDEX_SKIPS = "chaos-engine: MemPalace skips 1 nested repositories: nested-repo"
+MINE = "stores: mempalace mine (full tree) at " + ("a" * 12)
+INDEX_NOTES = (INDEX_MODE, PRUNE_SKIPPED, PRUNED, INDEX_SKIPS, MINE)
 
 
 def load(name: str, path: Path):
@@ -158,6 +171,55 @@ class InstallNoteRouting181Tests(unittest.TestCase):
                         invoke=lambda *_args, **_kwargs: None,
                     )
         self.assertIn(GRAPHIFY, captured.getvalue())
+
+    def _emit_mempalace_index_notes(self, stderr) -> None:
+        """Call the real note sites. Patch only the mine, prune, and decision bodies."""
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            nested = project / "nested-repo"
+            nested.mkdir()
+            (nested / ".git").mkdir()
+            command = ["/tools/mempalace", "mine", "."]
+            with mock.patch.dict(os.environ):
+                os.environ.pop("CHAOS_ENGINE_MEMPALACE", None)
+                os.environ.pop("SHAFT_MEMPALACE", None)
+                with mock.patch.object(
+                    self.dependencies,
+                    "mempalace_mine_decision",
+                    return_value=("incremental", "reusing index with 1 drawers"),
+                ), mock.patch.object(sys, "stderr", stderr):
+                    with mock.patch.object(
+                        self.dependencies,
+                        "prune_mempalace_drawers",
+                        side_effect=OSError("locked"),
+                    ):
+                        self.dependencies.prepare_mempalace_mine(project, command)
+                    with mock.patch.object(
+                        self.dependencies,
+                        "prune_mempalace_drawers",
+                        return_value=(2, 4),
+                    ):
+                        self.dependencies.prepare_mempalace_mine(project, command)
+                    self.stores._refresh_mempalace(
+                        project,
+                        snapshot=project,
+                        primary=project,
+                        revision="a" * 40,
+                        invoke=lambda _command, _cwd: 0,
+                    )
+
+    def test_mempalace_index_notes_use_step_detail_when_a_reporter_is_active(self):
+        proxy = _Proxy()
+        self._emit_mempalace_index_notes(proxy)
+        for note in INDEX_NOTES:
+            self.assertIn(note, proxy._reporter.traces)
+            self.assertNotIn(note, proxy.written)
+
+    def test_mempalace_index_notes_stay_on_stderr_without_a_reporter(self):
+        captured = io.StringIO()
+        self._emit_mempalace_index_notes(captured)
+        for note in INDEX_NOTES:
+            self.assertIn(note, captured.getvalue())
 
 
 if __name__ == "__main__":

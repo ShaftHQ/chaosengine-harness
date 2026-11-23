@@ -2147,8 +2147,9 @@ def adopt_relocated_mempalace_palace(project: Path) -> Path | None:
         meta = candidate.parent / MEMPALACE_INDEX_META_NAME
         if meta.is_file() and not is_link_or_reparse(meta):
             shutil.copy2(meta, target.parent / MEMPALACE_INDEX_META_NAME)
-        print(f"chaos-engine: MemPalace index reused from {candidate} (state location moved)",
-              file=sys.stderr)
+        _stderr_note(
+            f"chaos-engine: MemPalace index reused from {candidate} (state location moved)"
+        )
         return candidate
     return None
 
@@ -2398,11 +2399,11 @@ def _prune_before_incremental_mine(project: Path) -> None:
     try:
         sources, drawers = prune_mempalace_drawers(project)
     except (sqlite3.Error, OSError) as error:
-        print(f"chaos-engine: MemPalace prune skipped: {error}", file=sys.stderr)
+        _stderr_note(f"chaos-engine: MemPalace prune skipped: {error}")
         return
     if drawers:
-        print(f"chaos-engine: MemPalace pruned {drawers} drawers from {sources} "
-              "deleted or excluded sources", file=sys.stderr)
+        _stderr_note(f"chaos-engine: MemPalace pruned {drawers} drawers from {sources} "
+                     "deleted or excluded sources")
 
 
 def prune_after_install(project: Path) -> None:
@@ -2422,10 +2423,10 @@ def prepare_mempalace_mine(project: Path, command: list[str]) -> tuple[str, str]
             reason += f"; previous index kept at {aside}"
     else:
         _prune_before_incremental_mine(project)
-    print(f"chaos-engine: MemPalace index mode={mode} reason={reason}", file=sys.stderr)
+    _stderr_note(f"chaos-engine: MemPalace index mode={mode} reason={reason}")
     if nested:
-        print(f"chaos-engine: MemPalace skips {len(nested)} nested repositories: "
-              + ", ".join(nested), file=sys.stderr)
+        _stderr_note(f"chaos-engine: MemPalace skips {len(nested)} nested repositories: "
+                     + ", ".join(nested))
     return mode, reason
 
 
@@ -2566,8 +2567,9 @@ def start_background_mempalace_mine(
         options["start_new_session"] = True
     with open(log_path, "ab") as log:
         spawner(argv, stdout=log, **options)  # nosec B603 - fixed list-form argv.
-    print(f"chaos-engine: MemPalace index running in the background; progress: {log_path}",
-          file=sys.stderr)
+    _stderr_note(
+        f"chaos-engine: MemPalace index running in the background; progress: {log_path}"
+    )
 
 
 def run_mempalace_index(project: Path, command: list[str], *, runner=subprocess.run) -> int:
@@ -2947,7 +2949,7 @@ def _run_project_setup_command(
             probes=host_probes,
         )
         if decision == "continue":
-            print(f"chaos-engine: graphify setup continued: {detail}", file=sys.stderr)
+            _stderr_note(f"chaos-engine: graphify setup continued: {detail}")
             return subprocess.CompletedProcess(command, 0, error.stdout, error.stderr)
         if not is_graphify_empty_output(command, error):
             raise
