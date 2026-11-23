@@ -451,6 +451,8 @@ class PathAllowlistTests(unittest.TestCase):
             "runtime/dependencies.py:lexical_home = home or Path.home()",
             "runtime/dependencies.py:root = bin_dir if bin_dir is not None else Path.home() / \".local/bin\"",
             "runtime/dependencies.py:tools = tools_root if tools_root is not None else Path.home() / \".local/share/uv/tools\"",
+            "runtime/dependencies.py:root = Path(tool_dir) if tool_dir else Path.home() / \".local\" / \"share\" / \"uv\" / \"tools\"",
+            "runtime/dependencies.py:return Path.home() / \".local\" / \"bin\"",
             "runtime/dependencies.py:home = Path.home()",
             "runtime/dependencies.py:return Path.home() / \".mempalace\" / \"palace\"",
             "runtime/dependencies.py:prefix = Path.home() / \".local\"",
