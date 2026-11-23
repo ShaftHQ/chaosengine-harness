@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import io
 import os
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -39,6 +40,25 @@ def load(name: str, path: Path):
         raise RuntimeError(f"no loader for {path}")
     spec.loader.exec_module(module)
     return module
+
+
+def _populate_palace(palace: Path, drawers: int = 1) -> None:
+    palace.mkdir(parents=True, exist_ok=True)
+    database = palace / "sqlite_exact.sqlite3"
+    database.unlink(missing_ok=True)
+    connection = sqlite3.connect(database)
+    try:
+        connection.execute(
+            "CREATE TABLE documents (id INTEGER PRIMARY KEY, body TEXT)"
+        )
+        for index in range(drawers):
+            connection.execute(
+                "INSERT INTO documents (body) VALUES (?)",
+                (f"drawer-{index}",),
+            )
+        connection.commit()
+    finally:
+        connection.close()
 
 
 class _Reporter:
@@ -185,11 +205,19 @@ class InstallNoteRouting181Tests(unittest.TestCase):
             with mock.patch.dict(os.environ):
                 os.environ.pop("CHAOS_ENGINE_MEMPALACE", None)
                 os.environ.pop("SHAFT_MEMPALACE", None)
+                os.environ["GIT_CEILING_DIRECTORIES"] = str(project.parent)
+                relocated = project / ".git" / "chaos-engine" / "mempalace"
+                _populate_palace(relocated, drawers=1)
+                reused = (
+                    f"chaos-engine: MemPalace index reused from {relocated} "
+                    "(state location moved)"
+                )
                 with mock.patch.object(
                     self.dependencies,
                     "mempalace_mine_decision",
                     return_value=("incremental", "reusing index with 1 drawers"),
                 ), mock.patch.object(sys, "stderr", stderr):
+                    self.dependencies.adopt_relocated_mempalace_palace(project)
                     with mock.patch.object(
                         self.dependencies,
                         "prune_mempalace_drawers",
@@ -232,7 +260,39 @@ class InstallNoteRouting181Tests(unittest.TestCase):
                             argv, 1, "", "graph is empty\n"
                         ),
                     )
-        return (*INDEX_NOTES, background, GRAPHIFY_CONTINUED)
+        return (reused, *INDEX_NOTES, background, GRAPHIFY_CONTINUED)
+
+    def test_adopt_relocated_palace_emits_no_note_when_empty_or_target_populated(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            with mock.patch.dict(os.environ):
+                os.environ.pop("CHAOS_ENGINE_MEMPALACE", None)
+                os.environ.pop("SHAFT_MEMPALACE", None)
+                os.environ["GIT_CEILING_DIRECTORIES"] = str(project.parent)
+                relocated = project / ".git" / "chaos-engine" / "mempalace"
+                target = project / ".chaos-engine-state" / "mempalace"
+                _populate_palace(relocated, drawers=0)
+                captured = io.StringIO()
+                with mock.patch.object(sys, "stderr", captured):
+                    self.assertIsNone(
+                        self.dependencies.adopt_relocated_mempalace_palace(project)
+                    )
+                self.assertEqual("", captured.getvalue())
+
+                _populate_palace(relocated, drawers=2)
+                _populate_palace(target, drawers=1)
+                captured = io.StringIO()
+                with mock.patch.object(sys, "stderr", captured):
+                    self.assertIsNone(
+                        self.dependencies.adopt_relocated_mempalace_palace(project)
+                    )
+                self.assertEqual("", captured.getvalue())
+                self.assertEqual(1, self.stores.palace_drawer_count(target))
+
+                flush_out = io.StringIO()
+                with mock.patch.object(sys, "stderr", flush_out):
+                    self.dependencies._stderr_note("flushed note", flush=True)
+                self.assertEqual("flushed note\n", flush_out.getvalue())
 
     def test_mempalace_index_notes_use_step_detail_when_a_reporter_is_active(self):
         proxy = _Proxy()

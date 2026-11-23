@@ -1926,16 +1926,17 @@ class InstallerUxTests(unittest.TestCase):
             "clients": {"codex": {"status": "healthy"}},
         }
         stdout = io.StringIO()
-        with unittest.mock.patch.object(
-            INSTALL, "status_json", return_value=healthy
-        ), unittest.mock.patch.object(
-            INSTALL.sys, "stdout", stdout
-        ), unittest.mock.patch.object(
-            INSTALL.sys,
-            "argv",
-            ["install.py", "doctor", "--project", "."],
-        ):
-            self.assertEqual(0, INSTALL.main())
+        with tempfile.TemporaryDirectory() as project:
+            with unittest.mock.patch.object(
+                INSTALL, "status_json", return_value=healthy
+            ), unittest.mock.patch.object(
+                INSTALL.sys, "stdout", stdout
+            ), unittest.mock.patch.object(
+                INSTALL.sys,
+                "argv",
+                ["install.py", "doctor", "--project", project],
+            ):
+                self.assertEqual(0, INSTALL.main())
         out = stdout.getvalue()
         self.assertIn("Host onboarding cards:", out)
         self.assertIn("Codex", out)
@@ -1963,54 +1964,65 @@ class InstallerUxTests(unittest.TestCase):
                 "hooks": {"status": "recovery-required", "taskImpact": "required"},
             },
         }
-        stdout = io.StringIO()
-        stderr = io.StringIO()
-        with unittest.mock.patch.object(
-            INSTALL, "status_json", return_value=healthy
-        ), unittest.mock.patch.object(
-            INSTALL.sys, "stdout", stdout
-        ), unittest.mock.patch.object(
-            INSTALL.sys, "stderr", stderr
-        ), unittest.mock.patch.object(
-            INSTALL.sys,
-            "argv",
-            ["install.py", "doctor", "--project", "."],
-        ):
-            self.assertEqual(0, INSTALL.main())
-        human = stdout.getvalue()
-        self.assertIn("ChaosEngine doctor: healthy", human)
-        self.assertNotIn('"schemaVersion"', human)
-        self.assertEqual("", stderr.getvalue())
+        with tempfile.TemporaryDirectory() as cwd, tempfile.TemporaryDirectory() as project:
+            partial_overlay = Path(cwd) / ".chaos-engine"
+            partial_overlay.mkdir()
+            self.assertTrue(partial_overlay.is_dir())
+            self.assertFalse((partial_overlay / "tool.py").exists())
+            self.assertFalse((Path(project) / ".chaos-engine").exists())
+            previous_cwd = os.getcwd()
+            os.chdir(cwd)
+            try:
+                stdout = io.StringIO()
+                stderr = io.StringIO()
+                with unittest.mock.patch.object(
+                    INSTALL, "status_json", return_value=healthy
+                ), unittest.mock.patch.object(
+                    INSTALL.sys, "stdout", stdout
+                ), unittest.mock.patch.object(
+                    INSTALL.sys, "stderr", stderr
+                ), unittest.mock.patch.object(
+                    INSTALL.sys,
+                    "argv",
+                    ["install.py", "doctor", "--project", project],
+                ):
+                    self.assertEqual(0, INSTALL.main())
+                human = stdout.getvalue()
+                self.assertIn("ChaosEngine doctor: healthy", human)
+                self.assertNotIn('"schemaVersion"', human)
+                self.assertEqual("", stderr.getvalue())
 
-        stdout = io.StringIO()
-        with unittest.mock.patch.object(
-            INSTALL, "status_json", return_value=broken
-        ), unittest.mock.patch.object(
-            INSTALL.sys, "stdout", stdout
-        ), unittest.mock.patch.object(
-            INSTALL.sys,
-            "argv",
-            ["install.py", "doctor", "--project", "."],
-        ):
-            self.assertEqual(1, INSTALL.main())
-        failing = stdout.getvalue()
-        self.assertIn("fix-next:", failing)
-        self.assertIn("[error] hooks", failing)
+                stdout = io.StringIO()
+                with unittest.mock.patch.object(
+                    INSTALL, "status_json", return_value=broken
+                ), unittest.mock.patch.object(
+                    INSTALL.sys, "stdout", stdout
+                ), unittest.mock.patch.object(
+                    INSTALL.sys,
+                    "argv",
+                    ["install.py", "doctor", "--project", project],
+                ):
+                    self.assertEqual(1, INSTALL.main())
+                failing = stdout.getvalue()
+                self.assertIn("fix-next:", failing)
+                self.assertIn("[error] hooks", failing)
 
-        stdout = io.StringIO()
-        with unittest.mock.patch.object(
-            INSTALL, "status_json", return_value=healthy
-        ), unittest.mock.patch.object(
-            INSTALL.sys, "stdout", stdout
-        ), unittest.mock.patch.object(
-            INSTALL.sys,
-            "argv",
-            ["install.py", "doctor", "--project", ".", "--json"],
-        ):
-            self.assertEqual(0, INSTALL.main())
-        payload = json.loads(stdout.getvalue())
-        self.assertEqual("doctor", payload["kind"])
-        self.assertEqual("healthy", payload["status"])
+                stdout = io.StringIO()
+                with unittest.mock.patch.object(
+                    INSTALL, "status_json", return_value=healthy
+                ), unittest.mock.patch.object(
+                    INSTALL.sys, "stdout", stdout
+                ), unittest.mock.patch.object(
+                    INSTALL.sys,
+                    "argv",
+                    ["install.py", "doctor", "--project", project, "--json"],
+                ):
+                    self.assertEqual(0, INSTALL.main())
+                payload = json.loads(stdout.getvalue())
+                self.assertEqual("doctor", payload["kind"])
+                self.assertEqual("healthy", payload["status"])
+            finally:
+                os.chdir(previous_cwd)
 
     def test_host_onboarding_cards_cover_five_hosts_with_paths_and_gaps(self):
         rendered = BOOTSTRAP.format_host_onboarding_cards(
