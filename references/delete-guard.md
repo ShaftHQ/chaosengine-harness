@@ -56,22 +56,27 @@ so a filename alone never matches; `**/filename` is the portable form.
 The owner approves in chat with a one-time code; no terminal is needed.
 
 1. Bot: `python3 .chaos-engine/tool.py delete-check --request-code <paths...>`
-   prints a 6-char code (one use, 10 min) bound to the exact resolved path
+   prints a 6-char code (one use, 30 min, with an absolute UTC expiry timestamp
+   `expires YYYY-MM-DDTHH:MM:SSZ`) bound to the exact resolved path
    list. Only its sha256 is stored, in
    `~/.local/state/chaos-engine/delete-acks.json` (`XDG_STATE_HOME`).
 2. Bot shows the code to the owner in chat with the path list. The owner
    pastes it back. A code relayed by another agent is not approval.
-3. Bot: `python3 .chaos-engine/tool.py delete-check --code <code> <same paths>`
-   (or `CHAOS_DELETE_ACK=<code>`). Hosts that refuse `--code` on argv
-   (the `relayed-delete-code` hook) use `CHAOS_DELETE_ACK`. Spend the code
-   on the same invocation as `--command 'rm …'` because the code is
-   one-use. The host hook allows this documented `tool.py delete-check`
-   consumption; it still refuses `cleanup --delete-code` and other
-   relayed codes. A `#` comment ends at that line, including inside
+3. Bot: `python3 .chaos-engine/tool.py delete-check --code <code> --command 'rm -rf -- <same paths>'`
+   (or `<same paths>` / `CHAOS_DELETE_ACK=<code>`). Hosts that refuse `--code` on argv
+   (the `relayed-delete-code` hook) use `CHAOS_DELETE_ACK`. Passing
+   `--code <code> --command '<delete cmd>'` validates and consumes the code
+   and executes the delete command in one step; `PreToolUse` (`block_reason`)
+   verifies the code and inner targets with `consume=False` so `tool.py delete-check`
+   can spend the code and remove the paths. The host hook allows this documented
+   `tool.py delete-check` consumption; it still refuses `cleanup --delete-code`
+   and other relayed codes. A `#` comment ends at that line, including inside
    parentheses or a here-document. A quoted `--command` payload may
-   contain parentheses and `&&`, while an unquoted substitution,
-   backtick, or process substitution is still a relay. It passes only
-   for the same path list, unexpired and unused, then the code is spent.
+   contain parentheses and `&&` (provided every segment is a delete or `cd`/`pushd`),
+   while an unquoted substitution, backtick, or process substitution is still a
+   relay. It passes only for the same path list, unexpired and unused, then the
+   code is spent (`code unknown`, `code already used`, `code expired at <UTC ISO>`,
+   and `code was issued for a different path list` report distinct reasons).
    Git and allow-list refusals print as
    `warning:` lines instead of blocking.
 
@@ -85,8 +90,9 @@ backup and get the owner's code.
 No code unlocks a path with a segment named `ROG*`, `yt` or
 `designer-ws.git.retired`, a Chrome/Chromium profile
 (`.config/google-chrome*`, `.config/chromium`, `*chrome*-profile*`), or a dir
-that directly contains one. Add names or `/` patterns, one per line, to
-`~/.config/chaos-engine/never-delete.txt`.
+that directly contains one. Add names or `/` (or `\`) patterns, one per line, to
+`~/.config/chaos-engine/never-delete.txt`. Like the allow-list, `never-touch`
+patterns normalize `\` to `/` on every OS before matching.
 
 Inside `yt/`, two exact-file exceptions are not never-touch and need the
 owner's code like any other refusal:
