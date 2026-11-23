@@ -410,5 +410,254 @@ class MergeGateTests(unittest.TestCase):
         )
 
 
+def _required_green():
+    return {
+        "name": "Offline structure and syntax checks",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "isRequired": True,
+    }
+
+
+class InstallerContractMergeGateTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.guard = load()
+
+    def test_installer_contract_paths_are_the_installer_surface(self):
+        self.assertEqual(
+            (
+                "install.py",
+                "bootstrap.py",
+                "runtime/dependencies.py",
+                "install.sh",
+                "install.ps1",
+            ),
+            self.guard._INSTALLER_CONTRACT_PATHS,
+        )
+
+    def test_failed_installer_cell_blocks_an_installer_diff(self):
+        cell = {
+            "name": "ubuntu-latest upgrade empty",
+            "status": "COMPLETED",
+            "conclusion": "FAILURE",
+            "isRequired": False,
+        }
+        for files in (
+            ["runtime/dependencies.py"],
+            ["./runtime/dependencies.py"],
+            ["runtime\\dependencies.py"],
+        ):
+            with self.subTest(files=files):
+                snapshot = ready(
+                    checks=[_required_green(), cell],
+                    files=files,
+                    mergeStateStatus="UNSTABLE",
+                )
+                reason = self.guard.merge_readiness_reason(snapshot)
+                self.assertIn("installer-contract", reason)
+                self.assertIn("ubuntu-latest upgrade empty", reason)
+                self.assertNotIn("UNSTABLE", reason)
+
+    def test_workflow_name_blocks_an_installer_diff(self):
+        snapshot = ready(
+            checks=[
+                _required_green(),
+                {
+                    "name": "build",
+                    "workflowName": "installer-contract",
+                    "status": "COMPLETED",
+                    "conclusion": "FAILURE",
+                    "isRequired": False,
+                },
+            ],
+            files=["install.py"],
+        )
+        reason = self.guard.merge_readiness_reason(snapshot)
+        self.assertIn("installer-contract", reason)
+        self.assertIn("build", reason)
+
+    def test_pending_and_cancelled_installer_checks_block_installer_diffs(self):
+        pending = {
+            "name": "macos-latest upgrade empty",
+            "status": "IN_PROGRESS",
+            "conclusion": "",
+            "isRequired": False,
+        }
+        cancelled = {
+            "name": "windows-latest fresh empty",
+            "workflowName": "Installer-Contract",
+            "status": "COMPLETED",
+            "conclusion": "CANCELLED",
+            "isRequired": False,
+        }
+        cases = (
+            (["install.py"], pending),
+            (["bootstrap.py"], pending),
+            (["install.sh"], cancelled),
+            (["install.ps1"], cancelled),
+            ([{"path": "./install.py"}], pending),
+        )
+        for files, check in cases:
+            with self.subTest(files=files, check=check["conclusion"] or check["status"]):
+                snapshot = ready(checks=[_required_green(), check], files=files)
+                reason = self.guard.merge_readiness_reason(snapshot)
+                self.assertIn("installer-contract", reason)
+                self.assertIn(check["name"], reason)
+
+    def test_same_failed_cell_allows_a_docs_only_diff(self):
+        snapshot = ready(
+            checks=[
+                _required_green(),
+                {
+                    "name": "ubuntu-latest upgrade empty",
+                    "workflowName": "installer-contract",
+                    "status": "COMPLETED",
+                    "conclusion": "FAILURE",
+                    "isRequired": False,
+                },
+            ],
+            files=["README.md"],
+            mergeStateStatus="UNSTABLE",
+        )
+        self.assertEqual("", self.guard.merge_readiness_reason(snapshot))
+
+    def test_skipped_installer_cell_on_a_docs_diff_stays_allowed(self):
+        snapshot = ready(
+            checks=[
+                _required_green(),
+                {
+                    "name": "ubuntu-latest fresh empty",
+                    "status": "COMPLETED",
+                    "conclusion": "SKIPPED",
+                    "isRequired": False,
+                },
+            ],
+            files=["docs/layout.md"],
+        )
+        self.assertEqual("", self.guard.merge_readiness_reason(snapshot))
+
+    def test_non_installer_failure_still_does_not_block_an_installer_diff(self):
+        snapshot = ready(
+            checks=[
+                _required_green(),
+                {
+                    "name": "codecov",
+                    "status": "COMPLETED",
+                    "conclusion": "FAILURE",
+                    "isRequired": False,
+                },
+            ],
+            files=["install.py", "runtime/dependencies.py"],
+        )
+        self.assertEqual("", self.guard.merge_readiness_reason(snapshot))
+
+    def test_empty_check_list_still_blocks(self):
+        self.assertIn(
+            "CI checks have not finished",
+            self.guard.merge_readiness_reason(ready(checks=[], files=["install.py"])),
+        )
+        self.assertIn(
+            "CI checks have not finished",
+            self.guard.merge_readiness_reason(ready(checks=[])),
+        )
+
+    def test_rollup_preserves_workflow_name_and_probe_reads_files(self):
+        checks = self.guard.checks_from_rollup_contexts([
+            {
+                "__typename": "CheckRun",
+                "name": "ubuntu-latest upgrade empty",
+                "status": "COMPLETED",
+                "conclusion": "FAILURE",
+                "isRequired": False,
+                "checkSuite": {"workflowRun": {"workflow": {"name": "installer-contract"}}},
+            },
+            {
+                "__typename": "CheckRun",
+                "name": "build",
+                "status": "COMPLETED",
+                "conclusion": "SUCCESS",
+                "isRequired": True,
+                "workflowName": "offline",
+            },
+            {"__typename": "StatusContext", "context": "ci", "state": "SUCCESS", "isRequired": True},
+        ])
+        self.assertEqual("installer-contract", checks[0]["workflowName"])
+        self.assertEqual("offline", checks[1]["workflowName"])
+        self.assertNotIn("workflowName", checks[2])
+
+        seen = []
+
+        def fake(args):
+            seen.append(list(args))
+            if args[:2] == ["pr", "view"]:
+                self.assertIn("files", args[args.index("--json") + 1])
+                return {
+                    "id": "PR_abc",
+                    "url": "https://github.com/acme/widgets/pull/9",
+                    "mergeStateStatus": "UNSTABLE",
+                    "statusCheckRollup": [],
+                    "files": [{"path": "runtime/dependencies.py", "additions": 1, "deletions": 0}],
+                }, ""
+            query = args[-1]
+            if "reviewThreads" in query:
+                self.assertIn("files(first: 100)", query)
+                return {
+                    "data": {
+                        "repository": {
+                            "pullRequest": {
+                                "files": {"nodes": [{"path": "ignored-by-view.py"}]},
+                                "reviewThreads": {
+                                    "pageInfo": {"hasNextPage": False},
+                                    "nodes": [],
+                                },
+                            }
+                        }
+                    }
+                }, ""
+            self.assertIn("workflow { name }", query)
+            self.assertIn("isRequired", query)
+            return {
+                "data": {
+                    "repository": {
+                        "pullRequest": {
+                            "commits": {
+                                "nodes": [{
+                                    "commit": {
+                                        "statusCheckRollup": {
+                                            "contexts": {
+                                                "pageInfo": {"hasNextPage": False},
+                                                "nodes": [{
+                                                    "__typename": "CheckRun",
+                                                    "name": "ubuntu-latest upgrade empty",
+                                                    "status": "COMPLETED",
+                                                    "conclusion": "FAILURE",
+                                                    "isRequired": False,
+                                                    "checkSuite": {
+                                                        "workflowRun": {
+                                                            "workflow": {"name": "installer-contract"}
+                                                        }
+                                                    },
+                                                }],
+                                            }
+                                        }
+                                    }
+                                }]
+                            }
+                        }
+                    }
+                }
+            }, ""
+
+        self.guard._gh_json = fake
+        snapshot = self.guard.live_merge_probe("9")
+        self.assertEqual(["runtime/dependencies.py"], snapshot["files"])
+        self.assertEqual("installer-contract", snapshot["checks"][0]["workflowName"])
+        reason = self.guard.merge_readiness_reason(snapshot)
+        self.assertIn("installer-contract", reason)
+        self.assertIn("ubuntu-latest upgrade empty", reason)
+        self.assertTrue(seen)
+
+
 if __name__ == "__main__":
     unittest.main()

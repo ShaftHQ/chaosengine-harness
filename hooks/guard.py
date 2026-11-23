@@ -1025,10 +1025,56 @@ def _check_block_reason(check: object) -> str:
 
 
 _OUTSIDE_REQUIRED_CONCLUSIONS = frozenset({"SKIPPED", "NEUTRAL"})
+_INSTALLER_CONTRACT_PATHS = (
+    "install.py",
+    "bootstrap.py",
+    "runtime/dependencies.py",
+    "install.sh",
+    "install.ps1",
+)
+_INSTALLER_CONTRACT_CELL = re.compile(
+    r"^(ubuntu-latest|macos-latest|windows-latest)\s+(fresh|upgrade)\s+\S+",
+    re.IGNORECASE,
+)
 
 
 def _check_conclusion(check: Mapping) -> str:
     return str(check.get("conclusion") or check.get("state") or "").strip().upper()
+
+
+def _repo_relative_path(value: object) -> str:
+    """POSIX repo path. Leading ``./`` and backslashes normalize. Anything else is empty."""
+    if isinstance(value, Mapping):
+        value = value.get("path")
+    if not isinstance(value, str):
+        return ""
+    text = value.strip().replace("\\", "/")
+    while text.startswith("./"):
+        text = text[2:]
+    if not text or text.startswith("/"):
+        return ""
+    text = posixpath.normpath(text)
+    if text in {"", "."} or text.startswith("../"):
+        return ""
+    return text
+
+
+def _diff_touches_installer(snapshot: Mapping) -> bool:
+    """True when a changed path is an installer-contract input. Missing files are not."""
+    files = snapshot.get("files")
+    if not isinstance(files, list) or not files:
+        return False
+    return any(_repo_relative_path(item) in _INSTALLER_CONTRACT_PATHS for item in files)
+
+
+def _is_installer_contract_check(check: Mapping) -> bool:
+    workflow = str(check.get("workflowName") or "").strip().casefold()
+    if workflow == "installer-contract":
+        return True
+    name = str(check.get("name") or check.get("context") or "").strip()
+    if "installer-contract" in name.casefold():
+        return True
+    return _INSTALLER_CONTRACT_CELL.match(name) is not None
 
 
 def merge_readiness_reason(snapshot: Mapping) -> str:
@@ -1037,11 +1083,16 @@ def merge_readiness_reason(snapshot: Mapping) -> str:
     A pending check is not success. An empty check list has not finished.
     A skipped required check is not success. When at least one check is
     required, only that set is decided: ``isRequired: false`` does not block.
+    One exception: an installer diff (``install.py``, ``bootstrap.py``,
+    ``runtime/dependencies.py``, ``install.sh``, or ``install.ps1``) still
+    blocks on a failed, cancelled, or pending installer-contract check that
+    is not required. ``SKIPPED`` and ``NEUTRAL`` stay outside that set.
     When no check is required, ``SKIPPED`` and ``NEUTRAL`` with
     ``isRequired: false`` stay outside the set, and a failure, cancellation,
     or pending check still blocks. An unmarked skip still blocks, so a probe
     that cannot read ``isRequired`` does not let every skip pass.
     ``DRAFT``, ``DIRTY``, and ``BLOCKED`` deny. ``BEHIND`` does not deny by itself.
+    ``UNSTABLE`` does not deny by itself. Missing ``files`` is not an installer diff.
     """
     error = str(snapshot.get("error") or "").strip()
     if error:
@@ -1062,12 +1113,20 @@ def merge_readiness_reason(snapshot: Mapping) -> str:
     required_present = any(
         isinstance(check, Mapping) and check.get("isRequired") is True for check in checks
     )
+    installer_diff = _diff_touches_installer(snapshot)
     for check in checks:
         if isinstance(check, Mapping) and check.get("isRequired") is False:
-            if required_present or _check_conclusion(check) in _OUTSIDE_REQUIRED_CONCLUSIONS:
+            outside = _check_conclusion(check) in _OUTSIDE_REQUIRED_CONCLUSIONS
+            # A non-required installer-contract cell still blocks an installer diff.
+            # Skip and neutral stay outside the set on every diff.
+            binds = installer_diff and _is_installer_contract_check(check)
+            if outside or (required_present and not binds):
                 continue
         reason = _check_block_reason(check)
         if reason:
+            if installer_diff and isinstance(check, Mapping) and _is_installer_contract_check(check):
+                if "installer-contract" not in reason.casefold():
+                    reason = "installer-contract " + reason
             return "ChaosEngine refused gh pr merge: " + reason
     return ""
 
@@ -1120,8 +1179,43 @@ def checks_from_rollup_contexts(nodes: list) -> list:
             }
         if isinstance(node.get("isRequired"), bool):
             item["isRequired"] = node["isRequired"]
+        workflow = _check_workflow_name(node)
+        if workflow:
+            item["workflowName"] = workflow
         checks.append(item)
     return checks
+
+
+def _check_workflow_name(node: Mapping) -> str:
+    """Workflow name from a direct field or ``checkSuite.workflowRun.workflow.name``."""
+    direct = node.get("workflowName")
+    if isinstance(direct, str) and direct.strip():
+        return direct.strip()
+    suite = node.get("checkSuite")
+    if not isinstance(suite, Mapping):
+        return ""
+    run = suite.get("workflowRun")
+    if not isinstance(run, Mapping):
+        return ""
+    workflow = run.get("workflow")
+    if not isinstance(workflow, Mapping):
+        return ""
+    name = workflow.get("name")
+    return name.strip() if isinstance(name, str) else ""
+
+
+def _file_paths(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    paths: list[str] = []
+    for item in value:
+        if isinstance(item, str):
+            paths.append(item)
+        elif isinstance(item, Mapping):
+            path = item.get("path")
+            if isinstance(path, str):
+                paths.append(path)
+    return paths
 
 
 def _marked_required_checks(owner: str, name: str, number: str, pr_id: str) -> tuple[list | None, str]:
@@ -1136,7 +1230,8 @@ def _marked_required_checks(owner: str, name: str, number: str, pr_id: str) -> t
         "query { repository(owner: \"%s\", name: \"%s\") { pullRequest(number: %d) "
         "{ commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) "
         "{ pageInfo { hasNextPage } nodes { __typename "
-        "... on CheckRun { name status conclusion isRequired(pullRequestId: \"%s\") } "
+        "... on CheckRun { name status conclusion isRequired(pullRequestId: \"%s\") "
+        "checkSuite { workflowRun { workflow { name } } } } "
         "... on StatusContext { context state isRequired(pullRequestId: \"%s\") } "
         "} } } } } } } } }"
         % (owner, name, int(number), pr_id, pr_id)
@@ -1160,7 +1255,7 @@ def _marked_required_checks(owner: str, name: str, number: str, pr_id: str) -> t
 
 def live_merge_probe(target: str) -> dict:
     """Read check rollup and unresolved review threads. Fail closed on any gap."""
-    view = ["pr", "view", "--json", "id,statusCheckRollup,url,mergeStateStatus"]
+    view = ["pr", "view", "--json", "id,statusCheckRollup,url,mergeStateStatus,files"]
     if target:
         view.insert(2, target)
     payload, error = _gh_json(view)
@@ -1176,7 +1271,8 @@ def live_merge_probe(target: str) -> dict:
         return {"error": "the pull request URL could not be read."}
     query = (
         "query { repository(owner: \"%s\", name: \"%s\") { pullRequest(number: %d) "
-        "{ reviewThreads(first: 100) { pageInfo { hasNextPage } nodes { isResolved } } } } }"
+        "{ files(first: 100) { nodes { path } } "
+        "reviewThreads(first: 100) { pageInfo { hasNextPage } nodes { isResolved } } } } }"
         % (owner, name, int(number))
     )
     graph, graph_error = _gh_json(["api", "graphql", "-f", "query=" + query])
@@ -1185,11 +1281,17 @@ def live_merge_probe(target: str) -> dict:
     if not isinstance(graph, dict) or graph.get("errors"):
         return {"error": "review threads could not be read."}
     try:
-        threads = graph["data"]["repository"]["pullRequest"]["reviewThreads"]
+        pull = graph["data"]["repository"]["pullRequest"]
+        threads = pull["reviewThreads"]
         page = threads["pageInfo"]
         nodes = threads["nodes"]
     except (KeyError, TypeError):
         return {"error": "review threads could not be read."}
+    graphql_files: list[str] = []
+    if isinstance(pull, dict):
+        connection = pull.get("files")
+        if isinstance(connection, dict):
+            graphql_files = _file_paths(connection.get("nodes"))
     if not isinstance(nodes, list) or not isinstance(page, dict):
         return {"error": "review threads could not be read."}
     unresolved = 0
@@ -1204,11 +1306,14 @@ def live_merge_probe(target: str) -> dict:
         return {"error": mark_error}
     if marked is not None:
         checks = marked
+    view_files = _file_paths(payload.get("files"))
     return {
         "checks": checks,
         "unresolved": unresolved,
         "hasNextPage": page.get("hasNextPage") is True,
         "mergeStateStatus": str(payload.get("mergeStateStatus") or ""),
+        # Missing or empty files stay a non-installer diff. The view list wins.
+        "files": view_files or graphql_files,
     }
 
 

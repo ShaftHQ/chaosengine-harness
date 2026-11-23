@@ -3868,6 +3868,36 @@ def host_routes_cover(stored: object) -> bool:
     return set(stored) <= set(current) and all(stored[key] == current[key] for key in stored)
 
 
+# Written on every install, including a machine with no named host CLI.
+# Any client that reads AGENTS.md or the agents skill shim discovers ChaosEngine.
+UNIVERSAL_ENTRY_PATHS = (
+    "AGENTS.md",
+    ".agents/skills/chaos-engine/SKILL.md",
+    ".chaos-engine/skills/chaos-engine/SKILL.md",
+)
+_SKILL_POINTER_PATHS = frozenset({
+    ".agents/skills/chaos-engine/SKILL.md",
+    ".claude/skills/chaos-engine/SKILL.md",
+    ".gemini/skills/chaos-engine/SKILL.md",
+    ".github/skills/chaos-engine/SKILL.md",
+    "plugins/chaos-engine/skills/chaos-engine/SKILL.md",
+})
+_LEGACY_SKILL_POINTER = re.compile(
+    r"(?<!\.)chaos-engine/skills/chaos-engine/SKILL\.md",
+    re.IGNORECASE,
+)
+
+
+def universal_entry_paths() -> tuple[str, ...]:
+    """Files any AI client can open when no named host CLI is installed.
+
+    ``install`` writes the first two on every project. They point at the third,
+    the installed ChaosEngine skill. ``AGENTS.md`` also loads
+    ``.chaos-engine/identity.md``.
+    """
+    return UNIVERSAL_ENTRY_PATHS
+
+
 def host_routes() -> dict[str, str]:
     return {
         "codex": ".agents/skills/chaos-engine/SKILL.md",
@@ -4113,11 +4143,14 @@ def _is_current_or_recognized_legacy_owned_span(
         return True
     if start == START and end == END:
         folded = interior.casefold()
-        # Either fingerprint is an owned ChaosEngine block. Owner text outside
-        # the markers stays. A marker pair with neither fingerprint is a handoff.
+        # Either fingerprint is an owned ChaosEngine block, including the
+        # pre-overlay `chaos-engine/...` spelling. Owner text outside the
+        # markers stays. A marker pair with neither fingerprint is a handoff.
         return (
             ".chaos-engine/" in folded
             or "before every task, follow the canonical" in folded
+            or "chaos-engine/skills/chaos-engine/skill.md" in folded
+            or "chaos-engine/identity.md" in folded
         )
     if start == GITIGNORE_START and end == GITIGNORE_END:
         return (
@@ -8173,6 +8206,49 @@ def created_file_residue(original: bytes | None, residue: bytes | None) -> bytes
     return None if isinstance(document, dict) and not any(document.values()) else residue
 
 
+def _recognized_marker_residue(observed: bytes) -> bytes | None:
+    """User bytes outside one owned marker, or None when the file is not that shape.
+
+    A current or legacy ChaosEngine interior is owned. Text outside the markers
+    is the residue an upgrade merges back. A foreign interior is not residue.
+    """
+    try:
+        existing = observed.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+    if existing.count(START) != 1 or existing.count(END) != 1:
+        return None
+    begin = existing.index(START)
+    finish = existing.index(END, begin) + len(END)
+    interior = existing[begin:finish].replace("\r\n", "\n")
+    if not _is_current_or_recognized_legacy_owned_span(interior, START, END, instruction_block()):
+        return None
+    if finish < len(existing) and existing[finish] == "\r":
+        finish += 1
+    if finish < len(existing) and existing[finish] == "\n":
+        finish += 1
+    return (existing[:begin] + existing[finish:]).encode()
+
+
+def _obsolete_skill_shim(relative: str, observed: bytes | None) -> bool:
+    """True for a short managed shim that still points at the source tree.
+
+    A pasted router body is not a shim. Foreign text that never names the
+    source-tree skill stays drift.
+    """
+    if relative not in _SKILL_POINTER_PATHS or not isinstance(observed, bytes):
+        return False
+    if len(observed) > 4000:
+        return False
+    try:
+        text = observed.decode("utf-8")
+    except UnicodeDecodeError:
+        return False
+    if "measure thrice, cut once" in text.casefold():
+        return False
+    return _LEGACY_SKILL_POINTER.search(text) is not None
+
+
 def upgrade_before_images(
     project: Path,
     before: dict[str, bytes | None],
@@ -8245,6 +8321,13 @@ def upgrade_before_images(
                 ".claude/settings.json": "Claude",
             }[relative]
             restored[relative] = without_chaos_hooks(observed, label)
+            continue
+        if relative in MARKER_POLICY_FILES and isinstance(observed, bytes):
+            residue = _recognized_marker_residue(observed)
+            if residue is not None:
+                restored[relative] = residue
+                continue
+        if _obsolete_skill_shim(relative, observed):
             continue
         raise ValueError(f"ChaosEngine host adapter drift detected: {relative}")
     return restored
