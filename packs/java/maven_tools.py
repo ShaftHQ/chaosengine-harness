@@ -1386,6 +1386,7 @@ def _add_maven_server(
     maven_runtime: tuple[Path, Path] | None,
     maven_docker: tuple[str, str] | None,
     managed_python: Path | None,
+    platform_name: str | None = None,
 ) -> None:
     if maven_runtime is not None:
         # Portable shared-cache contract: never embed workstation-absolute
@@ -1394,6 +1395,7 @@ def _add_maven_server(
         servers["maven-tools-mcp"] = portable_python_server(
             [".chaos-engine/tool.py", "maven-tools-mcp"],
             managed_python=managed_python,
+            platform_name=platform_name,
         )
     elif maven_docker is not None:
         _docker, image = maven_docker

@@ -75,11 +75,31 @@ def entry_files(opt_out: str = "") -> tuple[str, ...]:
     return CORE_ENTRY_FILES + tuple(card for name, card in cards.items() if name not in stopped)
 
 
-ENTRY_RETRIEVE = (
-    "Run `python3 .chaos-engine/tool.py retrieve --store graphify|mempalace "
-    '"<q>"` before the first broad search; record `retrieve: used` or '
-    "`skipped(<reason>)`.\n"
-)
+def python_cli() -> str:
+    """Operator spelling shared with resolve_command. Windows has no python3.exe."""
+    return "py -3" if os.name == "nt" else "python3"
+
+
+def entry_retrieve() -> str:
+    return (
+        f"Run `{python_cli()} .chaos-engine/tool.py retrieve --store graphify|mempalace "
+        '"<q>"` before the first broad search; record `retrieve: used` or '
+        "`skipped(<reason>)`.\n"
+    )
+
+
+def retrieve_refusal() -> str:
+    return (
+        f"run `{python_cli()} .chaos-engine/tool.py retrieve --store graphify|mempalace "
+        '"<q>"` first'
+    )
+
+
+def entry_full_hint(digest: str) -> str:
+    return (
+        f"ChaosEngine entry unchanged ({digest}); new conversation, context summary, or cards not in context: "
+        f"run `{python_cli()} .chaos-engine/tool.py entry --full`.\n"
+    )
 
 
 def entry_bundle(installed_root: Path, opt_out: str = "") -> str:
@@ -101,7 +121,7 @@ def entry_bundle(installed_root: Path, opt_out: str = "") -> str:
                 parts.append(f"<!-- persona -->\n{persona.read_text(encoding='utf-8').strip()}\n")
             parts.append(module.receipt(installed_root, stopped=stopped_companions(opt_out)))
             return "\n".join(parts)
-    parts.append(ENTRY_RETRIEVE)
+    parts.append(entry_retrieve())
     return "\n".join(parts)
 
 
@@ -159,10 +179,7 @@ def _entry_output(installed_root: Path, full: bool = False, opt_out: str = "") -
         unchanged = False
     identity = entry_identity_line(installed_root)
     if unchanged and not full:
-        return identity + (
-            f"ChaosEngine entry unchanged ({digest}); new conversation, context summary, or cards not in context: "
-            "run `python3 .chaos-engine/tool.py entry --full`.\n"
-        )
+        return identity + entry_full_hint(digest)
     write_entry_stamp(installed_root, opt_out, digest)
     return identity + bundle
 
@@ -186,7 +203,7 @@ def entry_stamp_time(installed_root: Path) -> int:
         return 0
 
 
-RETRIEVE_REFUSAL = "run `python3 .chaos-engine/tool.py retrieve --store graphify|mempalace \"<q>\"` first"
+RETRIEVE_REFUSAL = retrieve_refusal()
 
 
 def retrieve_owed(installed_root: Path, arguments: list[str]) -> bool:
@@ -232,7 +249,7 @@ def load_stamp_refusal(installed_root: Path, tool: str) -> str:
         why = "no entry stamp"
     steps = ["install/repair if doctor is not pass", "`tool.py entry --full`"]
     if tool == "checkpoint":
-        steps += [RETRIEVE_REFUSAL.removesuffix(" first"), "`tool.py checkpoint <task> <step> --start --spec PATH`"]
+        steps += [retrieve_refusal().removesuffix(" first"), "`tool.py checkpoint <task> <step> --start --spec PATH`"]
     else:
         steps += [f"`tool.py {tool} <task>`"]
     return f"{LOAD_STAMP_REFUSAL} ({why}). Order: " + "; then ".join(steps)
@@ -680,8 +697,9 @@ def default_remote_ref(root: Path) -> str:
 
 def sync_fix_next(root: Path) -> str:
     branch = default_branch_name(root)
+    # Two lines: PowerShell 5.1 rejects ``&&``.
     return (
-        f"git fetch {DEFAULT_REMOTE} {branch} && "
+        f"git fetch {DEFAULT_REMOTE} {branch}\n"
         f"git merge --ff-only {DEFAULT_REMOTE}/{branch}"
     )
 
@@ -955,7 +973,7 @@ def resolve_command(
     enforce_tool_origin_main_policy(installed_project, tool)
     path = runtime_module(installed_root, "dependencies.py")
     if not path.is_file():
-        cli = "py -3" if os.name == "nt" else "python3"
+        cli = python_cli()
         raise ValueError(
             "ChaosEngine dependency controller could not be loaded "
             f"(wiped or incomplete `.chaos-engine` runtime). fix-next: run the "
@@ -1010,7 +1028,7 @@ def script_tool(installed_root: Path, tool: str, arguments: list[str]) -> int:
         print(load_stamp_refusal(installed_root, tool), file=sys.stderr)
         return 2
     if tool == "checkpoint" and retrieve_owed(installed_root, arguments):
-        print(RETRIEVE_REFUSAL, file=sys.stderr)
+        print(retrieve_refusal(), file=sys.stderr)
         return 2
     relative = SCRIPT_TOOLS[tool]
     module_path = installed_root / relative if "/" in relative else runtime_module(installed_root, relative)
