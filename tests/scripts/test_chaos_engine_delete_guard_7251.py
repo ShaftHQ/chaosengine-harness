@@ -610,6 +610,26 @@ class DeleteGuardTest(unittest.TestCase):
             self.assertTrue(dir_a.exists())
             self.assertEqual(0, GUARD.main(["--code", code_a, "--command", f"rm -rf -- {dir_a}"]))
             self.assertFalse(dir_a.exists())
+            # A Python delete that also runs another command is not a pure delete.
+            py_dir = self._loose("py-smuggle")
+            py_code = GUARD.request_code([py_dir])
+            py_cmd = (
+                "python3 -c 'import shutil; shutil.rmtree(\""
+                + str(py_dir)
+                + "\"); import os; os.system(\"echo smuggled\")'"
+            )
+            self.assertEqual(1, GUARD.main(["--code", py_code, "--command", py_cmd]))
+            self.assertTrue(py_dir.exists())
+            self.assertEqual(0, GUARD.main(["--code", py_code, "--command", f"rm -rf -- {py_dir}"]))
+            self.assertFalse(py_dir.exists())
+            # find -delete that also -execs is not a pure delete.
+            find_dir = self._loose("find-smuggle")
+            find_code = GUARD.request_code([find_dir])
+            find_cmd = f"find {find_dir} -delete -exec echo smuggled \\;"
+            self.assertEqual(1, GUARD.main(["--code", find_code, "--command", find_cmd]))
+            self.assertTrue(find_dir.exists())
+            self.assertEqual(0, GUARD.main(["--code", find_code, "--command", f"rm -rf -- {find_dir}"]))
+            self.assertFalse(find_dir.exists())
 
     def test_hook_blocks_and_doctor_row_passes(self):
         guard = load("chaos_engine_guard_hook_7251", CORE / "hooks" / "guard.py")
