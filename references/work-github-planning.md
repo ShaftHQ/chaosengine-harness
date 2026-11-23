@@ -81,7 +81,7 @@ compaction. Do not treat a compacted context as a session end.
 
 - After plan approval, stay fully unattended until every in-scope ticket is
   merged or closed, or the owner names a true HALT. Compaction is not stop.
-- Do not run `gh pr merge --squash --auto` when that arm would merge immediately. Arm it only when the platform queues the merge until required checks succeed. Otherwise watch, then `gh pr merge --squash` after the required checks pass and review threads are resolved. This repository allows only squash merges. A skipped or neutral check outside the required set does not block. A failed, cancelled, or pending check blocks when it is required and when no check is marked required. An unmarked skip blocks. An empty check list is not success. A pending check is not success. No unguarded force.
+- Do not run `gh pr merge --squash --auto`. Never arm `gh pr merge --auto`. Watch until required checks pass and review threads are resolved, then enqueue a `merge_queue` ruleset with `gh pr merge` and pass no strategy flag (`--merge`, `--squash`, or `--rebase`), or otherwise merge with `gh pr merge --squash`. This repository allows only squash merges. A skipped or neutral check outside the required set does not block. A failed, cancelled, or pending check blocks when it is required and when no check is marked required. An unmarked skip blocks. An empty check list is not success. A pending check is not success. No unguarded force.
 - Do not weaken or delete tests to reach green.
 - Push the self-accepted head and start review 1 together, on the host
   **most-intelligent** subagent, never the local mechanical model. The
@@ -89,7 +89,7 @@ compaction. Do not treat a compacted context as a session end.
   step. An unchanged head gets at most two reviews. A CI-only repair does not
   start a third reviewer ([delivery cycle](delivery-cycle.md)).
 - Nightly tracker autoclose and prove-close dispatch live in the
-  [delivery playbook](work-github-playbook.md#pr-merger-workflow-arm-watch-fix-confirm).
+  [delivery playbook](work-github-playbook.md#pr-merger-workflow-watch-fix-confirm).
   Targeted `jobs` values must not close full-matrix trackers.
 - Full-suite-only failures (pass alone or in a small `tests=` selection): before bisecting,
   scan the same run for in-JVM unit tests of that subsystem failing with `TimeoutException`.

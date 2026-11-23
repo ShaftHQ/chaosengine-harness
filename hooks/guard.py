@@ -1294,8 +1294,11 @@ def _paginate_pr_files(
         if not isinstance(page_info, dict) or not isinstance(nodes, list):
             return collected, False
         collected.extend(_file_paths(nodes))
-        if page_info.get("hasNextPage") is not True:
+        has_next = page_info.get("hasNextPage")
+        if has_next is False:
             return collected, True
+        if has_next is not True:
+            return collected, False
         next_cursor = page_info.get("endCursor")
         cursor = next_cursor if isinstance(next_cursor, str) and next_cursor else ""
     return collected, False
@@ -1369,8 +1372,8 @@ def live_merge_probe(target: str) -> dict:
         combined_files = list(dict.fromkeys([*view_files, *graphql_files]))
     else:
         combined_files = view_files
-        if view_files and len(view_files) < 100:
-            files_complete = True
+        if view_files:
+            files_complete = len(view_files) < 100
     return {
         "checks": checks,
         "unresolved": unresolved,

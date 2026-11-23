@@ -113,8 +113,8 @@ Promotion, orchestrated-runtime membership, nightly recovery, ROG machineId, and
 - A large delivery (more than one module, or more than one issue) opens a
   draft pull request on the first commit and pushes again after each locally green slice.
   The draft stays a draft until that exact head is green and the
-  required reviews have passed. This rule does not arm auto-merge. Auto-merge,
-  where the playbook already requires it, waits until that exact head is green and the required reviews have passed.
+  required reviews have passed. Never arm `gh pr merge --auto`; merge only once
+  that exact head is green, required reviews have passed, and review threads are resolved.
   A one-file reversible fix is not a large delivery.
 - After the implementation and Check/Act batch, push the branch and open or
   update the agreed PR shape with a
@@ -137,12 +137,12 @@ recorded `gh pr merge`. That includes an active delivery goal whose pull
 request was already open, and a session that only pushes new commits.
 `delivery-status` does not clear the block. A delivery goal keeps babysitting
 until that merge.
+When attendance is fully unattended (default) or the owner says babysit and merge it when green, follow this PR-merger workflow (watch, fix, confirm).
 Never arm `gh pr merge --auto`. Merge only once that exact head is green,
 required reviews have passed, and review threads are resolved, not while the
 pull request is still a draft or the head is red. A pending check is not
 success. `gh pr merge` is refused until then, including when `--auto` is
-present. Bundled `pr-babysit` forbids merge; do not copy that rule into
-ChaosEngine and do not edit the bundled skill in place.
+present. Bundled `pr-babysit` forbids merge; do not copy that rule into ChaosEngine and do not edit the bundled skill in place.
 
 When the base branch ruleset includes a `merge_queue` rule, enqueue with
 `gh pr merge` and pass no strategy flag (`--merge`, `--squash`, or `--rebase`);
@@ -181,24 +181,26 @@ Owner-authorized history correction and non-protected gate waivers:
    user-facing affected flows. Re-read the original tracker or epic body (not a
    later summary): every Functional Requirement, Success Criterion, and GitHub
    sub-issue in that initial scope must map to live files and a merged or
-   currently-armed PR. Do not arm auto-merge while any in-scope sub-issue is
+   ready PR. Do not arm auto-merge while any in-scope sub-issue is
    open, any FR/SC is unimplemented, or this PR would close an epic that still
-   has dropped scope. Owner-reduced scope counts only when the tracker body
+   has dropped scope (never arm `gh pr merge --auto`; merge only once scope is
+   complete). Owner-reduced scope counts only when the tracker body
    itself records the drop. Remaining work becomes new sub-issues before merge;
-   it does not silently vanish. This is the final assurance action before arming
-   auto-merge. If the head or remote feedback changes afterward, the receipt is
+   it does not silently vanish. This is the final assurance action before
+   merging. If the head or remote feedback changes afterward, the receipt is
    stale: clear only that new observable state, then run one replacement
    acceptance against the new exact head. Unchanged state never triggers a retry.
-#### Auto-merge safety
+#### Merge safety
 
-Before arming: one `Fixes #N` → one open PR (close twins); all in-scope commits
-on the **remote** head; at most one armed PR per overlapping product path. On
-overlap, leave the later PR unarmed until the earlier merges, then merge
-`origin/<default>` (merge commit, no force-push) and re-arm. If the later merged
-first and the earlier is `DIRTY`, merge `origin/<default>` into the earlier and
-re-arm — never a second `Fixes` PR. Non-overlapping paths may arm in parallel.
+Before merging: one `Fixes #N` → one open PR (close twins); all in-scope commits
+on the **remote** head; never arm `gh pr merge --auto`; merge at most one PR at a
+time per overlapping product path. On overlap, wait until the earlier PR merges,
+then merge `origin/<default>` (merge commit, no force-push) into the later PR and
+re-verify before merging. If the later merged first and the earlier is `DIRTY`,
+merge `origin/<default>` into the earlier and re-verify — never a second `Fixes`
+PR. Non-overlapping paths may merge in parallel once each is green and reviewed.
 
-4. **Merge** only after that acceptance remains current, the reviews are done, their comments are applied, and the required checks have passed. A skipped or neutral check outside the required set does not block. A failed, cancelled, or pending check blocks when it is required and when no check is marked required. An unmarked skip blocks. An empty check list is not success. A pending check is not success. `gh pr merge <n> --squash --match-head-commit <sha>` is refused while a required check has not finished, a required check is not success, no check is marked required and a failed, cancelled, or pending check remains, or a review thread is unresolved. `--auto` does not bypass that refusal. Never force.
+4. **Merge** only after that acceptance remains current, the reviews are done, their comments are applied, and the required checks have passed. A skipped or neutral check outside the required set does not block. A failed, cancelled, or pending check blocks when it is required and when no check is marked required. An unmarked skip blocks. An empty check list is not success. A pending check is not success. `gh pr merge <n> --squash --match-head-commit <sha>` (or `gh pr merge <n>` with no strategy flag when the base branch ruleset includes `merge_queue`) is refused while a required check has not finished, a required check is not success, no check is marked required and a failed, cancelled, or pending check remains, or a review thread is unresolved. `--auto` does not bypass that refusal. Never force.
 5. **Watch** with `python3 scripts/agents/watch_pr_checks.py --pr <n> --until-merged --digest` (repo-only)
    until merged or a red fix is pushed. One line on GREEN, RED, or MERGED.
    No second poll. Reject a `gh run view` loop and a second watch while one task is pending.
@@ -209,13 +211,13 @@ re-arm — never a second `Fixes` PR. Non-overlapping paths may arm in parallel.
    branch, or merge the fetched configured upstream default branch for a
    conflict or stale head, then return to watch. Never force-push away
    owner-visible history. Any new push restarts the comment gate before
-   auto-merge may remain armed. Static-analysis `ACTION_REQUIRED` (≥medium, any category)
+   merging. Static-analysis `ACTION_REQUIRED` (≥medium, any category)
    is unit red ([gate](static-analysis-gate.md),
-   [Complexity](complexity-gate.md)); never keep auto-merge armed on it.
+   [Complexity](complexity-gate.md)); never merge on it.
 
-Unresolved `reviewThreads` block auto-merge. Fix or answer, reply, and
+Unresolved `reviewThreads` block merge. Fix or answer, reply, and
 `resolveReviewThread` before returning to the watch.
-8. **Confirm** remotely that `mergedAt` is non-null; armed is not merged.
+8. **Confirm** remotely that `mergedAt` is non-null; queued is not merged.
    Learning Session runs only after that `mergedAt`.
 
 #### Nightly full-matrix autoclose

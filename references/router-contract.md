@@ -191,7 +191,7 @@ and the tracker or epic's initial scope is complete (every in-scope sub-issue me
 or explicitly dropped on the tracker; no dropped FR/SC),
 one blocking wait per push (`gh pr checks --watch --fail-fast`) confirms the merge.
 Red and conflicting are yours to fix. The duty survives compaction:
-[PR-merger workflow](work-github-playbook.md#pr-merger-workflow-arm-watch-fix-confirm).
+[PR-merger workflow](work-github-playbook.md#pr-merger-workflow-watch-fix-confirm).
 
 ## Reflection
 

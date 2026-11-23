@@ -854,6 +854,163 @@ class InstallerContractMergeGateTests(unittest.TestCase):
         self.assertIn("installer-contract", reason)
         self.assertIn("ubuntu-latest upgrade empty", reason)
 
+    def test_live_probe_page2_missing_or_null_has_next_page_fails_closed(self):
+        for page2_info in ({}, {"hasNextPage": None}):
+            with self.subTest(page2_info=page2_info):
+                def fake(args, page2_info=page2_info):
+                    if args[:2] == ["pr", "view"]:
+                        return {
+                            "id": "PR_p2",
+                            "url": "https://github.com/acme/widgets/pull/203",
+                            "mergeStateStatus": "UNSTABLE",
+                            "statusCheckRollup": [],
+                            "files": [{"path": f"docs/file-{i}.md"} for i in range(100)],
+                        }, ""
+                    query = args[-1]
+                    if "reviewThreads" in query:
+                        return {
+                            "data": {
+                                "repository": {
+                                    "pullRequest": {
+                                        "files": {
+                                            "pageInfo": {"hasNextPage": True, "endCursor": "CUR100"},
+                                            "nodes": [{"path": f"docs/file-{i}.md"} for i in range(100)],
+                                        },
+                                        "reviewThreads": {
+                                            "pageInfo": {"hasNextPage": False},
+                                            "nodes": [],
+                                        },
+                                    }
+                                }
+                            }
+                        }, ""
+                    if 'after: "CUR100"' in query:
+                        return {
+                            "data": {
+                                "repository": {
+                                    "pullRequest": {
+                                        "files": {
+                                            "pageInfo": page2_info,
+                                            "nodes": [{"path": f"docs/page2-{i}.md"} for i in range(100)],
+                                        }
+                                    }
+                                }
+                            }
+                        }, ""
+                    return {
+                        "data": {
+                            "repository": {
+                                "pullRequest": {
+                                    "commits": {
+                                        "nodes": [{
+                                            "commit": {
+                                                "statusCheckRollup": {
+                                                    "contexts": {
+                                                        "pageInfo": {"hasNextPage": False},
+                                                        "nodes": [
+                                                            {
+                                                                "__typename": "CheckRun",
+                                                                "name": "Offline structure and syntax checks",
+                                                                "status": "COMPLETED",
+                                                                "conclusion": "SUCCESS",
+                                                                "isRequired": True,
+                                                            },
+                                                            {
+                                                                "__typename": "CheckRun",
+                                                                "name": "ubuntu-latest upgrade empty",
+                                                                "status": "COMPLETED",
+                                                                "conclusion": "FAILURE",
+                                                                "isRequired": False,
+                                                            },
+                                                        ],
+                                                    }
+                                                }
+                                            }
+                                        }]
+                                    }
+                                }
+                            }
+                        }
+                    }, ""
+
+                self.guard._gh_json = fake
+                snapshot = self.guard.live_merge_probe("203")
+                self.assertFalse(snapshot["filesComplete"])
+                reason = self.guard.merge_readiness_reason(snapshot)
+                self.assertIn("installer-contract", reason)
+                self.assertIn("ubuntu-latest upgrade empty", reason)
+
+    def test_live_probe_empty_graphql_with_100_view_files_fails_closed(self):
+        def fake(args):
+            if args[:2] == ["pr", "view"]:
+                return {
+                    "id": "PR_v100",
+                    "url": "https://github.com/acme/widgets/pull/204",
+                    "mergeStateStatus": "UNSTABLE",
+                    "statusCheckRollup": [],
+                    "files": [{"path": f"docs/file-{i}.md"} for i in range(100)],
+                }, ""
+            query = args[-1]
+            if "reviewThreads" in query:
+                return {
+                    "data": {
+                        "repository": {
+                            "pullRequest": {
+                                "files": {
+                                    "pageInfo": {"hasNextPage": False},
+                                    "nodes": [],
+                                },
+                                "reviewThreads": {
+                                    "pageInfo": {"hasNextPage": False},
+                                    "nodes": [],
+                                },
+                            }
+                        }
+                    }
+                }, ""
+            return {
+                "data": {
+                    "repository": {
+                        "pullRequest": {
+                            "commits": {
+                                "nodes": [{
+                                    "commit": {
+                                        "statusCheckRollup": {
+                                            "contexts": {
+                                                "pageInfo": {"hasNextPage": False},
+                                                "nodes": [
+                                                    {
+                                                        "__typename": "CheckRun",
+                                                        "name": "Offline structure and syntax checks",
+                                                        "status": "COMPLETED",
+                                                        "conclusion": "SUCCESS",
+                                                        "isRequired": True,
+                                                    },
+                                                    {
+                                                        "__typename": "CheckRun",
+                                                        "name": "ubuntu-latest upgrade empty",
+                                                        "status": "COMPLETED",
+                                                        "conclusion": "FAILURE",
+                                                        "isRequired": False,
+                                                    },
+                                                ],
+                                            }
+                                        }
+                                    }
+                                }]
+                            }
+                        }
+                    }
+                }
+            }, ""
+
+        self.guard._gh_json = fake
+        snapshot = self.guard.live_merge_probe("204")
+        self.assertFalse(snapshot["filesComplete"])
+        reason = self.guard.merge_readiness_reason(snapshot)
+        self.assertIn("installer-contract", reason)
+        self.assertIn("ubuntu-latest upgrade empty", reason)
+
 
 if __name__ == "__main__":
     unittest.main()

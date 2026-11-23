@@ -38,7 +38,7 @@ After that PR merges, every agent installs the new ChaosEngine. Cleanup of rebui
 
 ## Ledger
 
-The 2026-11-06 transcripts live in [the lessons ledger](details/ce-lessons-2026-11-06/ledger.md). Upstream contribution close rules: [external contribution](external-contribution.md).
+The 2026-11-06 transcripts live in the lessons ledger (repo-only `references/details/ce-lessons-2026-11-06/ledger.md`). Upstream contribution close rules: [external contribution](external-contribution.md).
 
 ## One writer
 
@@ -48,4 +48,4 @@ No two workers edit the same file. Mega-PR grouping does not waive the claim.
 
 Orchestrator, Designer, and Chaos write the code themselves. Do not route implementation to a Cursor cloud agent or the Cursor bot. This owner's product checkout and ChaosEngine work is written on the owner's machine with Grok Build (`grok` CLI, `--prompt-file` or `-p`, `--always-approve`, `--cwd` the checkout). Always use local tools. A cloud agent or an extra machine needs the owner's own explicit yes in that moment, on every provider. A saved habit, a playbook, or "it is faster" is not approval. The already approved path is this machine with Grok Build, and it is not a license for another machine or a cloud agent. After a PR is opened, the public branch is `ChaosEngine/<short-slug>` and the body is a ChaosEngine body. Stripping provider chrome is cleanup after the fact. The default path does not create it.
 
-Token-opt notes for 2026-11-06: [index](details/token-opt-retro-2026-11-06/index.md).
+Token-opt notes for 2026-11-06: repo-only `references/details/token-opt-retro-2026-11-06/index.md`.

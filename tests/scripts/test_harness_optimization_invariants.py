@@ -97,8 +97,17 @@ def test_default_reviewer_is_not_hardcoded_to_grok() -> None:
 
 
 def test_work_github_playbook_matches_merge_policy() -> None:
-    text = _text("references/work-github-playbook.md")
-    assert "Never arm `gh pr merge --auto`" in text
-    assert "Arm `gh pr merge --auto`" not in text
-    assert "merge_queue" in text
-    assert "pass no strategy flag (`--merge`, `--squash`, or `--rebase`)" in text
+    playbook = _text("references/work-github-playbook.md")
+    planning = _text("references/work-github-planning.md")
+    router = _text("references/router-contract.md")
+    for text in (playbook, planning):
+        assert "Never arm `gh pr merge --auto`" in text
+        assert "Arm `gh pr merge --auto`" not in text
+        assert "merge_queue" in text
+        assert "pass no strategy flag (`--merge`, `--squash`, or `--rebase`)" in text
+    for forbidden in ("Before arming:", "and re-arm", "auto-merge may remain armed", "where the playbook already requires it"):
+        assert forbidden not in playbook
+    assert "Arm it only when the platform queues" not in planning
+    for text in (planning, router):
+        assert "pr-merger-workflow-arm-watch-fix-confirm" not in text
+        assert "pr-merger-workflow-watch-fix-confirm" in text

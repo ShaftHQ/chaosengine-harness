@@ -228,7 +228,7 @@ class ConsumerPayloadLeanTest(unittest.TestCase):
         for relative in KEPT_CI + KEPT_DETAILS:
             self.assertIn(relative, payload)
 
-    def test_no_shipped_markdown_links_to_newly_excluded_payload_files(self):
+    def test_no_shipped_markdown_links_to_excluded_payload_files(self):
         import posixpath
         import re
 
@@ -238,16 +238,16 @@ class ConsumerPayloadLeanTest(unittest.TestCase):
             path.relative_to(ROOT).as_posix()
             for path in INSTALL.source_files(ROOT)
         }
-        newly_excluded = set(EXCLUDED_CI) | set(EXCLUDED_DETAILS)
-        checked_docs = {
-            "references/work-github-playbook.md",
-            "references/work-ordering.md",
-            "references/ce-rules-2026-10-31-7-SPEC.md",
-            "references/ce-rules-2026-10-31-8-SPEC.md",
-            "references/ce-rules-2026-10-31-11-SPEC.md",
-            "references/ce-rules-2026-10-31-12-SPEC.md",
-            "references/ce-rules-2026-10-31-13-SPEC.md",
-            "references/ce-lessons-2026-11-02-SPEC.md",
+        origin_doc_prefixes = ("guides/", "docs/")
+        origin_doc_files = {
+            "README.md",
+            "INSTALL.md",
+            "CONTRIBUTING.md",
+            "CHANGELOG.md",
+            "ROADMAP.md",
+            "SECURITY.md",
+            "CODE_OF_CONDUCT.md",
+            "references/harness-files.md",
         }
         broken: list[str] = []
         for relative in sorted(payload):
@@ -263,12 +263,14 @@ class ConsumerPayloadLeanTest(unittest.TestCase):
                 if not target or uri_re.match(target) or target.startswith("/") or "{" in target:
                     continue
                 resolved = posixpath.normpath(posixpath.join(parent, target)) if parent else posixpath.normpath(target)
-                if resolved.startswith("../") or resolved.startswith(".chaos-engine") or resolved.startswith("guides/"):
+                if resolved.startswith("../") or resolved.startswith(".chaos-engine"):
+                    continue
+                if resolved.startswith(origin_doc_prefixes) or resolved in origin_doc_files:
                     continue
                 disk_path = ROOT / resolved
                 if disk_path.is_dir():
                     continue
-                if resolved in newly_excluded or (relative in checked_docs and disk_path.is_file() and resolved not in payload):
+                if disk_path.is_file() and resolved not in payload:
                     broken.append(f"{relative} -> {target} ({resolved})")
         self.assertEqual([], broken)
 
