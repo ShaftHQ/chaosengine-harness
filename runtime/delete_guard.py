@@ -2086,6 +2086,10 @@ def _only_delete_segments(command: str, cwd: Path) -> bool:
                 has_delete = True
                 continue
             if head.startswith("python"):
+                # Owner-code runs the string with shell=True; another call is not a pure delete.
+                payload = " ".join(arguments)
+                if re.search(r"\bos\.system\b|\bsubprocess\b|\bos\.popen\b|\beval\s*\(|\bexec\s*\(", payload):
+                    return False
                 if not (RMTREE.search(line) or PATHLIB_DELETE.search(line)):
                     return False
                 try:
@@ -2095,6 +2099,9 @@ def _only_delete_segments(command: str, cwd: Path) -> bool:
                     return False
                 has_delete = True
                 continue
+            # find -exec/-ok runs an extra command even when -delete is also present.
+            if head == "find" and any(item in {"-exec", "-execdir", "-ok", "-okdir"} for item in arguments):
+                return False
             try:
                 targets = _segment_targets(arguments, cwd)
             except Unsure:
