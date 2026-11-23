@@ -435,19 +435,34 @@ def graphify_import_action(
     resolved_version: str | None,
     extra_import_ok: bool | None,
 ) -> str:
-    """A version match that would be reused is a repair when anyio did not import.
+    """A reused graphify install is a repair when anyio did not import.
 
     ``graphify --version`` can succeed without importing the query extra.
-    An unverified registry (no resolved version) stays reused.
+    An unverified registry (no resolved version) stays reused. A verified
+    resolved version repairs even when the installed string is missing or
+    formatted differently from the registry version.
     """
-    matched = (
-        isinstance(installed_version, str)
-        and isinstance(resolved_version, str)
-        and installed_version.lstrip("v") == resolved_version.lstrip("v")
-    )
-    if action == "reused" and matched and extra_import_ok is False:
+    del installed_version
+    verified = isinstance(resolved_version, str) and bool(resolved_version.strip())
+    if action == "reused" and extra_import_ok is False and verified:
         return "repaired"
     return action
+
+
+def apply_graphify_extra_repair(actions: dict[str, dict[str, object]]) -> None:
+    """Reinstall a present graphify when anyio failed, even if the registry is down.
+
+    ``graphify_import_action`` keeps that unverified row reused. The installer
+    still has to put the pinned extras back before verification.
+    """
+    record = actions.get("graphify")
+    if not isinstance(record, dict):
+        return
+    if record.get("healthy") is not True or record.get("extraImport") is not False:
+        return
+    if record.get("action") != "reused":
+        return
+    record["action"] = "repaired"
 
 
 def _user_path_publish_enabled() -> bool:
@@ -884,6 +899,8 @@ def account_tool_plan(
             python_pin: list[str] = []
             if name in {"mempalace", "graphify"}:
                 python_version = (resolved_versions or {}).get("python")
+                if not isinstance(python_version, str) or not python_version.strip():
+                    python_version = _pinned_runtime_version(specification, "python")
                 if not isinstance(python_version, str) or not python_version.strip():
                     raise ValueError("account tool install requires the resolved Python version")
                 # Pin the interpreter. An unpinned install follows the newest CPython ABI,
@@ -1415,8 +1432,73 @@ def probe_account_dependency(
     return probed
 
 
+def _graphify_uv_tool_roots() -> list[Path]:
+    """Candidate uv tool roots. Windows uv defaults to %APPDATA%\\uv\\tools."""
+    roots: list[Path] = []
+    seen: set[str] = set()
+
+    def add(path: Path | None) -> None:
+        if path is None:
+            return
+        key = os.path.normcase(str(path))
+        if not key or key in seen:
+            return
+        seen.add(key)
+        roots.append(path)
+
+    tool_dir = os.environ.get("UV_TOOL_DIR", "").strip()
+    if tool_dir:
+        add(Path(tool_dir))
+    appdata = os.environ.get("APPDATA", "").strip()
+    if appdata:
+        add(Path(appdata) / "uv" / "tools")
+    local_appdata = os.environ.get("LOCALAPPDATA", "").strip()
+    if local_appdata:
+        add(Path(local_appdata) / "uv" / "tools")
+    home = Path.home()
+    add(home / "AppData" / "Roaming" / "uv" / "tools")
+    add(home / ".local" / "share" / "uv" / "tools")
+    return roots
+
+
+def _graphifyy_venv_python(tool_root: Path) -> str | None:
+    """Interpreter inside one ``graphifyy`` uv tool environment."""
+    for relative in (Path("Scripts") / "python.exe", Path("bin") / "python"):
+        candidate = tool_root / relative
+        if candidate.is_file():
+            return str(candidate)
+    return None
+
+
+def _graphifyy_root_containing(path: Path) -> Path | None:
+    """``graphifyy`` directory that contains this launcher, if any."""
+    parts = path.parts
+    for index, part in enumerate(parts):
+        if part.casefold() == "graphifyy":
+            return Path(*parts[: index + 1])
+    return None
+
+
+def _graphify_sibling_python(path: Path) -> str | None:
+    """Sibling interpreter only when the launcher sits inside ``graphifyy``."""
+    names = {parent.name.casefold() for parent in path.parents}
+    parent_name = path.parent.parent.name.casefold() if path.parent != path.parent.parent else ""
+    if "graphifyy" not in names and parent_name != "graphifyy":
+        return None
+    for name in ("python.exe", "python"):
+        candidate = path.parent / name
+        if candidate.is_file():
+            return str(candidate)
+    return None
+
+
 def _graphify_tool_python(executable_path: str) -> str | None:
-    """Interpreter from a uv tool shim. ``--version`` does not import extras."""
+    """Interpreter from a uv tool shim. ``--version`` does not import extras.
+
+    A Windows ``graphify.exe`` is a binary launcher with no shebang. A
+    ``python.exe`` beside that shim in ``~/.local/bin`` is not the tool
+    environment. uv on Windows keeps the environment under ``%APPDATA%\\uv\\tools``.
+    """
     path = Path(executable_path)
     try:
         with path.open("rb") as handle:
@@ -1431,18 +1513,99 @@ def _graphify_tool_python(executable_path: str) -> str | None:
                 if Path(parts[0]).name in {"env", "env.exe"} and len(parts) >= 2:
                     return parts[-1]
                 return parts[0]
-    for name in ("python.exe", "python"):
-        candidate = path.parent / name
-        if candidate.is_file():
-            return str(candidate)
-    tool_dir = os.environ.get("UV_TOOL_DIR", "").strip()
-    root = Path(tool_dir) if tool_dir else Path.home() / ".local" / "share" / "uv" / "tools"
-    scripts = "Scripts" if os.name == "nt" else "bin"
-    python_name = "python.exe" if os.name == "nt" else "python"
-    candidate = root / "graphifyy" / scripts / python_name
-    if candidate.is_file():
-        return str(candidate)
+    for root in _graphify_uv_tool_roots():
+        found = _graphifyy_venv_python(root / "graphifyy")
+        if found:
+            return found
+    contained = _graphifyy_root_containing(path)
+    if contained is not None:
+        found = _graphifyy_venv_python(contained)
+        if found:
+            return found
+    return _graphify_sibling_python(path)
+
+
+def _cpython_version_token(executable: str, runner) -> str | None:
+    """``major.minor.micro`` from one interpreter, or None when it cannot run."""
+    try:
+        result = runner(
+            [executable, "-c", "import sys; print('%d.%d.%d' % sys.version_info[:3])"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    text = (getattr(result, "stdout", "") or "").strip()
+    if getattr(result, "returncode", 1) != 0:
+        return None
+    if re.fullmatch(r"\d+\.\d+\.\d+", text):
+        return text
     return None
+
+
+def repair_graphify_extra_if_present(
+    project: Path,
+    specification: dict[str, object],
+    *,
+    runner=subprocess.run,
+    which=shutil.which,
+) -> str:
+    """Reinstall graphify extras when the tool is present and anyio does not import.
+
+    File upgrade does not revisit account tools. An unverified registry still
+    installs the pinned package plus ``--with`` extras. A missing graphify
+    stays absent so upgrade does not bootstrap every account tool.
+    """
+    validate_runtime_specification(specification)
+    executable = which("graphify")
+    if not isinstance(executable, str) or not executable:
+        if os.name == "nt":
+            found = which("graphify.exe")
+            executable = found if isinstance(found, str) else None
+    if not isinstance(executable, str) or not executable:
+        return "absent"
+    contracts = specification.get("dependencies")
+    contract = contracts.get("graphify") if isinstance(contracts, dict) else None
+    if not isinstance(contract, dict):
+        return "absent"
+    probed = probe_account_dependency("graphify", executable, contract, runner=runner)
+    if probed.get("healthy") is not True:
+        return "absent"
+    if probed.get("extraImport") is not False:
+        return "current"
+    uv = which("uv")
+    if (not isinstance(uv, str) or not uv) and os.name == "nt":
+        found_uv = which("uv.exe")
+        uv = found_uv if isinstance(found_uv, str) else None
+    if not isinstance(uv, str) or not uv:
+        raise RuntimeError("dependency verification failed: graphify")
+    python = _graphify_tool_python(executable)
+    python_version = _cpython_version_token(python, runner) if python else None
+    if not python_version:
+        python_version = _pinned_runtime_version(specification, "python")
+    if not python_version:
+        raise RuntimeError("dependency verification failed: graphify")
+    npm = which("npm")
+    if not isinstance(npm, str) or not npm:
+        npm = "npm"
+    plan = account_tool_plan(
+        project,
+        specification,
+        actions={"graphify": "repaired"},
+        executables={"uv": uv, "npm": npm},
+        resolved_versions={"python": python_version, "graphify": None},
+    )
+    for command in plan.get("graphify", []):
+        if is_uv_tool_install_command(command):
+            run_uv_tool_install_with_lock(command, project, runner=runner)
+        else:
+            _run_account_command(command, project, runner=runner)
+    checked = probe_account_dependency("graphify", executable, contract, runner=runner)
+    if checked.get("extraImport") is False:
+        raise RuntimeError("dependency verification failed: graphify")
+    return "repaired"
 
 
 def _probe_graphify_extra_import(
@@ -3674,6 +3837,7 @@ def install_account_dependencies(  # noqa: MC0001 - preflight then ordered accou
     actions = resolve_account_actions(
         specification, local, opener=opener
     )
+    apply_graphify_extra_repair(actions)
     blocked = describe_blocked_dependencies(actions)
     if blocked:
         raise RuntimeError("dependency setup blocked: " + blocked)
@@ -3695,6 +3859,23 @@ def install_account_dependencies(  # noqa: MC0001 - preflight then ordered accou
         name: str(actions[name]["action"])
         for name in ("mempalace", "graphify", "memory", "context7")
     }
+    resolved_versions = {
+        name: actions[name].get("resolvedVersion")
+        if isinstance(actions[name].get("resolvedVersion"), str) else None
+        for name in (*tool_actions, "python")
+    }
+    if tool_actions.get("graphify") == "repaired" and not resolved_versions.get("python"):
+        python_record = actions.get("python")
+        installed_python = None
+        if isinstance(python_record, dict):
+            for key in ("installedVersion", "version"):
+                candidate = python_record.get(key)
+                if isinstance(candidate, str) and candidate.strip():
+                    installed_python = candidate.strip()
+                    break
+        resolved_versions["python"] = (
+            installed_python or _pinned_runtime_version(specification, "python")
+        )
     if "uv" not in commands or "npm" not in commands:
         raise RuntimeError("dependency prerequisite siblings are incomplete")
     if any(value in {"installed", "upgraded", "repaired"} for value in (
@@ -3706,11 +3887,7 @@ def install_account_dependencies(  # noqa: MC0001 - preflight then ordered accou
         specification,
         actions=tool_actions,
         executables={"uv": commands["uv"], "npm": commands["npm"]},
-        resolved_versions={
-            name: actions[name].get("resolvedVersion")
-            if isinstance(actions[name].get("resolvedVersion"), str) else None
-            for name in (*tool_actions, "python")
-        },
+        resolved_versions=resolved_versions,
     ).items():
         for command in planned:
             if is_uv_tool_install_command(command):
