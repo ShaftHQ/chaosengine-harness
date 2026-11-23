@@ -79,8 +79,11 @@ A check does not exercise the shipped behavior.
 
 A check can pass while the behavior is absent. A fail names a fixture the
 brief already lists. An example the brief does not name is a residual, written
-in the verdict, and it is not a fail. The reviewer adds no probe and does not
-replace the brief's oracle with `exec`.
+in the verdict, and it is not a fail. Exception: when the diff skips an
+existing refusal path and text that the old path refused is now allowed, the
+heading is `regression` and the verdict is `fail`, even when the brief does
+not name that text. The reviewer adds no probe and does not replace the
+brief's oracle with `exec`.
 
 ### verdict
 
