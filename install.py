@@ -5377,8 +5377,11 @@ def install_with_dependencies(  # noqa: MC0001 - owned resources share one compe
         clear_install_rollback(project)
         if not _running_under_tests():
             refresh_stale_graph(project)
-            # Doctor runs before the one-liner's client step, and a cursor-only
-            # selection never activates Claude or Codex. Register them here.
+        # Doctor runs before the one-liner's client step, and a cursor-only
+        # selection never activates Claude or Codex. Register them here.
+        # In-process pytest imports pytest; CI's `python -m pytest tests` does not
+        # match the argv guard above. A real install and the proof child do not.
+        if "pytest" not in sys.modules:
             host_controller.activate_detected_plugins(project, which=shutil.which)
         return target
 
