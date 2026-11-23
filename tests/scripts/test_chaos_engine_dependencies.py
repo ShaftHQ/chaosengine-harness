@@ -223,7 +223,7 @@ class ChaosEngineDependenciesTest(unittest.TestCase):
                     ValueError,
                     r"HEAD \(" + head + r"\) != origin/main \(" + origin + r"\).*"
                     r"not synchronized with origin/main.*"
-                    r"fix-next: git fetch origin main && git merge --ff-only origin/main",
+                    r"fix-next: git fetch origin main\ngit merge --ff-only origin/main",
                 ):
                     module.enforce_tool_origin_main_policy(worktree, "memory")
                 with self.assertRaisesRegex(ValueError, "fix-next: git fetch origin main"):
@@ -253,7 +253,7 @@ class ChaosEngineDependenciesTest(unittest.TestCase):
                         warning = stderr.getvalue()
                         self.assertIn("warning:", warning)
                         self.assertIn(f"HEAD ({head}) != origin/main ({origin})", warning)
-                        self.assertIn("fix-next: git fetch origin main && git merge --ff-only origin/main", warning)
+                        self.assertIn("fix-next: git fetch origin main\ngit merge --ff-only origin/main", warning)
                 # uv is neither Memory nor advisory: stay silent and proceed
                 with mock.patch.object(module.sys, "stderr", new_callable=io.StringIO) as stderr:
                     module.enforce_tool_origin_main_policy(worktree, "uv")
@@ -2717,7 +2717,11 @@ class DefaultBranchResolution6216Test(unittest.TestCase):
             self.assertEqual("trunk", module.default_branch_name(root))
             message = module.origin_main_desync_message("aaa", "bbb", root)
             self.assertIn("not synchronized with origin/trunk", message)
-            self.assertIn("git fetch origin trunk && git merge --ff-only origin/trunk", message)
+            self.assertIn(
+                "git fetch origin trunk\ngit merge --ff-only origin/trunk",
+                message,
+            )
+            self.assertNotIn("&&", message)
             self.assertNotIn("origin/main", message)
 
 

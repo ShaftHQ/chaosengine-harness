@@ -194,30 +194,44 @@ done
 [ -z "$pending" ] || fail "$pending requires a value"
 
 
-find_chaos_engine_managed_jdk_home() {
-  # Prefer an already-provisioned managed JDK when ambient JAVA_HOME is unusable (#7734).
-  roots=
-  if [ -n "${HOME:-}" ]; then
-    roots="$roots ${HOME}/.local/share/chaos-engine/java"
-  fi
-  if [ -n "${XDG_DATA_HOME:-}" ]; then
-    roots="$roots ${XDG_DATA_HOME}/ChaosEngine/tools/temurin"
-  elif [ -n "${HOME:-}" ]; then
-    roots="$roots ${HOME}/.local/share/ChaosEngine/tools/temurin"
-  fi
-  for root in $roots; do
-    [ -d "$root" ] || continue
-    # Avoid word-splitting ls output; newest-first via find -printf when available.
-    while IFS= read -r candidate; do
-      [ -d "$candidate" ] || continue
-      if [ -x "$candidate/bin/java" ] && [ -x "$candidate/bin/javac" ]; then
-        printf '%s\n' "$candidate"
-        return 0
-      fi
-    done <<EOF
+_chaos_engine_jdk_home_under() {
+  root=$1
+  [ -n "$root" ] || return 1
+  [ -d "$root" ] || return 1
+  # Newest directory name first. Linux is bin/java. macOS Temurin is Contents/Home.
+  while IFS= read -r candidate; do
+    [ -n "$candidate" ] || continue
+    [ -d "$candidate" ] || continue
+    if [ -x "$candidate/bin/java" ] && [ -x "$candidate/bin/javac" ]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+    if [ -x "$candidate/Contents/Home/bin/java" ] && [ -x "$candidate/Contents/Home/bin/javac" ]; then
+      printf '%s\n' "$candidate/Contents/Home"
+      return 0
+    fi
+  done <<EOF
 $(find "$root" -mindepth 1 -maxdepth 2 -type d 2>/dev/null | sort -r)
 EOF
-  done
+  return 1
+}
+
+find_chaos_engine_managed_jdk_home() {
+  # Prefer an already-provisioned managed JDK when ambient JAVA_HOME is unusable (#7734).
+  # Paths are the ones install.sh can see without Python: HOME, XDG_DATA_HOME, uname.
+  # Linux ~/.local/share/chaos-engine/java stays first.
+  if [ -n "${HOME:-}" ]; then
+    _chaos_engine_jdk_home_under "${HOME}/.local/share/chaos-engine/java" && return 0
+  fi
+  if [ -n "${XDG_DATA_HOME:-}" ]; then
+    _chaos_engine_jdk_home_under "${XDG_DATA_HOME}/ChaosEngine/tools/temurin" && return 0
+    _chaos_engine_jdk_home_under "${XDG_DATA_HOME}/chaos-engine/java" && return 0
+  elif [ -n "${HOME:-}" ]; then
+    _chaos_engine_jdk_home_under "${HOME}/.local/share/ChaosEngine/tools/temurin" && return 0
+  fi
+  if [ "$(uname -s)" = "Darwin" ] && [ -n "${HOME:-}" ]; then
+    _chaos_engine_jdk_home_under "${HOME}/Library/Application Support/chaos-engine/java" && return 0
+  fi
   return 1
 }
 

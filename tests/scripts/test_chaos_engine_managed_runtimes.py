@@ -356,12 +356,16 @@ class ManagedRuntimeCliTest(TestCase):
     def test_owned_mcp_servers_use_portable_python(self):
         """#6179: tracked MCP config names python3 / py -3; tool.py hands off to the runtime."""
         managed = Path("/owned/python")
-        servers = HOSTS.owned_servers(managed_python=managed, with_mcp=True)
+        posix = HOSTS.owned_servers("posix", managed_python=managed, with_mcp=True)
+        windows = HOSTS.owned_servers("nt", managed_python=managed, with_mcp=True)
         for name in ("chaosengine-memory", "chaosengine-mempalace"):
             with self.subTest(server=name):
-                self.assertEqual("python3", servers[name]["command"])
-                self.assertEqual("py", servers[name]["commandWindows"])
-                self.assertNotIn(str(managed), json.dumps(servers[name]))
+                self.assertEqual("python3", posix[name]["command"])
+                self.assertNotEqual("python3", windows[name]["command"])
+                self.assertEqual("py", windows[name]["command"])
+                self.assertEqual("-3", windows[name]["args"][0])
+                self.assertEqual("py", windows[name]["commandWindows"])
+                self.assertNotIn(str(managed), json.dumps(windows[name]))
 
     def test_hook_documents_hand_off_to_managed_python_through_an_untracked_pointer(self):
         python = Path("/owned/python")

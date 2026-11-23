@@ -1045,17 +1045,21 @@ class ChaosEngineHostsTest(unittest.TestCase):
                 self.assertIn("chrome-devtools-mcp@1.12.0", cdp["args"])
                 self.assertIn("--no-usage-statistics", cdp["args"])
                 self.assertIn("--no-performance-crux", cdp["args"])
+                command, prefix = module.interpreter()
                 for name in ("chaosengine-memory", "chaosengine-mempalace"):
                     server = servers[name]
-                    self.assertEqual("python3", server["command"])
-                    self.assertNotEqual("-3", server["args"][0])
+                    self.assertEqual(command, server["command"])
+                    if prefix:
+                        self.assertEqual(prefix[0], server["args"][0])
+                    else:
+                        self.assertNotEqual("-3", server["args"][0])
                     self.assertEqual("py", server["commandWindows"])
                     self.assertEqual("-3", server["argsWindows"][0])
                     self.assertIn(".chaos-engine/tool.py", server["args"])
                     self.assertIn(".chaos-engine/tool.py", server["argsWindows"])
                 mempalace = servers["chaosengine-mempalace"]
                 self.assertEqual(
-                    [".chaos-engine/tool.py", "mempalace-mcp"],
+                    [*prefix, ".chaos-engine/tool.py", "mempalace-mcp"],
                     mempalace["args"],
                 )
                 self.assertEqual(module.MEMPALACE_MCP_ENV, mempalace["env"])
@@ -3473,13 +3477,19 @@ class ChaosEngineHostsTest(unittest.TestCase):
         windows = module.owned_servers("nt", with_mcp=True)
         posix = module.owned_servers("posix", with_mcp=True)
 
-        self.assertEqual(windows, posix)
+        self.assertNotEqual(windows, posix)
         for name in ("chaosengine-memory", "chaosengine-mempalace"):
             server = windows[name]
-            self.assertEqual("python3", server["command"])
-            self.assertNotEqual("-3", server["args"][0])
+            self.assertNotEqual("python3", server["command"])
+            self.assertEqual("py", server["command"])
+            self.assertEqual("-3", server["args"][0])
             self.assertEqual("py", server["commandWindows"])
             self.assertEqual("-3", server["argsWindows"][0])
+            posix_server = posix[name]
+            self.assertEqual("python3", posix_server["command"])
+            self.assertNotEqual("-3", posix_server["args"][0])
+            self.assertEqual("py", posix_server["commandWindows"])
+            self.assertEqual("-3", posix_server["argsWindows"][0])
 
     def test_windows_install_writes_portable_mcp_launchers(self):
         module = load(HOSTS, "chaos_engine_hosts_portable_mcp")
@@ -3490,19 +3500,21 @@ class ChaosEngineHostsTest(unittest.TestCase):
             posix_json = json.loads(module.json_content(None))["mcpServers"]
             posix_codex = module.codex_content(None).decode("utf-8")
 
-        self.assertEqual(windows_json, posix_json)
+        self.assertNotEqual(windows_json, posix_json)
         self.assertEqual(windows_codex, posix_codex)
         self.assertEqual(
             {"url": "https://mcp.context7.com/mcp"}, windows_json["context7"]
         )
         for name in ("chaosengine-memory", "chaosengine-mempalace"):
             server = windows_json[name]
-            self.assertEqual("python3", server["command"], name)
-            self.assertNotEqual("-3", server["args"][0], name)
+            self.assertNotEqual("python3", server["command"], name)
+            self.assertEqual("py", server["command"], name)
+            self.assertEqual("-3", server["args"][0], name)
             self.assertIn(".chaos-engine/tool.py", server["args"], name)
             self.assertEqual("py", server["commandWindows"], name)
             self.assertEqual("-3", server["argsWindows"][0], name)
             self.assertIn(".chaos-engine/tool.py", server["argsWindows"], name)
+            self.assertEqual("python3", posix_json[name]["command"], name)
         self.assertIn('command = "python3"', windows_codex)
         self.assertNotIn('command = "py"', windows_codex)
         self.assertIn('commandWindows = "py"', windows_codex)
@@ -3696,16 +3708,19 @@ class ChaosEngineHostsTest(unittest.TestCase):
 
         servers = module.owned_servers(account_commands=commands, with_mcp=True)
 
-        self.assertEqual("python3", servers["chaosengine-memory"]["command"])
+        command, prefix = module.interpreter()
+        self.assertEqual(command, servers["chaosengine-memory"]["command"])
         self.assertEqual(
-            [".chaos-engine/tool.py", "memory-mcp"],
+            [*prefix, ".chaos-engine/tool.py", "memory-mcp"],
             servers["chaosengine-memory"]["args"],
         )
-        self.assertEqual("python3", servers["chaosengine-mempalace"]["command"])
+        self.assertEqual(command, servers["chaosengine-mempalace"]["command"])
         self.assertEqual(
-            [".chaos-engine/tool.py", "mempalace-mcp"],
+            [*prefix, ".chaos-engine/tool.py", "mempalace-mcp"],
             servers["chaosengine-mempalace"]["args"],
         )
+        windows = module.owned_servers("nt", account_commands=commands, with_mcp=True)
+        self.assertNotEqual("python3", windows["chaosengine-memory"]["command"])
         self.assertEqual(".", servers["chaosengine-mempalace"]["cwd"])
         legacy = {
             "command": "python3",
@@ -5646,7 +5661,7 @@ class Ws3HostSliceTest(unittest.TestCase):
             )
             self.assertEqual("sync-advisory", missing["status"])
             self.assertEqual("advisory", missing["taskImpact"])
-            self.assertIn("python3-missing", missing["reason"])
+            self.assertIn("py-missing", missing["reason"])
             stub = module.windows_mcp_python_warning(
                 platform_name="nt",
                 finder=lambda _name: r"C:\Users\dev\AppData\Local\Microsoft\WindowsApps\python3.exe",

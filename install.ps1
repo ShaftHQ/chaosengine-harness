@@ -90,6 +90,8 @@ function Get-ChaosEngineManagedJdkHome {
     }
     if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
         $roots += (Join-Path $env:LOCALAPPDATA "ChaosEngine\tools\temurin")
+        # account_runtime_root("java"): %LOCALAPPDATA%\chaos-engine\java\*\bin\java.exe
+        $roots += (Join-Path $env:LOCALAPPDATA "chaos-engine\java")
     }
     foreach ($root in $roots) {
         if (-not (Test-Path -LiteralPath $root -PathType Container)) { continue }
