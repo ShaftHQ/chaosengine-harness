@@ -95,6 +95,21 @@ def _screen(stream: io.StringIO, columns: int) -> str:
     return screen.text()
 
 
+def _mask_wide_mark(blob: str) -> str:
+    """Hide the wide brand rows so a wordmark change does not rewrite the golden body."""
+    rows = [glyphs.rstrip() for glyphs, _mask in UI.BRAND_MARK_WIDE if glyphs.rstrip()]
+    masked = []
+    for line in blob.splitlines():
+        if any(line.startswith(row) for row in rows):
+            masked.append("<brand-row>")
+        else:
+            masked.append(line)
+    text = "\n".join(masked)
+    if blob.endswith("\n"):
+        text += "\n"
+    return text
+
+
 def _header_lines(screen: str) -> list[str]:
     version = BOOTSTRAP.product_version()
     needle = f"ChaosEngine {version}"
@@ -224,7 +239,19 @@ def test_live_frame_screen_after_each_transition(width: int) -> None:
         path.write_text(blob, encoding="utf-8", newline="\n")
         return
     assert path.is_file(), f"missing {path.name}"
-    assert path.read_text(encoding="utf-8") == blob
+    expected = path.read_text(encoding="utf-8")
+    if width >= 84:
+        # The wide header gained the scanned wordmark. The rest of the frame stays put.
+        assert _mask_wide_mark(expected) == _mask_wide_mark(blob)
+        tokens = [glyphs.rstrip() for glyphs, _mask in UI.BRAND_WORDMARK_WIDE]
+        assert tokens and all(tokens)
+        for token in tokens:
+            assert token in blob
+        for glyphs, _mask in UI.BRAND_MARK_WIDE:
+            token = glyphs.rstrip()
+            assert token and any(line.startswith(token) for line in blob.splitlines())
+    else:
+        assert expected == blob
 
 
 def test_narrow_lang_c_and_ascii_use_one_line_identity() -> None:

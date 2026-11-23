@@ -332,6 +332,23 @@ class InstallerUxTests(unittest.TestCase):
         self.assertIn(gap + "Project demo", beside[1])
         self.assertEqual(BOOTSTRAP.mark_clear_space(BOOTSTRAP.BRAND_MARK_WIDE), gap.count(" "))
 
+    def test_wide_header_draws_the_scanned_wordmark(self):
+        version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+        wide = BOOTSTRAP.brand_lines(width=120, color=False, unicode=True)
+        joined = "\n".join(wide)
+        self.assertIn(version, joined)
+        rows = [glyphs for glyphs, _mask in BOOTSTRAP.BRAND_WORDMARK_WIDE if glyphs.strip()]
+        self.assertTrue(rows)
+        for glyphs in rows:
+            self.assertIn(glyphs, joined)
+        colored = BOOTSTRAP.brand_lines(width=120, color=True, unicode=True, truecolor=True)
+        for glyphs in rows:
+            hits = [line for line in colored if glyphs in line]
+            self.assertTrue(hits, glyphs)
+            for line in hits:
+                tail = line[line.index(glyphs):]
+                self.assertNotIn(BOOTSTRAP.CYBERNETIC_RED, tail)
+
     def test_lone_bootstrap_copy_keeps_the_embedded_version(self):
         version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
         source = (ROOT / "bootstrap.py").read_text(encoding="utf-8")

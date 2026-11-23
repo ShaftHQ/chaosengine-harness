@@ -9,6 +9,7 @@ cell that votes core paints that red across armour quadrants.
 from __future__ import annotations
 
 import importlib.util
+import re
 from pathlib import Path
 
 
@@ -192,3 +193,39 @@ def test_red_core_never_bleeds_into_armour() -> None:
                 assert source == "c", (rows, cols, row, col, source)
             else:
                 assert source != "c", (rows, cols, row, col, source)
+
+
+def test_symbol_paths_are_in_both_lockups() -> None:
+    """The lockups reuse the symbol scan. Every symbol ``d`` is copied, not redrawn."""
+    primary = SVG.read_text(encoding="utf-8")
+    paths = re.findall(r'\sd="([^"]+)"', primary)
+    assert paths
+    for name in ("lockup-light.svg", "lockup-dark.svg"):
+        lockup = (ROOT / "assets" / "brand" / name).read_text(encoding="utf-8")
+        for path in paths:
+            assert path in lockup, name
+
+
+def test_wide_wordmark_is_the_scanner_and_not_red() -> None:
+    """The wide wordmark table is generated armour. Check mode fails if it drifts."""
+    symbol = MARK.load_layers(SVG.read_text(encoding="utf-8"))
+    light = (ROOT / "assets" / "brand" / "lockup-light.svg").read_text(encoding="utf-8")
+    table, row = MARK.scan_wordmark(symbol, light)
+    assert row > 0
+    assert any(glyph != " " for glyphs, _mask in table for glyph in glyphs)
+    for _glyphs, mask in table:
+        assert "c" not in mask
+    ui = load("ce_ui_wordmark", ROOT / "runtime" / "ce_ui.py")
+    assert ui.BRAND_WORDMARK_WIDE == table
+    assert ui.BRAND_WORDMARK_ROW == row
+    assert MARK.main(["--check"]) == 0
+
+
+def test_check_fails_when_the_checked_in_wordmark_drifts(tmp_path, monkeypatch) -> None:
+    source = (ROOT / "runtime" / "ce_ui.py").read_text(encoding="utf-8")
+    assert "BRAND_WORDMARK_WIDE = (" in source
+    mutated = source.replace("BRAND_WORDMARK_WIDE = (", "BRAND_WORDMARK_WIDE = (\n    ('x', ' '),", 1)
+    target = tmp_path / "ce_ui.py"
+    target.write_text(mutated, encoding="utf-8")
+    monkeypatch.setattr(MARK, "TARGET", target)
+    assert MARK.main(["--check"]) == 1

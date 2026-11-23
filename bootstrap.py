@@ -672,6 +672,12 @@ BRAND_MARK_STACK = (
     ('▜█▄  ▛█▙', '        '),
     (' ▝▀▀▀▌▀ ', '        '),
 )
+# Wordmark scan of assets/brand/lockup-light.svg. Strokes are armour, not the core.
+BRAND_WORDMARK_WIDE = (
+    ('▛▀▀▐▙▟▌ ▟▜▖▐▛▀▜▐██▛  ██▛▝█▄█▝▛▀▀▐▌▐█▟▌▐██', '                                         '),
+    ('▙▄▄▐▛▜▌▐▛▀█▐▙▄▟▗███  ██▙ ▌▜█▗▙██▐▌▐▛█▌▐██', '                                         '),
+)
+BRAND_WORDMARK_ROW = 3
 # <<< generated: brand_mark
 
 # Cybernetic Red #FF3B4D. Truecolor paints only the mark core with this RGB.
@@ -1649,11 +1655,12 @@ def brand_lines(
     header: list[str] | None = None,
     show_mark: bool = True,
 ) -> list[str]:
-    """Symbol from the generated scan. ``lockup`` is accepted and unused.
+    """Symbol from the generated scan. Wide headers add the scanned wordmark.
 
-    At 84 columns or more the 8-row mark sits beside the header. From 60 to 83
-    the 5-row mark is stacked above it. The gap between the mark and the header
-    is the core width.
+    At 84 columns or more the 8-row mark sits beside the header, and the lockup
+    wordmark sits on the rows it centers on. From 60 to 83 the 5-row mark is
+    stacked above the header. The gap is the core width. ``lockup`` is accepted
+    and unused.
     """
     del lockup
     version = product_version()
@@ -1677,15 +1684,31 @@ def brand_lines(
     if width >= 84 and mark_width + clear < width:
         gap = " " * clear
         budget = width - mark_width - clear
-        padded = list(mark)
-        while len(padded) < len(rights):
-            padded.append(" " * mark_width)
-        while len(rights) < len(padded):
-            rights.append("")
+        occupied = range(BRAND_WORDMARK_ROW, BRAND_WORDMARK_ROW + len(BRAND_WORDMARK_WIDE))
+        free = [index for index in range(len(mark)) if index not in occupied]
+        placed: dict[int, str] = {}
+        text_index = 0
+        for index in free:
+            if text_index >= len(rights):
+                break
+            placed[index] = rights[text_index]
+            text_index += 1
         lines = []
-        for left, right in zip(padded, rights):
-            shown = _fit_visible(right, budget, unicode=True) if right else ""
-            lines.append(left + (gap + shown if shown else ""))
+        for index, left in enumerate(mark):
+            slot = index - BRAND_WORDMARK_ROW
+            wordmark = BRAND_WORDMARK_WIDE[slot][0] if 0 <= slot < len(BRAND_WORDMARK_WIDE) else ""
+            shown = placed.get(index, "")
+            if wordmark:
+                piece = wordmark if len(wordmark) <= budget else _fit_visible(wordmark, budget, unicode=True)
+                lines.append(left + gap + piece)
+                continue
+            if shown:
+                lines.append(left + gap + _fit_visible(shown, budget, unicode=True))
+                continue
+            lines.append(left)
+        while text_index < len(rights):
+            lines.append(" " * mark_width + gap + _fit_visible(rights[text_index], budget, unicode=True))
+            text_index += 1
         return lines
     lines = [*mark, word, *(header or [])]
     return [_fit_visible(line, width, unicode=True) for line in lines]
