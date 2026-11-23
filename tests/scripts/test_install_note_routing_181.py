@@ -175,7 +175,7 @@ class InstallNoteRouting181Tests(unittest.TestCase):
         self.assertIn(GRAPHIFY, captured.getvalue())
 
     def _emit_mempalace_index_notes(self, stderr) -> tuple[str, ...]:
-        """Call the real note sites. Patch mine, prune, decision, and the home palace path."""
+        """Call the real note sites. Patch mine, prune, decision, the home palace path, and the tool lookup."""
         with tempfile.TemporaryDirectory() as temporary:
             project = Path(temporary)
             nested = project / "nested-repo"
@@ -202,13 +202,14 @@ class InstallNoteRouting181Tests(unittest.TestCase):
                         return_value=(2, 4),
                     ):
                         self.dependencies.prepare_mempalace_mine(project, command)
-                    self.stores._refresh_mempalace(
-                        project,
-                        snapshot=project,
-                        primary=project,
-                        revision="a" * 40,
-                        invoke=lambda _command, _cwd: 0,
-                    )
+                    with mock.patch.object(self.stores, "_store_tool", return_value="mempalace"):
+                        self.stores._refresh_mempalace(
+                            project,
+                            snapshot=project,
+                            primary=project,
+                            revision="a" * 40,
+                            invoke=lambda _command, _cwd: 0,
+                        )
                     with mock.patch.object(
                         self.dependencies,
                         "default_mempalace_palace",
