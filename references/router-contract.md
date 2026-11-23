@@ -45,10 +45,7 @@ that file is the `profiles/<id>/entrypoint.md` the installer copied. The
 when it is the profile present. A repository-profile install omits the
 portable entrypoint on purpose; read the selected entrypoint. A 404 on the
 portable link is not a skipped load. The
-[profiles catalog](../profiles/README.md) owns selection. The
-core never assumes a repository, default branch, local root, or companion
-project. A standalone distribution that bundles exactly one profile selects
-that profile automatically and must link it from its discoverable skill.
+[profiles catalog](../profiles/README.md) owns selection.
 
 The repository-local [installer](../install.py), [bootstrap](../bootstrap.py),
 [dependency doctor](../runtime/dependencies.py), and [host adapters](../runtime/hosts.py)
@@ -79,17 +76,12 @@ would start without ChaosEngine.
 4. Implement the full approved scope as one coherent batch. Fix root owner of
    an invariant, not each symptom; do not interrupt implementation with review,
    test, commit, push, or validation gates.
-5. After the final scope commit, push the self-accepted head and start
-   adversarial review 1 together. Fix whichever of review 1 and CI returns
-   first, reconcile the other, and push once. That push starts CI and review
-   2 together. Do not start both reviewers in one step. Neither reviewer is
-   the author ([delivery cycle](delivery-cycle.md)).
-   Ordinary reversible changes get one fresh-context adversarial review. Public-contract or hard-to-reverse changes get two independent adversarial reviews before orchestrator sign-off, one after another.
-   Never arm `gh pr merge --auto`. Merge with `gh pr merge --squash` only after required checks are green and review threads are resolved.
-   A skipped or neutral check outside the required set does not block.
-   A failed, cancelled, or pending check blocks when it is required and when
-   no check is marked required. An unmarked skip blocks.
-   An empty check list is not success. A pending check is not success.
+5. After the final scope commit, follow [delivery cycle](delivery-cycle.md).
+   Ordinary reversible changes get one fresh-context adversarial review.
+   Public-contract or hard-to-reverse changes get two independent adversarial reviews before orchestrator sign-off, one after another. Do not start both reviewers in one step. Neither reviewer is the author.
+   Never arm `gh pr merge --auto`. Merge with `gh pr merge --squash` only after
+   required checks are green and review threads are resolved. A `merge_queue`
+   ruleset enqueues with `gh pr merge` and no strategy flag, as that file states.
 6. Report outcome, exact checks, failures, and every finding as fixed or filed.
 
 Consult [field heuristics](heuristics.md) only for deeper
@@ -144,11 +136,7 @@ for behavior that lacked proof.
 
 Validation scope (balanced default): tests created or edited by the task plus
 directly impacted tests; the owner may pick only tests created or edited, or
-the full suite. Directly impacted tests include every test that references a
-type the change edits, replaces, or stops calling (mocks included): find them
-with `git grep -l TypeName -- '*/src/test/*'`. Review follows the floor in
-[delivery cycle](delivery-cycle.md): one fresh-context adversarial review, or two when the change is public-contract or hard-to-reverse. Details:
-[work-github-planning](work-github-planning.md).
+the full suite. Review follows the floor in [delivery cycle](delivery-cycle.md).
 
 When a CI job fails, inspect the failing job and isolate its exact failing
 test first. Fix the cause, run only tests created or edited for that cause, and
@@ -163,23 +151,13 @@ Caveman, Ponytail, and TDD adaptations retain their MIT notices under
 
 Bound reads with [context economy](context-economy.md) (`references/context-economy.md`), prefer
 [script first](script-first.md) (`references/script-first.md`), and retrieve through
-[retrieve-first](retrieve-first.md) when it pays.
-Routing also orders applicable knowledge retrieval before broad manual
-discovery. One bounded attempt is enough; never retry, repair, refresh, mine,
+[retrieve-first](retrieve-first.md). One bounded attempt is enough; never retry, repair, refresh, mine,
 checkpoint, poll, or watch a store for an ordinary task, and never treat an
 index as authority over a live file.
 
-Local and optional inference goes through one table,
-[local-runtimes](../skills/local-runtimes/SKILL.md); provider-neutral transport
-is [OmniRoute](../skills/local-runtimes/references/omniroute.md), used only when explicitly chosen.
+Local inference: [local-runtimes](../skills/local-runtimes/SKILL.md). Prefer the Zero-LLM / Heal rows before host chat. Doctor and `repair --component` beat discovery chat.
 
-Prefer the Zero-LLM / Heal rows before opening host chat for recovery. Iron-law
-Route: doctor and `repair --component` catalog entries beat discovery chat.
-
-The live overlay skills map is `.chaos-engine/skills/` (runtime). Host adapter
-inventories such as `.agents/skills/README.md` copy that map; they are not a
-second policy root. Nothing in the harness sits outside what this file and
-the live overlay reach.
+The live overlay skills map is `.chaos-engine/skills/`. Host inventories such as `.agents/skills/README.md` copy that map; they are not a second policy root.
 
 ## Roles and capability levels
 
@@ -192,38 +170,27 @@ writer limits. Optional local peers follow that file's transport-order table
 weaken the workflow. [local-agency](../skills/local-agency/SKILL.md) (OpenCode) stays
 an optional loopback peer, not a workflow owner.
 
-When orchestrating, run the [kanban](../skills/kanban/SKILL.md) flow first;
-load [process-owner](process-owner-scrum-master.md) only for its status format.
-[Delegation](delegation.md) owns dispatch, status, integration,
-and review. Apply
+When orchestrating, run the [kanban](../skills/kanban/SKILL.md) flow first.
+[Delegation](delegation.md) owns dispatch, status, integration, and review. Apply
 [orchestrator follow-through](orchestrator-follow-through.md)
-automatically while work is live. [Roles](roles.md) owns role
-boundaries. The main orchestrator owns any triggered Learning Session.
+while work is live. [Roles](roles.md) owns role boundaries. The main orchestrator owns any triggered Learning Session.
 
 Implementation follows [TDD and its PDCA boundary](tdd.md#workflow).
-The selected project profile may link its concrete PDCA playbook without
-redefining the workflow or roles.
 
 Capability comes in three levels on every host: most intelligent, default, and
 mechanical. Name them that way, never by provider or product.
-
-[Delegation](delegation.md) defines levels and the [delivery cycle](delivery-cycle.md) reviews;
-[roles](roles.md) defines role boundaries. Read both before dispatch.
-Every dispatch loads this entrypoint and carries its bounded covenant.
+[Delegation](delegation.md) defines levels and the [delivery cycle](delivery-cycle.md) reviews.
 
 ## Ownership and completion
 
 For issue-to-merged-PR work, use the [GitHub playbook](work-github-playbook.md).
-Do not confuse a diff with an outcome: run the real affected flow, review the
-actual diff, and keep external actions within granted authority.
+Run the real affected flow and review the actual diff.
 
-Opening a PR does not end the duty. Never arm `gh pr merge --auto`. After required checks are green, review threads are resolved,
+Opening a PR does not end the duty. Follow the merge rule in [delivery cycle](delivery-cycle.md). After required checks are green, review threads are resolved,
 and the tracker or epic's initial scope is complete (every in-scope sub-issue merged
 or explicitly dropped on the tracker; no dropped FR/SC),
-then make one blocking wait per push (`gh pr checks --watch --fail-fast`, or
-repo-only `python3 scripts/agents/watch_pr_checks.py --pr <n> --until-merged`) and confirm the merge once. Red and conflicting are yours to fix, not to hand back; stale emits no
-event, so ask for it. The duty survives compaction, a dead delegate, and the
-task that opened the PR:
+one blocking wait per push (`gh pr checks --watch --fail-fast`) confirms the merge.
+Red and conflicting are yours to fix. The duty survives compaction:
 [PR-merger workflow](work-github-playbook.md#pr-merger-workflow-arm-watch-fix-confirm).
 
 ## Reflection
@@ -243,7 +210,7 @@ the final report:
 1. Diff the session lessons (STATUS log, review log, failures, workarounds)
    against the existing skills and references; drop every duplicate.
 2. File one spec issue (problem, evidence, rule, acceptance criteria, test).
-3. Open ONE pull request with the `skip-release-notes` label, using the MERGE method, and babysit it to merged. Never arm `gh pr merge --auto`.
+3. Open ONE pull request with the `skip-release-notes` label, using the MERGE method in [delivery cycle](delivery-cycle.md), and babysit it to merged. Never arm `gh pr merge --auto`.
 4. When nothing new survives the diff, write one line in the final report
    naming the file that already holds each lesson. No issue, no PR.
 
@@ -251,13 +218,8 @@ The Learning Session pull request's own merge never starts another Learning
 Session. The Stop hook enforces the same rule on CLI hosts. Load
 [self-improve](../skills/self-improve/SKILL.md). A ChaosEngine harness lesson is
 a GitHub issue only, never a local queue or chat. Product lessons may report
-`product queued N` or `nothing durable`. Route a product learning once: native
-Memory, MemPalace, Graphify, or `learning.py queue --track product`. Nothing
-durable is a valid result. Scan the session for failures, traps, and guard
-blocks; prefer a smaller discriminating observation; search before writing. Self-development has no cap. Follow the
-[learned-lessons workflow](work-github-playbook.md#learned-lessons-workflow).
+`product queued N` or `nothing durable`. Nothing durable is a valid result.
 
-Harness parity: lasting policy lives in the portable overlay, not only in
-one agent's memory or routines; the inventory is
+Harness parity: lasting policy lives in the portable overlay; the inventory is
 [permanent rules](permanent-rules.md).
 

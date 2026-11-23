@@ -9,22 +9,17 @@ license: MIT
 
 # ChaosEngine
 
-Core card. Delegates load the [delegate card](../../references/delegate-card.md). Identity: [identity](../../identity.md).
+Delegates: [delegate card](../../references/delegate-card.md). Identity: [identity](../../identity.md). `<python>` is `py -3` on Windows and `python3` on Linux/macOS.
 
 ## Iron laws
 
-1. Measure thrice, cut once: step back before retrieve, discovery, or the
-   first edit; name the goal, the larger context, and what a local hotfix
-   would miss; then research and plan before the first edit.
+1. Measure thrice, cut once: step back before retrieve, discovery, or the first edit; name the goal, the larger context, and what a local hotfix would miss; then research and plan before the first edit.
 2. Evidence over inference. Inspect or run before claiming.
-3. Never weaken, delete, or rewrite a test to reach green. New behavior starts
-   with a red test; if test and requirement disagree, stop and say which is wrong.
+3. Never weaken, delete, or rewrite a test to reach green.
 4. Smallest correct change. Complete it before consolidated Check.
 5. Never claim a check you did not run.
-6. Finish before starting. WIP limits and Definition of Done ([kanban](../kanban/SKILL.md)). File a finding only when it is outside scope and not critical, blocker, or high.
-7. Safety and ethics control: preserve user work and secrets; irreversible or
-   externally visible actions need explicit owner authority
-   ([ethics card](../../companions/ethics-card.md)).
+6. Finish before starting. WIP limits and Definition of Done ([kanban](../kanban/SKILL.md)).
+7. Preserve user work and secrets. Irreversible or externally visible actions need explicit owner authority ([ethics card](../../companions/ethics-card.md)).
 
 ## Bigger picture first
 
@@ -32,41 +27,28 @@ Before Triage ([bigger picture first](../../references/bigger-picture-first.md))
 
 ## Triage
 
-Answer in one line each before task-specific discovery:
-
-- **Blast radius**: one file, one module, or a public contract and its callers.
-- **Reversibility**: undone by deleting the diff, or touches persisted data, a
-  published artifact, or an external system?
-
 | Worse answer | Depth |
 | --- | --- |
 | One file, reversible | Read, fix, prove. No plan document. |
 | One module, reversible | Short plan: premises, two options, chosen one, proof. |
 | Public contract or hard to reverse | Written spec, owner decisions asked, full proof. |
 
-Re-triage when a premise is false. Before a broad search, run one
-`python3 .chaos-engine/tool.py retrieve` and record `skipped(<reason>)`
-([retrieve-first](../../references/retrieve-first.md)). Gated: PR `## Plan` +
-`retrieve:` lines; `checkpoint --spec`.
+Before a broad search, run one `<python> .chaos-engine/tool.py retrieve` and record `skipped(<reason>)` ([retrieve-first](../../references/retrieve-first.md)).
 
 ## Plan, then go
 
-After plan approval, routine in-scope work goes unattended. Stop for an owner decision or a contradicting request. Ledger: [delivery ledger](../../references/bot-entry.md#delivery-ledger).
+After plan approval, routine in-scope work goes unattended. Stop for an owner decision. Ledger: [delivery ledger](../../references/bot-entry.md#delivery-ledger).
 
 ## Implement
 
-Companions at task start via `tool.py entry` ([bot entry](../../references/bot-entry.md)): [Caveman ultra](../../companions/caveman-ultra.md), [Ponytail ultra](../../companions/ponytail-ultra.md). Off only: `stop caveman`, `stop ponytail`, `normal mode`. Vendor bodies only on explicit invocation. Precedence: owner in chat > iron laws > this card > references > skills; deeper file wins on scope. Person-only outranks owner-in-chat for that class only.
+Companions at task start via `tool.py entry` ([bot entry](../../references/bot-entry.md)): [Caveman](../../companions/caveman-ultra.md), [Ponytail](../../companions/ponytail-ultra.md). Off only: `stop caveman`, `stop ponytail`, `normal mode`.
 
 ## Check and deliver
 
-- One Check: new, edited, and impacted tests.
-- At most 3 local PDCA loops, then review 1 with the self-accept push (delivery-cycle.md). Do not start both reviewers in one step.
+- At most 3 local PDCA loops, then review 1 with the self-accept push ([delivery cycle](../../references/delivery-cycle.md)). Do not start both reviewers in one step.
 - Ordinary reversible: one fresh-context adversarial review. Public-contract or hard-to-reverse: two, one after another.
 - Two failed attempts on one approach: step back and re-plan.
-- Merge after those reviews, applied comments, and green CI. A pending check is not success.
-- Babysit an open pull request until merged, or until `blocking: unverifiable`.
-- Status reports are always a Markdown table: deltas, at most 15 lines.
-  `tool.py usage`.
+- A pending check is not success. Babysit until merged or `blocking: unverifiable`.
 - Learning Session after every final delivery. Never local queues.
 - Repository work is not done until the pull request is merged.
 
@@ -83,6 +65,7 @@ Companions at task start via `tool.py entry` ([bot entry](../../references/bot-e
 | Git cleanup | dirty worktree or stray branches | [SKILL.md](../git-cleanup/SKILL.md) |
 | CI | slow merges, CI | [SKILL.md](../ci-cd/SKILL.md) |
 | Security audit | audit a repository we own | [SKILL.md](../security-audit/SKILL.md) |
+| On demand | named skill | [docs-hygiene](../docs-hygiene/SKILL.md), [job-applications](../job-applications/SKILL.md), [job-apply](../job-apply/SKILL.md), [job-search](../job-search/SKILL.md), [learn-from-external-harnesses](../learn-from-external-harnesses/SKILL.md), [pre-done-self-review](../pre-done-self-review/SKILL.md), [technical-presentations](../technical-presentations/SKILL.md) |
 | Zero-LLM first | install, doctor, repair by script | [zero-llm-catalog.md](../../references/zero-llm-catalog.md) |
 | Heal | drifted or unhealthy install | [heal-route.md](../../references/heal-route.md) |
 | Level-1 catalog | secondary skill or tool needed | [level-1-catalog.md](../../references/level-1-catalog.md) |
@@ -108,4 +91,4 @@ Companions at task start via `tool.py entry` ([bot entry](../../references/bot-e
 
 ## Catalog
 
-On demand: [catalog](../../references/catalog.md), [harness map](../../references/harness-map.md), [router contract](../../references/router-contract.md).
+[catalog](../../references/catalog.md), [harness map](../../references/harness-map.md), [router contract](../../references/router-contract.md).
