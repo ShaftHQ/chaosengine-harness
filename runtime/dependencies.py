@@ -428,6 +428,28 @@ def dependency_action(
     )
 
 
+def graphify_import_action(
+    action: str,
+    *,
+    installed_version: str | None,
+    resolved_version: str | None,
+    extra_import_ok: bool | None,
+) -> str:
+    """A version match that would be reused is a repair when anyio did not import.
+
+    ``graphify --version`` can succeed without importing the query extra.
+    An unverified registry (no resolved version) stays reused.
+    """
+    matched = (
+        isinstance(installed_version, str)
+        and isinstance(resolved_version, str)
+        and installed_version.lstrip("v") == resolved_version.lstrip("v")
+    )
+    if action == "reused" and matched and extra_import_ok is False:
+        return "repaired"
+    return action
+
+
 def _user_path_publish_enabled() -> bool:
     """Publish during a real install. Unit tests opt in with CHAOS_ENGINE_USER_PATHS=1.
 
@@ -1381,11 +1403,66 @@ def probe_account_dependency(
         build = re.search(r"(?<!\d)(\d+\.\d+(?:\.\d+)+\+\d+)", output)
         if build:
             version = build.group(1)
-    return {
-        "healthy": result.returncode == 0,
-        "version": version,
-        "detail": "passed" if result.returncode == 0 else f"exit-{result.returncode}",
-    }
+    extra_import = None
+    if name == "graphify" and result.returncode == 0:
+        extra_import = _probe_graphify_extra_import(executable_path, runner, environment)
+    detail = "passed" if result.returncode == 0 else f"exit-{result.returncode}"
+    if extra_import is False:
+        detail = "extra-import-failed"
+    probed = {"healthy": result.returncode == 0, "version": version, "detail": detail}
+    if extra_import is not None:
+        probed["extraImport"] = extra_import
+    return probed
+
+
+def _graphify_tool_python(executable_path: str) -> str | None:
+    """Interpreter from a uv tool shim. ``--version`` does not import extras."""
+    path = Path(executable_path)
+    try:
+        with path.open("rb") as handle:
+            first = handle.readline(512)
+    except OSError:
+        first = b""
+    if first.startswith(b"#!"):
+        line = first[2:].decode("utf-8", "replace").strip()
+        if line:
+            parts = shlex.split(line)
+            if parts:
+                if Path(parts[0]).name in {"env", "env.exe"} and len(parts) >= 2:
+                    return parts[-1]
+                return parts[0]
+    for name in ("python.exe", "python"):
+        candidate = path.parent / name
+        if candidate.is_file():
+            return str(candidate)
+    tool_dir = os.environ.get("UV_TOOL_DIR", "").strip()
+    root = Path(tool_dir) if tool_dir else Path.home() / ".local" / "share" / "uv" / "tools"
+    scripts = "Scripts" if os.name == "nt" else "bin"
+    python_name = "python.exe" if os.name == "nt" else "python"
+    candidate = root / "graphifyy" / scripts / python_name
+    if candidate.is_file():
+        return str(candidate)
+    return None
+
+
+def _probe_graphify_extra_import(
+    executable_path: str, runner, environment: dict[str, str]
+) -> bool:
+    python = _graphify_tool_python(executable_path)
+    if not python:
+        return False
+    try:
+        result = runner(
+            [python, "-c", "import anyio"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+            env=environment,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return getattr(result, "returncode", 1) == 0
 
 
 def _account_search_path() -> str:
@@ -1681,6 +1758,22 @@ def resolve_account_actions(
         if name in {"maven-tools-mcp", "chrome-devtools-mcp"}:
             continue
         record = local.get(name, {})
+        if name == "gh":
+            present = record.get("healthy") is True
+            pinned = _pinned_runtime_version(specification, "gh")
+            if not pinned:
+                raise ValueError("GitHub CLI version pin is missing")
+            resolved[name] = {
+                **record,
+                "provider": contract.get("provider"),
+                "source": contract.get("stableChannel"),
+                "installedVersion": record.get("version") if present else None,
+                "resolvedVersion": pinned,
+                "latestVersionVerified": True,
+                "action": "reused" if present else "installed",
+                "probe": record.get("detail", "passed" if present else "not-run"),
+            }
+            continue
         if name in OPTIONAL_ACCOUNT_DEPENDENCIES:
             present = record.get("healthy") is True and record.get("status") != "absent"
             resolved[name] = {
@@ -1723,6 +1816,18 @@ def resolve_account_actions(
             healthy=healthy,
             latest_version_verified=verified,
         )
+        extra_import = record.get("extraImport")
+        extra_import_ok = extra_import if isinstance(extra_import, bool) else None
+        if name == "graphify":
+            action = graphify_import_action(
+                action,
+                installed_version=installed,
+                resolved_version=latest if isinstance(latest, str) else None,
+                extra_import_ok=extra_import_ok,
+            )
+        probe = record.get("detail", "not-run")
+        if name == "graphify" and extra_import_ok is False:
+            probe = "extra-import-failed"
         resolved[name] = {
             **record,
             "provider": contract.get("provider"),
@@ -1731,7 +1836,7 @@ def resolve_account_actions(
             "resolvedVersion": latest,
             "latestVersionVerified": verified,
             "action": action,
-            "probe": record.get("detail", "not-run"),
+            "probe": probe,
             **({"lookupError": lookup_error} if lookup_error else {}),
         }
     return resolved
@@ -1791,13 +1896,18 @@ def select_account_receipt_components(
             )
             if not optional_account_dependency_enabled(project, name) or not installed_healthy:
                 continue
+        probe = observed.get("detail", "passed")
+        if observed.get("extraImport") is False or (
+            record.get("extraImport") is False and observed.get("extraImport") is not True
+        ):
+            probe = "extra-import-failed"
         selected[name] = {
             **record,
             **observed,
             "installedVersion": observed.get("version"),
             "scope": "user",
             "action": record["action"],
-            "probe": observed.get("detail", "passed"),
+            "probe": probe,
         }
     return selected
 
@@ -3320,6 +3430,176 @@ def _install_non_reused_account_prerequisites(
 
 
 
+def _gh_system(system: str) -> str:
+    folded = system.casefold()
+    if folded == "linux":
+        return "linux"
+    if folded in {"darwin", "macos"}:
+        return "darwin"
+    if folded in {"win32", "windows"}:
+        return "win32"
+    raise ValueError(f"unsupported platform: {system}")
+
+
+def _gh_arch(machine: str) -> str:
+    folded = machine.casefold()
+    if folded in {"x86_64", "amd64", "x64"}:
+        return "amd64"
+    if folded in {"aarch64", "arm64"}:
+        return "arm64"
+    raise ValueError(f"unsupported architecture: {machine}")
+
+
+def gh_release_asset(version: str, system: str, machine: str) -> str:
+    """Official cli/cli asset name for linux, darwin, or win32."""
+    if not isinstance(version, str) or re.fullmatch(r"\d+(?:\.\d+)+", version) is None:
+        raise ValueError("GitHub CLI version pin is invalid")
+    system_name = _gh_system(system)
+    arch = _gh_arch(machine)
+    if system_name == "linux":
+        return f"gh_{version}_linux_{arch}.tar.gz"
+    if system_name == "darwin":
+        return f"gh_{version}_macOS_{arch}.zip"
+    if arch != "amd64":
+        raise ValueError(f"unsupported platform: {system}/{machine}")
+    return f"gh_{version}_windows_amd64.zip"
+
+
+def gh_release_url(version: str, system: str, machine: str) -> str:
+    asset = gh_release_asset(version, system, machine)
+    return f"https://github.com/cli/cli/releases/download/v{version}/{asset}"
+
+
+def account_tool_bin() -> Path:
+    """Bin directory uv tool shims already use (``UV_TOOL_BIN_DIR`` or ``~/.local/bin``)."""
+    override = os.environ.get("UV_TOOL_BIN_DIR", "").strip()
+    if override:
+        return Path(override)
+    return Path.home() / ".local" / "bin"
+
+
+def gh_account_plan(
+    *,
+    found: str | None,
+    system: str,
+    machine: str,
+    version: str,
+    bin_dir: Path,
+) -> dict[str, object]:
+    """Plan a GitHub CLI install. A found binary downloads nothing.
+
+    ``commands`` is an argv list, never a shell string. The probe is ``gh --version``.
+    """
+    asset = gh_release_asset(version, system, machine)
+    url = gh_release_url(version, system, machine)
+    destination = bin_dir / ("gh.exe" if _gh_system(system) == "win32" else "gh")
+    probe = ["gh", "--version"]
+    if isinstance(found, str) and found.strip():
+        return {
+            "action": "reused",
+            "asset": asset,
+            "url": url,
+            "destination": destination,
+            "commands": [],
+            "probe": probe,
+        }
+    return {
+        "action": "installed",
+        "asset": asset,
+        "url": url,
+        "destination": destination,
+        "commands": [[url, "--output", str(destination)]],
+        "probe": probe,
+    }
+
+
+def _gh_checksum(version: str, asset: str, *, opener) -> str:
+    url = (
+        f"https://github.com/cli/cli/releases/download/v{version}/"
+        f"gh_{version}_checksums.txt"
+    )
+    with _open_with_retry(opener, url, timeout=30) as response:
+        payload = response.read(MAX_CONTROL_BYTES + 1)
+    if len(payload) > MAX_CONTROL_BYTES:
+        raise ValueError("GitHub CLI checksum manifest exceeds the size limit")
+    for line in payload.decode("utf-8", "replace").splitlines():
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        digest = parts[0].lower()
+        if parts[-1].lstrip("*") == asset and re.fullmatch(r"[0-9a-f]{64}", digest):
+            return digest
+    raise ValueError("GitHub CLI checksum manifest is missing the selected release")
+
+
+def install_gh_release(
+    bin_dir: Path,
+    *,
+    version: str,
+    system: str,
+    machine: str,
+    opener=urllib.request.urlopen,
+) -> Path:
+    """Download one official cli/cli archive and copy ``gh`` into ``bin_dir``."""
+    asset = gh_release_asset(version, system, machine)
+    url = gh_release_url(version, system, machine)
+    expected = _gh_checksum(version, asset, opener=opener)
+    windows = _gh_system(system) == "win32"
+    binary_name = "gh.exe" if windows else "gh"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    archive = bin_dir / asset
+    destination = bin_dir / binary_name
+    staging = bin_dir / f".gh-extract-{secrets.token_hex(4)}"
+    archive.unlink(missing_ok=True)
+    try:
+        _download_artifact(url, archive, expected, opener)
+        _extract_runtime_archive(archive, staging)
+        matches = [
+            path for path in staging.rglob(binary_name)
+            if path.is_file() and path.name == binary_name
+        ]
+        preferred = [path for path in matches if path.parent.name == "bin"]
+        source = preferred or matches
+        if not source:
+            raise ValueError("GitHub CLI archive is missing gh")
+        shutil.copyfile(source[0], destination)
+        if not windows:
+            destination.chmod(destination.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    finally:
+        archive.unlink(missing_ok=True)
+        if staging.exists() and not is_link_or_reparse(staging):
+            shutil.rmtree(staging, ignore_errors=True)
+    if not destination.is_file():
+        raise ValueError("GitHub CLI archive is missing gh")
+    return destination
+
+
+def provision_gh(
+    bin_dir: Path,
+    *,
+    version: str,
+    system: str,
+    machine: str,
+    which=shutil.which,
+    opener=urllib.request.urlopen,
+) -> dict[str, object]:
+    """Reuse ``gh`` when ``which`` finds it. Otherwise install the pinned release."""
+    found = which("gh")
+    plan = gh_account_plan(
+        found=found if isinstance(found, str) else None,
+        system=system,
+        machine=machine,
+        version=version,
+        bin_dir=bin_dir,
+    )
+    if plan["action"] == "reused":
+        return plan
+    plan["destination"] = install_gh_release(
+        bin_dir, version=version, system=system, machine=machine, opener=opener
+    )
+    return plan
+
+
 def _ensure_account_prerequisites(
     project: Path,
     specification: dict[str, object],
@@ -3438,6 +3718,29 @@ def install_account_dependencies(  # noqa: MC0001 - preflight then ordered accou
             else:
                 _run_account_command(command, project, runner=runner)
 
+    gh_record = actions.get("gh")
+    if isinstance(gh_record, dict) and gh_record.get("action") in {"installed", "upgraded", "repaired"}:
+        gh_version = gh_record.get("resolvedVersion")
+        if not isinstance(gh_version, str) or not gh_version.strip():
+            raise ValueError("GitHub CLI version pin is missing")
+        gh_system = system or (
+            "windows" if os.name == "nt" else "macos" if sys.platform == "darwin" else "linux"
+        )
+        found_gh = which("gh")
+        gh_plan = provision_gh(
+            account_tool_bin(),
+            version=gh_version.strip(),
+            system=gh_system,
+            machine=platform.machine(),
+            which=which,
+            opener=opener,
+        )
+        if gh_plan.get("action") == "reused" and isinstance(found_gh, str) and found_gh:
+            commands["gh"] = found_gh
+        elif gh_plan.get("action") != "reused":
+            commands["gh"] = str(gh_plan["destination"])
+            _prepend_process_path([str(Path(commands["gh"]).parent)])
+
     local, commands = discover_account_commands(
         specification, preferred_commands=commands, which=which, runner=runner
     )
@@ -3446,6 +3749,16 @@ def install_account_dependencies(  # noqa: MC0001 - preflight then ordered accou
         for name in ("uv", "python", "node", "java", "mempalace", "graphify", "memory", "context7")
         if local.get(name, {}).get("healthy") is not True
     ]
+    if local.get("graphify", {}).get("extraImport") is False and "graphify" not in unhealthy:
+        unhealthy.append("graphify")
+    gh_record = actions.get("gh")
+    if (
+        isinstance(gh_record, dict)
+        and gh_record.get("action") in {"installed", "upgraded", "repaired"}
+        and local.get("gh", {}).get("healthy") is not True
+        and "gh" not in unhealthy
+    ):
+        unhealthy.append("gh")
     if unhealthy:
         raise RuntimeError("dependency verification failed: " + ", ".join(unhealthy))
     # An injected runner without mine_spawner keeps the mine synchronous.
@@ -5078,6 +5391,18 @@ def generation_environment(generation: Path, transaction: Path) -> dict[str, str
     }
 
 
+def graphify_with_flags(extras: object) -> list[str]:
+    """One ``--with`` argument per Graphify extra. One extra stays one flag."""
+    if not isinstance(extras, (list, tuple)) or not extras:
+        raise ValueError("tool dependency specification is invalid")
+    flags: list[str] = []
+    for dependency in extras:
+        if not isinstance(dependency, str) or not dependency.strip():
+            raise ValueError("tool dependency specification is invalid")
+        flags.extend(("--with", dependency))
+    return flags
+
+
 def generation_install_plan(
     generation: Path, specification: dict[str, object]
 ) -> dict[str, list[list[str]]]:
@@ -5132,8 +5457,7 @@ def generation_install_plan(
             python_version,
             "--link-mode",
             "copy",
-            "--with",
-            str(graphify["with"][0]),  # type: ignore[index]
+            *graphify_with_flags(graphify.get("with")),
             str(graphify["package"]),
         ]],
         "memory": [[
@@ -6188,7 +6512,7 @@ def install_plan(runtime: Path, specification: dict[str, object]) -> dict[str, l
             [uv, "tool", "install", "--managed-python", "--python", python_pin, "--link-mode", "copy", "--with", str(mempalace["with"][0]), str(mempalace["package"])],
         ],
         "graphify": [
-            [uv, "tool", "install", "--managed-python", "--python", python_pin, "--link-mode", "copy", "--with", str(graphify["with"][0]), str(graphify["package"])],  # type: ignore[index]
+            [uv, "tool", "install", "--managed-python", "--python", python_pin, "--link-mode", "copy", *graphify_with_flags(graphify.get("with")), str(graphify["package"])],
         ],
         "memory": [
             [npm, "install", "--prefix", str(npm_prefix), str(tools["memory"]["package"])],  # type: ignore[index]

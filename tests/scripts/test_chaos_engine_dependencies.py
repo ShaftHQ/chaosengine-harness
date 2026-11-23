@@ -395,6 +395,154 @@ class ChaosEngineDependenciesTest(unittest.TestCase):
             self.assertEqual(extras[0], command[command.index("--with") + 1])
             self.assertEqual(package, command[-1])
 
+    def test_graphify_install_commands_pass_every_with_entry(self):
+        module = load_controller()
+        specification = json.loads(SPECIFICATION.read_text(encoding="utf-8"))
+        extras = specification["tools"]["graphify"]["with"]
+        self.assertGreaterEqual(len(extras), 2)
+        mempalace_extra = specification["tools"]["mempalace"]["with"]
+        self.assertEqual(1, len(mempalace_extra))
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            commands = {
+                "account": module.account_tool_plan(
+                    root,
+                    specification,
+                    actions={"mempalace": "installed", "graphify": "installed"},
+                    executables={"uv": "/user/bin/uv", "npm": "/user/bin/npm"},
+                    resolved_versions={"python": "3.14.2"},
+                ),
+                "generation": module.generation_install_plan(root, specification),
+                "install": module.install_plan(root, specification),
+            }
+        for name, plan in commands.items():
+            with self.subTest(builder=name):
+                graphify = plan["graphify"][0]
+                flags = [
+                    graphify[index + 1]
+                    for index, item in enumerate(graphify)
+                    if item == "--with"
+                ]
+                self.assertEqual(extras, flags)
+                self.assertEqual(specification["tools"]["graphify"]["package"], graphify[-1])
+                mempalace = plan["mempalace"][0]
+                mempalace_flags = [
+                    mempalace[index + 1]
+                    for index, item in enumerate(mempalace)
+                    if item == "--with"
+                ]
+                self.assertEqual(mempalace_extra, mempalace_flags)
+                self.assertNotIn("|", graphify)
+                self.assertIsInstance(graphify, list)
+
+    def test_one_graphify_extra_stays_a_single_with_flag(self):
+        module = load_controller()
+        specification = {
+            "schemaVersion": 2,
+            "tools": {
+                "uv": {"package": "uv==0.13.9"},
+                "mempalace": {"package": "mempalace==3.12.0", "with": ["chromadb==1.5.9"]},
+                "graphify": {"package": "graphifyy==0.9.113", "with": ["tree-sitter-sql==0.3.11"]},
+                "memory": {"package": "@aictx/memory@0.2.1"},
+            },
+            "runtimes": {"python": {"version": "3.11"}},
+            "dependencies": {"python": {"maximumSeries": "3.14"}},
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            generated = module.generation_install_plan(root, specification)["graphify"][0]
+            legacy = module.install_plan(root, specification)["graphify"][0]
+        for command in (generated, legacy):
+            flags = [
+                command[index + 1]
+                for index, item in enumerate(command)
+                if item == "--with"
+            ]
+            self.assertEqual(["tree-sitter-sql==0.3.11"], flags)
+
+    def test_graphify_version_match_repairs_when_anyio_import_probe_fails(self):
+        module = load_controller()
+        self.assertEqual(
+            "repaired",
+            module.graphify_import_action(
+                "reused",
+                installed_version="0.9.118",
+                resolved_version="0.9.118",
+                extra_import_ok=False,
+            ),
+        )
+        self.assertEqual(
+            "reused",
+            module.graphify_import_action(
+                "reused",
+                installed_version="0.9.118",
+                resolved_version="0.9.118",
+                extra_import_ok=True,
+            ),
+        )
+        self.assertEqual(
+            "reused",
+            module.graphify_import_action(
+                "reused",
+                installed_version="0.9.118",
+                resolved_version=None,
+                extra_import_ok=False,
+            ),
+        )
+        specification = json.loads(SPECIFICATION.read_text(encoding="utf-8"))
+        version = "0.9.118"
+        local = {
+            name: {"healthy": True, "version": version, "detail": "passed"}
+            for name in specification["dependencies"]
+        }
+        local["mempalace"] = {
+            "healthy": True,
+            "version": specification["tools"]["mempalace"]["package"].split("==", 1)[1],
+        }
+        local["graphify"] = {
+            "healthy": True,
+            "version": version,
+            "detail": "passed",
+            "extraImport": False,
+        }
+        with mock.patch.object(module, "resolve_stable_version", return_value=version):
+            actions = module.resolve_account_actions(specification, local)
+        self.assertEqual("repaired", actions["graphify"]["action"])
+        self.assertNotEqual("reused", actions["graphify"]["action"])
+        self.assertIs(False, actions["graphify"]["extraImport"])
+        self.assertEqual("extra-import-failed", actions["graphify"]["probe"])
+        selected = module.select_account_receipt_components(
+            Path("."),
+            actions,
+            {"graphify": dict(local["graphify"])},
+        )
+        self.assertEqual("repaired", selected["graphify"]["action"])
+        self.assertEqual("extra-import-failed", selected["graphify"]["probe"])
+        self.assertIs(False, selected["graphify"]["extraImport"])
+
+    def test_graphify_probe_records_a_failed_anyio_import_without_network(self):
+        module = load_controller()
+        specification = json.loads(SPECIFICATION.read_text(encoding="utf-8"))
+        contract = specification["dependencies"]["graphify"]
+        with tempfile.TemporaryDirectory() as temporary:
+            script = Path(temporary) / "graphify"
+            script.write_text("#!/tmp/graphifyy/bin/python\n", encoding="utf-8")
+
+            def runner(command, **_kwargs):
+                if command[1:3] == ["-c", "import anyio"]:
+                    return SimpleNamespace(
+                        returncode=1, stdout="", stderr="ModuleNotFoundError: No module named 'anyio'"
+                    )
+                return SimpleNamespace(returncode=0, stdout="graphify 0.9.118\n", stderr="")
+
+            result = module.probe_account_dependency(
+                "graphify", str(script), contract, runner=runner
+            )
+        self.assertTrue(result["healthy"])
+        self.assertEqual("0.9.118", result["version"])
+        self.assertIs(False, result["extraImport"])
+        self.assertEqual("extra-import-failed", result["detail"])
+
     def test_runtime_specification_rejects_any_schema3_tool_contract_drift(self):
         module = load_controller()
         source = json.loads(SPECIFICATION.read_text(encoding="utf-8"))
