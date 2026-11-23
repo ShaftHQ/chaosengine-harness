@@ -1059,8 +1059,17 @@ def _repo_relative_path(value: object) -> str:
     return text
 
 
+def _diff_files_incomplete(snapshot: Mapping) -> bool:
+    """True when the file list is known to be truncated or unreadable."""
+    if snapshot.get("filesComplete") is False:
+        return True
+    if "files" in snapshot and not isinstance(snapshot.get("files"), list):
+        return True
+    return False
+
+
 def _diff_touches_installer(snapshot: Mapping) -> bool:
-    """True when a changed path is an installer-contract input. Missing files are not."""
+    """True when a changed path is an installer-contract input."""
     files = snapshot.get("files")
     if not isinstance(files, list) or not files:
         return False
@@ -1084,15 +1093,16 @@ def merge_readiness_reason(snapshot: Mapping) -> str:
     A skipped required check is not success. When at least one check is
     required, only that set is decided: ``isRequired: false`` does not block.
     One exception: an installer diff (``install.py``, ``bootstrap.py``,
-    ``runtime/dependencies.py``, ``install.sh``, or ``install.ps1``) still
-    blocks on a failed, cancelled, or pending installer-contract check that
-    is not required. ``SKIPPED`` and ``NEUTRAL`` stay outside that set.
+    ``runtime/dependencies.py``, ``install.sh``, or ``install.ps1``) — or a
+    truncated/unreadable file list — still blocks on a failed, cancelled, or
+    pending installer-contract check that is not required. ``SKIPPED`` and
+    ``NEUTRAL`` stay outside that set.
     When no check is required, ``SKIPPED`` and ``NEUTRAL`` with
     ``isRequired: false`` stay outside the set, and a failure, cancellation,
     or pending check still blocks. An unmarked skip still blocks, so a probe
     that cannot read ``isRequired`` does not let every skip pass.
     ``DRAFT``, ``DIRTY``, and ``BLOCKED`` deny. ``BEHIND`` does not deny by itself.
-    ``UNSTABLE`` does not deny by itself. Missing ``files`` is not an installer diff.
+    ``UNSTABLE`` does not deny by itself.
     """
     error = str(snapshot.get("error") or "").strip()
     if error:
@@ -1113,11 +1123,12 @@ def merge_readiness_reason(snapshot: Mapping) -> str:
     required_present = any(
         isinstance(check, Mapping) and check.get("isRequired") is True for check in checks
     )
-    installer_diff = _diff_touches_installer(snapshot)
+    installer_diff = _diff_touches_installer(snapshot) or _diff_files_incomplete(snapshot)
     for check in checks:
         if isinstance(check, Mapping) and check.get("isRequired") is False:
             outside = _check_conclusion(check) in _OUTSIDE_REQUIRED_CONCLUSIONS
-            # A non-required installer-contract cell still blocks an installer diff.
+            # A non-required installer-contract cell still blocks an installer diff
+            # or a PR whose changed-file list could not be proven complete.
             # Skip and neutral stay outside the set on every diff.
             binds = installer_diff and _is_installer_contract_check(check)
             if outside or (required_present and not binds):
@@ -1253,8 +1264,45 @@ def _marked_required_checks(owner: str, name: str, number: str, pr_id: str) -> t
     return checks_from_rollup_contexts(nodes), ""
 
 
+def _paginate_pr_files(
+    owner: str,
+    name: str,
+    number: str,
+    initial_files: list[str],
+    end_cursor: object,
+) -> tuple[list[str], bool]:
+    """Fetch remaining PR file pages until ``hasNextPage`` is false (fail-closed on gap)."""
+    collected = list(initial_files)
+    cursor = end_cursor if isinstance(end_cursor, str) and end_cursor else ""
+    for _ in range(30):
+        if not cursor or not re.fullmatch(r"[A-Za-z0-9_=+/.-]+", cursor):
+            return collected, False
+        query = (
+            "query { repository(owner: \"%s\", name: \"%s\") { pullRequest(number: %d) "
+            "{ files(first: 100, after: \"%s\") { pageInfo { hasNextPage endCursor } nodes { path } } } } }"
+            % (owner, name, int(number), cursor)
+        )
+        graph, graph_error = _gh_json(["api", "graphql", "-f", "query=" + query])
+        if graph_error or not isinstance(graph, dict) or graph.get("errors"):
+            return collected, False
+        try:
+            connection = graph["data"]["repository"]["pullRequest"]["files"]
+            page_info = connection["pageInfo"]
+            nodes = connection["nodes"]
+        except (KeyError, TypeError):
+            return collected, False
+        if not isinstance(page_info, dict) or not isinstance(nodes, list):
+            return collected, False
+        collected.extend(_file_paths(nodes))
+        if page_info.get("hasNextPage") is not True:
+            return collected, True
+        next_cursor = page_info.get("endCursor")
+        cursor = next_cursor if isinstance(next_cursor, str) and next_cursor else ""
+    return collected, False
+
+
 def live_merge_probe(target: str) -> dict:
-    """Read check rollup and unresolved review threads. Fail closed on any gap."""
+    """Read check rollup, complete PR files, and unresolved review threads. Fail closed on any gap."""
     view = ["pr", "view", "--json", "id,statusCheckRollup,url,mergeStateStatus,files"]
     if target:
         view.insert(2, target)
@@ -1271,7 +1319,7 @@ def live_merge_probe(target: str) -> dict:
         return {"error": "the pull request URL could not be read."}
     query = (
         "query { repository(owner: \"%s\", name: \"%s\") { pullRequest(number: %d) "
-        "{ files(first: 100) { nodes { path } } "
+        "{ files(first: 100) { pageInfo { hasNextPage endCursor } nodes { path } } "
         "reviewThreads(first: 100) { pageInfo { hasNextPage } nodes { isResolved } } } } }"
         % (owner, name, int(number))
     )
@@ -1288,10 +1336,20 @@ def live_merge_probe(target: str) -> dict:
     except (KeyError, TypeError):
         return {"error": "review threads could not be read."}
     graphql_files: list[str] = []
+    files_complete = False
     if isinstance(pull, dict):
         connection = pull.get("files")
         if isinstance(connection, dict):
             graphql_files = _file_paths(connection.get("nodes"))
+            file_page = connection.get("pageInfo")
+            if isinstance(file_page, dict) and file_page.get("hasNextPage") is True:
+                graphql_files, files_complete = _paginate_pr_files(
+                    owner, name, number, graphql_files, file_page.get("endCursor")
+                )
+            elif isinstance(file_page, dict) and file_page.get("hasNextPage") is False:
+                files_complete = True
+            elif graphql_files and len(graphql_files) < 100:
+                files_complete = True
     if not isinstance(nodes, list) or not isinstance(page, dict):
         return {"error": "review threads could not be read."}
     unresolved = 0
@@ -1307,13 +1365,19 @@ def live_merge_probe(target: str) -> dict:
     if marked is not None:
         checks = marked
     view_files = _file_paths(payload.get("files"))
+    if graphql_files:
+        combined_files = list(dict.fromkeys([*view_files, *graphql_files]))
+    else:
+        combined_files = view_files
+        if view_files and len(view_files) < 100:
+            files_complete = True
     return {
         "checks": checks,
         "unresolved": unresolved,
         "hasNextPage": page.get("hasNextPage") is True,
         "mergeStateStatus": str(payload.get("mergeStateStatus") or ""),
-        # Missing or empty files stay a non-installer diff. The view list wins.
-        "files": view_files or graphql_files,
+        "files": combined_files,
+        "filesComplete": files_complete,
     }
 
 

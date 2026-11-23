@@ -1115,22 +1115,15 @@ _ORIGIN_ONLY_CI = frozenset({
     "scripts/ci/sync_ce_ui.py",
 })
 _ORIGIN_ONLY_DETAIL_DIRS = frozenset({
-    "ce-lessons-2026-11-02",
     "ce-lessons-2026-11-06",
     "ce-lessons-2026-11-21",
     "ce-repeat-failure-pdca",
-    "ce-rules-2026-10-31-7",
-    "ce-rules-2026-10-31-8",
-    "ce-rules-2026-10-31-11",
-    "ce-rules-2026-10-31-12",
-    "ce-rules-2026-10-31-13",
     "ce-study-2026-11-09",
     "token-opt-retro-2026-11-06",
 })
 _ORIGIN_ONLY_DETAIL_FILES = frozenset({
     "references/details/likeness_record_train.py",
     "references/details/showcase-film-slate.md",
-    "references/details/work-github-playbook-promotion.md",
 })
 
 

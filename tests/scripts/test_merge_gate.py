@@ -651,12 +651,208 @@ class InstallerContractMergeGateTests(unittest.TestCase):
 
         self.guard._gh_json = fake
         snapshot = self.guard.live_merge_probe("9")
-        self.assertEqual(["runtime/dependencies.py"], snapshot["files"])
+        self.assertIn("runtime/dependencies.py", snapshot["files"])
         self.assertEqual("installer-contract", snapshot["checks"][0]["workflowName"])
         reason = self.guard.merge_readiness_reason(snapshot)
         self.assertIn("installer-contract", reason)
         self.assertIn("ubuntu-latest upgrade empty", reason)
         self.assertTrue(seen)
+
+    def test_skipped_installer_cell_on_installer_diff_stays_allowed(self):
+        snapshot = ready(
+            checks=[
+                _required_green(),
+                {
+                    "name": "ubuntu-latest fresh empty",
+                    "workflowName": "installer-contract",
+                    "status": "COMPLETED",
+                    "conclusion": "SKIPPED",
+                    "isRequired": False,
+                },
+            ],
+            files=["install.py"],
+        )
+        self.assertEqual("", self.guard.merge_readiness_reason(snapshot))
+
+    def test_incomplete_file_list_fails_closed_on_red_installer_contract(self):
+        failed = {
+            "name": "ubuntu-latest upgrade empty",
+            "workflowName": "installer-contract",
+            "status": "COMPLETED",
+            "conclusion": "FAILURE",
+            "isRequired": False,
+        }
+        snapshot = ready(
+            checks=[_required_green(), failed],
+            files=["README.md"],
+            filesComplete=False,
+        )
+        reason = self.guard.merge_readiness_reason(snapshot)
+        self.assertIn("installer-contract", reason)
+        self.assertIn("ubuntu-latest upgrade empty", reason)
+
+    def test_live_probe_paginates_pr_files_beyond_100_and_blocks(self):
+        def fake(args):
+            if args[:2] == ["pr", "view"]:
+                return {
+                    "id": "PR_big",
+                    "url": "https://github.com/acme/widgets/pull/201",
+                    "mergeStateStatus": "UNSTABLE",
+                    "statusCheckRollup": [],
+                    "files": [{"path": f"docs/file-{i}.md"} for i in range(100)],
+                }, ""
+            query = args[-1]
+            if "reviewThreads" in query:
+                return {
+                    "data": {
+                        "repository": {
+                            "pullRequest": {
+                                "files": {
+                                    "pageInfo": {"hasNextPage": True, "endCursor": "CUR100"},
+                                    "nodes": [{"path": f"docs/file-{i}.md"} for i in range(100)],
+                                },
+                                "reviewThreads": {
+                                    "pageInfo": {"hasNextPage": False},
+                                    "nodes": [],
+                                },
+                            }
+                        }
+                    }
+                }, ""
+            if 'after: "CUR100"' in query:
+                return {
+                    "data": {
+                        "repository": {
+                            "pullRequest": {
+                                "files": {
+                                    "pageInfo": {"hasNextPage": False, "endCursor": "CUR143"},
+                                    "nodes": [{"path": "runtime/dependencies.py"}],
+                                }
+                            }
+                        }
+                    }
+                }, ""
+            return {
+                "data": {
+                    "repository": {
+                        "pullRequest": {
+                            "commits": {
+                                "nodes": [{
+                                    "commit": {
+                                        "statusCheckRollup": {
+                                            "contexts": {
+                                                "pageInfo": {"hasNextPage": False},
+                                                "nodes": [
+                                                    {
+                                                        "__typename": "CheckRun",
+                                                        "name": "Offline structure and syntax checks",
+                                                        "status": "COMPLETED",
+                                                        "conclusion": "SUCCESS",
+                                                        "isRequired": True,
+                                                    },
+                                                    {
+                                                        "__typename": "CheckRun",
+                                                        "name": "windows-latest fresh shaft-dev",
+                                                        "status": "COMPLETED",
+                                                        "conclusion": "FAILURE",
+                                                        "isRequired": False,
+                                                        "checkSuite": {
+                                                            "workflowRun": {
+                                                                "workflow": {"name": "installer-contract"}
+                                                            }
+                                                        },
+                                                    },
+                                                ],
+                                            }
+                                        }
+                                    }
+                                }]
+                            }
+                        }
+                    }
+                }
+            }, ""
+
+        self.guard._gh_json = fake
+        snapshot = self.guard.live_merge_probe("201")
+        self.assertTrue(snapshot["filesComplete"])
+        self.assertIn("runtime/dependencies.py", snapshot["files"])
+        reason = self.guard.merge_readiness_reason(snapshot)
+        self.assertIn("installer-contract", reason)
+        self.assertIn("windows-latest fresh shaft-dev", reason)
+
+    def test_live_probe_pagination_error_marks_files_incomplete_and_fails_closed(self):
+        def fake(args):
+            if args[:2] == ["pr", "view"]:
+                return {
+                    "id": "PR_trunc",
+                    "url": "https://github.com/acme/widgets/pull/202",
+                    "mergeStateStatus": "UNSTABLE",
+                    "statusCheckRollup": [],
+                    "files": [{"path": f"docs/file-{i}.md"} for i in range(100)],
+                }, ""
+            query = args[-1]
+            if "reviewThreads" in query:
+                return {
+                    "data": {
+                        "repository": {
+                            "pullRequest": {
+                                "files": {
+                                    "pageInfo": {"hasNextPage": True, "endCursor": "CUR100"},
+                                    "nodes": [{"path": f"docs/file-{i}.md"} for i in range(100)],
+                                },
+                                "reviewThreads": {
+                                    "pageInfo": {"hasNextPage": False},
+                                    "nodes": [],
+                                },
+                            }
+                        }
+                    }
+                }, ""
+            if 'after: "CUR100"' in query:
+                return None, "gh timed out."
+            return {
+                "data": {
+                    "repository": {
+                        "pullRequest": {
+                            "commits": {
+                                "nodes": [{
+                                    "commit": {
+                                        "statusCheckRollup": {
+                                            "contexts": {
+                                                "pageInfo": {"hasNextPage": False},
+                                                "nodes": [
+                                                    {
+                                                        "__typename": "CheckRun",
+                                                        "name": "Offline structure and syntax checks",
+                                                        "status": "COMPLETED",
+                                                        "conclusion": "SUCCESS",
+                                                        "isRequired": True,
+                                                    },
+                                                    {
+                                                        "__typename": "CheckRun",
+                                                        "name": "ubuntu-latest upgrade empty",
+                                                        "status": "COMPLETED",
+                                                        "conclusion": "FAILURE",
+                                                        "isRequired": False,
+                                                    },
+                                                ],
+                                            }
+                                        }
+                                    }
+                                }]
+                            }
+                        }
+                    }
+                }
+            }, ""
+
+        self.guard._gh_json = fake
+        snapshot = self.guard.live_merge_probe("202")
+        self.assertFalse(snapshot["filesComplete"])
+        reason = self.guard.merge_readiness_reason(snapshot)
+        self.assertIn("installer-contract", reason)
+        self.assertIn("ubuntu-latest upgrade empty", reason)
 
 
 if __name__ == "__main__":

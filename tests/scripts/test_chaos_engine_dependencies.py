@@ -3805,6 +3805,81 @@ class GraphifyExtraRepairTest(unittest.TestCase):
         self.assertEqual("current", current)
         locked.assert_not_called()
 
+    def test_upgrade_repair_finds_graphify_and_uv_off_default_path_via_account_search_and_receipt(self):
+        module = load_controller()
+        specification = json.loads(SPECIFICATION.read_text(encoding="utf-8"))
+        seen = []
+        imports = {"count": 0}
+
+        def runner(command, **_kwargs):
+            seen.append(list(command))
+            if len(command) >= 3 and command[1] == "-c" and "anyio" in command[2]:
+                imports["count"] += 1
+                return SimpleNamespace(returncode=0 if imports["count"] > 1 else 1, stdout="", stderr="")
+            if len(command) >= 3 and command[1] == "-c" and "version_info" in command[2]:
+                return SimpleNamespace(returncode=0, stdout="3.14.2\n", stderr="")
+            return SimpleNamespace(returncode=0, stdout="graphify 0.9.118\n", stderr="")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project = root / "project"
+            project.mkdir()
+            tool_bin = root / "account-home" / ".local" / "bin"
+            tool_bin.mkdir(parents=True)
+            graphify = tool_bin / "graphify"
+            graphify.write_text("#!/opt/graphifyy/bin/python\n", encoding="utf-8")
+            graphify.chmod(0o755)
+            uv = tool_bin / "uv"
+            uv.write_text("#!/bin/sh\n", encoding="utf-8")
+            uv.chmod(0o755)
+            (project / ".chaos-engine-dependencies.json").write_text(
+                json.dumps({
+                    "schemaVersion": 2,
+                    "scope": "user",
+                    "components": {},
+                    "commands": {"graphify": str(graphify), "uv": str(uv)},
+                }),
+                encoding="utf-8",
+            )
+            # Simulate CI runner where ~/.local/bin is NOT on PATH.
+            with mock.patch.dict(
+                os.environ,
+                {
+                    "HOME": str(root / "account-home"),
+                    "USERPROFILE": str(root / "account-home"),
+                    "PATH": "/nonexistent",
+                    "UV_TOOL_DIR": str(root / "uv-tools"),
+                },
+                clear=True,
+            ):
+                status = module.repair_graphify_extra_if_present(
+                    project, specification, runner=runner, which=shutil.which
+                )
+        self.assertEqual("repaired", status)
+        install = [command for command in seen if "tool" in command and "install" in command]
+        self.assertEqual(1, len(install))
+        self.assertEqual(str(uv), install[0][0])
+        self.assertIn("anyio==4.14.2", install[0])
+
+    def test_windows_graphify_probe_handles_appdata_path_with_spaces(self):
+        module = load_controller()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            appdata = root / "User Profile" / "AppData" / "Roaming"
+            venv_python = appdata / "uv" / "tools" / "graphifyy" / "Scripts" / "python.exe"
+            venv_python.parent.mkdir(parents=True)
+            venv_python.write_bytes(b"MZ")
+            shim = root / "bin" / "graphify.exe"
+            shim.parent.mkdir(parents=True)
+            shim.write_bytes(b"MZ")
+            with mock.patch.dict(
+                os.environ,
+                {"APPDATA": str(appdata), "HOME": str(root / "empty-home")},
+                clear=True,
+            ):
+                resolved = module._graphify_tool_python(str(shim))
+        self.assertEqual(str(venv_python), resolved)
+
 
 class WindowsUvToolPathTest(unittest.TestCase):
     def test_windows_tools_dir_and_scripts_launcher(self):

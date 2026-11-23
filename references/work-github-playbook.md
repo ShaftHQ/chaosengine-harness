@@ -128,7 +128,7 @@ Promotion, orchestrated-runtime membership, nightly recovery, ROG machineId, and
   repository needs its own authority.
 - Compact after a confirmed merge if the host supports it.
 
-### PR-merger workflow: arm, watch, fix, confirm
+### PR-merger workflow: watch, fix, confirm
 
 The entrypoint makes this a duty. The terminal states are merged, red,
 conflicting, and stale; a watcher observes only green and red.
@@ -137,12 +137,18 @@ recorded `gh pr merge`. That includes an active delivery goal whose pull
 request was already open, and a session that only pushes new commits.
 `delivery-status` does not clear the block. A delivery goal keeps babysitting
 until that merge.
-When attendance is fully unattended (default) or the owner says babysit and merge it when green, follow this PR-merger
-(arm auto-merge, watch, fix, confirm). Arm `gh pr merge --auto` only when the platform queues the merge until required checks succeed. Merge only once that exact head is green and the required reviews have passed, not while the pull request is still a draft or the head is red. A pending check is not success. `gh pr merge` is refused until then, including when `--auto` is present: on a repository with auto-merge disabled that flag merges immediately and is not a queue. Bundled `pr-babysit` forbids merge;
-do not copy that rule into ChaosEngine and do not edit the bundled skill in place.
+Never arm `gh pr merge --auto`. Merge only once that exact head is green,
+required reviews have passed, and review threads are resolved, not while the
+pull request is still a draft or the head is red. A pending check is not
+success. `gh pr merge` is refused until then, including when `--auto` is
+present. Bundled `pr-babysit` forbids merge; do not copy that rule into
+ChaosEngine and do not edit the bundled skill in place.
 
-This repository allows only squash merges (`gh pr merge --squash`).
-Merge commits and rebase merges are disabled.
+When the base branch ruleset includes a `merge_queue` rule, enqueue with
+`gh pr merge` and pass no strategy flag (`--merge`, `--squash`, or `--rebase`);
+the merge queue owns the method. Otherwise merge with `gh pr merge --squash`
+(this repository allows only squash merges; merge commits and rebase merges are
+disabled).
 
 After **you** merge a PR that changes `chaos-engine/`, rebuild the
 live overlay from the new `origin/<default>` on the **primary checkout**:

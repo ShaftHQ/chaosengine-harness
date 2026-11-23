@@ -1545,6 +1545,38 @@ def _cpython_version_token(executable: str, runner) -> str | None:
     return None
 
 
+def _which_on_path(which, name: str, search_path: str) -> str | None:
+    """Call ``which`` with ``path=search_path``, keeping 1-arg test fakes working."""
+    try:
+        found = which(name, path=search_path)
+    except TypeError:
+        found = which(name)
+    return found if isinstance(found, str) and found else None
+
+
+def _locate_repair_command(project: Path, name: str, which, search_path: str) -> str | None:
+    """Resolve an account CLI even when ``~/.local/bin`` is not on the runner PATH."""
+    found = _which_on_path(which, name, search_path)
+    if not found and os.name == "nt":
+        found = _which_on_path(which, f"{name}.exe", search_path)
+    if found:
+        return found
+    try:
+        receipt = read_account_receipt(project)
+    except ValueError:
+        receipt = None
+    if isinstance(receipt, dict):
+        commands = receipt.get("commands")
+        recorded = commands.get(name) if isinstance(commands, dict) else None
+        if isinstance(recorded, str) and recorded.strip() and Path(recorded).is_file():
+            return recorded
+    if which is shutil.which:
+        candidate = account_tool_bin() / (f"{name}.exe" if os.name == "nt" else name)
+        if candidate.is_file():
+            return str(candidate)
+    return None
+
+
 def repair_graphify_extra_if_present(
     project: Path,
     specification: dict[str, object],
@@ -1559,11 +1591,8 @@ def repair_graphify_extra_if_present(
     stays absent so upgrade does not bootstrap every account tool.
     """
     validate_runtime_specification(specification)
-    executable = which("graphify")
-    if not isinstance(executable, str) or not executable:
-        if os.name == "nt":
-            found = which("graphify.exe")
-            executable = found if isinstance(found, str) else None
+    search_path = _account_search_path()
+    executable = _locate_repair_command(project, "graphify", which, search_path)
     if not isinstance(executable, str) or not executable:
         return "absent"
     contracts = specification.get("dependencies")
@@ -1575,10 +1604,7 @@ def repair_graphify_extra_if_present(
         return "absent"
     if probed.get("extraImport") is not False:
         return "current"
-    uv = which("uv")
-    if (not isinstance(uv, str) or not uv) and os.name == "nt":
-        found_uv = which("uv.exe")
-        uv = found_uv if isinstance(found_uv, str) else None
+    uv = _locate_repair_command(project, "uv", which, search_path)
     if not isinstance(uv, str) or not uv:
         raise RuntimeError("dependency verification failed: graphify")
     python = _graphify_tool_python(executable)
@@ -1587,9 +1613,7 @@ def repair_graphify_extra_if_present(
         python_version = _pinned_runtime_version(specification, "python")
     if not python_version:
         raise RuntimeError("dependency verification failed: graphify")
-    npm = which("npm")
-    if not isinstance(npm, str) or not npm:
-        npm = "npm"
+    npm = _locate_repair_command(project, "npm", which, search_path) or "npm"
     plan = account_tool_plan(
         project,
         specification,

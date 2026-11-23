@@ -48,16 +48,16 @@ KEPT_CI = (
     "scripts/ci/agent_harness_parity.json",
 )
 EXCLUDED_DETAILS = (
-    "references/details/ce-lessons-2026-11-02/status-board.md",
     "references/details/ce-lessons-2026-11-21/learn-retrospective.md",
     "references/details/ce-repeat-failure-pdca/repeat-failure-pdca.md",
-    "references/details/ce-rules-2026-10-31-7/orchestrator-pre-publish.md",
-    "references/details/work-github-playbook-promotion.md",
 )
 KEPT_DETAILS = (
     "references/details/bot-entry-on-demand.md",
     "references/details/retro-spec-index.md",
     "references/details/narration-review.md",
+    "references/details/work-github-playbook-promotion.md",
+    "references/details/ce-rules-2026-10-31-12/mega-pr.md",
+    "references/details/ce-lessons-2026-11-02/status-board.md",
 )
 
 
@@ -227,6 +227,50 @@ class ConsumerPayloadLeanTest(unittest.TestCase):
             self.assertNotIn(relative, payload)
         for relative in KEPT_CI + KEPT_DETAILS:
             self.assertIn(relative, payload)
+
+    def test_no_shipped_markdown_links_to_newly_excluded_payload_files(self):
+        import posixpath
+        import re
+
+        link_re = re.compile(r"(?<!!)\[[^]]*\]\(([^)\s#]+)(?:#[^)]*)?\)")
+        uri_re = re.compile(r"^[a-z][a-z0-9+.-]*:", re.IGNORECASE)
+        payload = {
+            path.relative_to(ROOT).as_posix()
+            for path in INSTALL.source_files(ROOT)
+        }
+        newly_excluded = set(EXCLUDED_CI) | set(EXCLUDED_DETAILS)
+        checked_docs = {
+            "references/work-github-playbook.md",
+            "references/work-ordering.md",
+            "references/ce-rules-2026-10-31-7-SPEC.md",
+            "references/ce-rules-2026-10-31-8-SPEC.md",
+            "references/ce-rules-2026-10-31-11-SPEC.md",
+            "references/ce-rules-2026-10-31-12-SPEC.md",
+            "references/ce-rules-2026-10-31-13-SPEC.md",
+            "references/ce-lessons-2026-11-02-SPEC.md",
+        }
+        broken: list[str] = []
+        for relative in sorted(payload):
+            if not relative.endswith(".md"):
+                continue
+            parts = Path(relative).parts
+            if parts[:1] == ("vendor",) or "templates" in parts or relative == "AGENTS.md":
+                continue
+            text = (ROOT / relative).read_text(encoding="utf-8", errors="replace")
+            parent = posixpath.dirname(relative)
+            for match in link_re.finditer(text):
+                target = match.group(1).strip().strip("<>")
+                if not target or uri_re.match(target) or target.startswith("/") or "{" in target:
+                    continue
+                resolved = posixpath.normpath(posixpath.join(parent, target)) if parent else posixpath.normpath(target)
+                if resolved.startswith("../") or resolved.startswith(".chaos-engine") or resolved.startswith("guides/"):
+                    continue
+                disk_path = ROOT / resolved
+                if disk_path.is_dir():
+                    continue
+                if resolved in newly_excluded or (relative in checked_docs and disk_path.is_file() and resolved not in payload):
+                    broken.append(f"{relative} -> {target} ({resolved})")
+        self.assertEqual([], broken)
 
 
 if __name__ == "__main__":

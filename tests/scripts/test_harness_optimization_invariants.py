@@ -94,3 +94,11 @@ def test_default_reviewer_is_not_hardcoded_to_grok() -> None:
     assert "The default reviewer is the same local Grok path" not in text
     assert "grok" not in text.casefold()
     assert "any AI client" in text
+
+
+def test_work_github_playbook_matches_merge_policy() -> None:
+    text = _text("references/work-github-playbook.md")
+    assert "Never arm `gh pr merge --auto`" in text
+    assert "Arm `gh pr merge --auto`" not in text
+    assert "merge_queue" in text
+    assert "pass no strategy flag (`--merge`, `--squash`, or `--rebase`)" in text
