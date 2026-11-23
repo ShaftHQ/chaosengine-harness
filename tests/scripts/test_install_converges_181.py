@@ -9,7 +9,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from types import SimpleNamespace
 from unittest import mock
 
@@ -94,6 +94,175 @@ class InstallConverges181Tests(unittest.TestCase):
             receipt, _raw = hosts.read_receipt(project)
             wanted = hosts.decode_images(receipt["after"], nullable=True)[".agents/hooks.json"]
             self.assertEqual(wanted, hooks.read_bytes())
+
+    def test_rebind_clears_windows_shim_path_before_verify(self):
+        """#192: quarantine and rebind must leave hosts healthy after a Windows shim rewrite."""
+        launch = ".chaos-engine/hooks/launch.py"
+        windows_launch = str(PureWindowsPath(*launch.split("/")))
+        json_windows = json.dumps(windows_launch)[1:-1]
+        self.assertNotEqual(launch, windows_launch)
+        self.assertIn("\\", json_windows)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary) / "checkout"
+            project.mkdir()
+            specification = json.loads((ROOT / "dependencies.json").read_text(encoding="utf-8"))
+            real_load = INSTALL.load_installed_controller
+
+            def _load_installed_controller(installed_root, name):
+                controller = real_load(installed_root, name)
+                if name == "hosts":
+                    def _refuse_plugin_activation(*_args, **_kwargs):
+                        raise AssertionError(
+                            "install_with_dependencies called activate_detected_plugins under pytest"
+                        )
+
+                    controller.activate_detected_plugins = _refuse_plugin_activation
+                return controller
+
+            def install(reporter=None):
+                with mock.patch.object(
+                    INSTALL, "load_dependency_controller", return_value=_account_controller(specification)
+                ), mock.patch.object(INSTALL.shutil, "which", return_value=None), mock.patch.object(
+                    INSTALL, "load_installed_controller", side_effect=_load_installed_controller
+                ):
+                    INSTALL.install_with_dependencies(
+                        project,
+                        ROOT,
+                        COMMIT,
+                        with_maven_tools=False,
+                        reporter=reporter,
+                    )
+
+            install()
+            hooks = project / ".agents" / "hooks.json"
+            original_hooks = hooks.read_text(encoding="utf-8")
+            self.assertIn(launch, original_hooks)
+            hooks.write_text(original_hooks.replace(launch, json_windows), encoding="utf-8")
+            self.assertTrue(INSTALL.upgrade_host_receipt_drift_needed(project))
+
+            mcp_path = project / ".mcp.json"
+            payload = json.loads(mcp_path.read_text(encoding="utf-8"))
+            payload.setdefault("mcpServers", {})["user-foreign-192"] = {
+                "command": "keep-me",
+                "args": ["--foreign"],
+            }
+            mcp_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+            seen = {"hooks": 0}
+            original_write_text = Path.write_text
+
+            def windows_write_text(self, data, encoding=None, errors=None, newline=None):
+                if (
+                    isinstance(data, str)
+                    and self.parent.name == ".agents"
+                    and self.name.startswith("hooks.json")
+                    and launch in data
+                ):
+                    seen["hooks"] += 1
+                    data = data.replace(launch, json_windows)
+                return original_write_text(
+                    self, data, encoding=encoding, errors=errors, newline=newline
+                )
+
+            class _Trace:
+                def __init__(self):
+                    self.lines: list[str] = []
+
+                def trace(self, message):
+                    self.lines.append(str(message))
+
+                def start(self, *_args, **_kwargs):
+                    return None
+
+                def complete(self, *_args, **_kwargs):
+                    return None
+
+            reporter = _Trace()
+            with mock.patch.object(Path, "write_text", windows_write_text):
+                install(reporter)
+            self.assertGreater(seen["hooks"], 0)
+            self.assertTrue(
+                any(
+                    "quarantined drifted host receipt (upgrade adapter drift)" in line
+                    for line in reporter.lines
+                ),
+                reporter.lines,
+            )
+            self.assertFalse(INSTALL.upgrade_host_receipt_drift_needed(project))
+            hosts = INSTALL.load_installed_controller(project / ".chaos-engine", "hosts")
+            verified = hosts.verify(project, core_commit=COMMIT)
+            self.assertEqual("healthy", verified["status"])
+            status = INSTALL.status_with_dependencies(project)
+            hosts_row = status["hosts"]
+            self.assertEqual("healthy", hosts_row["status"])
+            self.assertNotEqual("CE_HOST_ADAPTER_DRIFT", hosts_row.get("code"))
+            component = (status.get("components") or {}).get("hosts") or {}
+            self.assertNotEqual("CE_HOST_ADAPTER_DRIFT", component.get("code"))
+            healed = json.loads(mcp_path.read_text(encoding="utf-8"))
+            self.assertEqual("keep-me", healed["mcpServers"]["user-foreign-192"]["command"])
+
+    def test_user_visible_commands_use_doctor_python_cli(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            overlay = project / ".chaos-engine"
+            overlay.mkdir()
+            (overlay / "VERSION").write_text("1\n", encoding="utf-8")
+            pin = project / "chaos-engine"
+            pin.mkdir()
+            (pin / "VERSION").write_text("2\n", encoding="utf-8")
+            palace = project / ".chaos-engine-state" / "mempalace"
+            palace.mkdir(parents=True)
+            with mock.patch.object(INSTALL.os, "name", "nt"):
+                self.assertEqual("py -3", INSTALL._doctor_python_cli())
+            with mock.patch.object(INSTALL, "_doctor_python_cli", return_value="py -3"):
+                needle = "py -3 .chaos-engine/install.py"
+                drift = INSTALL.upgrade_host_receipt_drift_status(project)
+                self.assertIn(needle, drift["components"]["hosts"]["detail"])
+                missing = INSTALL.missing_hosts_receipt_recovery_status(project)
+                self.assertIn(needle, missing["components"]["hosts"]["detail"])
+                wiped = INSTALL.wiped_runtime_recovery_status(project)
+                self.assertIn(needle, json.dumps(wiped))
+                result: dict = {}
+                INSTALL._require_overlay_tool(result, project)
+                self.assertIn(needle, result["components"][".chaos-engine/tool.py"]["fixNext"])
+                sqlite_missing = INSTALL._mempalace_sqlite_missing_finding(project)
+                self.assertIsNotNone(sqlite_missing)
+                self.assertIn(needle, sqlite_missing["fixNext"])
+                previous = project / ".chaos-engine-state" / "mempalace.previous-192"
+                previous.mkdir()
+                empty_previous = INSTALL._mempalace_empty_previous_finding(project)
+                self.assertIsNotNone(empty_previous)
+                self.assertIn(needle, empty_previous["fixNext"])
+                version = INSTALL._ce_version_after_upgrade_finding(project, overlay)
+                self.assertIsNotNone(version)
+                self.assertIn(needle, version["fixNext"])
+                with mock.patch.object(
+                    INSTALL,
+                    "_load_stores_module",
+                    return_value={
+                        "palace_drawer_count": lambda _palace: 0,
+                        "resolve_palace": lambda _project: project,
+                    },
+                ):
+                    empty_drawers = INSTALL._mempalace_empty_finding(project, {"status": "finished"})
+                self.assertIsNotNone(empty_drawers)
+                self.assertIn(needle, empty_drawers["fixNext"])
+                health: dict = {"components": {"plugins": {}}}
+                INSTALL.apply_plugin_client_health(
+                    health,
+                    project,
+                    SimpleNamespace(
+                        detected_plugin_status=lambda _project: {"codex": {"status": "absent"}}
+                    ),
+                )
+                self.assertIn(needle, health["components"]["plugins"]["detail"])
+                with mock.patch.object(INSTALL, "runtime_module", return_value=project / "missing-hosts.py"):
+                    INSTALL.apply_companion_and_identity_doctor({"components": {}}, project)
+                handoff = (project / ".chaos-engine-state" / "companion-handoff.md").read_text(
+                    encoding="utf-8"
+                )
+                self.assertIn(needle, handoff)
 
     def test_harness_checkout_doctor_passes_without_repair(self):
         with tempfile.TemporaryDirectory() as temporary:
