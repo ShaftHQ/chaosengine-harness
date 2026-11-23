@@ -489,6 +489,42 @@ class ChaosEngineDependenciesTest(unittest.TestCase):
                 extra_import_ok=False,
             ),
         )
+        self.assertEqual(
+            "repaired",
+            module.graphify_import_action(
+                "reused",
+                installed_version="0.9.1",
+                resolved_version="0.9.118",
+                extra_import_ok=False,
+            ),
+        )
+        self.assertEqual(
+            "repaired",
+            module.graphify_import_action(
+                "reused",
+                installed_version=None,
+                resolved_version="0.9.118",
+                extra_import_ok=False,
+            ),
+        )
+        self.assertEqual(
+            "upgraded",
+            module.graphify_import_action(
+                "upgraded",
+                installed_version="0.9.1",
+                resolved_version="0.9.118",
+                extra_import_ok=False,
+            ),
+        )
+        self.assertEqual(
+            "reused",
+            module.graphify_import_action(
+                "reused",
+                installed_version=None,
+                resolved_version=None,
+                extra_import_ok=False,
+            ),
+        )
         specification = json.loads(SPECIFICATION.read_text(encoding="utf-8"))
         version = "0.9.118"
         local = {
@@ -712,6 +748,28 @@ class ChaosEngineDependenciesTest(unittest.TestCase):
         self.assertFalse(actions["graphify"]["latestVersionVerified"])
         self.assertEqual("OSError: down", actions["graphify"]["lookupError"])
         self.assertEqual("", module.describe_blocked_dependencies(actions))
+
+    def test_unverified_graphify_extra_failure_stays_reused_until_install_forces_repair(self):
+        module = load_controller()
+        specification = json.loads(SPECIFICATION.read_text(encoding="utf-8"))
+        local = {name: {"healthy": True, "version": "1.0.0"} for name in specification["dependencies"]}
+        local["mempalace"] = {
+            "healthy": True,
+            "version": specification["tools"]["mempalace"]["package"].split("==", 1)[1],
+        }
+        local["graphify"] = {
+            "healthy": True,
+            "version": "0.9.118",
+            "extraImport": False,
+        }
+        with mock.patch.object(module, "resolve_stable_version", side_effect=OSError("down")):
+            actions = module.resolve_account_actions(specification, local)
+        self.assertEqual("reused", actions["graphify"]["action"])
+        self.assertIsNone(actions["graphify"]["resolvedVersion"])
+        forced = copy.deepcopy(actions)
+        module.apply_graphify_extra_repair(forced)
+        self.assertEqual("repaired", forced["graphify"]["action"])
+        self.assertEqual("reused", actions["graphify"]["action"])
 
     def test_unreachable_registry_still_blocks_a_missing_tool_with_its_cause(self):
         module = load_controller()
@@ -3542,6 +3600,210 @@ class DanglingCeUvToolShimsTest(unittest.TestCase):
             self.assertIn("--force", command)
             self.assertEqual("tool", command[1])
             self.assertEqual("install", command[2])
+
+
+class GraphifyToolPythonTest(unittest.TestCase):
+    def _isolate(self, module, home: Path, **env: str):
+        return (
+            mock.patch.dict(os.environ, env, clear=True),
+            mock.patch.object(module.Path, "home", return_value=home),
+        )
+
+    def _touch(self, path: Path, payload: bytes = b"py") -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(payload)
+
+    def test_shebang_wins_over_uv_tool_roots(self):
+        module = load_controller()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            home = root / "home"
+            launcher = root / "bin" / "graphify"
+            self._touch(launcher, b"#!/opt/graphifyy/bin/python\n")
+            tool_python = root / "uv-tools" / "graphifyy" / "bin" / "python"
+            self._touch(tool_python)
+            env_patch, home_patch = self._isolate(module, home, UV_TOOL_DIR=str(root / "uv-tools"))
+            with env_patch, home_patch:
+                found = module._graphify_tool_python(str(launcher))
+        self.assertEqual("/opt/graphifyy/bin/python", found)
+
+    def test_windows_appdata_beats_unrelated_sibling_python(self):
+        module = load_controller()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            home = root / "home"
+            bindir = home / ".local" / "bin"
+            self._touch(bindir / "python.exe", b"decoy")
+            launcher = bindir / "graphify.exe"
+            self._touch(launcher, b"MZ")
+            appdata = home / "AppData" / "Roaming"
+            expected = appdata / "uv" / "tools" / "graphifyy" / "Scripts" / "python.exe"
+            self._touch(expected)
+            env_patch, home_patch = self._isolate(module, home, APPDATA=str(appdata))
+            with env_patch, home_patch:
+                found = module._graphify_tool_python(str(launcher))
+        self.assertEqual(str(expected), found)
+
+    def test_uv_tool_dir_beats_appdata(self):
+        module = load_controller()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            home = root / "home"
+            launcher = root / "graphify.exe"
+            self._touch(launcher, b"MZ")
+            appdata = root / "appdata"
+            self._touch(appdata / "uv" / "tools" / "graphifyy" / "Scripts" / "python.exe", b"app")
+            expected = root / "custom" / "graphifyy" / "Scripts" / "python.exe"
+            self._touch(expected, b"custom")
+            env_patch, home_patch = self._isolate(
+                module, home, UV_TOOL_DIR=str(root / "custom"), APPDATA=str(appdata)
+            )
+            with env_patch, home_patch:
+                found = module._graphify_tool_python(str(launcher))
+        self.assertEqual(str(expected), found)
+
+    def test_localappdata_and_home_roaming_and_posix_share(self):
+        module = load_controller()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            home = root / "home"
+            launcher = root / "graphify.exe"
+            self._touch(launcher, b"MZ")
+            local = root / "local"
+            expected = local / "uv" / "tools" / "graphifyy" / "bin" / "python"
+            self._touch(expected)
+            env_patch, home_patch = self._isolate(
+                module, home, APPDATA=str(root / "empty-app"), LOCALAPPDATA=str(local)
+            )
+            (root / "empty-app").mkdir()
+            with env_patch, home_patch:
+                found = module._graphify_tool_python(str(launcher))
+            self.assertEqual(str(expected), found)
+            roaming = home / "AppData" / "Roaming" / "uv" / "tools" / "graphifyy" / "Scripts" / "python.exe"
+            self._touch(roaming)
+            env_patch, home_patch = self._isolate(module, home)
+            with env_patch, home_patch:
+                found = module._graphify_tool_python(str(launcher))
+            self.assertEqual(str(roaming), found)
+            posix = home / ".local" / "share" / "uv" / "tools" / "graphifyy" / "bin" / "python"
+            roaming.unlink()
+            self._touch(posix)
+            env_patch, home_patch = self._isolate(module, home)
+            with env_patch, home_patch:
+                found = module._graphify_tool_python(str(launcher))
+            self.assertEqual(str(posix), found)
+
+    def test_launcher_inside_graphifyy_uses_that_venv(self):
+        module = load_controller()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            home = root / "home"
+            scripts = root / "uv-tools" / "graphifyy" / "Scripts" / "python.exe"
+            launcher = root / "uv-tools" / "graphifyy" / "Scripts" / "graphify.exe"
+            self._touch(scripts)
+            self._touch(launcher, b"MZ")
+            decoy = root / "bin" / "python.exe"
+            self._touch(decoy, b"decoy")
+            env_patch, home_patch = self._isolate(module, home)
+            with env_patch, home_patch:
+                found = module._graphify_tool_python(str(launcher))
+            self.assertEqual(str(scripts), found)
+            posix_launcher = root / "tools" / "graphifyy" / "bin" / "graphify"
+            posix_python = root / "tools" / "graphifyy" / "bin" / "python"
+            self._touch(posix_python)
+            self._touch(posix_launcher, b"not-a-shebang")
+            with env_patch, home_patch:
+                found = module._graphify_tool_python(str(posix_launcher))
+            self.assertEqual(str(posix_python), found)
+
+    def test_unrelated_sibling_python_is_not_the_tool_interpreter(self):
+        module = load_controller()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            home = root / "home"
+            launcher = home / ".local" / "bin" / "graphify.exe"
+            self._touch(launcher, b"MZ")
+            self._touch(launcher.parent / "python.exe", b"decoy")
+            env_patch, home_patch = self._isolate(module, home)
+            with env_patch, home_patch:
+                found = module._graphify_tool_python(str(launcher))
+        self.assertIsNone(found)
+
+
+class GraphifyExtraRepairTest(unittest.TestCase):
+    def test_present_graphify_without_anyio_reinstalls_the_pinned_extras(self):
+        module = load_controller()
+        specification = json.loads(SPECIFICATION.read_text(encoding="utf-8"))
+        imports = {"count": 0}
+        seen: list[list[str]] = []
+
+        def runner(command, **_kwargs):
+            seen.append(list(command))
+            if len(command) >= 3 and command[1] == "-c" and "anyio" in command[2]:
+                imports["count"] += 1
+                return SimpleNamespace(returncode=0 if imports["count"] > 1 else 1, stdout="", stderr="")
+            if len(command) >= 3 and command[1] == "-c" and "version_info" in command[2]:
+                return SimpleNamespace(returncode=0, stdout="3.14.2\n", stderr="")
+            return SimpleNamespace(returncode=0, stdout="graphify 0.9.118\n", stderr="")
+
+        def which(name):
+            return {
+                "graphify": "/tools/bin/graphify",
+                "uv": "/tools/bin/uv",
+                "npm": "/tools/bin/npm",
+            }.get(name)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            launcher = root / "graphify"
+            launcher.write_text("#!/opt/graphifyy/bin/python\n", encoding="utf-8")
+
+            def which_real(name):
+                if name == "graphify":
+                    return str(launcher)
+                return which(name)
+
+            with mock.patch.dict(os.environ, {"UV_TOOL_DIR": str(root / "uv-tools")}, clear=True):
+                status = module.repair_graphify_extra_if_present(
+                    root, specification, runner=runner, which=which_real
+                )
+        self.assertEqual("repaired", status)
+        install = [command for command in seen if "tool" in command and "install" in command]
+        self.assertEqual(1, len(install))
+        command = install[0]
+        self.assertIn("--force", command)
+        self.assertNotIn("--reinstall", command)
+        self.assertEqual(["--python", "3.14.2"], command[command.index("--python"): command.index("--python") + 2])
+        self.assertIn("anyio==4.14.2", command)
+        self.assertIn("tree-sitter-sql==0.3.11", command)
+        self.assertEqual("graphifyy==0.9.113", command[-1])
+
+    def test_missing_graphify_and_healthy_anyio_do_not_reinstall(self):
+        module = load_controller()
+        specification = json.loads(SPECIFICATION.read_text(encoding="utf-8"))
+
+        def runner(command, **_kwargs):
+            if len(command) >= 3 and command[1] == "-c" and "anyio" in command[2]:
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
+            return SimpleNamespace(returncode=0, stdout="graphify 0.9.118\n", stderr="")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            absent = module.repair_graphify_extra_if_present(
+                root, specification, runner=runner, which=lambda _name: None
+            )
+            launcher = root / "graphify"
+            launcher.write_text("#!/opt/graphifyy/bin/python\n", encoding="utf-8")
+            with mock.patch.object(module, "run_uv_tool_install_with_lock") as locked:
+                current = module.repair_graphify_extra_if_present(
+                    root,
+                    specification,
+                    runner=runner,
+                    which=lambda name: str(launcher) if name == "graphify" else None,
+                )
+        self.assertEqual("absent", absent)
+        self.assertEqual("current", current)
+        locked.assert_not_called()
 
 
 class WindowsUvToolPathTest(unittest.TestCase):
