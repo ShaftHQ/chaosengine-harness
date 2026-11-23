@@ -88,7 +88,7 @@ _GIT_ENV_PREFIX_BLOCKLIST = ("GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_")
 # Relative roots treated as CE-managed for primary-SHA restore (checkout, never delete).
 CE_MANAGED_PREFIXES = (".chaos-engine/",)
 ACK_ENV = "CHAOS_DELETE_ACK"
-CODE_TTL = 600
+CODE_TTL = 1800
 CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
 # No code unlocks these: a path segment matching a name, or a browser profile dir.
 NEVER_NAMES = ("ROG*", "yt", "designer-ws.git.retired", "signed-renders")
@@ -1612,7 +1612,7 @@ def _never_rules() -> tuple[list[str], list[str]]:
         for line in extra.read_text(encoding="utf-8").splitlines():
             item = line.strip()
             if item and not item.startswith("#"):
-                (patterns if "/" in item else names).append(os.path.expanduser(item))
+                (patterns if ("/" in item or "\\" in item) else names).append(os.path.expanduser(item))
     return names, patterns
 
 
@@ -1925,8 +1925,8 @@ def never_touch(path: Path) -> str:
             continue
         if hit:
             return f"never-touch `{hit}`"
-    text = str(path)
-    hit = next((item for item in patterns if _pattern_regex(item).match(text)), "")
+    text = str(path).replace("\\", "/")
+    hit = next((item for item in patterns if _pattern_regex(item.replace("\\", "/")).match(text)), "")
     if hit:
         return f"never-touch `{hit}`"
     if path.is_dir() and not path.is_symlink():
@@ -1947,14 +1947,36 @@ def _code_digest(code: str) -> str:
     return hashlib.sha256(code.strip().upper().encode("utf-8")).hexdigest()
 
 
-def _load_codes() -> dict:
+def _iso_utc(ts: float) -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(ts))
+
+
+def _load_all_codes() -> dict[str, dict[str, object]]:
     store = _ack_store()
     try:
         codes = json.loads(store.read_text(encoding="utf-8")) if store.is_file() else {}
     except ValueError:
         codes = {}
+    if not isinstance(codes, dict):
+        return {}
+    cutoff = time.time() - 86400
+    return {
+        key: value
+        for key, value in codes.items()
+        if isinstance(value, dict)
+        and isinstance(value.get("expires", 0), (int, float))
+        and float(value.get("expires", 0)) >= cutoff
+        and "paths" in value
+    }
+
+
+def _load_codes() -> dict:
     now = time.time()
-    return {key: value for key, value in codes.items() if isinstance(value, dict) and value.get("expires", 0) >= now and "paths" in value}
+    return {
+        key: value
+        for key, value in _load_all_codes().items()
+        if not value.get("used") and float(value.get("expires", 0)) >= now
+    }
 
 
 def _save_codes(codes: dict) -> None:
@@ -1973,27 +1995,44 @@ def request_code(paths: list[Path], ttl: float = CODE_TTL) -> str:
         if hit:
             raise PermissionError(f"`{path}` is {hit}; no code unlocks it")
     code = "".join(secrets.choice(CODE_ALPHABET) for _ in range(6))
-    codes = _load_codes()
-    codes[_code_digest(code)] = {"paths": _paths_digest(paths), "count": len(set(paths)), "expires": time.time() + ttl}
+    codes = _load_all_codes()
+    codes[_code_digest(code)] = {
+        "paths": _paths_digest(paths),
+        "count": len(set(paths)),
+        "expires": time.time() + ttl,
+        "used": False,
+    }
     _save_codes(codes)
     _log({"issued": True, "paths": _paths_digest(paths)[:12], "count": len(set(paths))})
     return code
 
 
-def consume_code(code: str, paths: list[Path]) -> str:
-    """'' when ``code`` matches ``paths`` (then it is spent); else why it was rejected."""
+def verify_code(code: str, paths: list[Path], *, consume: bool = True) -> str:
+    """'' when ``code`` matches ``paths`` (and is spent when ``consume=True``); else why it was rejected."""
     if not code:
         return "no code"
-    codes = _load_codes()
-    entry = codes.get(_code_digest(code))
+    codes = _load_all_codes()
+    digest = _code_digest(code)
+    entry = codes.get(digest)
     if entry is None:
-        return "code unknown, expired or already used"
+        return "code unknown"
+    if entry.get("used"):
+        return "code already used"
+    expires = float(entry.get("expires", 0))
+    if expires < time.time():
+        return f"code expired at {_iso_utc(expires)}"
     if entry.get("paths") != _paths_digest(paths):
         return "code was issued for a different path list"
-    del codes[_code_digest(code)]
-    _save_codes(codes)
-    _log({"used": True, "paths": entry["paths"][:12], "targets": [str(path) for path in paths][:20]})
+    if consume:
+        entry["used"] = True
+        _save_codes(codes)
+        _log({"used": True, "codeDigest": digest, "paths": [str(path) for path in paths]})
     return ""
+
+
+def consume_code(code: str, paths: list[Path]) -> str:
+    """'' when ``code`` matches ``paths`` (then it is spent); else why it was rejected."""
+    return verify_code(code, paths, consume=True)
 
 
 def _checkout_rev(command: str) -> str | None:
@@ -2016,14 +2055,106 @@ def _checkout_rev(command: str) -> str | None:
     return first
 
 
-def check(command: str, cwd: Path | None = None, project: Path | None = None, code: str | None = None) -> tuple[str, list[str]]:
+def _only_delete_segments(command: str, cwd: Path) -> bool:
+    """True when every shell segment in ``command`` is a cd/pushd or a recognized delete segment."""
+    if UNSURE.search(command):
+        return False
+    lines = [line for line in command.splitlines() if line.strip()]
+    if not lines:
+        return False
+    has_delete = False
+    for line in lines:
+        try:
+            segments = _segments(line)
+        except ValueError:
+            return False
+        if not segments:
+            return False
+        for arguments in segments:
+            head, rest = _head(arguments)
+            if head in {"cd", "pushd"}:
+                target = rest[0] if rest else "~"
+                if UNSURE.search(target):
+                    return False
+                cwd = (cwd / os.path.expanduser(target)).resolve()
+                continue
+            if head in SHELLS:
+                if "-c" not in rest or rest.index("-c") + 1 >= len(rest):
+                    return False
+                if not _only_delete_segments(rest[rest.index("-c") + 1], cwd):
+                    return False
+                has_delete = True
+                continue
+            if head.startswith("python"):
+                if not (RMTREE.search(line) or PATHLIB_DELETE.search(line)):
+                    return False
+                try:
+                    if not _python_entries(line):
+                        return False
+                except Unsure:
+                    return False
+                has_delete = True
+                continue
+            try:
+                targets = _segment_targets(arguments, cwd)
+            except Unsure:
+                return False
+            if not targets:
+                return False
+            has_delete = True
+    return has_delete
+
+
+def _delete_check_cli_args(command: str) -> list[str] | None:
+    """Return CLI arguments when ``command`` is a single tool.py delete-check / delete_guard.py invocation."""
+    if "\n" in command.strip() or UNSURE.search(command):
+        return None
+    try:
+        segments = _segments(command)
+    except ValueError:
+        return None
+    if len(segments) != 1:
+        return None
+    head, rest = _head(segments[0])
+    if head.startswith("python"):
+        idx = 0
+        while idx < len(rest) and rest[idx].startswith("-"):
+            idx += 1
+        if idx >= len(rest):
+            return None
+        script = os.path.basename(rest[idx])
+        tail = rest[idx + 1 :]
+    else:
+        script = head
+        tail = rest
+    if script == "tool.py" and tail[:1] == ["delete-check"]:
+        return tail[1:]
+    if script == "delete_guard.py":
+        return tail
+    return None
+
+
+def check(
+    command: str | list[Path],
+    cwd: Path | None = None,
+    project: Path | None = None,
+    code: str | None = None,
+    *,
+    consume: bool = True,
+) -> tuple[str, list[str]]:
     """(refusal or '', warnings). A matching owner code turns git/allow-list refusals into warnings."""
+    if isinstance(command, (list, tuple)):
+        if not command:
+            return ("Delete guard (#7251): refused: no delete targets.", []) if code is not None else ("", [])
+        command = _rm([str(item) for item in command])
     if not (DELETE_WORD.search(command) or RMTREE.search(command) or PATHLIB_DELETE.search(command)):
-        return "", []
+        return ("Delete guard (#7251): refused: no delete targets.", []) if code is not None else ("", [])
     try:
         targets = command_targets(command, cwd)
     except Unsure as error:
         return f"Delete guard (#7251): refused, cannot tell what this deletes ({error}). Name literal paths and run `tool.py delete-check <paths>`.", []
+    if code is not None and not targets:
+        return "Delete guard (#7251): refused: no delete targets.", []
     for target in targets:
         hit = never_touch(target)
         if hit:
@@ -2031,13 +2162,22 @@ def check(command: str, cwd: Path | None = None, project: Path | None = None, co
     rev = _checkout_rev(command)
     reasons = [(target, reason) for target in targets for reason in [path_reason(target, project, rev)] if reason]
     if not reasons:
-        return "", []
-    code = code if code is not None else os.environ.get(ACK_ENV, "")
-    rejected = consume_code(code, targets) if code else "no code"
+        if code is None:
+            return "", []
+        rejected = verify_code(code, targets, consume=consume)
+        if not rejected:
+            return "", [f"`{target}`: (owner code accepted)" for target in targets]
+        target = targets[0]
+        return (
+            f"Delete guard (#7251): refused `{target}`: owner code rejected: {rejected}. "
+            f"Run `tool.py delete-check --request-code <same paths>` and ask the owner to paste the code back in chat."
+        ), []
+    effective_code = code if code is not None else os.environ.get(ACK_ENV, "")
+    rejected = verify_code(effective_code, targets, consume=consume) if effective_code else "no code"
     if not rejected:
         return "", [f"`{target}`: {reason} (owner code accepted)" for target, reason in reasons]
     target, reason = reasons[0]
-    hint = f"owner code rejected: {rejected}. " if code else ""
+    hint = f"owner code rejected: {rejected}. " if effective_code else ""
     return (
         f"Delete guard (#7251): refused `{target}`: {reason}. {hint}Commit and push it, back it up, "
         f"add a scratch pattern to {STATE_DIR}/{ALLOW_FILE}, or run `tool.py delete-check --request-code <same paths>` "
@@ -2070,6 +2210,29 @@ def denial_with_tool_repair(reason: str, project: Path | None) -> str:
 
 def block_reason(command: str, cwd: Path | None = None, project: Path | None = None) -> str:
     """Hook entry point: '' to allow, else a refusal message."""
+    cli_args = _delete_check_cli_args(command)
+    if cli_args is not None:
+        if "--code" not in cli_args:
+            return ""
+        if cli_args[:1] == ["--code"] and len(cli_args) >= 2:
+            code, rest = cli_args[1], cli_args[2:]
+            if rest[:1] == ["--command"] and len(rest) == 2:
+                inner_cmd = rest[1]
+                base_cwd = (cwd or Path.cwd()).resolve()
+                if not _only_delete_segments(inner_cmd, base_cwd):
+                    return denial_with_tool_repair(
+                        "Delete guard (#7251): refused: --command with --code must contain only delete commands.",
+                        project or cwd,
+                    )
+                reason, _ = check(inner_cmd, cwd=cwd, project=project, code=code, consume=False)
+                return denial_with_tool_repair(reason, project or cwd) if reason else ""
+            if rest and not rest[0].startswith("--"):
+                reason, _ = check([Path(p) for p in rest], cwd=cwd, project=project, code=code, consume=False)
+                return denial_with_tool_repair(reason, project or cwd) if reason else ""
+        return denial_with_tool_repair(
+            "Delete guard (#7251): refused: invalid tool.py delete-check --code invocation.",
+            project or cwd,
+        )
     return denial_with_tool_repair(check(command, cwd, project)[0], project or cwd)
 
 
@@ -2182,7 +2345,9 @@ def _rm(paths: list[str]) -> str:
     return "rm -rf -- " + " ".join(shlex.quote(item) for item in paths)
 
 
-def main(arguments: list[str]) -> int:
+def main(arguments: list[str] | None = None) -> int:
+    if arguments is None:
+        arguments = sys.argv[1:]
     code = None
     if arguments[:1] == ["--restore-ce"] and len(arguments) >= 2:
         session = Path(os.environ.get(SESSION_WORKTREE_ENV) or Path.cwd()).resolve()
@@ -2201,11 +2366,23 @@ def main(arguments: list[str]) -> int:
         except (PermissionError, Unsure) as error:
             print(f"delete-code: refused: {error}", file=sys.stderr)
             return 2
-        print(f"delete-code: {code} (one use, {CODE_TTL // 60} min, {len(paths)} path(s)). Show it to the owner; "
-              f"after they paste it back run: tool.py delete-check --code <code> <same paths>")
+        expires_iso = _iso_utc(float(_load_all_codes()[_code_digest(code)]["expires"]))
+        print(
+            f"delete-code: {code} (one use, {CODE_TTL // 60} min, expires {expires_iso}, {len(paths)} path(s)). "
+            "Show it to the owner; after they paste it back run: "
+            "tool.py delete-check --code <code> --command 'rm -rf -- <same paths>'"
+        )
         return 0
-    if arguments[:1] == ["--command"] and len(arguments) == 2:
-        reason, warnings = check(arguments[1], Path.cwd(), Path.cwd(), code)
+    is_command_mode = arguments[:1] == ["--command"] and len(arguments) == 2
+    if is_command_mode:
+        cmd = arguments[1]
+        if code is not None and not _only_delete_segments(cmd, Path.cwd()):
+            print(
+                "Delete guard (#7251): refused: --command with --code must contain only delete commands.",
+                file=sys.stderr,
+            )
+            return 1
+        reason, warnings = check(cmd, Path.cwd(), Path.cwd(), code)
     elif arguments and not arguments[0].startswith("--"):
         reason, warnings = check(_rm(arguments), Path.cwd(), Path.cwd(), code)
     else:
@@ -2219,6 +2396,10 @@ def main(arguments: list[str]) -> int:
         return 1
     for warning in warnings:
         print(f"delete-check: warning: {warning}", file=sys.stderr)
+    if code is not None and is_command_mode:
+        completed = subprocess.run(cmd, shell=True, cwd=Path.cwd(), check=False)  # nosec B602
+        if completed.returncode != 0:
+            return completed.returncode
     print("delete-check: allowed")
     print("code required: no")
     return 0

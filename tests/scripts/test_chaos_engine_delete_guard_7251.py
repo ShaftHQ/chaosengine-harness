@@ -155,6 +155,17 @@ class DeleteGuardTest(unittest.TestCase):
         self.assertIn("forward slashes on every OS", docs)
         self.assertIn("`**/filename` is the portable form", docs)
 
+    def test_windows_backslash_path_matches_never_touch_patterns(self):
+        self.assertEqual("never-touch `**/.ssh/**`", GUARD.never_touch(Path("D:\\Code\\proj\\.ssh\\id_rsa")))
+        self.assertEqual("never-touch `**/.env`", GUARD.never_touch(Path("D:\\Code\\proj\\.env")))
+        self.assertEqual("", GUARD.never_touch(Path("D:\\Code\\proj\\src\\Scratch.java")))
+        never_file = Path.home() / ".config" / "chaos-engine" / "never-delete.txt"
+        never_file.parent.mkdir(parents=True, exist_ok=True)
+        for pattern in ("**/secrets/key.pem", "**\\secrets\\key.pem"):
+            never_file.write_text(pattern + "\n", encoding="utf-8")
+            self.assertIn("never-touch", GUARD.never_touch(Path("D:\\Code\\proj\\secrets\\key.pem")), pattern)
+            self.assertIn("never-touch", GUARD.never_touch(Path("/w/proj/secrets/key.pem")), pattern)
+
     def test_python_rmtree_literal_checked_and_computed_refused(self):
         (self.repo / "d").mkdir()
         (self.repo / "d" / "f").write_text("f", encoding="utf-8")
@@ -540,6 +551,65 @@ class DeleteGuardTest(unittest.TestCase):
             self.assertEqual(1, GUARD.main([str(loose)]))
             self.assertEqual(0, GUARD.main(["--code", code, str(loose)]))
             self.assertEqual(1, GUARD.main(["--code", code, str(loose)]))
+
+    def test_issue_186_one_step_delete_ttl_and_code_diagnostics(self):
+        self.assertEqual(1800, GUARD.CODE_TTL)
+        loose = self._loose("one-step")
+        (loose / "f.txt").write_text("data", encoding="utf-8")
+        out = io.StringIO()
+        err = io.StringIO()
+        with unittest.mock.patch("sys.stdout", out), unittest.mock.patch("sys.stderr", err), unittest.mock.patch.object(
+            GUARD.Path, "cwd", return_value=self.base
+        ):
+            self.assertEqual(0, GUARD.main(["--request-code", str(loose)]))
+            issued_line = out.getvalue().strip()
+            code = issued_line.split()[1]
+            self.assertIn("30 min", issued_line)
+            self.assertRegex(issued_line, r"expires \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
+            # PreToolUse hook block_reason allows the documented delete-check --code --command without spending the code
+            hook_cmd = f"python3 .chaos-engine/tool.py delete-check --code {code} --command 'rm -rf -- {loose}'"
+            self.assertEqual("", GUARD.block_reason(hook_cmd, self.base, self.repo))
+            self.assertEqual("", GUARD.block_reason(f"python3 .chaos-engine/tool.py delete-check --request-code {loose}", self.base, self.repo))
+            # Now run main with --code and --command: it must spend the code and remove the directory
+            out.truncate(0)
+            out.seek(0)
+            self.assertEqual(0, GUARD.main(["--code", code, "--command", f"rm -rf -- {loose}"]))
+            self.assertFalse(loose.exists())
+            self.assertIn("delete-check: allowed", out.getvalue())
+            # Second invocation with the same code (even after directory is gone) is refused as already used
+            err.truncate(0)
+            err.seek(0)
+            self.assertEqual(1, GUARD.main(["--code", code, "--command", f"rm -rf -- {loose}"]))
+            self.assertIn("already used", err.getvalue())
+            self.assertIn("already used", GUARD.block_reason(hook_cmd, self.base, self.repo))
+
+        # Expired code reports specific expiry timestamp and leaves directory intact
+        exp_dir = self._loose("expired-dir")
+        (exp_dir / "keep.txt").write_text("keep", encoding="utf-8")
+        stale = GUARD.request_code([exp_dir], ttl=-5)
+        err = io.StringIO()
+        with unittest.mock.patch("sys.stderr", err), unittest.mock.patch.object(GUARD.Path, "cwd", return_value=self.base):
+            self.assertEqual(1, GUARD.main(["--code", stale, "--command", f"rm -rf -- {exp_dir}"]))
+            self.assertTrue(exp_dir.exists())
+            self.assertRegex(err.getvalue(), r"code expired at \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
+
+        # Path mismatch leaves code unspent and does not delete either directory
+        dir_a = self._loose("dir-a")
+        dir_b = self._loose("dir-b")
+        code_a = GUARD.request_code([dir_a])
+        err = io.StringIO()
+        with unittest.mock.patch("sys.stderr", err), unittest.mock.patch.object(GUARD.Path, "cwd", return_value=self.base):
+            self.assertEqual(1, GUARD.main(["--code", code_a, "--command", f"rm -rf -- {dir_b}"]))
+            self.assertIn("different path list", err.getvalue())
+            self.assertTrue(dir_a.exists())
+            self.assertTrue(dir_b.exists())
+            # A non-delete segment is refused before the code is spent.
+            err.truncate(0)
+            err.seek(0)
+            self.assertEqual(1, GUARD.main(["--code", code_a, "--command", f"rm -rf -- {dir_a} && echo smuggled"]))
+            self.assertTrue(dir_a.exists())
+            self.assertEqual(0, GUARD.main(["--code", code_a, "--command", f"rm -rf -- {dir_a}"]))
+            self.assertFalse(dir_a.exists())
 
     def test_hook_blocks_and_doctor_row_passes(self):
         guard = load("chaos_engine_guard_hook_7251", CORE / "hooks" / "guard.py")
