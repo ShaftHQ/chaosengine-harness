@@ -38,5 +38,5 @@ Chaosengine Harness — No product description yet — set it with `memory save`
 No features recorded yet. Run `memory init --brief` for the indexing brief.
 <!-- memory:map:end -->
 <!-- CHAOSENGINE:START -->
-Before every task, follow the canonical ChaosEngine skill. When `.chaos-engine/skills/chaos-engine/SKILL.md` is present, load that and `.chaos-engine/identity.md`; when those files are absent, load `skills/chaos-engine/SKILL.md` and `identity.md`. Read one skill, not both. Use `.chaos-engine/tool.py` for the project-local Memory, MemPalace, and Graphify tools. Prefer gh for GitHub when gh exists and is configured. CLI over MCP when both exist. Default MCP catalog never includes GitHub MCP.
+Before every task, follow the canonical ChaosEngine skill. When `.chaos-engine/skills/chaos-engine/SKILL.md` is present, load that and `.chaos-engine/identity.md`; when those files are absent, load the repository copy of that skill and `identity.md`. Read one skill, not both. Use `.chaos-engine/tool.py` for the project-local Memory, MemPalace, and Graphify tools. Prefer gh for GitHub when gh exists and is configured. CLI over MCP when both exist. Default MCP catalog never includes GitHub MCP.
 <!-- CHAOSENGINE:END -->
