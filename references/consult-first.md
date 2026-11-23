@@ -23,7 +23,9 @@ decision-ready. After owner approval, execution is unattended; dispatch a
 consultant agent for implementation ambiguity rather than asking the user.
 When the owner says not to ask again, or closes a decision with "you decide",
 do not reopen it. Dispatch a read-only consultant subagent for the remaining
-ambiguity and proceed on its guidance.
+ambiguity and proceed on its guidance. This does not cover an irreversible or
+externally visible action; those still need explicit owner approval
+([ethics card](../companions/ethics-card.md)).
 
 ## Full pass
 
