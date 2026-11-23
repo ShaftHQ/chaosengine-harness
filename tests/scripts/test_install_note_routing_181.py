@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import io
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -27,6 +28,7 @@ PRUNED = (
 )
 INDEX_SKIPS = "chaos-engine: MemPalace skips 1 nested repositories: nested-repo"
 MINE = "stores: mempalace mine (full tree) at " + ("a" * 12)
+GRAPHIFY_CONTINUED = "chaos-engine: graphify setup continued: graph is empty"
 INDEX_NOTES = (INDEX_MODE, PRUNE_SKIPPED, PRUNED, INDEX_SKIPS, MINE)
 
 
@@ -172,8 +174,8 @@ class InstallNoteRouting181Tests(unittest.TestCase):
                     )
         self.assertIn(GRAPHIFY, captured.getvalue())
 
-    def _emit_mempalace_index_notes(self, stderr) -> None:
-        """Call the real note sites. Patch only the mine, prune, and decision bodies."""
+    def _emit_mempalace_index_notes(self, stderr) -> tuple[str, ...]:
+        """Call the real note sites. Patch mine, prune, decision, and the home palace path."""
         with tempfile.TemporaryDirectory() as temporary:
             project = Path(temporary)
             nested = project / "nested-repo"
@@ -207,18 +209,41 @@ class InstallNoteRouting181Tests(unittest.TestCase):
                         revision="a" * 40,
                         invoke=lambda _command, _cwd: 0,
                     )
+                    with mock.patch.object(
+                        self.dependencies,
+                        "default_mempalace_palace",
+                        return_value=project / "empty-home-palace",
+                    ):
+                        log_path = self.dependencies.mempalace_index_paths(project)[1]
+                        self.dependencies.start_background_mempalace_mine(
+                            command,
+                            project,
+                            spawner=lambda *_args, **_kwargs: None,
+                        )
+                    background = (
+                        "chaos-engine: MemPalace index running in the background; progress: "
+                        f"{log_path}"
+                    )
+                    self.dependencies._run_project_setup_command(
+                        [str(project / "graphify"), "extract"],
+                        project,
+                        runner=lambda argv, **_kwargs: subprocess.CompletedProcess(
+                            argv, 1, "", "graph is empty\n"
+                        ),
+                    )
+        return (*INDEX_NOTES, background, GRAPHIFY_CONTINUED)
 
     def test_mempalace_index_notes_use_step_detail_when_a_reporter_is_active(self):
         proxy = _Proxy()
-        self._emit_mempalace_index_notes(proxy)
-        for note in INDEX_NOTES:
+        notes = self._emit_mempalace_index_notes(proxy)
+        for note in notes:
             self.assertIn(note, proxy._reporter.traces)
             self.assertNotIn(note, proxy.written)
 
     def test_mempalace_index_notes_stay_on_stderr_without_a_reporter(self):
         captured = io.StringIO()
-        self._emit_mempalace_index_notes(captured)
-        for note in INDEX_NOTES:
+        notes = self._emit_mempalace_index_notes(captured)
+        for note in notes:
             self.assertIn(note, captured.getvalue())
 
 
