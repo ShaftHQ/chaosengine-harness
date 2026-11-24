@@ -444,6 +444,66 @@ class DeleteGuardIssue208Test(unittest.TestCase):
         self.assertEqual("", self.reason("source ./env.sh"))
         self.assertEqual("", self.reason(". ./env.sh"))
 
+    def test_review4_getopt_long_prefixes_and_ash_shells_are_refused(self) -> None:
+        self._write_only()
+        refused = (
+            "/usr/bin/time --verb rm -f only.txt",
+            "/usr/bin/time --out=/tmp/t rm -f only.txt",
+            "/usr/bin/time --out /tmp/t rm -f only.txt",
+            "/usr/bin/time --form=%e rm -f only.txt",
+            "/usr/bin/time --qui rm -f only.txt",
+            "/usr/bin/time --por rm -f only.txt",
+            "/usr/bin/time --app rm -f only.txt",
+            "/usr/bin/time -l rm -f only.txt",
+            "stdbuf --out=0 rm -f only.txt",
+            "stdbuf --out=0 -- rm -f only.txt",
+            "stdbuf --err=0 rm -f only.txt",
+            "stdbuf --in=0 rm -f only.txt",
+            "busybox ash -c 'rm -f only.txt'",
+            "busybox ksh -c 'rm -f only.txt'",
+            "busybox mksh -c 'rm -f only.txt'",
+        )
+        for cmd in refused:
+            with self.subTest(cmd=cmd):
+                reason = self.reason(cmd)
+                self.assertIn("untracked", reason)
+                self.assertIn("only.txt", reason)
+        for cmd in (
+            "/usr/bin/time --verb echo ok",
+            "stdbuf --out=0 echo ok",
+            "/usr/bin/time --help rm -f only.txt",
+            "busybox ash -c 'echo ok'",
+            "busybox ksh -c 'echo ok'",
+            "busybox mksh -c 'echo ok'",
+        ):
+            with self.subTest(cmd=cmd):
+                self.assertEqual("", self.reason(cmd))
+
+    def test_review4_match_long_option_unique_prefix(self) -> None:
+        match = GUARD._match_long_option
+        time_flags = ("--verbose", "--portability", "--append", "--quiet")
+        time_values = ("--output", "--format")
+        self.assertEqual("flag", match("--verb", time_flags, time_values))
+        self.assertEqual("flag", match("--verbose", time_flags, time_values))
+        self.assertEqual("flag", match("--por", time_flags, time_values))
+        self.assertEqual("flag", match("--app", time_flags, time_values))
+        self.assertEqual("flag", match("--qui", time_flags, time_values))
+        self.assertEqual("flag", match("--out=/tmp/t", time_flags, time_values))
+        self.assertEqual("value", match("--out", time_flags, time_values))
+        self.assertEqual("value", match("--output", time_flags, time_values))
+        self.assertEqual("flag", match("--form=%e", time_flags, time_values))
+        self.assertEqual("value", match("--format", time_flags, time_values))
+        self.assertIsNone(match("--help", time_flags, time_values))
+        self.assertIsNone(match("--", time_flags, time_values))
+        self.assertIsNone(match("-v", time_flags, time_values))
+        self.assertIsNone(match("--o", ("--output", "--outfile"), ()))
+        stdbuf_values = ("--input", "--output", "--error")
+        self.assertEqual("flag", match("--out=0", (), stdbuf_values))
+        self.assertEqual("flag", match("--err=0", (), stdbuf_values))
+        self.assertEqual("flag", match("--in=0", (), stdbuf_values))
+        self.assertEqual("value", match("--out", (), stdbuf_values))
+        self.assertEqual("value", match("--error", (), stdbuf_values))
+
 
 if __name__ == "__main__":
     unittest.main()

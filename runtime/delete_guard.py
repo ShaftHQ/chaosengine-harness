@@ -157,7 +157,7 @@ PATHLIB_DELETE = re.compile(
 PY_DELETE_HINT = re.compile(r"\b(?:remove|removedirs|unlink|rmdir|rmtree)\s*\(")
 RS_DELETE = re.compile(r"^--delete(?:-|$)|^-delete$|^--remove-source-files$")
 WRAPPERS = frozenset({"command", "env", "sudo", "timeout", "nice", "nohup", "exec", "builtin"})
-SHELLS = frozenset({"sh", "bash", "zsh", "dash"})
+SHELLS = frozenset({"sh", "bash", "zsh", "dash", "ash", "ksh", "mksh"})
 ENV_ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 _SHELL_KEYWORDS_PREFIX = frozenset({"if", "then", "elif", "else", "do", "while", "until", "!", "{"})
 _SHELL_KEYWORDS_END = frozenset({"fi", "done", "esac", "}"})
@@ -170,20 +170,39 @@ class Unsure(ValueError):
     """The command deletes something the parser cannot pin down."""
 
 
-_TIME_FLAG_OPTIONS = frozenset({
-    "-p",
-    "-v",
-    "-a",
-    "-q",
-    "--verbose",
-    "--portability",
-    "--append",
-    "--quiet",
-})
-_TIME_ARG_OPTIONS = frozenset({"-o", "-f", "--output", "--format"})
-_TIME_SHORT_FLAGS = frozenset("pvaq")
+_TIME_FLAG_OPTIONS = frozenset({"-p", "-v", "-a", "-q", "-l"})
+_TIME_ARG_OPTIONS = frozenset({"-o", "-f"})
+_TIME_LONG_FLAGS = ("--verbose", "--portability", "--append", "--quiet")
+_TIME_LONG_VALUES = ("--output", "--format")
+_TIME_SHORT_FLAGS = frozenset("pvaql")
 _TIME_SHORT_ARGS = frozenset("of")
+_STDBUF_LONG_VALUES = ("--input", "--output", "--error")
 _SCRIPT_DOT_COMMANDS = frozenset({"source", "."})
+
+
+def _match_long_option(arg: str, flag_opts: tuple[str, ...], value_opts: tuple[str, ...]) -> str | None:
+    """Resolve a GNU ``getopt_long`` unique prefix.
+
+    ``flag`` is a no-arg long option, or any long option written as ``--opt=val``.
+    ``value`` means the next argv element is the option's value. ``None`` means
+    ``arg`` is not a unique prefix of exactly one known option.
+    """
+    if not arg.startswith("--") or arg == "--":
+        return None
+    name, sep, _attached = arg[2:].partition("=")
+    if not name:
+        return None
+
+    def hits(options: tuple[str, ...]) -> list[str]:
+        return [opt for opt in options if opt.startswith("--") and opt[2:].startswith(name)]
+
+    flag_hits = hits(flag_opts)
+    value_hits = hits(value_opts)
+    if len(flag_hits) + len(value_hits) != 1:
+        return None
+    if flag_hits or sep:
+        return "flag"
+    return "value"
 
 
 def _time_short_cluster(token: str) -> str | None:
@@ -203,20 +222,30 @@ def _time_short_cluster(token: str) -> str | None:
 def _skip_time_options(arguments: list[str], index: int) -> int:
     """Skip POSIX ``-p`` and GNU ``time`` options so the timed command is visible.
 
-    Covers ``-p``/``-v``/``-a``/``-q``, ``--verbose``/``--portability``/``--append``/
-    ``--quiet``, ``-o``/``-f`` and ``--output``/``--format`` (separate argument or
-    ``=`` / attached form), and ``--`` end-of-options.
+    Covers short flags ``-p``/``-v``/``-a``/``-q``/``-l``, value shorts ``-o``/``-f``
+    (clusters such as ``-pv`` and attached ``-oFILE``), GNU ``getopt_long`` unique
+    prefixes of ``--verbose``/``--portability``/``--append``/``--quiet`` and
+    ``--output``/``--format`` (next argv element or ``--opt=val``), and ``--``.
     """
     while index < len(arguments):
         token = arguments[index]
         if token == "--":
             return index + 1
+        matched = _match_long_option(token, _TIME_LONG_FLAGS, _TIME_LONG_VALUES)
+        if matched == "flag":
+            index += 1
+            continue
+        if matched == "value":
+            index += 1
+            if index < len(arguments):
+                index += 1
+            continue
         if token in _TIME_FLAG_OPTIONS:
             index += 1
             continue
-        if token in _TIME_ARG_OPTIONS or token.startswith(("--output=", "--format=")):
+        if token in _TIME_ARG_OPTIONS:
             index += 1
-            if token in _TIME_ARG_OPTIONS and index < len(arguments):
+            if index < len(arguments):
                 index += 1
             continue
         kind = _time_short_cluster(token)
@@ -233,23 +262,30 @@ def _skip_time_options(arguments: list[str], index: int) -> int:
 
 
 def _skip_stdbuf_options(arguments: list[str], index: int) -> int:
-    """Skip ``stdbuf`` ``-i``/``-o``/``-e`` (and the long forms) plus each mode value.
+    """Skip ``stdbuf`` ``-i``/``-o``/``-e`` and long-option prefixes, plus each mode.
 
-    ``--`` ends option parsing so the next word is the command.
+    ``--opt=MODE`` keeps the mode on the option. ``--opt MODE`` and ``-o MODE``
+    take the next argv element. ``-o0`` keeps the mode attached. ``--`` ends
+    option parsing so the next word is the command.
     """
     short = {"-i", "-o", "-e"}
-    long = ("--input", "--output", "--error")
     while index < len(arguments):
         token = arguments[index]
         if token == "--":
             return index + 1
-        if token in short or token in long:
+        matched = _match_long_option(token, (), _STDBUF_LONG_VALUES)
+        if matched == "flag":
+            index += 1
+            continue
+        if matched == "value":
             index += 1
             if index < len(arguments):
                 index += 1
             continue
-        if token.startswith(tuple(flag + "=" for flag in long)):
+        if token in short:
             index += 1
+            if index < len(arguments):
+                index += 1
             continue
         if len(token) > 2 and token[0] == "-" and not token.startswith("--") and token[1] in "ioe":
             index += 1
@@ -1438,8 +1474,8 @@ def _commit_cd(
 def _piped_stdin_bodies(previous: _SimpleCommand, command: _SimpleCommand) -> list[str] | None:
     """Heredoc bodies of ``previous`` when a pipe feeds them to a shell or Python.
 
-    The receiver is ``sh``/``bash``/``zsh``/``dash``/``python`` (or ``env`` plus
-    one of those) with no ``-c`` script and no heredoc or here-string of its own.
+    The receiver is a shell in ``SHELLS`` or ``python`` (or ``env`` plus one of
+    those) with no ``-c`` script and no heredoc or here-string of its own.
     """
     if command.heredocs or command.here_strings:
         return None
