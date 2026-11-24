@@ -3776,7 +3776,7 @@ class GraphifyExtraRepairTest(unittest.TestCase):
         self.assertEqual(["--python", "3.14.2"], command[command.index("--python"): command.index("--python") + 2])
         self.assertIn("anyio==4.14.2", command)
         self.assertIn("tree-sitter-sql==0.3.11", command)
-        self.assertEqual("graphifyy==0.9.113", command[-1])
+        self.assertEqual(specification["tools"]["graphify"]["package"], command[-1])
 
     def test_missing_graphify_and_healthy_anyio_do_not_reinstall(self):
         module = load_controller()

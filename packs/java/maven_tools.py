@@ -186,7 +186,7 @@ def managed_temurin_root(version: str = "25.0.5.1+2") -> Path:
     )
 
 
-def managed_maven_root(version: str = "3.10.1") -> Path:
+def managed_maven_root(version: str = "3.10.2") -> Path:
     system, architecture, _host = _tools_host_platform()
     return (
         maven_tools_cache_root().parent
