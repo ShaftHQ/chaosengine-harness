@@ -663,6 +663,13 @@ def run_hook_protocol(
         except (Exception, KeyboardInterrupt, SystemExit) as fallback_error:
             print(f"Hook fallback error: {fallback_error}", file=sys.stderr)
             output = {}
-        result = 0
+        # Claude PreToolUse is a hard block: exit 2 and JSON on stderr.
+        # Every other event keeps the historical fail-open exit 0.
+        if host == "claude" and event_name == "PreToolUse":
+            result = 2
+            if not output:
+                output = {"decision": "block", "reason": HOOK_PROTOCOL_ERROR}
+        else:
+            result = 0
     _write_json(output, sys.stderr if host == "claude" and result == 2 else sys.stdout)
     return result

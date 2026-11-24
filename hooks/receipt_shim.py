@@ -1,7 +1,6 @@
-"""Research-receipt shims for hook-capable instruction-only hosts (#6218).
+"""Research-receipt shims for hosts that can read a project file before the hook gate (#6218).
 
-Cursor and OpenCode load `AGENTS.md` without the ChaosEngine hook runtime, so
-their `retrieve:` receipt is the only enforcement. This shim opens a pending
+Cursor and OpenCode have a hook runtime. This shim still opens a pending
 receipt at `.chaos-engine-state/research-receipt.md` before the host's first
 project read. It never blocks, never overwrites an existing receipt, and never
 fills the `retrieve:` field: the agent still records `used`, `skipped(<reason>)`

@@ -625,6 +625,7 @@ class GuardParityTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.guard = load(ROOT / "hooks" / "guard.py", "ce_guard_quality_219")
+        cls.kernel = load(ROOT / "hooks" / "kernel.py", "ce_kernel_quality_231")
 
     def _block(self, event_name: str, tool_name: str, tool_input: dict, host: str = "claude"):
         event = {"hook_event_name": event_name, "cwd": str(ROOT), "session_id": "ws3"}
@@ -958,7 +959,13 @@ class GuardParityTests(unittest.TestCase):
             self.assertNotIn("Test quality gate", allowed_blob)
 
     def test_f1_write_without_content_does_not_score_the_existing_file(self):
-        self.assertNotIn("newString", self.guard._QUALITY_WRITE_KEYS)
+        dropped = self.kernel.extract_file_payload(
+            "write_to_file",
+            {"TargetFile": "tests/test_keep.py", "newString": "    " + sleep_for()},
+        )
+        self.assertEqual("write", dropped.kind)
+        self.assertFalse(dropped.recognized)
+        self.assertIs(self.kernel.UNREADABLE, dropped.new_text)
         with tempfile.TemporaryDirectory() as temporary:
             project = Path(temporary)
             target = project / "tests" / "test_keep.py"
@@ -982,9 +989,17 @@ class GuardParityTests(unittest.TestCase):
             )
 
     def test_f6_camel_case_and_chunk_arrays_score_edits(self):
-        self.assertIn("oldString", self.guard._QUALITY_OLD_KEYS)
-        self.assertIn("newString", self.guard._QUALITY_NEW_KEYS)
-        self.assertNotIn("newString", self.guard._QUALITY_WRITE_KEYS)
+        mixed = self.kernel.extract_file_payload(
+            "Edit", {"old_string": "a", "newString": "b"}
+        )
+        self.assertTrue(mixed.recognized)
+        self.assertEqual("a", mixed.old_text)
+        self.assertEqual("b", mixed.new_text)
+        whole = self.kernel.extract_file_payload(
+            "Write", {"file_path": "t.py", "content": "full", "newString": "partial"}
+        )
+        self.assertEqual("full", whole.new_text)
+        self.assertTrue(whole.recognized)
         bad_new = "    " + sleep_for() + "\n    assertEqual(1, 1)"
         clean = {
             "filePath": "tests/test_new.py",
@@ -1095,6 +1110,208 @@ class PreDoneParityTests(unittest.TestCase):
             target.write_text(fn_with(f"    {sleep_call()}", "    assertEqual(1, 1)"), encoding="utf-8")
             findings = self.pre_done.mechanical_problems({"proof_required": False, "project_root": str(root)})
             self.assertTrue(any(item.startswith("test-quality:sleep:") for item in findings), findings)
+
+
+# ``_MISS`` stands for kernel.UNREADABLE. An explicit "" is a real host value.
+_MISS = object()
+
+
+class FilePayloadParityTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.kernel = load(ROOT / "hooks" / "kernel.py", "ce_kernel_payload_231")
+
+    def _check(
+        self,
+        tool: str,
+        tool_input: dict | None,
+        kind: str,
+        path: str = "",
+        recognized: bool = False,
+        old_text: object = _MISS,
+        new_text: object = _MISS,
+        patch: object = _MISS,
+        chunks: tuple = (),
+    ) -> None:
+        before = json.dumps(tool_input) if isinstance(tool_input, dict) else None
+        payload = self.kernel.extract_file_payload(tool, tool_input)
+        if before is not None:
+            self.assertEqual(before, json.dumps(tool_input))
+        self.assertEqual(kind, payload.kind)
+        self.assertEqual(path, payload.path)
+        self.assertIs(recognized, payload.recognized)
+        for field, want in (
+            ("old_text", old_text),
+            ("new_text", new_text),
+            ("patch", patch),
+        ):
+            got = getattr(payload, field)
+            if want is _MISS:
+                self.assertIs(self.kernel.UNREADABLE, got, field)
+            else:
+                self.assertEqual(want, got, field)
+                self.assertIsNot(self.kernel.UNREADABLE, got, field)
+        self.assertEqual(len(chunks), len(payload.chunks))
+        for chunk, spec in zip(payload.chunks, chunks):
+            self.assertEqual(spec, (chunk.old_text, chunk.new_text, chunk.recognized))
+
+    def test_extract_file_payload_host_matrix(self):
+        """One extractor for every host Write/Edit/patch spelling."""
+        cases = (
+            ("claude-write-snake", "Write", {"file_path": "src/a.py", "content": "hello"}, "write", "src/a.py", True, _MISS, "hello"),
+            ("claude-write-camel", "Write", {"filePath": "src/a.py", "Content": "hello"}, "write", "src/a.py", True, _MISS, "hello"),
+            ("claude-edit-snake", "Edit", {"file_path": "src/a.py", "old_string": "a", "new_string": "b"}, "edit", "src/a.py", True, "a", "b"),
+            ("claude-edit-camel", "Edit", {"filePath": "src/a.py", "oldString": "a", "newString": "b"}, "edit", "src/a.py", True, "a", "b"),
+            ("codex-patch-input", "apply_patch", {"input": "*** Begin Patch"}, "patch", "", True, _MISS, _MISS, "*** Begin Patch"),
+            ("opencode-patch", "apply_patch", {"patch": "diff --git"}, "patch", "", True, _MISS, _MISS, "diff --git"),
+            ("opencode-diff", "apply_patch", {"diff": "@@ -1 +1 @@"}, "patch", "", True, _MISS, _MISS, "@@ -1 +1 @@"),
+            ("agy-edit-file", "edit_file", {"Path": "p.py", "Target": "a", "Replacement": "b"}, "edit", "p.py", True, "a", "b"),
+            ("agy-replace-file", "replace_file_content", {"TargetFile": "p.py", "TargetContent": "a", "ReplacementContent": "b"}, "edit", "p.py", True, "a", "b"),
+            (
+                "agy-multi-replace",
+                "multi_replace_file_content",
+                {"TargetFile": "p.py", "ReplacementChunks": [{"TargetContent": "a", "ReplacementContent": "b"}]},
+                "edit",
+                "p.py",
+                True,
+                _MISS,
+                _MISS,
+                _MISS,
+                (("a", "b", True),),
+            ),
+            ("agy-write-to-file", "write_to_file", {"TargetFile": "p.py", "CodeContent": "body"}, "write", "p.py", True, _MISS, "body"),
+            ("agy-write-file", "write_file", {"path": "p.py", "contents": "body"}, "write", "p.py", True, _MISS, "body"),
+            ("copilot-replace", "replace_string_in_file", {"filePath": "p.py", "oldString": "a", "newString": "b"}, "edit", "p.py", True, "a", "b"),
+            (
+                "copilot-multi",
+                "multi_replace_string_in_file",
+                {"filePath": "p.py", "replacements": [{"old_string": "a", "new_string": "b"}]},
+                "edit",
+                "p.py",
+                True,
+                _MISS,
+                _MISS,
+                _MISS,
+                (("a", "b", True),),
+            ),
+            ("cursor-strreplace", "StrReplace", {"path": "p.py", "old_string": "a", "new_string": "b"}, "edit", "p.py", True, "a", "b"),
+            (
+                "cursor-multiedit",
+                "MultiEdit",
+                {"path": "p.py", "replacementChunks": [{"oldString": "a", "newString": "b"}]},
+                "edit",
+                "p.py",
+                True,
+                _MISS,
+                _MISS,
+                _MISS,
+                (("a", "b", True),),
+            ),
+            ("gemini-replace", "replace", {"file_path": "p.py", "old_str": "a", "new_str": "b"}, "edit", "p.py", True, "a", "b"),
+            ("gemini-write", "write_file", {"file_path": "p.py", "file_text": "body"}, "write", "p.py", True, _MISS, "body"),
+            ("grok-edit", "Edit", {"AbsolutePath": "p.py", "oldText": "a", "newText": "b"}, "edit", "p.py", True, "a", "b"),
+            ("grok-write", "Write", {"targetFile": "p.py", "text": "body"}, "write", "p.py", True, _MISS, "body"),
+            ("mixed-case-sides", "Edit", {"old_string": "a", "newString": "b"}, "edit", "", True, "a", "b"),
+            (
+                "mixed-inside-chunk",
+                "Edit",
+                {"file_path": "p.py", "replacements": [{"old_string": "a", "newString": "b"}]},
+                "edit",
+                "p.py",
+                True,
+                _MISS,
+                _MISS,
+                _MISS,
+                (("a", "b", True),),
+            ),
+            (
+                "chunk-key-order",
+                "Edit",
+                {
+                    "file_path": "p.py",
+                    "ReplacementChunks": [{"old_string": "a", "new_string": "b"}],
+                    "replacementChunks": [{"old_string": "c", "new_string": "d"}],
+                    "replacements": [{"old": "e", "new": "f"}],
+                },
+                "edit",
+                "p.py",
+                True,
+                _MISS,
+                _MISS,
+                _MISS,
+                (("a", "b", True), ("c", "d", True), ("e", "f", True)),
+            ),
+            ("explicit-empty-write", "Write", {"file_path": "p.py", "content": ""}, "write", "p.py", True, _MISS, ""),
+            ("missing-write-body", "Write", {"file_path": "p.py"}, "write", "p.py", False),
+            ("missing-edit-sides", "Edit", {"file_path": "p.py"}, "edit", "p.py", False),
+            ("explicit-empty-old", "Edit", {"file_path": "p.py", "old_string": ""}, "edit", "p.py", True, "", _MISS),
+            ("missing-patch", "apply_patch", {"file_path": "p.py"}, "patch", "p.py", False),
+            ("explicit-empty-patch", "apply_patch", {"input": ""}, "patch", "", True, _MISS, _MISS, ""),
+            ("notebook-is-other", "NotebookEdit", {"notebook_path": "n.ipynb", "new_string": "x"}, "other", "n.ipynb", False),
+            ("write-drops-new-string", "Write", {"file_path": "p.py", "new_string": "partial"}, "write", "p.py", False),
+            ("write-drops-input", "Write", {"file_path": "p.py", "input": "partial"}, "write", "p.py", False),
+            (
+                "unrecognized-chunk-uses-top-level",
+                "Edit",
+                {"file_path": "p.py", "ReplacementChunks": [{"nope": 1}], "old_string": "a", "new_string": "b"},
+                "edit",
+                "p.py",
+                True,
+                "a",
+                "b",
+                _MISS,
+                ((None, None, False),),
+            ),
+            ("first-path-key", "Write", {"file_path": "first.py", "path": "second.py", "content": "z"}, "write", "first.py", True, _MISS, "z"),
+            ("null-input", "Write", None, "write", "", False),
+        )
+        for case in cases:
+            with self.subTest(case=case[0]):
+                self._check(*case[1:])
+
+    def test_normalize_event_uses_payload_path_and_shell_aliases(self):
+        event = self.kernel.normalize_event(
+            {
+                "hook_event_name": "PreToolUse",
+                "tool_name": "Edit",
+                "tool_input": {"target_file": "b.py", "old_string": "a", "new_string": "c"},
+            }
+        )
+        self.assertEqual("b.py", event.tool_input["file_path"])
+        self.assertEqual("Edit", event.tool_name)
+        shell = self.kernel.normalize_event(
+            {
+                "hook_event_name": "PreToolUse",
+                "tool_name": "Shell",
+                "tool_input": {"command": "rm -rf /"},
+            }
+        )
+        self.assertEqual("PowerShell", shell.tool_name)
+        replaced = self.kernel.normalize_event(
+            {
+                "hook_event_name": "PreToolUse",
+                "tool_name": "StrReplace",
+                "tool_input": {"path": "a.py", "old_string": "a", "new_string": "b"},
+            }
+        )
+        self.assertEqual("Edit", replaced.tool_name)
+        self.assertEqual("a.py", replaced.tool_input["file_path"])
+        multi = self.kernel.normalize_event(
+            {"hook_event_name": "PreToolUse", "tool_name": "MultiEdit", "tool_input": {}}
+        )
+        self.assertEqual("Edit", multi.tool_name)
+
+    def test_guard_source_has_no_duplicate_quality_key_tables(self):
+        text = (ROOT / "hooks" / "guard.py").read_text(encoding="utf-8")
+        for name in (
+            "_QUALITY_PATH_KEYS",
+            "_QUALITY_WRITE_KEYS",
+            "_QUALITY_OLD_KEYS",
+            "_QUALITY_NEW_KEYS",
+            "_QUALITY_CHUNK_KEYS",
+            "_QUALITY_PATCH_KEYS",
+        ):
+            self.assertNotIn(name, text, name)
 
 
 if __name__ == "__main__":
