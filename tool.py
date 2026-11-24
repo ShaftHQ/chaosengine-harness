@@ -162,9 +162,83 @@ def entry_unfinished(installed_root: Path) -> str:
         return ""
 
 
+def _load_wake_pack(installed_root: Path):
+    """Load runtime/wake_pack.py from the installed root or colocated source tree."""
+    candidates = (
+        runtime_module(installed_root, "wake_pack.py"),
+        runtime_module(Path(__file__).resolve().parent, "wake_pack.py"),
+    )
+    for path in candidates:
+        if path.is_file():
+            spec = importlib.util.spec_from_file_location("_chaos_engine_wake_pack", path)
+            if spec is not None and spec.loader is not None:
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                return module
+    return None
+
+
+def _env_memory_project(installed_root: Path) -> Path:
+    if installed_root.name in {".chaos-engine", "chaos-engine"}:
+        return installed_root.parent
+    if installed_root.resolve() == Path(__file__).resolve().parent:
+        return Path.cwd()
+    return installed_root
+
+
+def entry_env_memory(installed_root: Path) -> str:
+    """#205: surface OS/shell/tools memory index hints only when entries match (0 bytes otherwise)."""
+    try:
+        module = _load_wake_pack(installed_root)
+        if module is None or not hasattr(module, "env_memory_hints"):
+            return ""
+        hints = module.env_memory_hints(_env_memory_project(installed_root))
+        return (hints + "\n") if hints else ""
+    except Exception:  # nosec B110 - entry must not crash
+        return ""
+
+
+def env_memory_command(installed_root: Path, arguments: list[str]) -> int:
+    """`tool.py env-memory [--tools a,b] [--memory-dir DIR]`: print matching MEMORY.md lines (#205)."""
+    import argparse
+
+    if arguments and arguments[0] in HELP_FLAGS:
+        print(
+            "usage: tool.py env-memory [--tools a,b] [--memory-dir DIR] [--project PATH]\n"
+            "\n"
+            "Print MEMORY.md index entries matching the current OS, shell, and requested tools.\n"
+            "Prints nothing (exit 0) when no index exists or no entry matches.\n",
+            end="",
+        )
+        return 0
+    parser = argparse.ArgumentParser(prog="tool.py env-memory", add_help=True)
+    parser.add_argument("--tools", action="append", default=[], help="Comma-separated tool names")
+    parser.add_argument("--memory-dir", default=None, help="Directory containing MEMORY.md")
+    parser.add_argument("--project", type=Path, default=None, help="Project directory")
+    try:
+        args = parser.parse_args(arguments)
+    except SystemExit as exc:
+        return int(exc.code) if isinstance(exc.code, int) else 0
+    module = _load_wake_pack(installed_root)
+    if module is None or not hasattr(module, "env_memory_hints"):
+        return 0
+    env = dict(os.environ)
+    if args.memory_dir:
+        env["MEMORY_DIR"] = str(args.memory_dir)
+    project = args.project if args.project is not None else _env_memory_project(installed_root)
+    hints = module.env_memory_hints(project, env=env, tools=args.tools)
+    if hints:
+        print(hints)
+    return 0
+
+
 def entry_output(installed_root: Path, full: bool = False, opt_out: str = "") -> str:
     """Installed re-runs print one line while the bundle is unchanged (token economy)."""
-    return entry_unfinished(installed_root) + _entry_output(installed_root, full, opt_out)
+    return (
+        entry_unfinished(installed_root)
+        + entry_env_memory(installed_root)
+        + _entry_output(installed_root, full, opt_out)
+    )
 
 
 def _entry_output(installed_root: Path, full: bool = False, opt_out: str = "") -> str:
@@ -561,7 +635,7 @@ def upgrade(installed_root: Path, arguments: list[str], *, runner=subprocess.run
 
 def tool_help_text() -> str:
     """One usage text for every host. There is no per-host help."""
-    names = ", ".join(sorted(TOOLS | {"retrieve", "entry", "maintain", "upgrade", "job", "checkpoint", "resume", "delete-check", "backups-watch", "pre-done", "force-push-approve", "output-search", "output-resume", "output-stats", "output-purge", "ethics-check", "supply-chain", "ce-version"}))
+    names = ", ".join(sorted(TOOLS | {"retrieve", "entry", "env-memory", "maintain", "upgrade", "job", "checkpoint", "resume", "delete-check", "backups-watch", "pre-done", "force-push-approve", "output-search", "output-resume", "output-stats", "output-purge", "ethics-check", "supply-chain", "ce-version"}))
     return (
         "usage: tool.py <tool|retrieve> [args...]\n"
         "       tool.py --help\n"
@@ -570,6 +644,9 @@ def tool_help_text() -> str:
         "\n"
         "entry (bots without hooks: print core card, companions, retrieve step):\n"
         "  tool.py entry [--full] [stop phrase]  (one line while unchanged; --full reprints)\n"
+        "\n"
+        "env-memory (surface MEMORY.md entries matching current OS, shell, and tools; #205):\n"
+        "  tool.py env-memory [--tools a,b] [--memory-dir DIR]  (exit 0; empty when no match)\n"
         "\n"
         "ethics-check (no assessment submit and no live answer-feed without this receipt):\n"
         "  tool.py ethics-check [receipt.json]  (exit 0 allow or alternative; exit 2 person-only submit, decline, or live_feed)\n"
@@ -1057,6 +1134,8 @@ def _dispatch_core(installed_root: Path, tool: str, arguments: list[str]) -> int
         phrase = " ".join(arg for arg in arguments if arg != "--full")
         print(entry_output(installed_root, full="--full" in arguments, opt_out=phrase), end="")
         return 0
+    if tool == "env-memory":
+        return env_memory_command(installed_root, arguments)
     if tool == "maintain":
         usage = "usage: tool.py maintain\n"
         if arguments and arguments[0] in HELP_FLAGS:

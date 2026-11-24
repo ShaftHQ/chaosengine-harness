@@ -28,7 +28,7 @@ Merge:
 - A skipped required check is not success.
 - A skipped or neutral check outside the required set does not block.
 - A failed, cancelled, or pending check blocks when it is required and when no check is marked required.
-- If the pull-request diff touches `install.py`, `bootstrap.py`, `runtime/dependencies.py`, `install.sh`, or `install.ps1`, a failed, cancelled, or pending `installer-contract` check blocks squash-merge even when another required check is green.
+- If the pull-request diff touches `install.py`, `bootstrap.py`, `runtime/dependencies.py`, `install.sh`, or `install.ps1`, a failed, cancelled, or pending `installer-contract` check blocks squash-merge even when another required check is green. When the pull-request file list is truncated or incomplete, the gate fails closed on red `installer-contract` checks.
 - An unmarked skip blocks.
 - An empty check list is not success.
 - When the only remaining gate is an owner-only artifact this session cannot create, record `blocking: unverifiable` once and end the goal (`runtime/owner_gate.py`).

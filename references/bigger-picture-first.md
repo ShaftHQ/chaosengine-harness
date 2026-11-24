@@ -14,6 +14,18 @@ Then choose an approach that fits that context.
 
 When the diff is one file and deleting it undoes the change, one line is enough: the goal, the context, and why a local patch is enough. Uncertainty means this is not the short form.
 
+## Intake feasibility gate
+
+Before any code, verify whether the requested acceptance state requires data or state the test account cannot produce without a state-changing write, or that mocks cannot reach on the target platform. When unsure, run a short read-only consultant check ([consult-first.md](consult-first.md)).
+
+If the acceptance state is unreachable, surface it before any code and offer three options:
+
+1. Implement what is reachable and mark the rest `In progress` with a documented skip.
+2. Run a time-boxed spike.
+3. Request a suitable test account.
+
+Do not force green with an inferred or skipped assertion.
+
 ## Do not skip
 
 A review comment, a CI failure, or wording like "just hotfix it" does not skip this step.

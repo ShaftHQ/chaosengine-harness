@@ -14,14 +14,19 @@ Checks one markdown report (PR body, handoff note, status doc):
 4. A non-empty ``## What's missing`` section answers "are we missing any?"; a bare "nothing"/"none"
    needs a ``verified: <how>`` note.
 Exit 0 pass, 1 findings, 2 usage error. ``--gate OBS.json`` is the mechanical
-done gate: exit 0 pass, 1 a rule was skipped, 2 usage or bad JSON. Stdlib only.
+done gate: exit 0 pass, 1 a rule was skipped, 2 usage or bad JSON.
+``--shell-check [PROJECT_ROOT]`` checks edited shell scripts for syntax errors
+and new CR bytes: exit 0 pass, 1 findings, 2 usage error. Stdlib only.
 """
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 import importlib.util
 import json
 import re
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -247,6 +252,164 @@ def check_replaced_literal_readers(diff_text: str, project_root) -> list[str]:
     return warnings
 
 
+_SHELL_SHEBANG = re.compile(r"^#!\s*(?:\S*/)?(?:env(?:\s+-\S+)*\s+)?(?:ba)?sh(?:\s|$)")
+
+
+def _is_shell_script(path: Path, raw: bytes) -> bool:
+    if path.suffix.casefold() == ".sh":
+        return True
+    if not raw.startswith(b"#!"):
+        return False
+    first_line = raw.splitlines()[0].decode("ascii", errors="ignore").rstrip("\r")
+    return _SHELL_SHEBANG.match(first_line) is not None
+
+
+def _git_prefix(root: Path) -> str:
+    try:
+        completed = subprocess.run(
+            ["git", "rev-parse", "--show-prefix"],
+            cwd=str(root),
+            capture_output=True,
+            check=False,
+        )
+    except OSError:
+        return ""
+    if completed.returncode != 0:
+        return ""
+    return completed.stdout.decode("utf-8", errors="surrogateescape").strip().replace("\\", "/")
+
+
+def _git_edited_files(root: Path, base_ref: str) -> list[str]:
+    found: list[str] = []
+    seen: set[str] = set()
+
+    def add_nul(data: bytes) -> None:
+        for entry in data.split(b"\0"):
+            if not entry:
+                continue
+            rel = entry.decode("utf-8", errors="surrogateescape").replace("\\", "/")
+            if rel not in seen:
+                seen.add(rel)
+                found.append(rel)
+
+    try:
+        diff = subprocess.run(
+            [
+                "git", "-c", "core.quotepath=false", "diff",
+                "--relative", "-z", "--name-only", "--diff-filter=ACMR", base_ref,
+            ],
+            cwd=str(root),
+            capture_output=True,
+            check=False,
+        )
+        if diff.returncode == 0:
+            add_nul(diff.stdout)
+        else:
+            cached = subprocess.run(
+                [
+                    "git", "-c", "core.quotepath=false", "diff",
+                    "--relative", "-z", "--cached", "--name-only", "--diff-filter=ACMR",
+                ],
+                cwd=str(root),
+                capture_output=True,
+                check=False,
+            )
+            if cached.returncode == 0:
+                add_nul(cached.stdout)
+        untracked = subprocess.run(
+            ["git", "-c", "core.quotepath=false", "ls-files", "-z", "--others", "--exclude-standard"],
+            cwd=str(root),
+            capture_output=True,
+            check=False,
+        )
+        if untracked.returncode == 0:
+            add_nul(untracked.stdout)
+    except OSError:
+        return []
+    return sorted(found)
+
+
+def _git_cr_count(root: Path, git_path: str, base_ref: str) -> int:
+    try:
+        shown = subprocess.run(
+            ["git", "show", f"{base_ref}:{git_path}"],
+            cwd=str(root),
+            capture_output=True,
+            check=False,
+        )
+    except OSError:
+        return 0
+    if shown.returncode != 0:
+        return 0
+    return shown.stdout.count(b"\r")
+
+
+def _bash_syntax_detail(bash_exe: str, root: Path, target: Path) -> str | None:
+    try:
+        rel_to_root = target.resolve().relative_to(root.resolve()).as_posix()
+        cmd = [bash_exe, "-n", rel_to_root]
+        cwd: str | None = str(root)
+    except ValueError:
+        cmd = [bash_exe, "-n", str(target)]
+        cwd = None
+    try:
+        completed = subprocess.run(cmd, cwd=cwd, capture_output=True, check=False)
+    except OSError:
+        return None
+    if completed.returncode == 0:
+        return None
+    raw_msg = completed.stderr or completed.stdout
+    lines = [line.strip() for line in raw_msg.decode("utf-8", errors="replace").splitlines() if line.strip()]
+    return "; ".join(lines) if lines else f"bash -n exited {completed.returncode}"
+
+
+def shell_script_problems(
+    project_root: Path,
+    files: Sequence[str] | None = None,
+    *,
+    base_ref: str = "HEAD",
+) -> list[str]:
+    """Check edited shell scripts with ``bash -n`` and CR-byte growth vs ``base_ref``."""
+    root = Path(project_root)
+    if not root.is_dir():
+        return []
+    candidates = _git_edited_files(root, base_ref) if files is None else list(files)
+    bash_exe = shutil.which("bash")
+    prefix = _git_prefix(root)
+    findings: list[str] = []
+    seen: set[str] = set()
+    root_resolved = root.resolve()
+    for item in candidates:
+        raw_path = Path(item)
+        if raw_path.is_absolute():
+            full_path = raw_path
+            try:
+                rel_path = full_path.resolve().relative_to(root_resolved).as_posix()
+            except ValueError:
+                rel_path = full_path.as_posix()
+        else:
+            rel_path = Path(str(item).replace("\\", "/")).as_posix()
+            full_path = root / rel_path
+        if rel_path in seen or not full_path.is_file():
+            continue
+        seen.add(rel_path)
+        try:
+            data = full_path.read_bytes()
+        except OSError:
+            continue
+        if not _is_shell_script(full_path, data):
+            continue
+        if bash_exe is not None:
+            detail = _bash_syntax_detail(bash_exe, root, full_path)
+            if detail is not None:
+                findings.append(f"SYNTAX {rel_path}: {detail}")
+        before = _git_cr_count(root, f"{prefix}{rel_path}", base_ref)
+        after = data.count(b"\r")
+        if after > before:
+            findings.append(f"NEW CR BYTES {rel_path} ({before} -> {after})")
+    return findings
+
+
 def _rules_bridge():
     global _BRIDGE
     if _BRIDGE is not None:
@@ -338,11 +501,26 @@ def mechanical_problems(obs: dict) -> list[str]:
     root = obs.get("project_root") or obs.get("root")
     if diff and root:
         found.extend(check_replaced_literal_readers(str(diff), root))
+    shell_files = obs.get("shell_files")
+    shell_check = obs.get("shell_check")
+    if root and (shell_check is True or shell_files is not None):
+        base_ref = str(obs.get("base_ref") or "HEAD")
+        files_arg = list(shell_files) if isinstance(shell_files, (list, tuple)) else None
+        if files_arg is not None or shell_check is True:
+            found.extend(shell_script_problems(Path(root), files_arg, base_ref=base_ref))
     if "memory_note" in obs:
         found.extend(_memory_cause_problems(obs.get("memory_note")))
     if "rules" in obs:
         found.extend(apply_wired_rules(obs.get("rules")))
     return found
+
+
+def _shell_check_main(root: Path) -> int:
+    found = shell_script_problems(root)
+    for item in found:
+        print(f"pre-done: {item}")
+    print(f"pre-done: {'fail' if found else 'pass'} ({len(found)} finding(s))")
+    return 1 if found else 0
 
 
 def _gate_main(path: Path) -> int:
@@ -370,6 +548,15 @@ def main(argv: list[str]) -> int:
             print("usage: pre_done_review.py --gate OBS.json", file=sys.stderr)
             return 2
         return _gate_main(Path(argv[1]))
+    if argv[:1] == ["--shell-check"]:
+        if len(argv) > 2 or (len(argv) == 2 and argv[1].startswith("--")):
+            print("usage: pre_done_review.py --shell-check [PROJECT_ROOT]", file=sys.stderr)
+            return 2
+        root = Path(argv[1]) if len(argv) == 2 else Path.cwd()
+        if not root.is_dir():
+            print(f"pre-done: {root} not found", file=sys.stderr)
+            return 2
+        return _shell_check_main(root)
     paths = [arg for arg in argv if not arg.startswith("--")]
     if len(paths) != 1 or any(arg not in {"--json"} for arg in argv if arg.startswith("--")):
         print("usage: pre_done_review.py REPORT.md [--json]", file=sys.stderr)

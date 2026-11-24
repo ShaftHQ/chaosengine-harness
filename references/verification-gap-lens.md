@@ -90,6 +90,25 @@ genuine problem noticed in passing), `evidence` (what you actually read,
 with `file:line`). An empty list is a valid, complete result — say so
 plainly rather than padding with low-confidence noise.
 
+## Shell-script verification (#206)
+
+`bash -n` alone is a broken-verification gap for stray `\r` (CR) bytes in edited
+shell scripts: lines such as `#!/usr/bin/env bash\r\n`, `VAR=value\r\n`, or
+`echo ok\r\n` pass `bash -n` while failing or corrupting values at runtime.
+
+`runtime/pre_done_review.py` checks edited `*.sh` files and any edited file
+whose first line is a `sh`/`bash` shebang:
+
+1. **`bash -n <file>`** (when `bash` is on `PATH`): reports `SYNTAX <path>: <detail>`.
+2. **CR-byte growth check**: compares `git show HEAD:<path>` CR count (`0` for
+   new/untracked files) against current bytes; reports
+   `NEW CR BYTES <path> (<before> -> <after>)` only when `after > before`
+   (existing CRLF files whose CR count did not grow produce zero findings).
+
+Run directly with `python3 runtime/pre_done_review.py --shell-check [PROJECT_ROOT]`
+(or `tool.py pre-done --shell-check [PROJECT_ROOT]`), or via `mechanical_problems(obs)`
+with `shell_check: True` or `shell_files` plus `project_root`/`root`.
+
 ## Related
 
 Mobile / backend retro helpers (freeze, Blocked gate, primary time-cap, tracked NO_PUSH, evidence pin, NamedBlock by gap id): [mobile-retro-harness.md](mobile-retro-harness.md).

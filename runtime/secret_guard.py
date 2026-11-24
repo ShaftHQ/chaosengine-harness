@@ -20,6 +20,7 @@ Usage::
     python3 secret_guard.py --staged                 # pre-commit
     python3 secret_guard.py --push < <pushed refs>    # pre-push (git passes the refs on stdin)
     python3 secret_guard.py --rev @{upstream}..HEAD   # audit a branch
+    python3 secret_guard.py --exec-with-secret KEY=ENV_VAR -- <command...>  # inject secret without echo
 
 ``SECRET_GUARD_FILES`` lists the local secret files (comma separated, relative to the
 repository root). The default is
@@ -39,10 +40,10 @@ import json
 import os
 import re
 import shutil
-import subprocess  # nosec B404 - runs git only, with a resolved path and no shell
+import subprocess  # nosec B404 - runs git or explicit wrapper command with no shell
 import sys
 from pathlib import Path
-from typing import Iterable, Iterator
+from typing import Iterable, Iterator, Sequence
 
 DEFAULT_GUARDED_FILES = "src/main/resources/properties/secrets.properties,src/main/resources/secrets.properties,browserstack.yml"  # nosec B105 - file paths, not a secret
 ALLOW_FILE = ".secret-guard-allow"
@@ -292,8 +293,301 @@ def revisions(args: list[str]) -> Iterator[tuple[str, bytes]]:
             yield path, git("cat-file", "blob", sha)
 
 
+YAML_MAPPING = re.compile(r"^(\s*)([^#:\n]+?)\s*:(?:\s+(.*)|\s*)$")
+ENV_VAR_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+REDACTED_BYTES = b"[REDACTED]"
+
+
+def _guarded_file_names(files: Iterable[str] | None = None) -> list[str]:
+    source = (
+        os.environ.get("SECRET_GUARD_FILES", DEFAULT_GUARDED_FILES).split(",")
+        if files is None
+        else files
+    )
+    return [name.strip() for name in source if name and name.strip()]
+
+
+def _strip_scalar_value(raw: str, *, allow_inline_comment: bool) -> str:
+    """Extract a scalar string value without printing or expanding it."""
+    text = raw.strip()
+    if not text:
+        return ""
+    if text[0] in {"'", '"'}:
+        quote = text[0]
+        chars: list[str] = []
+        index = 1
+        while index < len(text):
+            ch = text[index]
+            if quote == '"' and ch == "\\" and index + 1 < len(text):
+                chars.append(text[index + 1])
+                index += 2
+                continue
+            if ch == quote:
+                return "".join(chars)
+            chars.append(ch)
+            index += 1
+        return text.strip(quote)
+    if allow_inline_comment:
+        for index, ch in enumerate(text):
+            if ch == "#" and index > 0 and text[index - 1] in " \t":
+                return text[:index].rstrip()
+    return text
+
+
+def _json_scalar(node: object) -> str | None:
+    if isinstance(node, str):
+        return node if node else None
+    if isinstance(node, (int, float)) and not isinstance(node, bool):
+        return str(node)
+    return None
+
+
+def _json_find_key(node: object, key: str) -> str | None:
+    if isinstance(node, dict):
+        if key in node:
+            found = _json_scalar(node[key])
+            if found is not None:
+                return found
+        for child in node.values():
+            found = _json_find_key(child, key)
+            if found is not None:
+                return found
+    elif isinstance(node, list):
+        for child in node:
+            found = _json_find_key(child, key)
+            if found is not None:
+                return found
+    return None
+
+
+def _read_json_key(text: str, key: str) -> str | None:
+    try:
+        data = json.loads(text or "null")
+    except json.JSONDecodeError:
+        return None
+    if isinstance(data, dict):
+        if key in data:
+            found = _json_scalar(data[key])
+            if found is not None:
+                return found
+        if "." in key:
+            current: object = data
+            for segment in key.split("."):
+                if isinstance(current, dict) and segment in current:
+                    current = current[segment]
+                else:
+                    current = None
+                    break
+            found = _json_scalar(current)
+            if found is not None:
+                return found
+    return _json_find_key(data, key)
+
+
+def _read_yaml_key(text: str, key: str) -> str | None:
+    stack: list[tuple[int, str]] = []
+    leaf_match: str | None = None
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        indent = len(line) - len(line.lstrip(" "))
+        if stripped.startswith("-"):
+            while stack and stack[-1][0] >= indent:
+                stack.pop()
+            continue
+        match = YAML_MAPPING.match(line)
+        if not match:
+            continue
+        name = match.group(2).strip().strip("\"'")
+        raw_val = (match.group(3) or "").strip()
+        while stack and stack[-1][0] >= indent:
+            stack.pop()
+        if not raw_val or raw_val.startswith("#"):
+            stack.append((indent, name))
+            continue
+        value = _strip_scalar_value(raw_val, allow_inline_comment=True)
+        if not value:
+            continue
+        dotted = ".".join([*(part for _, part in stack), name])
+        if dotted == key:
+            return value
+        if leaf_match is None and "." not in key and name == key:
+            leaf_match = value
+    return leaf_match
+
+
+def _read_kv_key(text: str, key: str, *, env_style: bool) -> str | None:
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or (not env_style and stripped.startswith("!")):
+            continue
+        if env_style and stripped.startswith("export "):
+            stripped = stripped[len("export "):].lstrip()
+        if env_style:
+            if "=" not in stripped:
+                continue
+            name, raw_val = stripped.split("=", 1)
+        else:
+            eq_idx = stripped.find("=")
+            colon_idx = stripped.find(":")
+            positions = [idx for idx in (eq_idx, colon_idx) if idx >= 0]
+            if not positions:
+                continue
+            split_at = min(positions)
+            name, raw_val = stripped[:split_at], stripped[split_at + 1 :]
+        if name.strip() == key:
+            value = _strip_scalar_value(raw_val, allow_inline_comment=env_style)
+            return value if value else None
+    return None
+
+
+def read_secret_key(
+    root: Path, key: str, *, files: Iterable[str] | None = None
+) -> str | None:
+    """Read a secret-like key from local guarded files without printing it."""
+    target = (key or "").strip()
+    if not target:
+        return None
+    base = Path(root)
+    for name in _guarded_file_names(files):
+        path = base / name
+        if not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        suffix = path.suffix.lower()
+        if suffix == ".json":
+            value = _read_json_key(text, target)
+        elif suffix in {".yml", ".yaml"}:
+            value = _read_yaml_key(text, target)
+        elif suffix == ".env" or path.name == ".env" or path.name.startswith(".env."):
+            value = _read_kv_key(text, target, env_style=True)
+        else:
+            value = _read_kv_key(text, target, env_style=False)
+        if value is not None:
+            return value
+    return None
+
+
+def _scrub_bytes(data: bytes, secrets: Sequence[bytes]) -> bytes:
+    if not data or not secrets:
+        return data
+    scrubbed = data
+    for secret in secrets:
+        if secret and secret in scrubbed:
+            scrubbed = scrubbed.replace(secret, REDACTED_BYTES)
+    return scrubbed
+
+
+def _write_stream(stream: object, data: bytes) -> None:
+    if not data:
+        return
+    buffer = getattr(stream, "buffer", None)
+    if buffer is not None:
+        buffer.write(data)
+        buffer.flush()
+    else:
+        stream.write(data.decode("utf-8", errors="replace"))  # type: ignore[attr-defined]
+        stream.flush()  # type: ignore[attr-defined]
+
+
+def exec_with_secrets(
+    root: Path,
+    mappings: Sequence[tuple[str, str]],
+    argv: Sequence[str],
+    *,
+    files: Iterable[str] | None = None,
+) -> int:
+    """Run a child command with secret keys injected via env and scrubbed output."""
+    if not argv or not mappings:
+        print("secret_guard: --exec-with-secret requires at least one KEY=ENV_VAR and a command", file=sys.stderr)
+        return 2
+    base = Path(root)
+    guarded = _guarded_file_names(files)
+    resolved: list[tuple[str, str]] = []
+    for key, env_var in mappings:
+        clean_key = (key or "").strip()
+        clean_env = (env_var or "").strip()
+        if not clean_key or not ENV_VAR_NAME.match(clean_env):
+            print("secret_guard: invalid KEY=ENV_VAR mapping", file=sys.stderr)
+            return 2
+        value = read_secret_key(base, clean_key, files=guarded)
+        if value is None:
+            print(f"secret_guard: secret key not found: {clean_key}", file=sys.stderr)
+            return 2
+        resolved.append((clean_env, value))
+
+    env = dict(os.environ)
+    scrub_set: set[bytes] = set(secret_values(base, guarded))
+    for env_var, value in resolved:
+        env[env_var] = value
+        encoded = value.encode("utf-8")
+        if encoded:
+            scrub_set.add(encoded)
+    ordered_secrets = sorted(scrub_set, key=len, reverse=True)
+
+    try:
+        completed = subprocess.run(  # nosec B603 - explicit argv without shell; output is scrubbed
+            list(argv), env=env, capture_output=True, check=False
+        )
+    except OSError as exc:
+        message = _scrub_bytes(f"secret_guard: failed to execute command: {exc}\n".encode("utf-8"), ordered_secrets)
+        _write_stream(sys.stderr, message)
+        return 127
+
+    _write_stream(sys.stdout, _scrub_bytes(completed.stdout, ordered_secrets))
+    _write_stream(sys.stderr, _scrub_bytes(completed.stderr, ordered_secrets))
+    return completed.returncode
+
+
+def _parse_exec_with_secret_argv(argv: Sequence[str]) -> tuple[list[tuple[str, str]], list[str]] | None:
+    mappings: list[tuple[str, str]] = []
+    index = 0
+    while index < len(argv):
+        token = argv[index]
+        if token == "--":
+            command = list(argv[index + 1 :])
+            return (mappings, command) if mappings and command else None
+        if token == "--exec-with-secret":
+            if index + 1 >= len(argv):
+                return None
+            spec = argv[index + 1]
+            index += 2
+        elif token.startswith("--exec-with-secret="):
+            spec = token.split("=", 1)[1]
+            index += 1
+        else:
+            return None
+        key, sep, env_var = spec.partition("=")
+        if sep != "=" or not key.strip() or not ENV_VAR_NAME.match(env_var.strip()):
+            return None
+        mappings.append((key.strip(), env_var.strip()))
+    return None
+
+
+def _resolve_root() -> Path:
+    try:
+        return Path(git("rev-parse", "--show-toplevel").decode().strip())
+    except (subprocess.CalledProcessError, RuntimeError, OSError):
+        return Path.cwd()
+
+
 def main(argv: list[str], stdin: str = "") -> int:
     """Run the guard; return the process exit code."""
+    if argv[:1] and (argv[0] == "--exec-with-secret" or argv[0].startswith("--exec-with-secret=")):
+        parsed = _parse_exec_with_secret_argv(argv)
+        if parsed is None:
+            print(
+                "secret_guard: usage: secret_guard.py --exec-with-secret KEY=ENV_VAR [--exec-with-secret ...] -- <command...>",
+                file=sys.stderr,
+            )
+            return 2
+        mappings, command = parsed
+        return exec_with_secrets(_resolve_root(), mappings, command)
+
     root = Path(git("rev-parse", "--show-toplevel").decode().strip())
     try:
         if argv[:1] == ["--push"]:
