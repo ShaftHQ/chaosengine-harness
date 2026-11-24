@@ -402,6 +402,48 @@ class DeleteGuardIssue208Test(unittest.TestCase):
                 self.assertIn("indirect Python delete via getattr", self.reason(inner))
         self.assertEqual("", self.reason("python3 -c \"import os; getattr(os, 'getcwd')()\""))
 
+    def test_review3_gnu_time_stdbuf_end_opts_and_busybox_are_refused(self) -> None:
+        self._write_only()
+        refused = (
+            "/usr/bin/time -v rm -f only.txt",
+            "command time -v rm -f only.txt",
+            "/usr/bin/time -o /tmp/t -- rm -f only.txt",
+            "/usr/bin/time --verbose rm -f only.txt",
+            "/usr/bin/time --output=/tmp/t rm -f only.txt",
+            "/usr/bin/time --output /tmp/t rm -f only.txt",
+            "/usr/bin/time -f %e rm -f only.txt",
+            "/usr/bin/time --format=%e rm -f only.txt",
+            "/usr/bin/time --format %e -- rm -f only.txt",
+            "/usr/bin/time -a -q -p rm -f only.txt",
+            "stdbuf -o0 -- rm -f only.txt",
+            "stdbuf --output=L -- rm -f only.txt",
+            "busybox rm -f only.txt",
+            "busybox -- rm -f only.txt",
+        )
+        for cmd in refused:
+            with self.subTest(cmd=cmd):
+                reason = self.reason(cmd)
+                self.assertIn("untracked", reason)
+                self.assertIn("only.txt", reason)
+        for cmd in (
+            "time echo ok",
+            "/usr/bin/time -v echo ok",
+            "stdbuf -o0 -- echo ok",
+            "busybox echo ok",
+        ):
+            with self.subTest(cmd=cmd):
+                self.assertEqual("", self.reason(cmd))
+
+    def test_review3_source_and_dot_process_substitution_are_refused(self) -> None:
+        for cmd in (
+            "source <(printf 'rm -f only.txt\\n')",
+            ". <(printf 'rm -f only.txt\\n')",
+        ):
+            with self.subTest(cmd=cmd):
+                self.assertIn("shell process substitution", self.reason(cmd))
+        self.assertEqual("", self.reason("source ./env.sh"))
+        self.assertEqual("", self.reason(". ./env.sh"))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -845,18 +845,31 @@ def _is_maven_wrapper_fetch_failure(maven_out: str) -> bool:
 
     A log that merely contains both ``maven-wrapper`` and ``error`` is a
     compile failure. Fallback requires a fetch/download marker, a missing
-    ``maven-wrapper.jar``, or ``MavenWrapperMain`` not loading.
+    ``maven-wrapper.jar`` on the same line as the missing-file wording, a
+    failed fetch/download of ``maven-wrapper`` on one line, or
+    ``MavenWrapperMain`` not loading.
+
+    The line checks stay in this function. Pack binding rebinds only ``__all__``
+    names into the install controller, so helpers defined beside it would not
+    resolve there.
     """
     detail_cf = maven_out.casefold()
     if any(marker in detail_cf for marker in _MAVEN_WRAPPER_FETCH_MARKERS):
         return True
     if "mavenwrappermain" in detail_cf and "could not find or load main class" in detail_cf:
         return True
-    if "maven-wrapper.jar" in detail_cf and any(marker in detail_cf for marker in _MAVEN_WRAPPER_JAR_MISSING):
-        return True
-    return "maven-wrapper" in detail_cf and any(
-        token in detail_cf for token in _MAVEN_WRAPPER_FETCH_ACTIONS
-    )
+    # Same-line only. A bare "Downloading … maven-wrapper.jar" line is not a failure.
+    action_failures = ("fail", "error", "unable", "cannot", "could not", "can't")
+    for line in detail_cf.splitlines():
+        if "maven-wrapper.jar" in line and any(marker in line for marker in _MAVEN_WRAPPER_JAR_MISSING):
+            return True
+        if (
+            "maven-wrapper" in line
+            and any(token in line for token in _MAVEN_WRAPPER_FETCH_ACTIONS)
+            and any(word in line for word in action_failures)
+        ):
+            return True
+    return False
 
 
 def _fallback_managed_maven_cli(

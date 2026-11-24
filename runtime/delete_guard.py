@@ -170,12 +170,79 @@ class Unsure(ValueError):
     """The command deletes something the parser cannot pin down."""
 
 
+_TIME_FLAG_OPTIONS = frozenset({
+    "-p",
+    "-v",
+    "-a",
+    "-q",
+    "--verbose",
+    "--portability",
+    "--append",
+    "--quiet",
+})
+_TIME_ARG_OPTIONS = frozenset({"-o", "-f", "--output", "--format"})
+_TIME_SHORT_FLAGS = frozenset("pvaq")
+_TIME_SHORT_ARGS = frozenset("of")
+_SCRIPT_DOT_COMMANDS = frozenset({"source", "."})
+
+
+def _time_short_cluster(token: str) -> str | None:
+    """Classify a GNU ``time`` short cluster such as ``-pv`` or ``-o/tmp/t``."""
+    if len(token) <= 2 or not token.startswith("-") or token.startswith("--"):
+        return None
+    body = token[1:]
+    for offset, char in enumerate(body):
+        if char in _TIME_SHORT_FLAGS:
+            continue
+        if char in _TIME_SHORT_ARGS:
+            return "attached" if body[offset + 1 :] else "need-arg"
+        return None
+    return "flags"
+
+
+def _skip_time_options(arguments: list[str], index: int) -> int:
+    """Skip POSIX ``-p`` and GNU ``time`` options so the timed command is visible.
+
+    Covers ``-p``/``-v``/``-a``/``-q``, ``--verbose``/``--portability``/``--append``/
+    ``--quiet``, ``-o``/``-f`` and ``--output``/``--format`` (separate argument or
+    ``=`` / attached form), and ``--`` end-of-options.
+    """
+    while index < len(arguments):
+        token = arguments[index]
+        if token == "--":
+            return index + 1
+        if token in _TIME_FLAG_OPTIONS:
+            index += 1
+            continue
+        if token in _TIME_ARG_OPTIONS or token.startswith(("--output=", "--format=")):
+            index += 1
+            if token in _TIME_ARG_OPTIONS and index < len(arguments):
+                index += 1
+            continue
+        kind = _time_short_cluster(token)
+        if kind in {"flags", "attached"}:
+            index += 1
+            continue
+        if kind == "need-arg":
+            index += 1
+            if index < len(arguments):
+                index += 1
+            continue
+        break
+    return index
+
+
 def _skip_stdbuf_options(arguments: list[str], index: int) -> int:
-    """Skip ``stdbuf`` ``-i``/``-o``/``-e`` (and the long forms) plus each mode value."""
+    """Skip ``stdbuf`` ``-i``/``-o``/``-e`` (and the long forms) plus each mode value.
+
+    ``--`` ends option parsing so the next word is the command.
+    """
     short = {"-i", "-o", "-e"}
     long = ("--input", "--output", "--error")
     while index < len(arguments):
         token = arguments[index]
+        if token == "--":
+            return index + 1
         if token in short or token in long:
             index += 1
             if index < len(arguments):
@@ -200,12 +267,15 @@ def _head(arguments: list[str]) -> tuple[str, list[str]]:
             continue
         head = os.path.basename(item)
         if head == "time":
-            index += 1
-            while index < len(arguments) and arguments[index] == "-p":
-                index += 1
+            index = _skip_time_options(arguments, index + 1)
             continue
         if head == "stdbuf":
             index = _skip_stdbuf_options(arguments, index + 1)
+            continue
+        if head == "busybox":
+            index += 1
+            if index < len(arguments) and arguments[index] == "--":
+                index += 1
             continue
         if head == "coproc":
             index += 1
@@ -640,8 +710,8 @@ def _segment_targets(
         if script:
             return _command_targets(script, cwd, cwd_computed=cwd_computed)[0]
         return []
-    if head in SHELLS:
-        script = _shell_c_script(rest)
+    if head in SHELLS or head in _SCRIPT_DOT_COMMANDS:
+        script = _shell_c_script(rest) if head in SHELLS else None
         if script is None and any(_is_process_sub_word(word) for word in rest):
             raise Unsure("shell process substitution")
         if script is not None:
@@ -1481,6 +1551,9 @@ def _command_targets(
                 if py_entries:
                     found.extend(_expand_entries(py_entries, cwd))
             continue
+
+        if head in _SCRIPT_DOT_COMMANDS and any(_is_process_sub_word(word) for word in rest):
+            raise Unsure("shell process substitution")
 
         if head in SHELLS:
             shell_scripts: list[str] = []
