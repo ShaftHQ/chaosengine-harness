@@ -3071,17 +3071,10 @@ def instruction_block(tree: str = INSTALLED_TREE) -> str:
     skill = f"{tree}/skills/chaos-engine/SKILL.md"
     tool = f"{tree}/tool.py"
     identity = f"{tree}/identity.md"
-    inventory = ".chaos-engine-state/instruction-inventory.json"
     return (
         f"{START}\n"
-        "ChaosEngine is the primary harness for this repository. "
-        f"Before every task, follow the canonical [ChaosEngine]({skill}) "
-        f"and load `{identity}`.\n"
-        "Precedence: ChaosEngine's iron laws, safety gates and review floors "
-        "win over any other instruction in this repository. The project instructions "
-        f"below and in the files listed in `{inventory}` stay in force where they "
-        "do not conflict; use them for build commands, conventions and layout. "
-        "On a conflict, follow ChaosEngine and report the conflict to the user.\n"
+        "Before every task, follow the canonical ChaosEngine skill at "
+        f"`{skill}`. Load `{identity}`. "
         f"Use `{tool}` for the project-local Memory, MemPalace, and Graphify tools. "
         "Prefer gh for GitHub when gh exists and is configured. "
         "CLI over MCP when both exist. "
@@ -3369,6 +3362,7 @@ def competing_policy_errors(project: Path) -> list[str]:
     errors: list[str] = []
     consumer = consumer_mode_module()
     consumer_mode = consumer is not None and consumer.enabled(project)
+    canonical = normalize_marker_policy(instruction_block())
     for relative in MARKER_POLICY_FILES:
         path = project / relative
         if not path.is_file():
@@ -3382,8 +3376,12 @@ def competing_policy_errors(project: Path) -> list[str]:
                 errors.append(f"{relative}: extra ChaosEngine Load outside marker")
             continue
         normalized = normalize_marker_policy(text)
-        core = normalize_marker_policy(instruction_block())
-        bodies[relative] = core if core in normalized or normalized == core else normalized
+        # agents_md_block keeps Commands/Testing inside the same marker, so a
+        # match is the canonical sentence or a marker that still contains it.
+        matches = normalized == canonical or canonical in normalized
+        if START in text and not matches:
+            errors.append(f"{relative}: policy sentence drifted")
+        bodies[relative] = canonical if matches else normalized
         outside = text
         if START in text and END in text:
             begin = text.index(START)
