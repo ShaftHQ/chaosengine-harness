@@ -504,6 +504,211 @@ class DeleteGuardIssue208Test(unittest.TestCase):
         self.assertEqual("value", match("--out", (), stdbuf_values))
         self.assertEqual("value", match("--error", (), stdbuf_values))
 
+    def _py(self, source: str) -> str:
+        return "python3 - <<'PY'\n" + source + "\nPY"
+
+    def test_issue_213_source_and_dot_stdin_heredoc_is_a_shell_script(self) -> None:
+        """``source`` / ``.`` of stdin runs the attached heredoc as a shell script.
+
+        ``/dev/stdin``, ``/proc/self/fd/0``, and ``/dev/fd/0`` are the script.
+        A heredoc on ``source ./file`` is stdin data for that file, not the script.
+        """
+        self._write_only()
+        refused = (
+            "source /dev/stdin <<'EOF'\nrm -f only.txt\nEOF",
+            ". /dev/stdin <<'EOF'\nrm -f only.txt\nEOF",
+            "source /proc/self/fd/0 <<'EOF'\nrm -f only.txt\nEOF",
+            ". /proc/self/fd/0 <<'EOF'\nrm -f only.txt\nEOF",
+            "source /dev/fd/0 <<'EOF'\nrm -f only.txt\nEOF",
+            ". /dev/fd/0 <<'EOF'\nrm -f only.txt\nEOF",
+            "source -- /dev/stdin <<'EOF'\nrm -f only.txt\nEOF",
+            ". -- /dev/stdin <<'EOF'\nrm -f only.txt\nEOF",
+            "source /dev//stdin <<'EOF'\nrm -f only.txt\nEOF",
+            "source /dev/stdin <<EOF\nrm -f only.txt\nEOF",
+            "bash -c \"source /dev/stdin <<'EOF'\nrm -f only.txt\nEOF\"",
+            ". /dev/stdin <<-EOF\n\trm -f only.txt\n\tEOF",
+            "source /dev/stdin <<< 'rm -f only.txt'",
+            ". /dev/stdin <<< 'rm -f only.txt'",
+            "cat <<'EOF' | source /dev/stdin\nrm -f only.txt\nEOF",
+            "cat <<'EOF' | . /dev/fd/0\nrm -f only.txt\nEOF",
+            "source /dev/stdin <<'EOF'\npython3 -c \"import os; os.remove('only.txt')\"\nEOF",
+            "cd \"$T\" && source /dev/stdin <<'EOF'\nrm -f foo\nEOF",
+        )
+        for cmd in refused:
+            with self.subTest(cmd=cmd):
+                reason = self.reason(cmd)
+                self.assertNotEqual("", reason)
+                if "cd \"$T\"" in cmd:
+                    self.assertIn("cd to a computed path before a delete", reason)
+                else:
+                    self.assertIn("untracked", reason)
+                    self.assertIn("only.txt", reason)
+        absolute = f"cd \"$T\" && source /dev/stdin <<'EOF'\nrm -f {self.precious}\nEOF"
+        absolute_reason = self.reason(absolute)
+        self.assertIn("untracked", absolute_reason)
+        self.assertIn("precious.txt", absolute_reason)
+        self.assertNotIn("cd to a computed path", absolute_reason)
+        for cmd in (
+            "source /dev/stdin <<'EOF'\necho ok\nEOF",
+            ". /dev/stdin <<'EOF'\necho ok\nEOF",
+            "source /dev/stdin <<'EOF'\necho rm -f only.txt\nEOF",
+            ". /proc/self/fd/0 <<'EOF'\nprintf 'ok\\n'\nEOF",
+            "source /dev/stdin <<< 'echo ok'",
+            "source ./env.sh <<'EOF'\nrm -f only.txt\nEOF",
+            ". ./env.sh <<'EOF'\nrm -f only.txt\nEOF",
+            "cat <<'EOF' | source ./env.sh\nrm -f only.txt\nEOF",
+            "source ./env.sh <<< 'rm -f only.txt'",
+        ):
+            with self.subTest(cmd=cmd):
+                self.assertEqual("", self.reason(cmd))
+
+    def test_issue_213_folded_getattr_delete_names_are_refused(self) -> None:
+        """Constant-folded ``getattr`` names are delete checks, not only ``ast.Constant``.
+
+        A folded ``remove``/``unlink``/``rmtree``/``rmdir`` is refused on any object.
+        An unfoldable name is refused when the receiver is ``os``, ``shutil``,
+        ``pathlib``, or ``Path(...)`` (including import aliases). A bare
+        ``getattr(obj, key)`` stays allowed, and a folded benign name such as
+        ``getcwd`` stays allowed.
+        """
+        refused = (
+            "import os\ngetattr(os, 'rem' + 'ove')('only.txt')",
+            "import os\ngetattr(os, 'rem' 'ove')('only.txt')",
+            "import os\ngetattr(os, f\"{'rem'}{'ove'}\")('only.txt')",
+            "import os\ngetattr(os, ''.join(['rem', 'ove']))('only.txt')",
+            "import os\ngetattr(os, str.join('', ['rem', 'ove']))('only.txt')",
+            "import os\ngetattr(os, 'un' + 'link')('only.txt')",
+            "import os\ngetattr(os, 'rm' + 'dir')('only.txt')",
+            "import shutil\ngetattr(shutil, 'rm' + 'tree')('only.txt')",
+            "obj = object()\ngetattr(obj, 'rem' + 'ove')('only.txt')",
+            "import os as operating_system\ngetattr(operating_system, 'rem' + 'ove')('only.txt')",
+            "import os\nname = 'remove'\ngetattr(os, name)('only.txt')",
+            "import os\nname = 'getcwd'\ngetattr(os, name)()",
+            "import shutil\nname = 'copy'\ngetattr(shutil, name)('a', 'b')",
+            "import pathlib\nname = 'Path'\ngetattr(pathlib, name)",
+            "from pathlib import Path\nname = 'unlink'\ngetattr(Path('only.txt'), name)()",
+            "from pathlib import Path\ngetattr(Path('only.txt'), 'un' + 'link')()",
+            "import os\ngetattr(os, '{}'.format('remove'))('only.txt')",
+            "obj = object()\ngetattr(obj, '{}'.format('remove'))('only.txt')",
+            "obj = object()\ngetattr(obj, '%s%s' % ('rem', 'ove'))('only.txt')",
+        )
+        for source in refused:
+            with self.subTest(source=source):
+                self.assertIn("indirect Python delete via getattr", self.reason(self._py(source)))
+        allowed = (
+            "import os\ngetattr(os, 'getcwd')()",
+            "import os\ngetattr(os, 'get' + 'cwd')()",
+            "import os\ngetattr(os, f\"{'getcwd'}\")()",
+            "import os\ngetattr(os, ''.join(['get', 'cwd']))()",
+            "from pathlib import Path\ngetattr(Path('only.txt'), 'exists')()",
+            "from pathlib import Path\ngetattr(Path('only.txt'), 'name')",
+            "obj = object()\nkey = 'remove'\ngetattr(obj, key)",
+            "obj = object()\ngetattr(obj, obj.__class__.__name__)",
+        )
+        for source in allowed:
+            with self.subTest(source=source):
+                self.assertEqual("", self.reason(self._py(source)))
+
+    def test_issue_213_quoted_braces_are_literal_delete_targets(self) -> None:
+        """Quoted ``{a,b}`` is the literal filename. Unquoted braces still expand."""
+        literal = self.repo / "{only,nope}.txt"
+        literal.write_text("only copy", encoding="utf-8")
+        ranged = self.repo / "file{1..3}.txt"
+        ranged.write_text("only copy", encoding="utf-8")
+        quoted = (
+            "rm -f '{only,nope}.txt'",
+            'rm -f "{only,nope}.txt"',
+            r"rm -f \{only,nope\}.txt",
+            r"rm -f $'{only,nope}.txt'",
+            "rm -f -- '{only,nope}.txt'",
+            "rm -f '{only,nope}'.txt",
+            'rm -f {"only,nope"}.txt',
+            "rm -f 'file{1..3}.txt'",
+            r"rm -f file\{1..3\}.txt",
+        )
+        for cmd in quoted:
+            with self.subTest(cmd=cmd):
+                reason = self.reason(cmd)
+                self.assertNotIn("brace-expanded delete target", reason)
+                self.assertIn("untracked", reason)
+        events = GUARD._parse_shell("rm -f '{only,nope}.txt'")
+        command = next(payload for kind, payload in events if kind == "cmd")
+        self.assertEqual("{only,nope}.txt", command.words[-1])
+        self.assertEqual("1" * len(command.words[-1]), command.word_masks[-1])
+        partial = GUARD._parse_shell('rm -f {"only,nope"}.txt')
+        partial_cmd = next(payload for kind, payload in partial if kind == "cmd")
+        word = partial_cmd.words[-1]
+        mask = partial_cmd.word_masks[-1]
+        self.assertEqual("{only,nope}.txt", word)
+        self.assertEqual("1", mask[word.index(",")])
+        self.assertEqual("0", mask[0])
+        for cmd in (
+            "rm -f {only,nope}.txt",
+            "rm {only,nope}.txt",
+            "rm -f file{1..3}.txt",
+            'rm -f {only,"nope"}.txt',
+            "rm -f {only,nope}.txt '{only,nope}.txt'",
+        ):
+            with self.subTest(cmd=cmd):
+                reason = self.reason(cmd)
+                self.assertIn("brace-expanded delete target", reason)
+        absent = self.reason("rm -f '{does-not-exist,either}.txt'")
+        self.assertEqual("", absent)
+
+    def test_issue_213_command_sub_head_boundary(self) -> None:
+        """Literal ``$(echo ...)`` / ``$(printf ...)`` heads are visible only when safe.
+
+        Allowed: one ``echo`` or ``printf`` with a single literal operand whose
+        printed word is one token and is not a delete, shell, interpreter, or
+        wrapper (``$(echo ls)``, ``$(printf echo)``, ``$(printf 'ls')``).
+        The inner script must not contain another command, a delete, ``eval``,
+        a computed head, or a redirection.
+
+        Still refused as a computed command head:
+        ``$(echo rm)``, ``$(printf 'rm')``, ``$(printf '%s%s' r m)``,
+        ``$(echo r; echo m)``, ``$(echo /bin/rm)``, and ``$(echo bash)``.
+        """
+        self._write_only()
+        for cmd in (
+            "$(echo ls)",
+            "$(echo ls) -la",
+            "$(echo 'ls') -la",
+            "$( printf echo ) hello",
+            "$(printf 'echo') hello",
+            "$(printf echo) rm -f only.txt",
+            "`echo ls`",
+            "`printf echo` ok",
+            "$(echo /bin/ls) -la",
+            "$(echo cat) only.txt",
+        ):
+            with self.subTest(cmd=cmd):
+                self.assertEqual("", self.reason(cmd))
+        refused = (
+            "$(echo rm) -f only.txt",
+            "$(echo 'rm') -f only.txt",
+            "$(printf 'rm') -f only.txt",
+            "$(printf rm) -f only.txt",
+            "$(printf '%s%s' r m) -f only.txt",
+            "$(printf '%s' rm) -f only.txt",
+            "$(echo r; echo m) -f only.txt",
+            "$(echo r && echo m) -f only.txt",
+            "$(echo /bin/rm) -f only.txt",
+            "`echo rm` -f only.txt",
+            "`printf '%s%s' r m` -f only.txt",
+            "$(echo ls; rm -f only.txt)",
+            "$(rm -f only.txt; echo ls)",
+            "$(echo ls >/tmp/ce-delete-guard-213)",
+            "$(echo bash) -c 'rm -f only.txt'",
+            "$(echo python3) -c \"import os; os.remove('only.txt')\"",
+            "$(echo env) rm -f only.txt",
+            "$(echo unlink) only.txt",
+            "$(echo mv) only.txt /tmp/ce-delete-guard-213-dest",
+            "x=rm; $x -f only.txt",
+        )
+        for cmd in refused:
+            with self.subTest(cmd=cmd):
+                self.assertIn("computed command head", self.reason(cmd))
+
 
 if __name__ == "__main__":
     unittest.main()
