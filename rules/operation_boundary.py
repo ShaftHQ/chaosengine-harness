@@ -993,6 +993,23 @@ def observe_commands(root: Path, commands: list[str] | tuple[str, ...], *, faile
     return None
 
 
+def _output_has_guarded_secret(guard: Any, encoded: bytes, values: set[bytes]) -> bool:
+    """True when output holds a guarded value or a base64 / percent-encoded form.
+
+    Forms come from ``secret_guard`` (raw, standard and URL-safe base64 with and
+    without ``=``, ``quote`` and ``quote_plus``). ``%HH`` hex digits match in
+    any case. This module does not import ``base64`` or ``urllib.parse``.
+    """
+    forms: set[bytes] = set()
+    for value in values:
+        if value:
+            forms.update(guard._secret_byte_forms(value))
+    if not forms:
+        return False
+    ordered = sorted(forms, key=len, reverse=True)
+    return guard._scrub_bytes(encoded, ordered) != encoded
+
+
 def output_secret_block(result: object, root: Path | None = None) -> str | None:
     """Scan tool stdout/stderr/output. The command string is not this evidence."""
     if not isinstance(result, dict):
@@ -1005,10 +1022,8 @@ def output_secret_block(result: object, root: Path | None = None) -> str | None:
         guard = _load(nested if nested.is_file() else tree / "secret_guard.py", "ce_boundary_secret_guard")
         names = [part.strip() for part in str(guard.DEFAULT_GUARDED_FILES).split(",") if part.strip()]
         encoded = text.encode("utf-8", errors="ignore")
-        for value in guard.secret_values(Path(root), names):
-            if value and value in encoded:
-                hits.append("secret-in-output")
-                break
+        if _output_has_guarded_secret(guard, encoded, guard.secret_values(Path(root), names)):
+            hits.append("secret-in-output")
     if not hits:
         return None
     code = result.get("exit_code", result.get("exitCode", 0))

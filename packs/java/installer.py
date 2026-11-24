@@ -79,6 +79,8 @@ __all__ = (
     "_run_captured_build",
     "_MAVEN_WRAPPER_NAMES",
     "_MAVEN_WRAPPER_FETCH_MARKERS",
+    "_MAVEN_WRAPPER_SCOPED_FETCH_MARKERS",
+    "_MAVEN_WRAPPER_BOOTSTRAP_CONTEXT",
     "_MAVEN_WRAPPER_FETCH_ACTIONS",
     "_MAVEN_WRAPPER_JAR_MISSING",
     "_is_maven_wrapper_cli",
@@ -814,13 +816,25 @@ _MAVEN_WRAPPER_NAMES = ("mvnw", "mvnw.cmd")
 _MAVEN_WRAPPER_FETCH_MARKERS = (
     "failed to fetch",
     "wget:",
-    "curl:",
     "cannot download",
-    "failed to download",
     "unable to download",
     "could not download",
     "invoke-webrequest",
     'exception calling "downloadfile"',
+)
+# These match only on a wrapper-bootstrap line. A global hit is a plugin or
+# dependency log (``curl: command failed``, ``Failed to download artifact``).
+_MAVEN_WRAPPER_SCOPED_FETCH_MARKERS = (
+    "curl:",
+    "failed to download",
+)
+_MAVEN_WRAPPER_BOOTSTRAP_CONTEXT = (
+    "mvnw",
+    "maven-wrapper",
+    "apache-maven",
+    "wrapper.properties",
+    "repo.maven.apache.org",
+    "archive.apache.org",
 )
 _MAVEN_WRAPPER_FETCH_ACTIONS = (
     "fetch",
@@ -844,10 +858,14 @@ def _is_maven_wrapper_fetch_failure(maven_out: str) -> bool:
     """True for a wrapper download/bootstrap failure, not a later compile error.
 
     A log that merely contains both ``maven-wrapper`` and ``error`` is a
-    compile failure. Fallback requires a fetch/download marker, a missing
-    ``maven-wrapper.jar`` on the same line as the missing-file wording, a
-    failed fetch/download of ``maven-wrapper`` on one line, or
-    ``MavenWrapperMain`` not loading.
+    compile failure. Fallback requires an unconditional fetch marker, a
+    ``curl:`` or ``failed to download`` line that also names the wrapper
+    bootstrap, a missing ``maven-wrapper.jar`` on the same line as the
+    missing-file wording, a failed fetch/download of ``maven-wrapper`` on
+    one line, or ``MavenWrapperMain`` not loading.
+
+    ``error`` is a whole word (``\\berror\\b``). ``\\b`` treats the hyphen in
+    ``error-prone`` as a boundary, so that token does not count.
 
     The line checks stay in this function. Pack binding rebinds only ``__all__``
     names into the install controller, so helpers defined beside it would not
@@ -859,14 +877,22 @@ def _is_maven_wrapper_fetch_failure(maven_out: str) -> bool:
     if "mavenwrappermain" in detail_cf and "could not find or load main class" in detail_cf:
         return True
     # Same-line only. A bare "Downloading … maven-wrapper.jar" line is not a failure.
-    action_failures = ("fail", "error", "unable", "cannot", "could not", "can't")
+    # "fail" stays a prefix so "failed" still matches; "error" does not.
+    action_failures = ("fail", "unable", "cannot", "could not", "can't")
     for line in detail_cf.splitlines():
+        if any(marker in line for marker in _MAVEN_WRAPPER_SCOPED_FETCH_MARKERS) and any(
+            token in line for token in _MAVEN_WRAPPER_BOOTSTRAP_CONTEXT
+        ):
+            return True
         if "maven-wrapper.jar" in line and any(marker in line for marker in _MAVEN_WRAPPER_JAR_MISSING):
             return True
         if (
             "maven-wrapper" in line
             and any(token in line for token in _MAVEN_WRAPPER_FETCH_ACTIONS)
-            and any(word in line for word in action_failures)
+            and (
+                any(word in line for word in action_failures)
+                or re.search(r"\berror\b(?!-)", line) is not None
+            )
         ):
             return True
     return False

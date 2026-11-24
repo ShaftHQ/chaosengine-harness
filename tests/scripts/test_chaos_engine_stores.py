@@ -700,7 +700,8 @@ class SharedStoreTest(unittest.TestCase):
         document = next(node for node in graph["nodes"] if node["path"] == "journeys/start.mdx")
         self.assertEqual(document["label"], "Journey start")
         self.assertIn(
-            {"source": "docs:journeys/start.mdx", "target": "../guide.md", "kind": "link"},
+            {"source": "docs:journeys/start.mdx", "target": "docs:guide.md", "kind": "link",
+             "relation": "link", "confidence": "EXTRACTED", "source_file": "journeys/start.mdx"},
             graph["edges"],
         )
         filing = json.loads(
@@ -773,14 +774,207 @@ class DocumentationPassTest(unittest.TestCase):
         self.assertIn("docs:teaching/leveling-up.md#round-34-1", nodes)
         self.assertIn(
             {"source": "docs:teaching/leveling-up.md", "target": "docs:teaching/leveling-up.md#outcomes",
-             "kind": "contains"},
+             "kind": "contains", "relation": "contains", "confidence": "EXTRACTED",
+             "source_file": "teaching/leveling-up.md"},
             graph["edges"],
         )
+
+    def test_link_edges_resolve_only_to_indexed_pages_and_anchors(self):
+        links = {
+            "../topics/target%20page.mdx": "docs:topics/target page.mdx",
+            "../topics/target%20page.mdx#overview": "docs:topics/target page.mdx",
+            "/topics/target%20page.mdx?view=1#next%2Dsteps": "docs:topics/target page.mdx#next-steps",
+            "#local": "docs:review/start.md#local",
+            "../missing.md": None,
+            "../ignored.md": None,
+            "../topics/target%20page.mdx#missing": None,
+            "../../present.md": None,
+            "https://example.invalid/page.md": None,
+            "//example.invalid/page.md": None,
+            "mailto:help@example.invalid": None,
+            "http://[invalid": None,
+        }
+        self._write("review/start.md", "# Review\n" + "\n".join(f"[Link]({link})" for link in links)
+                    + "\n## Local\n")
+        self._write("topics/target page.mdx", "# Overview\n## Next steps\n")
+        self._write("present.md")
+        self._write("ignored.md")
+        self._write(".graphifyignore", "ignored.md\n")
+        filing = self.root / "filing"
+        graph_file = self.root / "graph.json"
+        self.stores._apply_documentation_index(self.root, graph_file, filing)
+        graph = json.loads(graph_file.read_text(encoding="utf-8"))
+        raw_pages = json.loads((filing / "documentation-pages.json").read_text(encoding="utf-8"))["pages"]
+        start = next(page for page in raw_pages if page["path"] == "review/start.md")
+        self.assertEqual(list(links), start["links"])
+        self.assertEqual(
+            [
+                {"source": "docs:review/start.md", "target": target, "kind": "link",
+                 "relation": "link", "confidence": "EXTRACTED", "source_file": "review/start.md"}
+                for target in links.values() if target is not None
+            ],
+            [edge for edge in graph["edges"] if edge["kind"] == "link"],
+        )
+        node_ids = {node["id"] for node in graph["nodes"]}
+        self.assertTrue(all({edge["source"], edge["target"]} <= node_ids for edge in graph["edges"]))
+
+    def test_encoded_hash_stays_in_the_filename(self):
+        self._write("guide.md", "# Introduction\n## Details\n")
+        self._write("hash#guide.md", "# Hash guide\n## Details\n")
+        self._write("start.md", "\n".join((
+            "[File](hash%23guide.md)",
+            "[Section](hash%23guide.md#details)",
+            "[Title](hash%23guide.md#hash-guide)",
+            "[Missing filename](guide.md%23details)",
+            "[Missing filename matching title](guide.md%23introduction)",
+            "[Missing filename with fragment](guide.md%23missing.md#details)",
+        )))
+        graph = self.stores.merge_documentation_graph(
+            self.root / "graph.json", self.stores.index_documentation(self.root),
+        )
+        self.assertEqual(
+            ["docs:hash#guide.md", "docs:hash#guide.md#details", "docs:hash#guide.md"],
+            [edge["target"] for edge in graph["edges"] if edge["kind"] == "link"],
+        )
+
+    def test_incremental_refresh_replaces_legacy_documentation_and_is_idempotent(self):
+        corpus = self.root / "corpus"
+        self._write("corpus/start.md", "# Start\n[Old](old.md)\n")
+        self._write("corpus/old.md")
+        target = self.root / "graphify-out"
+        target.mkdir()
+        graph_file = target / "graph.json"
+        code_nodes = [{"id": "code:entry"}, {"id": "code:helper"}]
+        code_edge = {"source": "code:entry", "target": "code:helper", "relation": "calls"}
+        code_to_doc = {"source": "code:entry", "target": "docs:start.md", "relation": "references"}
+        base = {"nodes": code_nodes, "edges": [code_edge], "hyperedges": []}
+        graph_file.write_text(json.dumps({
+            **base,
+            "nodes": code_nodes + [{"id": "docs:start.md"}, {"id": "docs:old.md"}],
+            "edges": [code_edge, code_to_doc,
+                      {"source": "code:entry", "target": "docs:pruned.md", "relation": "references"},
+                      {"source": "docs:pruned.md", "target": "code:helper", "relation": "references"},
+                      {"source": "docs:pruned.md", "target": "pruned.md", "kind": "link"},
+                      {"source": "docs:start.md", "target": "old.md", "kind": "link"}],
+        }), encoding="utf-8")
+        (target / "manifest.json").write_text("{}", encoding="utf-8")
+        scratch = self.root / "scratch"
+        (corpus / "old.md").unlink()
+
+        def refresh():
+            with unittest.mock.patch.multiple(
+                self.stores,
+                resolve_graph_out=lambda cwd: target,
+                _ancestor_revision=lambda *args: True,
+                _indexed_revision=lambda path: "b" * 40,
+                _store_tool=lambda name: name,
+                store_revision=lambda cwd: "c" * 40,
+            ):
+                self.stores._refresh_graphify(
+                    self.root, snapshot=corpus, scratch=scratch, revision="c" * 40,
+                    invoke=lambda command, cwd: 0,
+                )
+            return json.loads(graph_file.read_text(encoding="utf-8"))
+
+        first = refresh()
+        self.assertEqual(["code:entry", "code:helper", "docs:start.md"],
+                         [node["id"] for node in first["nodes"]])
+        self.assertEqual(code_nodes, first["nodes"][:2])
+        self.assertEqual([code_edge, code_to_doc], first["edges"])
+        self.assertEqual(first, refresh())
+        (corpus / "start.md").unlink()
+        self.assertEqual(base, refresh())
+
+    def test_removing_last_document_clears_existing_filings(self):
+        corpus = self.root / "corpus"
+        self._write("corpus/guide.md", "# Guide\n## Details\n")
+        output = self.root / "graphify-out"
+        palace = self.root / "mempalace"
+        palace.mkdir()
+        graph = output / "graph.json"
+        graph_filing = output / "documentation-pages.json"
+        palace_filing = self.stores.palace_documentation_path(palace)
+
+        self.stores._apply_documentation_index(corpus, graph, output, palace)
+        for filing in (graph_filing, palace_filing):
+            self.assertEqual(1, len(json.loads(filing.read_bytes())["pages"]))
+        (corpus / "guide.md").unlink()
+        unused = self.root / "unused"
+        self.stores._apply_documentation_index(corpus, graph, output, palace, unused)
+
+        self.assertEqual({"nodes": [], "edges": []}, json.loads(graph.read_bytes()))
+        for filing in (graph_filing, palace_filing):
+            with self.subTest(filing=filing.name):
+                self.assertEqual({"pages": []}, json.loads(filing.read_bytes()))
+        self.assertFalse(unused.exists())
+
+    def test_legacy_links_cache_survives_an_empty_documentation_refresh(self):
+        graph_file = self.root / "graph.json"
+        code_graph = {
+            "nodes": [
+                {"id": f"code:{label}", "label": label, "file_type": "code", "source_file": "code.py"}
+                for label in ("entry", "helper")
+            ],
+            "links": [
+                {"source": "code:entry", "target": "code:helper", "relation": "calls",
+                 "confidence": "EXTRACTED", "source_file": "code.py"}
+            ],
+        }
+        graph_file.write_text(json.dumps(code_graph), encoding="utf-8")
+        self.stores._apply_documentation_index(self.root, graph_file)
+        self.assertEqual(code_graph, json.loads(graph_file.read_text(encoding="utf-8")))
+
+        self._write("start.md", "# Start\n[Section](#details)\n## Details\n")
+        self.stores._apply_documentation_index(self.root, graph_file)
+        updated = json.loads(graph_file.read_text(encoding="utf-8"))
+        self.assertNotIn("edges", updated)
+        self.assertEqual(code_graph["links"], updated["links"][:1])
+        self.assertEqual(["contains", "link"], [edge["relation"] for edge in updated["links"][1:]])
+
+    def test_mixed_legacy_edge_lists_preserve_code_and_replace_old_docs(self):
+        self._write("start.md", "# Start\n[Section](#details)\n## Details\n")
+        graph_file = self.root / "graph.json"
+        code_nodes = [{"id": "code:entry"}, {"id": "code:helper"}]
+        code_edge = {"source": "code:entry", "target": "code:helper", "relation": "calls",
+                     "confidence": "EXTRACTED", "source_file": "code.py"}
+        graph_file.write_text(json.dumps({
+            "nodes": code_nodes + [{"id": "docs:start.md"}],
+            "links": [code_edge],
+            "edges": [{"source": "docs:start.md", "target": "#details", "kind": "link"}],
+        }), encoding="utf-8")
+        self.stores._apply_documentation_index(self.root, graph_file)
+        graph = json.loads(graph_file.read_text(encoding="utf-8"))
+        self.assertNotIn("links", graph)
+        self.assertEqual(code_nodes, graph["nodes"][:2])
+        self.assertEqual(code_edge, graph["edges"][0])
+        self.assertEqual([("contains", "docs:start.md#details"), ("link", "docs:start.md#details")],
+                         [(e["relation"], e["target"]) for e in graph["edges"][1:]])
+        self.stores._apply_documentation_index(self.root, graph_file)
+        self.assertEqual(graph, json.loads(graph_file.read_text(encoding="utf-8")))
+
+    def test_malformed_cached_rows_do_not_disrupt_the_documentation_merge(self):
+        self._write("start.md", "# Start\n## Section\n")
+        graph_file = self.root / "graph.json"
+        code_nodes = [{"id": "code:entry"}, {"id": "code:helper"}, {"id": []}, {"id": {}}, None]
+        code_edges = [
+            {"source": "code:entry", "target": "code:helper", "relation": "calls"},
+            {"source": [], "target": {}, "relation": "calls"},
+            {"source": {}, "target": [], "relation": "calls"},
+            "invalid cached row",
+        ]
+        graph_file.write_text(json.dumps({"nodes": code_nodes, "edges": code_edges}), encoding="utf-8")
+        self.stores._apply_documentation_index(self.root, graph_file)
+        graph = json.loads(graph_file.read_text(encoding="utf-8"))
+        self.assertEqual(code_nodes, graph["nodes"][:len(code_nodes)])
+        self.assertEqual(code_edges, graph["edges"][:len(code_edges)])
+        self.assertEqual("docs:start.md#section", graph["edges"][-1]["target"])
+        self.stores._apply_documentation_index(self.root, graph_file)
+        self.assertEqual(graph, json.loads(graph_file.read_text(encoding="utf-8")))
 
     @unittest.skipUnless(shutil.which("graphify"), "graphify CLI not installed")
     def test_graphify_query_finds_text_under_a_sub_heading(self):
         self._write("teaching/leveling-up.md", "# Leveling Up\n\n## Cohorts\n\nRound thirtyfour mentoring.\n")
-        self._write("other.md", "# Other\n\nUnrelated.\n")
+        self._write("other.md", "# Other\n\n[Cohorts](teaching/leveling-up.md#cohorts)\n")
         graph = self.root / "graph.json"
         graph.write_text('{"directed": false, "multigraph": false, "graph": {}, "nodes": [], "edges": []}\n',
                          encoding="utf-8")
@@ -791,6 +985,61 @@ class DocumentationPassTest(unittest.TestCase):
         )
         self.assertEqual(0, completed.returncode, completed.stderr)
         self.assertIn("Leveling Up › Cohorts", completed.stdout)
+        seeded = subprocess.run(  # nosec B603 B607 - fixed graphify argv.
+            ["graphify", "query", "thirtyfour mentoring", "--seed", "docs:other.md",
+             "--depth", "1", "--graph", str(graph)],
+            capture_output=True, text=True, check=True, timeout=60,
+        )
+        self.assertIn("Start (given): ['Other']", seeded.stdout)
+        self.assertIn("Other --link [EXTRACTED]--> Leveling Up › Cohorts", seeded.stdout)
+        diagnostic = subprocess.run(  # nosec B603 B607 - fixed graphify argv.
+            ["graphify", "diagnose", "multigraph", "--graph", str(graph)],
+            capture_output=True, text=True, check=True, timeout=60,
+        )
+        self.assertIn("dangling_endpoint_edges: 0", diagnostic.stdout)
+        self.assertIn("post_build_edges: 2", diagnostic.stdout)
+        self.assertNotIn("Extraction warning", diagnostic.stderr)
+
+    @unittest.skipUnless(shutil.which("graphify"), "graphify CLI not installed")
+    def test_graphify_incremental_extraction_rebuilds_docs_and_preserves_code(self):
+        corpus = self.root / "corpus"
+        self._write("corpus/entry.py", "def entry():\n    return 1\n")
+        self._write("corpus/start.md", "# Start\n[Guide](guide.md#details)\n")
+        self._write("corpus/guide.md", "# Guide\n## Details\n")
+        output = self.root / "output"
+        graph_file = output / "graphify-out" / "graph.json"
+
+        def extract():
+            return subprocess.run(  # nosec B603 B607 - fixed graphify argv.
+                ["graphify", "extract", str(corpus), "--code-only", "--no-cluster", "--out", str(output)],
+                cwd=corpus, capture_output=True, text=True, check=True, timeout=60,
+            ).stdout
+
+        def read_graph():
+            return json.loads(graph_file.read_text(encoding="utf-8"))
+
+        extract()
+        code_graph = read_graph()
+        self.assertTrue(code_graph["nodes"])
+        self.assertTrue(code_graph["edges"])
+        self.stores._apply_documentation_index(corpus, graph_file)
+        first = read_graph()
+        self.assertEqual(code_graph["nodes"], first["nodes"][:len(code_graph["nodes"])])
+        self.assertEqual(code_graph["edges"], first["edges"][:len(code_graph["edges"])])
+        self.assertIn("docs:guide.md#details", [edge["target"] for edge in first["edges"]
+                                               if edge.get("relation") == "link"])
+        self.assertIn("no incremental changes detected", extract().lower())
+        self.stores._apply_documentation_index(corpus, graph_file)
+        self.assertEqual(first, read_graph())
+
+        (corpus / "guide.md").unlink()
+        self.assertIn("incremental", extract().lower())
+        self.stores._apply_documentation_index(corpus, graph_file)
+        graph = read_graph()
+        self.assertEqual([node["id"] for node in code_graph["nodes"]] + ["docs:start.md"],
+                         [node["id"] for node in graph["nodes"]])
+        self.assertEqual(code_graph["nodes"], graph["nodes"][:-1])
+        self.assertEqual(code_graph["edges"], graph["edges"])
 
 
 class StoreIndexAttributionTest(unittest.TestCase):

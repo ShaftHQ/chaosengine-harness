@@ -23,7 +23,7 @@ import tempfile
 import time
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Callable, Iterator
+from typing import Any, Callable, Iterator, TypeGuard
 
 
 PALACE_BACKEND = "sqlite_exact"
@@ -1282,8 +1282,44 @@ def documentation_texts(graph_out: Path) -> dict[tuple[str, str], str]:
     return texts
 
 
+def _documentation_link_destination(page_path: str, link: str) -> tuple[str, str] | None:
+    import posixpath
+    from urllib.parse import unquote, urlsplit
+
+    try:
+        destination = urlsplit(link)
+    except ValueError:
+        return None
+    if destination.scheme or destination.netloc or link.startswith("//"):
+        return None
+    path = unquote(destination.path)
+    if path.startswith("/"):
+        path = posixpath.normpath(path.lstrip("/"))
+    elif path:
+        path = posixpath.normpath(posixpath.join(posixpath.dirname(page_path), path))
+    else:
+        path = page_path
+    # A decoded '#' in the path is a filename character, separate from the anchor.
+    return path, unquote(destination.fragment)
+
+
+def _documentation_edge(source: str, target: str, kind: str) -> dict:
+    return {
+        "source": source,
+        "target": target,
+        "kind": kind,
+        "relation": kind,
+        "confidence": "EXTRACTED",
+        "source_file": source.removeprefix("docs:"),
+    }
+
+
+def _is_documentation_id(value: object) -> TypeGuard[str]:
+    return isinstance(value, str) and value.startswith("docs:")
+
+
 def merge_documentation_graph(graph_json: Path, indexed: dict) -> dict:
-    """Add documentation pages, and one node per page section, to a Graphify graph.json.
+    """Replace generated documentation pages, sections and edges in a Graphify graph.json.
 
     A section node's label is its heading trail under the page title and its body
     text rides in ``rationale``, which Graphify's query scorer reads.
@@ -1295,13 +1331,20 @@ def merge_documentation_graph(graph_json: Path, indexed: dict) -> dict:
     if not isinstance(graph, dict):
         graph = {}
     nodes = graph.get("nodes")
-    edges = graph.get("edges")
+    edge_key = "links" if "edges" not in graph and "links" in graph else "edges"
+    edges = graph.get(edge_key)
     if not isinstance(nodes, list):
         nodes = []
     if not isinstance(edges, list):
         edges = []
-    nodes = [node for node in nodes if not str(node.get("id", "")).startswith("docs:")]
-    edges = [edge for edge in edges if not str(edge.get("source", "")).startswith("docs:")]
+    if edge_key == "edges" and isinstance(graph.get("links"), list):
+        # The old merger could write docs into edges beside legacy code links.
+        edges = edges + graph.pop("links")
+    # Incremental extraction can carry forward the previous documentation layer.
+    nodes = [node for node in nodes if not isinstance(node, dict) or not _is_documentation_id(node.get("id"))]
+    doc_targets: dict[tuple[str, str], str] = {}
+    doc_edges: list[dict] = []
+    pending_links: list[tuple[str, tuple[str, str]]] = []
     for page in indexed.get("pages") or []:
         if not isinstance(page, dict):
             continue
@@ -1309,7 +1352,13 @@ def merge_documentation_graph(graph_json: Path, indexed: dict) -> dict:
         if not page_path:
             continue
         node_id = "docs:" + page_path
+        doc_targets[page_path, ""] = node_id
         label, page_text, sections = _documentation_labels(page)
+        first_section = next(
+            (section for section in page.get("sections") or [] if isinstance(section, dict)), {}
+        )
+        if first_section.get("level") == 1 and first_section.get("anchor"):
+            doc_targets[page_path, str(first_section["anchor"])] = node_id
         node = {
             "id": node_id,
             "label": label,
@@ -1335,11 +1384,30 @@ def merge_documentation_graph(graph_json: Path, indexed: dict) -> dict:
             if text:
                 section_node["rationale"] = text
             nodes.append(section_node)
-            edges.append({"source": node_id, "target": section_id, "kind": "contains"})
+            doc_targets[page_path, anchor] = section_id
+            doc_edges.append(_documentation_edge(node_id, section_id, "contains"))
         for link in page.get("links") or []:
-            edges.append({"source": node_id, "target": str(link), "kind": "link"})
+            destination = _documentation_link_destination(page_path, str(link))
+            if destination is not None:
+                pending_links.append((node_id, destination))
+    for node_id, destination in pending_links:
+        target = doc_targets.get(destination)
+        if target is not None:
+            doc_edges.append(_documentation_edge(node_id, target, "link"))
+    doc_ids = set(doc_targets.values())
+    kept_edges = []
+    for edge in edges:
+        if isinstance(edge, dict):
+            source, target = edge.get("source"), edge.get("target")
+            if _is_documentation_id(source) and (
+                source not in doc_ids or edge.get("kind") in ("link", "contains")
+            ):
+                continue
+            if _is_documentation_id(target) and target not in doc_ids:
+                continue
+        kept_edges.append(edge)
     graph["nodes"] = nodes
-    graph["edges"] = edges
+    graph[edge_key] = kept_edges + doc_edges
     graph_json.parent.mkdir(parents=True, exist_ok=True)
     graph_json.write_text(json.dumps(graph, indent=2) + "\n", encoding="utf-8")
     return graph
@@ -1351,20 +1419,22 @@ def _is_palace_directory(directory: Path) -> bool:
     return (directory / "sqlite_exact.sqlite3").is_file()
 
 
+def _documentation_filing_path(directory: Path) -> Path:
+    if _is_palace_directory(directory):
+        return palace_documentation_path(directory)
+    return directory / "documentation-pages.json"
+
+
 def write_documentation_filing(directory: Path, indexed: dict) -> Path:
     """Record the pages a documentation mine files, including .mdx.
 
     Palace pages sit beside the palace. Graphify-out keeps its own filing.
     """
     legacy = directory / "documentation-pages.json"
-    if _is_palace_directory(directory):
-        destination = palace_documentation_path(directory)
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        if legacy.is_file():
-            legacy.unlink()
-    else:
-        directory.mkdir(parents=True, exist_ok=True)
-        destination = legacy
+    destination = _documentation_filing_path(directory)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if destination != legacy and legacy.is_file():
+        legacy.unlink()
     destination.write_text(
         json.dumps(indexed, separators=(",", ":")) + "\n",
         encoding="utf-8",
@@ -1374,12 +1444,15 @@ def write_documentation_filing(directory: Path, indexed: dict) -> Path:
 
 def _apply_documentation_index(source: Path, *destinations: Path) -> dict:
     indexed = index_documentation(source)
-    if not indexed["pages"]:
-        return indexed
     for destination in destinations:
         if destination.name == "graph.json":
-            merge_documentation_graph(destination, indexed)
-        else:
+            if indexed["pages"] or destination.is_file():
+                merge_documentation_graph(destination, indexed)
+        elif (
+            indexed["pages"]
+            or _documentation_filing_path(destination).is_file()
+            or (destination / "documentation-pages.json").is_file()
+        ):
             write_documentation_filing(destination, indexed)
     return indexed
 
