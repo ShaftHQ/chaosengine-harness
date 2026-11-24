@@ -219,10 +219,11 @@ def find_memory_index_files(
 
     raw_home = str(environ.get("HOME") or environ.get("USERPROFILE") or "").strip()
     if not raw_home and env is None:
-        try:
-            raw_home = str(Path.home())
-        except RuntimeError:
-            raw_home = ""
+        # env is the process environment here. A passed mapping that omits
+        # HOME and USERPROFILE must not fall through to the real account.
+        expanded = os.path.expanduser("~")
+        if expanded and not expanded.startswith("~"):
+            raw_home = expanded
     if raw_home:
         home = Path(raw_home)
         encoded_variants = dict.fromkeys(

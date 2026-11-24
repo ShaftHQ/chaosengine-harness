@@ -96,7 +96,7 @@ plainly rather than padding with low-confidence noise.
 shell scripts: lines such as `#!/usr/bin/env bash\r\n`, `VAR=value\r\n`, or
 `echo ok\r\n` pass `bash -n` while failing or corrupting values at runtime.
 
-`runtime/pre_done_review.py` checks edited `*.sh` files and any edited file
+`.chaos-engine/runtime/pre_done_review.py` checks edited `*.sh` files and any edited file
 whose first line is a `sh`/`bash` shebang:
 
 1. **`bash -n <file>`** (when `bash` is on `PATH`): reports `SYNTAX <path>: <detail>`.
@@ -105,8 +105,8 @@ whose first line is a `sh`/`bash` shebang:
    `NEW CR BYTES <path> (<before> -> <after>)` only when `after > before`
    (existing CRLF files whose CR count did not grow produce zero findings).
 
-Run directly with `python3 runtime/pre_done_review.py --shell-check [PROJECT_ROOT]`
-(or `tool.py pre-done --shell-check [PROJECT_ROOT]`), or via `mechanical_problems(obs)`
+Run directly with `python3 .chaos-engine/runtime/pre_done_review.py --shell-check [PROJECT_ROOT]`
+(or `python3 .chaos-engine/tool.py pre-done --shell-check [PROJECT_ROOT]`), or via `mechanical_problems(obs)`
 with `shell_check: True` or `shell_files` plus `project_root`/`root`.
 
 ## Related
