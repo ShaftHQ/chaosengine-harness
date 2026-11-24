@@ -1,6 +1,7 @@
 """#211: intake feasibility gate and output-secret no-echo script-read helper."""
 from __future__ import annotations
 
+import base64
 import contextlib
 import importlib.util
 import io
@@ -9,6 +10,7 @@ import subprocess  # nosec B404 - invokes the Python guard CLI on temp fixtures 
 import sys
 import tempfile
 import unittest
+import urllib.parse
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -107,6 +109,46 @@ class ReadSecretKeyTest(unittest.TestCase):
             self.guard.read_secret_key(self.root, "anyKey", files=["missing.properties", "broken.json"])
         )
 
+    def test_read_secret_key_rejects_absolute_and_parent_escape(self) -> None:
+        project = self.root / "project"
+        project.mkdir()
+        outside = self.root / "outside.properties"
+        outside.write_text(f"browserstack.app=LEAKED211OUTSIDE\n", encoding="utf-8")
+        (project / "secrets.properties").write_text(
+            f"browserstack.app={APP_ID}\n",
+            encoding="utf-8",
+        )
+        self.assertIsNone(
+            self.guard.read_secret_key(project, "browserstack.app", files=[str(outside)])
+        )
+        self.assertIsNone(
+            self.guard.read_secret_key(project, "browserstack.app", files=["../outside.properties"])
+        )
+        self.assertIsNone(
+            self.guard.read_secret_key(
+                project, "browserstack.app", files=["/etc/passwd"]
+            )
+        )
+        nested = project / "nested"
+        nested.mkdir()
+        self.assertEqual(
+            APP_ID,
+            self.guard.read_secret_key(
+                project, "browserstack.app", files=["nested/../secrets.properties"]
+            ),
+        )
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = self.guard.exec_with_secrets(
+                project,
+                [("browserstack.app", "BS_APP")],
+                [sys.executable, "-c", "print('ran')"],
+                files=["../outside.properties"],
+            )
+        self.assertEqual(2, code)
+        self.assertNotIn("LEAKED211OUTSIDE", out.getvalue() + err.getvalue())
+        self.assertNotIn(APP_ID, out.getvalue() + err.getvalue())
+
 
 class ExecWithSecretsTest(unittest.TestCase):
     def setUp(self) -> None:
@@ -146,6 +188,34 @@ class ExecWithSecretsTest(unittest.TestCase):
         combined = out.getvalue() + err.getvalue()
         self.assertNotIn(APP_ID, combined)
         self.assertNotIn(ACCESS_KEY, combined)
+
+    def test_exec_with_secrets_scrubs_base64_and_url_encoded_forms(self) -> None:
+        script = (
+            "import base64, os, sys, urllib.parse\n"
+            "app = os.environ['BS_APP']\n"
+            "key = os.environ['BS_KEY']\n"
+            "print(base64.b64encode(app.encode()).decode())\n"
+            "print(urllib.parse.quote(app, safe=''))\n"
+            "print(base64.b64encode(key.encode()).decode(), file=sys.stderr)\n"
+            "print(urllib.parse.quote_plus(key), file=sys.stderr)\n"
+        )
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = self.guard.exec_with_secrets(
+                self.root,
+                [("browserstack.app", "BS_APP"), ("browserStack.accessKey", "BS_KEY")],
+                [sys.executable, "-c", script],
+            )
+        self.assertEqual(0, code)
+        combined = out.getvalue() + err.getvalue()
+        self.assertIn("[REDACTED]", out.getvalue())
+        self.assertIn("[REDACTED]", err.getvalue())
+        self.assertNotIn(APP_ID, combined)
+        self.assertNotIn(ACCESS_KEY, combined)
+        self.assertNotIn(base64.b64encode(APP_ID.encode()).decode(), combined)
+        self.assertNotIn(base64.b64encode(ACCESS_KEY.encode()).decode(), combined)
+        self.assertNotIn(urllib.parse.quote(APP_ID, safe=""), combined)
+        self.assertNotIn(urllib.parse.quote_plus(ACCESS_KEY), combined)
 
     def test_exec_with_secrets_propagates_child_exit_code(self) -> None:
         out, err = io.StringIO(), io.StringIO()

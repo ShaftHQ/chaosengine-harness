@@ -42,6 +42,7 @@ import re
 import shutil
 import subprocess  # nosec B404 - runs git or explicit wrapper command with no shell
 import sys
+import urllib.parse
 from pathlib import Path
 from typing import Iterable, Iterator, Sequence
 
@@ -77,12 +78,30 @@ def git(*args: str, data: bytes | None = None) -> bytes:
     ).stdout
 
 
+def _contained_secret_file(root: Path, name: str) -> Path | None:
+    """Return a guarded path inside ``root``, or None if it is absolute or escapes via ``..``."""
+    cleaned = (name or "").strip()
+    if not cleaned:
+        return None
+    relative = Path(cleaned)
+    if relative.is_absolute():
+        return None
+    base = Path(root).resolve()
+    try:
+        resolved = (base / relative).resolve()
+    except (OSError, RuntimeError, ValueError):
+        return None
+    if resolved != base and base not in resolved.parents:
+        return None
+    return resolved
+
+
 def secret_values(root: Path, names: Iterable[str]) -> set[bytes]:
     """Read the literal secret values from the local secret files that exist."""
     values: set[bytes] = set()
     for name in names:
-        path = root / name.strip()
-        if not name.strip() or not path.is_file():
+        path = _contained_secret_file(root, name)
+        if path is None or not path.is_file():
             continue
         text = path.read_text(encoding="utf-8", errors="ignore")
         if path.suffix == ".json":
@@ -451,8 +470,8 @@ def read_secret_key(
         return None
     base = Path(root)
     for name in _guarded_file_names(files):
-        path = base / name
-        if not path.is_file():
+        path = _contained_secret_file(base, name)
+        if path is None or not path.is_file():
             continue
         try:
             text = path.read_text(encoding="utf-8", errors="ignore")
@@ -470,6 +489,32 @@ def read_secret_key(
         if value is not None:
             return value
     return None
+
+
+def _secret_byte_forms(secret: bytes) -> list[bytes]:
+    """Raw secret plus base64 and URL-encoded forms that must not leak on output."""
+    if not secret:
+        return []
+    forms: list[bytes] = [secret]
+    standard = base64.b64encode(secret)
+    urlsafe = base64.urlsafe_b64encode(secret)
+    for item in (standard, urlsafe, standard.rstrip(b"="), urlsafe.rstrip(b"=")):
+        if item and item not in forms:
+            forms.append(item)
+    try:
+        text = secret.decode("utf-8")
+    except UnicodeDecodeError:
+        return forms
+    for encoded in (
+        urllib.parse.quote(text, safe=""),
+        urllib.parse.quote_plus(text, safe=""),
+        urllib.parse.quote(text),
+        urllib.parse.quote_plus(text),
+    ):
+        raw = encoded.encode("ascii", errors="ignore")
+        if raw and raw not in forms:
+            forms.append(raw)
+    return forms
 
 
 def _scrub_bytes(data: bytes, secrets: Sequence[bytes]) -> bytes:
@@ -524,9 +569,8 @@ def exec_with_secrets(
     scrub_set: set[bytes] = set(secret_values(base, guarded))
     for env_var, value in resolved:
         env[env_var] = value
-        encoded = value.encode("utf-8")
-        if encoded:
-            scrub_set.add(encoded)
+        for form in _secret_byte_forms(value.encode("utf-8")):
+            scrub_set.add(form)
     ordered_secrets = sorted(scrub_set, key=len, reverse=True)
 
     try:

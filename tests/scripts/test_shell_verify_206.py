@@ -159,6 +159,48 @@ def test_mechanical_problems_wires_shell_check_and_shell_files(tmp_path: Path):
     assert reasons_files == ["NEW CR BYTES run.sh (0 -> 1)"]
 
 
+def test_autocrlf_true_content_edit_and_new_crlf_line_are_not_new_cr(tmp_path: Path):
+    repo = _init_repo(tmp_path)
+    script = _commit_file(repo, "scripts/legacy.sh", b"#!/bin/sh\necho one\n")
+    _git(repo, "config", "core.autocrlf", "true")
+
+    script.write_bytes(b"#!/bin/sh\r\necho two\r\n")
+    assert pre_done_review.shell_script_problems(repo) == []
+
+    script.write_bytes(b"#!/bin/sh\r\necho one\r\necho three\r\n")
+    assert pre_done_review.shell_script_problems(repo) == []
+
+
+def test_autocrlf_true_stray_cr_fails_with_new_cr_bytes(tmp_path: Path):
+    repo = _init_repo(tmp_path)
+    script = _commit_file(repo, "scripts/legacy.sh", b"#!/bin/sh\necho one\n")
+    _git(repo, "config", "core.autocrlf", "true")
+
+    script.write_bytes(b"#!/bin/sh\r\ntr -d '\r'\r\n")
+    assert pre_done_review.shell_script_problems(repo) == [
+        "NEW CR BYTES scripts/legacy.sh (2 -> 3)"
+    ]
+
+    script.write_bytes(b"#!/bin/sh\r\necho one\r\r\n")
+    assert pre_done_review.shell_script_problems(repo) == [
+        "NEW CR BYTES scripts/legacy.sh (2 -> 3)"
+    ]
+
+
+def test_autocrlf_true_eol_lf_still_flags_crlf(tmp_path: Path):
+    repo = _init_repo(tmp_path)
+    (repo / ".gitattributes").write_text("*.sh text eol=lf\n", encoding="utf-8")
+    script = _commit_file(repo, "scripts/legacy.sh", b"#!/bin/sh\necho one\n")
+    _git(repo, "add", ".gitattributes")
+    _git(repo, "commit", "-m", "attrs")
+    _git(repo, "config", "core.autocrlf", "true")
+
+    script.write_bytes(b"#!/bin/sh\r\necho two\r\n")
+    assert pre_done_review.shell_script_problems(repo) == [
+        "NEW CR BYTES scripts/legacy.sh (0 -> 2)"
+    ]
+
+
 def test_missing_bash_still_runs_cr_check(tmp_path: Path, monkeypatch):
     repo = _init_repo(tmp_path)
     script = _commit_file(repo, "nobash.sh", b"#!/bin/sh\necho ok\n")

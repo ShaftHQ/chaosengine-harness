@@ -23,7 +23,7 @@ Delegates: [delegate card](../../references/delegate-card.md). Identity: [identi
 
 ## Bigger picture first
 
-Before Triage ([bigger picture first](../../references/bigger-picture-first.md)): check intake feasibility before code (surface unreachable acceptance states with 3 options). One file and reversible: one line. If unsure, it is not trivial.
+Before Triage ([bigger picture first](../../references/bigger-picture-first.md)). One file and reversible: one line. If unsure, it is not trivial.
 
 ## Triage
 
@@ -41,11 +41,9 @@ After plan approval, routine in-scope work goes unattended. Stop for an owner de
 
 ## Implement
 
-Companions at task start via `tool.py entry` ([bot entry](../../references/bot-entry.md)): [Caveman](../../companions/caveman-ultra.md), [Ponytail](../../companions/ponytail-ultra.md). Off only: `stop caveman`, `stop ponytail`, `normal mode`. Before the first shell command, check OS/shell/tool memory hints (`tool.py env-memory`).
+Companions at task start via `tool.py entry` ([bot entry](../../references/bot-entry.md)): [Caveman](../../companions/caveman-ultra.md), [Ponytail](../../companions/ponytail-ultra.md). Off only: `stop caveman`, `stop ponytail`, `normal mode`.
 
 ## Check and deliver
-
-- Edited shell scripts (`*.sh` or sh/bash shebang): run `tool.py pre-done --shell-check` (`bash -n` + stray CR check) before done.
 
 - At most 3 local PDCA loops, then review 1 with the self-accept push ([delivery cycle](../../references/delivery-cycle.md)). Do not start both reviewers in one step.
 - Ordinary reversible: one fresh-context adversarial review. Public-contract or hard-to-reverse: two, one after another.

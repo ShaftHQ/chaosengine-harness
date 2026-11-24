@@ -4799,19 +4799,70 @@ def _rewrite_legacy_pointers(
     return rewritten
 
 
-def _directory_contains_link_or_reparse(root: Path) -> bool:
-    """Return True if any nested entry under root is a symlink, junction, or reparse point."""
-    pending = [root]
-    while pending:
-        current = pending.pop()
-        with os.scandir(current) as entries:
-            for entry in entries:
+def _real_tree_postorder(root: Path) -> list[Path] | None:
+    """Real files and directories under ``root``, children before parents.
+
+    Returns None when any symlink or junction is encountered. Never descends
+    into a link, so a swap-to-symlink cannot be walked.
+    """
+    ordered: list[Path] = []
+
+    def walk(current: Path) -> bool:
+        try:
+            iterator = os.scandir(current)
+        except OSError:
+            return False
+        with iterator:
+            for entry in iterator:
                 child = Path(entry.path)
                 if entry.is_symlink() or is_link_or_reparse(child):
-                    return True
-                if entry.is_dir(follow_symlinks=False):
-                    pending.append(child)
-    return False
+                    return False
+                try:
+                    directory = entry.is_dir(follow_symlinks=False)
+                except OSError:
+                    return False
+                if directory and not walk(child):
+                    return False
+                ordered.append(child)
+        return True
+
+    if not walk(root):
+        return None
+    return ordered
+
+
+def _entry_is_link(path: Path) -> bool:
+    return path.is_symlink() or is_link_or_reparse(path)
+
+
+def _remove_real_directory(root: Path) -> bool:
+    """Remove a real directory bottom-up. Leave it in place if a link appears.
+
+    Each entry is checked again immediately before it is removed. A symlink or
+    junction is never unlinked and never descended into.
+    """
+    ordered = _real_tree_postorder(root)
+    if ordered is None:
+        return False
+    for child in ordered:
+        if _entry_is_link(child):
+            return False
+        try:
+            if child.is_dir():
+                if _entry_is_link(child):
+                    return False
+                os.rmdir(child)
+            else:
+                child.unlink()
+        except OSError:
+            return False
+    if _entry_is_link(root):
+        return False
+    try:
+        os.rmdir(root)
+    except OSError:
+        return False
+    return True
 
 
 def _remove_legacy_backup(
@@ -4826,11 +4877,10 @@ def _remove_legacy_backup(
         path.unlink()
         return True
     if path.is_dir():
-        if _directory_contains_link_or_reparse(path):
+        if not _remove_real_directory(path):
             if skipped_nested_links is not None:
                 skipped_nested_links.append(path.name)
             return False
-        shutil.rmtree(path)
         return True
     path.unlink()
     return True

@@ -262,6 +262,57 @@ class DeleteGuardIssue208Test(unittest.TestCase):
     def test_genuinely_unclosed_quote_with_delete_still_fails_closed(self) -> None:
         self.assertIn("unparsable delete", self.reason('rm -rf "unclosed'))
 
+    def test_ansi_c_heredoc_delimiter_does_not_swallow_the_next_command(self) -> None:
+        cmd = "cat <<$'EOF'\nhello\nEOF\nrm -f precious.txt"
+        reason = self.reason(cmd)
+        self.assertIn("untracked", reason)
+        self.assertIn("precious.txt", reason)
+        quoted = 'cat <<$"EOF"\nhello\nEOF\nrm -f precious.txt'
+        quoted_reason = self.reason(quoted)
+        self.assertIn("untracked", quoted_reason)
+        self.assertIn("precious.txt", quoted_reason)
+
+    def test_heredoc_piped_into_shell_or_python_is_scanned(self) -> None:
+        shell_cmd = "cat <<'EOF' | bash\nrm -f precious.txt\nEOF"
+        shell_reason = self.reason(shell_cmd)
+        self.assertIn("untracked", shell_reason)
+        self.assertIn("precious.txt", shell_reason)
+        env_shell = "cat <<'EOF' | env bash\nrm -f precious.txt\nEOF"
+        self.assertIn("precious.txt", self.reason(env_shell))
+        python_cmd = "cat <<'EOF' | python3\nimport shutil; shutil.rmtree('precious.txt')\nEOF"
+        python_reason = self.reason(python_cmd)
+        self.assertIn("untracked", python_reason)
+        self.assertIn("precious.txt", python_reason)
+        env_python = "cat <<'EOF' | env python3\nimport shutil; shutil.rmtree('precious.txt')\nEOF"
+        self.assertIn("precious.txt", self.reason(env_python))
+
+    def test_cd_is_not_applied_when_the_shell_would_not(self) -> None:
+        for cmd in (
+            "cd /no/such/dir/zzz; rm -f precious.txt",
+            "cd /no/such/dir/zzz || rm -f precious.txt",
+            "cd /tmp | rm -f precious.txt",
+        ):
+            with self.subTest(cmd=cmd):
+                reason = self.reason(cmd)
+                self.assertIn("untracked", reason)
+                self.assertIn("precious.txt", reason)
+
+    def test_quote_split_and_ansi_c_command_names_are_refused(self) -> None:
+        for cmd in (
+            "r'm' -f precious.txt",
+            "r\"m\" -f precious.txt",
+            "$'r\\x6d' -f precious.txt",
+        ):
+            with self.subTest(cmd=cmd):
+                reason = self.reason(cmd)
+                self.assertIn("untracked", reason)
+                self.assertIn("precious.txt", reason)
+
+    def test_function_body_delete_is_refused(self) -> None:
+        reason = self.reason("f() { rm -f precious.txt; }; f")
+        self.assertIn("untracked", reason)
+        self.assertIn("precious.txt", reason)
+
 
 if __name__ == "__main__":
     unittest.main()

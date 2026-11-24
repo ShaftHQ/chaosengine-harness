@@ -329,7 +329,7 @@ def _git_edited_files(root: Path, base_ref: str) -> list[str]:
     return sorted(found)
 
 
-def _git_cr_count(root: Path, git_path: str, base_ref: str) -> int:
+def _git_blob(root: Path, git_path: str, base_ref: str) -> bytes | None:
     try:
         shown = subprocess.run(
             ["git", "show", f"{base_ref}:{git_path}"],
@@ -338,10 +338,112 @@ def _git_cr_count(root: Path, git_path: str, base_ref: str) -> int:
             check=False,
         )
     except OSError:
-        return 0
+        return None
     if shown.returncode != 0:
-        return 0
-    return shown.stdout.count(b"\r")
+        return None
+    return shown.stdout
+
+
+def _core_autocrlf_true(root: Path) -> bool:
+    try:
+        proc = subprocess.run(
+            ["git", "config", "--bool", "core.autocrlf"],
+            cwd=str(root),
+            capture_output=True,
+            check=False,
+        )
+    except OSError:
+        return False
+    return proc.returncode == 0 and proc.stdout.strip() == b"true"
+
+
+def _attr_blocks_autocrlf_smudge(root: Path, attr_path: str) -> bool:
+    """True when ``eol=lf`` or ``-text`` keeps checkout from turning LF into CRLF."""
+    try:
+        proc = subprocess.run(
+            ["git", "check-attr", "-z", "text", "eol", "--", attr_path],
+            cwd=str(root),
+            capture_output=True,
+            check=False,
+        )
+    except OSError:
+        return False
+    if proc.returncode != 0:
+        return False
+    text_value = ""
+    eol_value = ""
+    if b"\0" in proc.stdout:
+        parts = proc.stdout.split(b"\0")
+        index = 0
+        while index + 2 < len(parts):
+            attr = parts[index + 1].decode("utf-8", errors="replace")
+            value = parts[index + 2].decode("utf-8", errors="replace")
+            if attr == "text":
+                text_value = value
+            elif attr == "eol":
+                eol_value = value
+            index += 3
+    else:
+        for line in proc.stdout.decode("utf-8", errors="replace").splitlines():
+            pieces = line.rsplit(": ", 2)
+            if len(pieces) != 3:
+                continue
+            _path, attr, value = pieces
+            if attr == "text":
+                text_value = value.strip()
+            elif attr == "eol":
+                eol_value = value.strip()
+    return eol_value == "lf" or text_value == "unset"
+
+
+def _lone_cr_count(data: bytes) -> int:
+    """Count ``\\r`` bytes that are not the CR of a CRLF pair."""
+    count = 0
+    index = 0
+    limit = len(data)
+    while index < limit:
+        if data[index] == 13:
+            if index + 1 < limit and data[index + 1] == 10:
+                index += 2
+                continue
+            count += 1
+        index += 1
+    return count
+
+
+def _smudge_autocrlf(blob: bytes) -> bytes:
+    """Worktree bytes git writes for a text blob when ``core.autocrlf`` is true."""
+    return blob.replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
+
+
+def _cr_growth(
+    root: Path,
+    git_path: str,
+    attr_path: str,
+    base_ref: str,
+    worktree: bytes,
+    *,
+    autocrlf: bool,
+) -> tuple[int, int, bool]:
+    """Return ``(before, after, grew)`` for the new-CR check.
+
+    When ``core.autocrlf`` is true and the path is not ``eol=lf`` or ``-text``,
+    ``before`` is the CR count of the smudged blob. A new normal CRLF line is
+    not growth. A ``\\r`` that is not followed by ``\\n``, or a CR count past
+    one CRLF per newline, is.
+    """
+    blob = _git_blob(root, git_path, base_ref)
+    after = worktree.count(b"\r")
+    if blob is None:
+        return 0, after, after > 0
+    if autocrlf and not _attr_blocks_autocrlf_smudge(root, attr_path):
+        smudged = _smudge_autocrlf(blob)
+        before = smudged.count(b"\r")
+        allowed = max(0, worktree.count(b"\n") - smudged.count(b"\n"))
+        grew = after > before + allowed or _lone_cr_count(worktree) > _lone_cr_count(smudged)
+        return before, after, grew
+    before = blob.count(b"\r")
+    return before, after, after > before
 
 
 def _bash_syntax_detail(bash_exe: str, root: Path, target: Path) -> str | None:
@@ -376,6 +478,7 @@ def shell_script_problems(
     candidates = _git_edited_files(root, base_ref) if files is None else list(files)
     bash_exe = shutil.which("bash")
     prefix = _git_prefix(root)
+    autocrlf = _core_autocrlf_true(root)
     findings: list[str] = []
     seen: set[str] = set()
     root_resolved = root.resolve()
@@ -403,10 +506,16 @@ def shell_script_problems(
             detail = _bash_syntax_detail(bash_exe, root, full_path)
             if detail is not None:
                 findings.append(f"SYNTAX {rel_path}: {detail}")
-        before = _git_cr_count(root, f"{prefix}{rel_path}", base_ref)
-        after = data.count(b"\r")
-        if after > before:
-            findings.append(f"NEW CR BYTES {rel_path} ({before} -> {after})")
+        before, _after, grew = _cr_growth(
+            root,
+            f"{prefix}{rel_path}",
+            rel_path,
+            base_ref,
+            data,
+            autocrlf=autocrlf,
+        )
+        if grew:
+            findings.append(f"NEW CR BYTES {rel_path} ({before} -> {_after})")
     return findings
 
 
