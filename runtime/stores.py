@@ -13,7 +13,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import posixpath
 import re
 import secrets
 import shutil
@@ -25,7 +24,6 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable, Iterator, TypeGuard
-from urllib.parse import unquote, urlsplit
 
 
 PALACE_BACKEND = "sqlite_exact"
@@ -1285,6 +1283,9 @@ def documentation_texts(graph_out: Path) -> dict[tuple[str, str], str]:
 
 
 def _documentation_link_destination(page_path: str, link: str) -> tuple[str, str] | None:
+    import posixpath
+    from urllib.parse import unquote, urlsplit
+
     try:
         destination = urlsplit(link)
     except ValueError:

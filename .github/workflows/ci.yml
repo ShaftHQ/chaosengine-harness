@@ -115,7 +115,23 @@ jobs:
           set -eu
           python -m venv "$RUNNER_TEMP/graphify-tests"
           export PATH="$RUNNER_TEMP/graphify-tests/bin:$PATH"
-          python -m pip install --quiet 'graphifyy==0.9.118' 'anyio==4.14.2'
+          python - <<'PY'
+          import json
+          import subprocess
+          import sys
+
+          spec = json.load(open("dependencies.json", encoding="utf-8"))
+          tool = spec["tools"]["graphify"]
+          pins = [str(tool["package"])]
+          pins.extend(
+              str(item) for item in tool.get("with", []) if str(item).startswith("anyio==")
+          )
+          if not any(pin.startswith("graphifyy==") for pin in pins):
+              sys.exit("dependencies.json is missing the graphifyy pin")
+          if not any(pin.startswith("anyio==") for pin in pins):
+              sys.exit("dependencies.json is missing the anyio pin")
+          subprocess.check_call([sys.executable, "-m", "pip", "install", "--quiet", *pins])
+          PY
           graphify --version
           python -B -m unittest discover -s tests/scripts -p test_chaos_engine_stores.py \
             -k test_graphify_query_finds_text_under_a_sub_heading \
