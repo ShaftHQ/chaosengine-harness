@@ -5,7 +5,7 @@ Permanent rule: any static-analysis check in `ACTION_REQUIRED` for a ≥medium f
 ## Iron rule
 
 1. Static-analysis `ACTION_REQUIRED` (≥medium, any category) ≡ unit red. Do not wait for other jobs to finish before acting.
-2. Never arm auto-merge while static analysis is `ACTION_REQUIRED`; if auto-merge is already armed, disarm it (`gh pr merge <n> --disable-auto`) until the finding is fixed.
+2. Never arm auto-merge (`gh pr merge --auto`), and never merge while static analysis is `ACTION_REQUIRED` ([delivery cycle](delivery-cycle.md)).
 3. Triage from the check-run annotations (pattern id + file:line), not from a full log: `gh api repos/<owner>/<repo>/check-runs/<id>/annotations`.
 4. Fix the code. Do not weaken the analyzer, delete findings, or admin-merge.
 5. Status and RAG: report `red` / `Blocked` with the pattern id; never bury it under "pending checks". The `watch_pr_checks.py --digest` field `static_analysis_action_required` carries it ([CI status economy](ci-status-economy.md)).
