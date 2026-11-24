@@ -662,6 +662,51 @@ def _has_commit(cwd: Path) -> bool:
     return True
 
 
+def _git_metadata_husk(cwd: Path) -> bool:
+    """True when ``.git`` is a husk: missing objects/refs, or a born HEAD object is gone.
+
+    A symbolic unborn HEAD stays a normal empty repository. This check does not
+    import the installer and does not suggest a commit on a husk.
+    """
+    marker = cwd / ".git"
+    if not marker.exists():
+        return False
+    common = marker
+    if marker.is_file():
+        try:
+            raw = marker.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return True
+        common = None
+        for line in raw.splitlines():
+            if line.startswith("gitdir:"):
+                target = Path(line.split(":", 1)[1].strip())
+                common = target if target.is_absolute() else (marker.parent / target)
+                break
+        if common is None:
+            return True
+    objects = common / "objects"
+    refs = common / "refs"
+    if not objects.is_dir() or not refs.is_dir():
+        return True
+    head = common / "HEAD"
+    try:
+        text = head.read_text(encoding="utf-8", errors="replace").strip()
+    except OSError:
+        return True
+    if text.startswith("ref:"):
+        return False
+    if len(text) < 4 or any(character not in "0123456789abcdefABCDEF" for character in text):
+        return False
+    loose = objects / text[:2] / text[2:]
+    if loose.is_file():
+        return False
+    pack = objects / "pack"
+    if pack.is_dir() and any(pack.glob("*.pack")):
+        return False
+    return True
+
+
 def graphify_doctor_row(cwd: Path) -> dict[str, str] | None:
     """Doctor row for an existing shared graph. Missing caches stay the setup plan."""
     graph_out = resolve_graph_out(cwd)
@@ -684,11 +729,21 @@ def graphify_doctor_row(cwd: Path) -> dict[str, str] | None:
         }
     if not _has_commit(cwd):
         # #6499: repair cannot index a repository with no commits; say so.
+        # A husk must not be told to commit. Name box-durability instead.
+        if _git_metadata_husk(cwd):
+            return {
+                "status": "absent",
+                "detail": "git-husk blocks Graphify until git metadata is restored",
+                "fixNext": (
+                    "git-husk: restore git metadata using references/box-durability.md "
+                    "before Graphify can index"
+                ),
+            }
         return {
             "status": "absent",
             "detail": "waiting for the first commit - Graphify indexes a revision",
             "fixNext": (
-                "commit once (git add -A && git commit -m init), then "
+                "commit once (git add <tracked-safe paths> && git commit -m init), then "
                 f"{python_cli()} .chaos-engine/install.py repair --project . --component graphify"
             ),
         }

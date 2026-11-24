@@ -19,7 +19,16 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT
 PARITY = ROOT / "scripts/ci/agent_harness_parity.json"
-HOOK_HOSTS = ("claude", "codex", "gemini", "grok", "copilot")
+HOOK_HOSTS = (
+    "claude",
+    "codex",
+    "copilot",
+    "gemini",
+    "grok",
+    "opencode",
+    "cursor",
+    "antigravity",
+)
 READ_EVENTS = {
     "claude": {"hook_event_name": "PreToolUse", "tool_name": "Read"},
     "codex": {"hook_event_name": "PreToolUse", "tool_name": "read_file"},

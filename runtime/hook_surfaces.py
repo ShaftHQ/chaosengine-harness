@@ -14,6 +14,34 @@ from pathlib import Path
 CURSOR_HOOKS = ".cursor/hooks.json"
 OPENCODE_PLUGIN = ".opencode/plugins/chaos-engine-receipt.js"
 ANTIGRAVITY_HOOKS = ".agents/hooks.json"
+CLAUDE_HOOKS = ".claude/settings.json"
+CODEX_HOOKS = ".codex/hooks.json"
+COPILOT_HOOKS = ".github/hooks/chaos-engine.json"
+GEMINI_HOOKS = ".gemini/settings.json"
+GROK_HOOKS = ".grok/hooks/lifecycle.json"
+
+# Canonical 8 hook hosts, same order as worktree_overlay.HOOK_HOSTS.
+# grok-bot is instruction-only and is not a surface here.
+HOOK_SURFACE_HOSTS = (
+    "claude",
+    "codex",
+    "copilot",
+    "gemini",
+    "grok",
+    "opencode",
+    "cursor",
+    "antigravity",
+)
+HOOK_SURFACE_PATHS = {
+    "claude": CLAUDE_HOOKS,
+    "codex": CODEX_HOOKS,
+    "copilot": COPILOT_HOOKS,
+    "gemini": GEMINI_HOOKS,
+    "grok": GROK_HOOKS,
+    "opencode": OPENCODE_PLUGIN,
+    "cursor": CURSOR_HOOKS,
+    "antigravity": ANTIGRAVITY_HOOKS,
+}
 
 # #106 event table. Names are Cursor's native camelCase.
 CURSOR_EVENTS = (
@@ -250,13 +278,31 @@ function payloadFor(event, input, output) {{
   const toolInput = source.args || source.input || source.tool_input
     || extra.args || extra.input || extra.tool_input
     || {{}};
-  return {{
+  const payload = {{
     hook_event_name: event,
     tool_name: source.tool || source.name || '',
     tool_input: toolInput,
     session_id: source.sessionID || source.sessionId || source.session_id || extra.sessionID || '',
     tool_use_id: source.callID || source.tool_use_id || source.id || extra.callID || '',
   }};
+  if (event === 'PostToolUse' || event === 'PostToolUseFailure') {{
+    const carried = extra.tool_response || extra.toolResponse;
+    if (carried && typeof carried === 'object') {{
+      payload.tool_response = carried;
+    }} else if (extra.stdout != null || extra.stderr != null || extra.output != null) {{
+      const asText = (value) => (
+        value == null ? '' : (typeof value === 'string' ? value : JSON.stringify(value))
+      );
+      payload.tool_response = {{
+        stdout: asText(extra.stdout),
+        stderr: asText(extra.stderr),
+        output: asText(extra.output),
+      }};
+    }} else if (typeof extra === 'string' && extra) {{
+      payload.tool_response = {{ stdout: extra, output: extra }};
+    }}
+  }}
+  return payload;
 }}
 
 async function guard(directory, event, input, output) {{

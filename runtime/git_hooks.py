@@ -136,7 +136,7 @@ def install_secret_guard(project: Path, guard_source: Path) -> dict[str, object]
                 "status": "failed",
                 "reason": (
                     "broken git metadata (.git present but rev-parse failed); "
-                    "repair the clone before install, or pass --no-secret-guard"
+                    "git-husk: restore the clone using references/box-durability.md"
                 ),
             }
         return {"status": "skipped", "reason": "not a git repository"}
@@ -146,7 +146,7 @@ def install_secret_guard(project: Path, guard_source: Path) -> dict[str, object]
             "status": "failed",
             "reason": (
                 f"broken git metadata (missing objects/refs under {common_dir}); "
-                "repair the clone before install, or pass --no-secret-guard"
+                "git-husk: restore the clone using references/box-durability.md"
             ),
         }
     top = _git(project, "rev-parse", "--show-toplevel", missing_ok=True)

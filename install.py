@@ -6340,6 +6340,189 @@ def _verify_hosts_into_doctor_result(
 
 
 
+_HOOK_SURFACES = None
+_KERNEL_CAPS = None
+_CORE_HOOK_SCRIPTS = (
+    "hooks/guard.py",
+    "hooks/kernel.py",
+    "hooks/launch.js",
+    "hooks/launch.py",
+    "hooks/lifecycle.py",
+    "hooks/reflection.py",
+)
+_INSTRUCTION_ONLY_GAPS = {
+    "grok-bot": "GAP-GROKBOT-HOOKS",
+    "independent-bot": "GAP-BOT-ENTRY",
+}
+_SELF_ENFORCED_COMMANDS = (
+    "entry --full",
+    "retrieve",
+    "delete-check",
+    "ethics-check",
+    "pre-done",
+    "dod",
+    "checkpoint",
+    "resume",
+    "maintain",
+)
+
+
+def _hook_surfaces():
+    """Load the canonical 8-host surface map without importing hosts.py."""
+    global _HOOK_SURFACES
+    if _HOOK_SURFACES is None:
+        path = runtime_module(Path(__file__).resolve().parent, "hook_surfaces.py")
+        spec = importlib.util.spec_from_file_location("ce_install_hook_surfaces", path)
+        if spec is None or spec.loader is None:
+            raise RuntimeError("hook_surfaces.py is required")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        try:
+            spec.loader.exec_module(module)
+        except Exception:
+            sys.modules.pop(spec.name, None)
+            raise
+        _HOOK_SURFACES = module
+    return _HOOK_SURFACES
+
+
+def _kernel_capabilities():
+    """Host Stop support from hooks/kernel.py. Read-only."""
+    global _KERNEL_CAPS
+    if _KERNEL_CAPS is None:
+        path = Path(__file__).resolve().parent / "hooks" / "kernel.py"
+        spec = importlib.util.spec_from_file_location("ce_install_kernel_caps", path)
+        if spec is None or spec.loader is None:
+            raise RuntimeError("hooks/kernel.py is required")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        try:
+            spec.loader.exec_module(module)
+        except Exception:
+            sys.modules.pop(spec.name, None)
+            raise
+        _KERNEL_CAPS = module.HOST_CAPABILITIES
+    return _KERNEL_CAPS
+
+
+def _hook_host_supports_stop(host: str) -> bool:
+    capability = _kernel_capabilities().get(host)
+    if capability is None:
+        return False
+    if "Stop" in tuple(getattr(capability, "supported_events", ()) or ()):
+        return True
+    aliases = getattr(capability, "event_aliases", {}) or {}
+    return any(value == "Stop" for value in aliases.values())
+
+
+def _instruction_only_rows(targets: tuple[str, ...]) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for host in targets:
+        gap = _INSTRUCTION_ONLY_GAPS.get(host)
+        if gap is None:
+            continue
+        rows.append(
+            {
+                "host": host,
+                "gap": gap,
+                "residualRisk": "GAP-BOT-ENTRY",
+                "selfEnforced": list(_SELF_ENFORCED_COMMANDS),
+            }
+        )
+    return rows
+
+
+def _instruction_only_detail(rows: list[dict[str, object]]) -> str:
+    named: list[str] = []
+    for row in rows:
+        for key in ("gap", "residualRisk"):
+            value = str(row.get(key) or "")
+            if value and value not in named:
+                named.append(value)
+    commands = ", ".join(_SELF_ENFORCED_COMMANDS)
+    return "instruction-only " + " ".join(named) + f"; self-enforced tool.py {commands}"
+
+
+def _core_hook_scripts_present(target: Path) -> bool:
+    return all((target / relative).is_file() for relative in _CORE_HOOK_SCRIPTS)
+
+
+def _set_learning_enforcement(hooks: dict[str, object], hosts: list[str]) -> None:
+    """Stop only when an expected hook host can fire it. Otherwise the operator self-enforces."""
+    session = hooks.get("learningSession")
+    if not isinstance(session, dict):
+        session = {}
+        hooks["learningSession"] = session
+    if hosts and any(_hook_host_supports_stop(host) for host in hosts):
+        session["enforcedBy"] = "Stop"
+        return
+    session["status"] = "advisory"
+    session["enforcedBy"] = "self"
+    session["gateInstalled"] = False
+
+
+def _apply_completion_hook_health(
+    project: Path,
+    target: Path,
+    components: dict[str, dict[str, object]],
+) -> None:
+    """Scope hook health to completion targets. Instruction-only hosts stay advisory."""
+    hooks = components.get("hooks")
+    if not isinstance(hooks, dict):
+        return
+    surfaces = _hook_surfaces()
+    paths = dict(surfaces.HOOK_SURFACE_PATHS)
+    hosts = tuple(surfaces.HOOK_SURFACE_HOSTS)
+    targets = read_completion_targets(project)
+    expected = [host for host in hosts if host in targets] if targets else list(hosts)
+    rows = _instruction_only_rows(targets)
+    missing = [
+        paths[host]
+        for host in expected
+        if host in paths and not (project / paths[host]).is_file()
+    ]
+    if rows and not expected:
+        hooks["status"] = "sync-advisory"
+        hooks["taskImpact"] = "advisory"
+        hooks["scope"] = "completion-target"
+        hooks["completionTargets"] = list(targets)
+        hooks["hookHostsExpected"] = []
+        hooks["instructionOnly"] = rows
+        hooks["detail"] = _instruction_only_detail(rows)
+        hooks["learningSession"] = {
+            "status": "advisory",
+            "enforcedBy": "self",
+            "gateInstalled": False,
+        }
+        hooks.pop("hookHostsMissing", None)
+        return
+    if missing:
+        hooks["status"] = "degraded"
+        hooks["hookHostsMissing"] = missing
+        hooks["fixNext"] = "repair --project . --component hooks"
+        hooks["hookHostsExpected"] = [paths[host] for host in expected if host in paths]
+        if rows:
+            hooks["instructionOnly"] = rows
+            hooks["completionTargets"] = list(targets)
+            hooks["scope"] = "completion-target"
+        _set_learning_enforcement(hooks, expected)
+        return
+    if not _core_hook_scripts_present(target):
+        hooks["status"] = "absent"
+        return
+    if not targets:
+        if hooks.get("status") == "healthy":
+            _set_learning_enforcement(hooks, expected)
+        return
+    hooks["status"] = "healthy"
+    hooks.pop("hookHostsMissing", None)
+    if rows:
+        hooks["instructionOnly"] = rows
+        hooks["completionTargets"] = list(targets)
+        hooks["scope"] = "completion-target"
+    _set_learning_enforcement(hooks, expected)
+
+
 def _attach_learning_session_gate(
     components: dict[str, dict[str, object]], target: Path
 ) -> None:
@@ -6412,10 +6595,6 @@ def attach_component_status(
             target / "hooks/launch.py",
             target / "hooks/lifecycle.py",
             target / "hooks/reflection.py",
-            project / ".codex/hooks.json",
-            project / ".grok/hooks/lifecycle.json",
-            project / ".gemini/settings.json",
-            project / ".github/hooks/chaos-engine.json",
             project / "plugins/chaos-engine/hooks/hooks.json",
             project / "plugins/chaos-engine/hooks/launch.js",
             project / "plugins/chaos-engine/hooks/launch.py",
@@ -6511,6 +6690,7 @@ def attach_component_status(
     # Surface top-level hosts failures as a component row so they cannot mask
     # later checks (and later checks cannot hide hosts) (#2026.10.31.4).
     _promote_hosts_into_components(result, components)
+    _apply_completion_hook_health(project, target, components)
     _finalize_doctor_component_rows(result, project, components)
 
 
@@ -8065,6 +8245,13 @@ def _repair_dependency_component(
                 "objects": migrated.get("objects"),
             }
     if name in {"memory", "mempalace", "graphify", "tools"}:
+        if name in {"mempalace", "graphify"} and is_husk_git(project):
+            return {
+                "status": "blocked",
+                "component": name,
+                "blockedBy": "git-husk",
+                "fixNext": _husk_recovery_advice(project),
+            }
         controller = load_dependency_controller(target)
         specification = controller.load_specification(target / "dependencies.json")
         account_receipt = project / ".chaos-engine-dependencies.json"
@@ -9313,18 +9500,48 @@ def _git_object_exists(common: Path, sha: str) -> bool:
     return any(pack_dir.glob("*.pack"))
 
 
+_REMOTE_CONFIG_LINE = re.compile(r"^\s*\[remote\s+\"", re.MULTILINE)
+
+
+def _git_config_declares_remote(project: Path) -> bool:
+    """True when git config text names a remote. Used when ``git remote`` cannot run."""
+    candidates: list[Path] = []
+    common = resolve_git_common_dir(project)
+    if common is not None:
+        candidates.append(common / "config")
+    candidates.append(Path(project) / ".git" / "config")
+    seen: set[Path] = set()
+    for path in candidates:
+        try:
+            key = path.resolve()
+        except OSError:
+            key = path
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if _REMOTE_CONFIG_LINE.search(text):
+            return True
+    return False
+
+
 def _git_has_remote(project: Path) -> bool:
     git = shutil.which("git")
-    if git is None:
-        return False
-    try:
-        result = subprocess.run(  # nosec B603
-            [git, "remote"],
-            cwd=project, capture_output=True, text=True, timeout=15, check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return False
-    return bool(result.stdout.strip()) if result.returncode == 0 else False
+    if git is not None:
+        try:
+            result = subprocess.run(  # nosec B603
+                [git, "remote"],
+                cwd=project, capture_output=True, text=True, timeout=15, check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            result = None
+        else:
+            if result.returncode == 0:
+                return bool(result.stdout.strip())
+    return _git_config_declares_remote(project)
 
 
 def _secret_guard_blocked_by_git(project: Path) -> bool:
@@ -9368,15 +9585,14 @@ def is_husk_git(project: Path) -> bool:
 def _husk_recovery_advice(project: Path) -> str:
     if _git_has_remote(project):
         return (
-            "Remote repo: re-clone or `git fetch` into a fresh clone, copy work "
-            "files from /workspace, then reinstall ChaosEngine. Do not `git init` "
-            "over a lost remote history. See box-durability in bot-entry.md."
+            "git-husk: remote history is configured. Re-clone or fetch into a fresh "
+            "clone and copy the working tree across. Do not git init over lost "
+            "remote history. See references/box-durability.md."
         )
     return (
-        "Local-only repo (no remote): keep the working tree; run `git init` only "
-        "if `.git` is missing, then make one baseline commit of explicit "
-        "tracked-safe paths (never `git add -A`). Re-clone is impossible without "
-        "a remote. See box-durability in bot-entry.md."
+        "git-husk: local-only branch. Back up .git, run git init in place, and make "
+        "one baseline commit of explicit tracked-safe paths. "
+        "See references/box-durability.md."
     )
 
 
@@ -9419,6 +9635,14 @@ def apply_git_husk_doctor(result: dict[str, object], project: Path) -> None:
     }
     if secret_blocked:
         result["status"] = "recovery-required"
+        for name in ("graphify", "mempalace"):
+            row = components.get(name)
+            if not isinstance(row, dict):
+                row = {}
+                components[name] = row
+            row["status"] = "degraded"
+            row["blockedBy"] = "git-husk"
+            row["fixNext"] = advice
 
 
 def format_doctor_host_onboarding(
@@ -9747,7 +9971,12 @@ def _dedupe_severity_rows(lines: list[str]) -> list[str]:
                 skipping_dup_onboarding = False
             elif line.startswith("Host onboarding cards:"):
                 continue
-            elif line.startswith("[") or line.startswith("ChaosEngine ") or line.startswith("commit:"):
+            elif (
+                line.startswith("[")
+                or line.startswith("ChaosEngine ")
+                or line.startswith("commit:")
+                or line.startswith("release:")
+            ):
                 skipping_dup_onboarding = False
             else:
                 # still inside the duplicate card table
@@ -9917,6 +10146,9 @@ def format_agent_summary(document: dict[str, object]) -> str:
     ]
     if commit_bits:
         lines.append(" ".join(commit_bits))
+    hook_advisory = _hooks_instruction_advisory(document)
+    if hook_advisory:
+        lines.append(hook_advisory)
     lines.extend(
         [
             "token-economy: " + " ".join(token_economy_status()),
@@ -10168,6 +10400,38 @@ def format_fix_next_only(document: dict[str, object]) -> str:
     return ("\n".join(lines) + "\n") if lines else ""
 
 
+def overlay_release_version() -> str:
+    """Calver from the sibling VERSION file. Empty when that file cannot be read."""
+    path = Path(__file__).resolve().parent / "VERSION"
+    try:
+        return path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+def _hooks_instruction_advisory(document: dict[str, object]) -> str | None:
+    """One agent-summary line when completion targets include an instruction-only host."""
+    components = document.get("components")
+    if not isinstance(components, dict):
+        return None
+    hooks = components.get("hooks")
+    if not isinstance(hooks, dict):
+        return None
+    rows = hooks.get("instructionOnly")
+    if not isinstance(rows, list) or not rows:
+        return None
+    commands = ", ".join(_SELF_ENFORCED_COMMANDS)
+    return f"hooks: GAP-GROKBOT-HOOKS self-enforced tool.py {commands}"
+
+
+def _release_commit_advisory(commit: str, note: str = "") -> tuple[str, ...]:
+    body = commit if not note else f"{commit} {note}"
+    release = overlay_release_version()
+    if release:
+        return ("release:", release, "commit:", body)
+    return ("commit:", body)
+
+
 def format_health_report(document: dict[str, object], *, kind: str | None = None) -> str:
     """Render a short healthy summary or a scannable failure list with fix-next lines."""
     label = kind or str(document.get("kind") or "doctor")
@@ -10193,6 +10457,9 @@ def format_health_report(document: dict[str, object], *, kind: str | None = None
         f"ChaosEngine {label}: {status}",
         f"commit: {commit_text}",
     ]
+    release = overlay_release_version()
+    if release:
+        lines.append(f"release: {release}")
     config_row = document.get("config")
     if isinstance(config_row, dict) and config_row.get("status"):
         lines.append(f"config: {config_row['status']}")
@@ -10590,15 +10857,15 @@ def source_behind_advisory(project: Path | None) -> tuple[str, ...]:
         return ()
     source = detect_project_chaos_engine_source(project)
     if source is None:
-        return ("commit:", installed[:12])
+        return _release_commit_advisory(installed)
     head = detect_full_commit(source)
     if not head:
-        return ("commit:", installed[:12])
+        return _release_commit_advisory(installed)
     if installed == head:
-        return ("commit:", f"{installed[:12]} (matches source HEAD)")
-    return (
-        "commit:",
-        f"{installed[:12]} (behind source HEAD {head[:12]}; reinstall with "
+        return _release_commit_advisory(installed, "(matches source HEAD)")
+    return _release_commit_advisory(
+        installed,
+        f"(behind source tip {head}; reinstall with "
         f"--source <repo>/chaos-engine --commit {head})",
     )
 
