@@ -52,6 +52,10 @@ class SkillIndexParityTest(unittest.TestCase):
         payload = index()
         self.assertEqual(1, payload["schemaVersion"])
         self.assertEqual(parity_hosts(), payload["hosts"])
+        self.assertEqual(
+            {"claude", "codex", "copilot", "gemini", "grok", "opencode", "cursor", "antigravity"},
+            set(payload["hookHosts"]),
+        )
         self.assertIn(".chaos-engine/", payload["harnessRoots"])
         for entry in payload["entries"]:
             with self.subTest(entry=entry.get("name")):

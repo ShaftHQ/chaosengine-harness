@@ -40,7 +40,7 @@ and (for design kinds) `first_pass_signoff_streak` for that kind.
    consecutive first-pass sign-offs for that kind), treat it as a conflict —
    same as path overlap. Different kinds may run in parallel.
 
-Executable check: `scripts/ci/parallel_stream_conflict.py`
+Executable check (external-example): `scripts/ci/parallel_stream_conflict.py`
 (`refuse_dispatch_on_ownership_overlap` / `conflicting_peer_stream_ids` /
 `refuse_dispatch` with workspace for disk + worktree caps, and `refuse_dispatch_on_same_kind_wip` / `conflicting_same_kind_stream_ids`).
 
@@ -76,7 +76,7 @@ iterations, then the two reviews ([delivery cycle](delivery-cycle.md)).
 
 Never force-push a branch under open review. Prefer append-only fix commits. If a
 rebase is required, the orchestrator pauses reviewers, rebases, then requests a
-fresh sign-off on the new SHA. Merge with head-SHA match; confirm auto-merge.
+fresh sign-off on the new SHA. Merge with head-SHA match. Never run `gh pr merge --auto`. If the base ruleset has `merge_queue`, enqueue with `gh pr merge` and no strategy flag; otherwise run `gh pr merge --squash` only after required checks are green and review threads are resolved.
 
 ## Post-merge own cleanup
 
@@ -91,7 +91,7 @@ substitute on hosts without hooks. Skipping cleanup is a DoD miss.
    configured upstream tip, or PR head OID matches the merged receipt) and the
    worktree has **no unpushed commits** and **no untracked / dirty work**.
 2. From outside the target worktree, run
-   `scripts/ci/worktree_hygiene.py --cleanup-task-worktree …` with the schema-v1
+   `scripts/ci/worktree_hygiene.py --cleanup-task-worktree …` (external-example) with the schema-v1
    ownership manifest, owned branch, expected HEAD, and diff SHA-256
    ([cleanup scopes](cleanup-scopes.md) bounded task cleanup).
 3. Then `--cleanup-task-local-branch` (merged-only `git branch -d`) once no
@@ -147,8 +147,8 @@ the worktree cap before starting another parallel worker. A low reading refuses
 that worker.
 
 Shared box, before creating a worktree or clone. **Executable** check:
-`scripts/ci/box_disk_guard.py` (`disk_level` / `refuse_new_worker` /
-`new_worker_blockers`) and `scripts/ci/parallel_stream_conflict.py`
+`scripts/ci/box_disk_guard.py` (external-example; `disk_level` / `refuse_new_worker` /
+`new_worker_blockers`) and `scripts/ci/parallel_stream_conflict.py` (external-example)
 (`refuse_dispatch` with a workspace path).
 
 1. **Warn** when free space is under **15 GiB**. **Block** a new worker,

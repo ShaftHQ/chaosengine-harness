@@ -10,7 +10,7 @@ Lean CE-native skill informed by Task Observer methodology
 
 ## When
 
-- **Primary:** root-owned Learning Session after every final delivery (owner approval, publish done, final PR merged), automatic: lessons diff against the skills, one spec issue, ONE PR (`skip-release-notes`, MERGE method) babysat to merged. Never arm `gh pr merge --auto`.
+- **Primary:** root-owned Learning Session after every final delivery (owner approval, publish done, final PR merged), automatic: lessons diff against the skills, one spec issue, ONE PR (`skip-release-notes`, MERGE method) babysat to merged. Never run `gh pr merge --auto`. If the base ruleset has `merge_queue`, enqueue with `gh pr merge` and no strategy flag; otherwise run `gh pr merge --squash` only after required checks are green and review threads are resolved.
 - **Secondary:** explicit operator request mid-session.
 - **Not:** every casual turn, and never the Learning Session PR's own merge.
 - A lesson already shipped in the delivery pull request is not a new issue. Finalize with nothing durable.
@@ -102,7 +102,7 @@ Skill bodies: `skill_compress_audit.py` proposes compress diffs only; never auto
 Periodic: `meta_optimize.py review` (offline cadence — not continuous).
 Draft skill PRs: `draft_skill_pr.py` opt-in only (default OFF; never auto-merge).
 That covers the automated drafter only; the Learning Session's own lessons PR
-runs the normal PR gates and auto-merges.
+runs the normal PR gates. Never run `gh pr merge --auto`. If the base ruleset has `merge_queue`, enqueue with `gh pr merge` and no strategy flag; otherwise run `gh pr merge --squash` only after required checks are green and review threads are resolved.
 See [meta-optimize](../../../references/meta-optimize.md) and
 [draft-skill-pr](../../../references/draft-skill-pr.md).
 

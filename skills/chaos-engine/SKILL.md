@@ -33,7 +33,7 @@ Before Triage ([bigger picture first](../../references/bigger-picture-first.md))
 | One module, reversible | Short plan: premises, two options, chosen one, proof. |
 | Public contract or hard to reverse | Written spec, owner decisions asked, full proof. |
 
-Before a broad search, run one `<python> .chaos-engine/tool.py retrieve` and record `skipped(<reason>)` ([retrieve-first](../../references/retrieve-first.md)).
+Before a broad search, run one `<python> .chaos-engine/tool.py retrieve` and record `retrieve: used|skipped(<reason>)` ([retrieve-first](../../references/retrieve-first.md)).
 
 ## Plan, then go
 
@@ -45,7 +45,7 @@ Companions at task start via `tool.py entry` ([bot entry](../../references/bot-e
 
 ## Check and deliver
 
-- At most 3 local PDCA loops, then review 1 with the self-accept push ([delivery cycle](../../references/delivery-cycle.md)). Do not start both reviewers in one step.
+- PDCA cap is 3, not a quota. Review 1 starts with the self-accept push (review 1 with the self-accept push) ([delivery cycle](../../references/delivery-cycle.md)). Do not start both reviewers in one step.
 - Ordinary reversible: one fresh-context adversarial review. Public-contract or hard-to-reverse: two, one after another.
 - Two failed attempts on one approach: step back and re-plan.
 - A pending check is not success. Babysit until merged or `blocking: unverifiable`.

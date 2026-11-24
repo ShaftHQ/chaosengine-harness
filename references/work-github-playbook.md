@@ -183,8 +183,10 @@ Owner-authorized history correction and non-protected gate waivers:
    sub-issue in that initial scope must map to live files and a merged or
    ready PR. Do not arm auto-merge while any in-scope sub-issue is
    open, any FR/SC is unimplemented, or this PR would close an epic that still
-   has dropped scope (never arm `gh pr merge --auto`; merge only once scope is
-   complete). Owner-reduced scope counts only when the tracker body
+   has dropped scope. Never run `gh pr merge --auto`. If the base ruleset has
+   `merge_queue`, enqueue with `gh pr merge` and no strategy flag; otherwise
+   run `gh pr merge --squash` only after required checks are green and review
+   threads are resolved, and only once scope is complete. Owner-reduced scope counts only when the tracker body
    itself records the drop. Remaining work becomes new sub-issues before merge;
    it does not silently vanish. This is the final assurance action before
    merging. If the head or remote feedback changes afterward, the receipt is
