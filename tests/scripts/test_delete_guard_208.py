@@ -313,6 +313,95 @@ class DeleteGuardIssue208Test(unittest.TestCase):
         self.assertIn("untracked", reason)
         self.assertIn("precious.txt", reason)
 
+    def _write_only(self) -> None:
+        (self.repo / "only.txt").write_text("only copy", encoding="utf-8")
+
+    def test_review2_wrappers_eval_and_coproc_name_are_refused(self) -> None:
+        self._write_only()
+        for cmd in (
+            "time rm -f only.txt",
+            "time -p rm -f only.txt",
+            "stdbuf -o0 rm -f only.txt",
+            "stdbuf -o 0 rm -f only.txt",
+            "coproc rm -f only.txt",
+            "coproc worker { rm -f only.txt; }",
+            "eval 'rm -f only.txt'",
+            'eval "rm -f only.txt"',
+        ):
+            with self.subTest(cmd=cmd):
+                reason = self.reason(cmd)
+                self.assertIn("untracked", reason)
+                self.assertIn("only.txt", reason)
+        self.assertEqual("", self.reason("time echo ok"))
+        self.assertEqual("", self.reason("eval 'echo ok'"))
+
+    def test_review2_computed_command_head_is_refused(self) -> None:
+        self._write_only()
+        for cmd in (
+            "x=rm; $x -f only.txt",
+            "$(echo rm) -f only.txt",
+        ):
+            with self.subTest(cmd=cmd):
+                self.assertIn("computed command head", self.reason(cmd))
+        events = GUARD._parse_shell("$(echo rm) -f only.txt")
+        commands = [payload for kind, payload in events if kind == "cmd"]
+        self.assertTrue(any("echo rm" in sub for cmd in commands for sub in cmd.cmd_subs))
+        # Directory expansion may be dynamic; a literal basename must not trip the head check.
+        self.assertEqual("", self.reason('"$VENV/bin/python" -c "print(1)"'))
+        caught = f'"$VENV/bin/python" -c "import os; os.remove(\'{self.precious}\')"'
+        self.assertIn("untracked", self.reason(caught))
+        self.assertNotIn("computed command head", self.reason(caught))
+
+    def test_review2_shell_process_substitution_is_refused(self) -> None:
+        for shell in ("sh", "bash", "zsh", "dash"):
+            cmd = f"{shell} <(printf 'rm -f only.txt\\n')"
+            with self.subTest(shell=shell):
+                self.assertIn("shell process substitution", self.reason(cmd))
+        self.assertEqual("", self.reason("bash -c 'echo hi'"))
+
+    def test_review2_arithmetic_command_substitution_is_refused(self) -> None:
+        self._write_only()
+        for cmd in (
+            "echo $(($(rm -f only.txt)))",
+            'echo "$(($(rm -f only.txt)))"',
+            "echo $((`rm -f only.txt`))",
+        ):
+            with self.subTest(cmd=cmd):
+                reason = self.reason(cmd)
+                self.assertIn("untracked", reason)
+                self.assertIn("only.txt", reason)
+
+    def test_review2_function_keyword_body_is_refused(self) -> None:
+        self._write_only()
+        for cmd in (
+            "function f { rm -f only.txt; }; f",
+            "function f() { rm -f only.txt; }; f",
+        ):
+            with self.subTest(cmd=cmd):
+                reason = self.reason(cmd)
+                self.assertIn("untracked", reason)
+                self.assertIn("only.txt", reason)
+        self.assertEqual("", self.reason("function f { echo ok; }; f"))
+
+    def test_review2_brace_expansion_and_glob_cd_are_refused(self) -> None:
+        brace = self.reason("rm {only,nope}.txt")
+        self.assertIn("brace-expanded delete target", brace)
+        self.assertIn("{only,nope}.txt", brace)
+        ranged = self.reason("rm file{1..3}.txt")
+        self.assertIn("brace-expanded delete target", ranged)
+        glob_cd = self.reason("cd dir* && rm -f precious.txt")
+        self.assertIn("cd to a computed path before a delete", glob_cd)
+        self.assertEqual("", self.reason("cd dir* && echo ok"))
+
+    def test_review2_python_getattr_delete_is_refused(self) -> None:
+        cmd = "python3 -c \"import os; getattr(os, 'remove')('only.txt')\""
+        self.assertIn("indirect Python delete via getattr", self.reason(cmd))
+        for attr in ("unlink", "rmtree", "rmdir"):
+            with self.subTest(attr=attr):
+                inner = f"python3 -c \"import os; getattr(os, '{attr}')('only.txt')\""
+                self.assertIn("indirect Python delete via getattr", self.reason(inner))
+        self.assertEqual("", self.reason("python3 -c \"import os; getattr(os, 'getcwd')()\""))
+
 
 if __name__ == "__main__":
     unittest.main()

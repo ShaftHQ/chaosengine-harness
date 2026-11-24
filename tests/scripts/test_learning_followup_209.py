@@ -276,6 +276,78 @@ class MavenWrapperFetchFallback209Test(unittest.TestCase):
             self.assertEqual(1, len(trace["managed_calls"]))
             self.assertEqual(1, len(trace["build_clis"]))
 
+    def test_maven_wrapper_main_class_not_found_falls_back(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            managed_mvn = self._make_managed_mvn(root)
+            error = subprocess.CalledProcessError(
+                1,
+                ["mvnw", "-B", "clean", "package"],
+                output="",
+                stderr=(
+                    "Error: Could not find or load main class "
+                    "org.apache.maven.wrapper.MavenWrapperMain\n"
+                ),
+            )
+            build_clis, managed_calls, published, *_rest = self._run_build(
+                root,
+                wrapper_error=error,
+                managed_return=managed_mvn,
+                module=INSTALL,
+            )
+            expected_wrapper = "mvnw.cmd" if os.name == "nt" else "mvnw"
+            expected_mvn = "mvn.cmd" if os.name == "nt" else "mvn"
+            self.assertEqual([expected_wrapper, expected_mvn], build_clis)
+            self.assertEqual(1, len(managed_calls))
+            self.assertEqual(1, len(published))
+
+    def test_missing_maven_wrapper_jar_falls_back(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            managed_mvn = self._make_managed_mvn(root)
+            error = subprocess.CalledProcessError(
+                1,
+                ["mvnw", "-B", "clean", "package"],
+                output="Can't find .mvn/wrapper/maven-wrapper.jar\n",
+                stderr="",
+            )
+            build_clis, managed_calls, published, *_rest = self._run_build(
+                root,
+                wrapper_error=error,
+                managed_return=managed_mvn,
+                module=INSTALL,
+            )
+            expected_wrapper = "mvnw.cmd" if os.name == "nt" else "mvnw"
+            expected_mvn = "mvn.cmd" if os.name == "nt" else "mvn"
+            self.assertEqual([expected_wrapper, expected_mvn], build_clis)
+            self.assertEqual(1, len(managed_calls))
+            self.assertEqual(1, len(published))
+
+    def test_compile_error_mentioning_maven_wrapper_does_not_fall_back(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            managed_mvn = self._make_managed_mvn(root)
+            trace: dict[str, list] = {}
+            error = subprocess.CalledProcessError(
+                1,
+                ["mvnw", "-B", "clean", "package"],
+                output=(
+                    "[ERROR] COMPILATION ERROR :\n"
+                    "[ERROR] /src/main/java/maven-wrapper/Foo.java:[10,5] cannot find symbol\n"
+                ),
+                stderr="",
+            )
+            with self.assertRaises(subprocess.CalledProcessError):
+                self._run_build(
+                    root,
+                    wrapper_error=error,
+                    managed_return=managed_mvn,
+                    module=INSTALL,
+                    trace=trace,
+                )
+            self.assertEqual([], trace["managed_calls"])
+            self.assertEqual(1, len(trace["build_clis"]))
+
 
 class LegacyMigrationSafety209Test(unittest.TestCase):
     def test_nested_symlink_blocks_backup_rmtree_and_records_summary(self):

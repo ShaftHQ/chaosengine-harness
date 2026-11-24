@@ -514,7 +514,40 @@ def _secret_byte_forms(secret: bytes) -> list[bytes]:
         raw = encoded.encode("ascii", errors="ignore")
         if raw and raw not in forms:
             forms.append(raw)
+        if "%" in encoded:
+            lowered = encoded.lower().encode("ascii", errors="ignore")
+            if lowered and lowered not in forms:
+                forms.append(lowered)
     return forms
+
+
+def _percent_hex_class(byte: int) -> bytes:
+    char = chr(byte)
+    if char.isalpha():
+        return b"[" + char.upper().encode("ascii") + char.lower().encode("ascii") + b"]"
+    return re.escape(bytes((byte,)))
+
+
+def _percent_casefold_pattern(encoded: bytes) -> re.Pattern[bytes] | None:
+    """Match ``encoded`` with any hex-digit case in ``%HH`` escapes."""
+    if not re.search(rb"%[0-9A-Fa-f]{2}", encoded):
+        return None
+    parts: list[bytes] = []
+    index = 0
+    length = len(encoded)
+    while index < length:
+        if (
+            encoded[index] == 0x25
+            and index + 3 <= length
+            and chr(encoded[index + 1]) in "0123456789ABCDEFabcdef"
+            and chr(encoded[index + 2]) in "0123456789ABCDEFabcdef"
+        ):
+            parts.append(b"%" + _percent_hex_class(encoded[index + 1]) + _percent_hex_class(encoded[index + 2]))
+            index += 3
+            continue
+        parts.append(re.escape(encoded[index : index + 1]))
+        index += 1
+    return re.compile(b"".join(parts))
 
 
 def _scrub_bytes(data: bytes, secrets: Sequence[bytes]) -> bytes:
@@ -522,8 +555,13 @@ def _scrub_bytes(data: bytes, secrets: Sequence[bytes]) -> bytes:
         return data
     scrubbed = data
     for secret in secrets:
-        if secret and secret in scrubbed:
+        if not secret:
+            continue
+        if secret in scrubbed:
             scrubbed = scrubbed.replace(secret, REDACTED_BYTES)
+        pattern = _percent_casefold_pattern(secret)
+        if pattern is not None:
+            scrubbed = pattern.sub(REDACTED_BYTES, scrubbed)
     return scrubbed
 
 

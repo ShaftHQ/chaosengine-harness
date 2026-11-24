@@ -80,6 +80,7 @@ __all__ = (
     "_MAVEN_WRAPPER_NAMES",
     "_MAVEN_WRAPPER_FETCH_MARKERS",
     "_MAVEN_WRAPPER_FETCH_ACTIONS",
+    "_MAVEN_WRAPPER_JAR_MISSING",
     "_is_maven_wrapper_cli",
     "_is_maven_wrapper_fetch_failure",
     "_fallback_managed_maven_cli",
@@ -824,11 +825,14 @@ _MAVEN_WRAPPER_FETCH_MARKERS = (
 _MAVEN_WRAPPER_FETCH_ACTIONS = (
     "fetch",
     "download",
-    "fail",
-    "error",
-    "unable",
-    "cannot",
-    "could not",
+)
+_MAVEN_WRAPPER_JAR_MISSING = (
+    "can't find",
+    "cannot find",
+    "could not find",
+    "not found",
+    "no such file",
+    "missing",
 )
 
 
@@ -837,8 +841,18 @@ def _is_maven_wrapper_cli(maven_cli: Path) -> bool:
 
 
 def _is_maven_wrapper_fetch_failure(maven_out: str) -> bool:
+    """True for a wrapper download/bootstrap failure, not a later compile error.
+
+    A log that merely contains both ``maven-wrapper`` and ``error`` is a
+    compile failure. Fallback requires a fetch/download marker, a missing
+    ``maven-wrapper.jar``, or ``MavenWrapperMain`` not loading.
+    """
     detail_cf = maven_out.casefold()
     if any(marker in detail_cf for marker in _MAVEN_WRAPPER_FETCH_MARKERS):
+        return True
+    if "mavenwrappermain" in detail_cf and "could not find or load main class" in detail_cf:
+        return True
+    if "maven-wrapper.jar" in detail_cf and any(marker in detail_cf for marker in _MAVEN_WRAPPER_JAR_MISSING):
         return True
     return "maven-wrapper" in detail_cf and any(
         token in detail_cf for token in _MAVEN_WRAPPER_FETCH_ACTIONS

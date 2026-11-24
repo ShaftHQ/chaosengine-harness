@@ -144,6 +144,9 @@ DELETE_WORD = re.compile(
     r"-exec(?:dir)?\s+\S*rm\b"
 )
 UNSURE = re.compile(r"\$|`|<\(|>\(")
+# `{a,b}` and `{1..3}` are shell brace lists. A literal `{name}` is not.
+_BRACE_EXPANSION = re.compile(r"\{[^{}]*(?:,|\.\.)[^{}]*\}")
+_INDIRECT_PY_DELETES = frozenset({"remove", "unlink", "rmtree", "rmdir"})
 RMTREE = re.compile(
     r"(?:shutil\.rmtree|os\.remove|os\.unlink|os\.rmdir|os\.removedirs|\.unlink|\.rmtree|\.rmdir)\s*\(\s*(?P<arg>[^)]*)\)"
 )
@@ -167,6 +170,27 @@ class Unsure(ValueError):
     """The command deletes something the parser cannot pin down."""
 
 
+def _skip_stdbuf_options(arguments: list[str], index: int) -> int:
+    """Skip ``stdbuf`` ``-i``/``-o``/``-e`` (and the long forms) plus each mode value."""
+    short = {"-i", "-o", "-e"}
+    long = ("--input", "--output", "--error")
+    while index < len(arguments):
+        token = arguments[index]
+        if token in short or token in long:
+            index += 1
+            if index < len(arguments):
+                index += 1
+            continue
+        if token.startswith(tuple(flag + "=" for flag in long)):
+            index += 1
+            continue
+        if len(token) > 2 and token[0] == "-" and not token.startswith("--") and token[1] in "ioe":
+            index += 1
+            continue
+        break
+    return index
+
+
 def _head(arguments: list[str]) -> tuple[str, list[str]]:
     index = 0
     while index < len(arguments):
@@ -175,6 +199,26 @@ def _head(arguments: list[str]) -> tuple[str, list[str]]:
             index += 1
             continue
         head = os.path.basename(item)
+        if head == "time":
+            index += 1
+            while index < len(arguments) and arguments[index] == "-p":
+                index += 1
+            continue
+        if head == "stdbuf":
+            index = _skip_stdbuf_options(arguments, index + 1)
+            continue
+        if head == "coproc":
+            index += 1
+            # `coproc NAME { ... }` — the name is not the command. A simple
+            # command's first word is the command (`coproc rm ...`).
+            if (
+                index + 1 < len(arguments)
+                and arguments[index] not in {"{", "("}
+                and not arguments[index].startswith("-")
+                and arguments[index + 1] == "{"
+            ):
+                index += 1
+            continue
         if head in WRAPPERS:
             index += 1
             while index < len(arguments) and (arguments[index].startswith("-") or ENV_ASSIGNMENT.match(arguments[index])):
@@ -184,6 +228,19 @@ def _head(arguments: list[str]) -> tuple[str, list[str]]:
             continue
         return head, arguments[index + 1 :]
     return "", []
+
+
+def _computed_command_head(head: str) -> bool:
+    """True when the basename `_head` returns still contains `$` or a backtick.
+
+    `$VENV/bin/python` is basename `python` and stays a normal command.
+    `$x` and `$(echo rm)` do not name a command this parser can see.
+    """
+    return "$" in head or "`" in head
+
+
+def _is_process_sub_word(word: str) -> bool:
+    return word.startswith("<(") or word.startswith(">(")
 
 
 def _rm_targets(arguments: list[str]) -> list[str]:
@@ -385,6 +442,15 @@ def _call_path_arg(node: ast.Call) -> ast.AST | None:
     return None
 
 
+def _is_indirect_getattr_delete(node: ast.Call) -> bool:
+    """``getattr(obj, "remove"|"unlink"|"rmtree"|"rmdir")`` hides the delete call."""
+    func = node.func
+    if not isinstance(func, ast.Name) or func.id != "getattr" or len(node.args) < 2:
+        return False
+    attr = node.args[1]
+    return isinstance(attr, ast.Constant) and isinstance(attr.value, str) and attr.value in _INDIRECT_PY_DELETES
+
+
 def _python_entries(segment: str) -> list[tuple[str, bool]]:
     """Return (path, follow_symlinks) for actual Python delete calls in ``segment`` via AST."""
     try:
@@ -425,6 +491,8 @@ def _python_entries(segment: str) -> list[tuple[str, bool]]:
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
+        if _is_indirect_getattr_delete(node):
+            raise Unsure("indirect Python delete via getattr")
         func = node.func
         if isinstance(func, ast.Name) and func.id in direct_funcs:
             arg = _call_path_arg(node)
@@ -530,6 +598,8 @@ def _segment_targets(
     cwd_computed: bool = False,
 ) -> list[tuple[Path, bool]]:
     head, rest = _head(arguments)
+    if _computed_command_head(head):
+        raise Unsure("computed command head")
     if head in {"rm", "unlink", "shred"}:
         targets = _rm_targets(rest)
         if cwd_computed and _needs_computed_cwd(targets):
@@ -565,8 +635,15 @@ def _segment_targets(
         if cwd_computed:
             raise Unsure("cd to a computed path before a delete")
         raise Unsure("xargs/parallel delete: targets come from stdin")
+    if head == "eval":
+        script = " ".join(rest)
+        if script:
+            return _command_targets(script, cwd, cwd_computed=cwd_computed)[0]
+        return []
     if head in SHELLS:
         script = _shell_c_script(rest)
+        if script is None and any(_is_process_sub_word(word) for word in rest):
+            raise Unsure("shell process substitution")
         if script is not None:
             return _command_targets(script, cwd, cwd_computed=cwd_computed)[0]
     return []
@@ -769,13 +846,12 @@ def _scan_balanced_brace(text: str, pos: int, cmd_subs: list[str] | None) -> int
                 cmd_subs.append(inner)
             continue
         if ch == "$" and index + 1 < n and text[index + 1] == "(":
+            end = _scan_balanced_paren(text, index + 1)
             if index + 2 < n and text[index + 2] == "(":
-                index = _scan_balanced_paren(text, index + 1)
-            else:
-                end = _scan_balanced_paren(text, index + 1)
-                if cmd_subs is not None:
-                    cmd_subs.append(text[index + 2 : end - 1])
-                index = end
+                _note_arith_cmd_subs(text, index, end, cmd_subs)
+            elif cmd_subs is not None:
+                cmd_subs.append(text[index + 2 : end - 1])
+            index = end
             continue
         if ch == "{":
             depth += 1
@@ -822,12 +898,11 @@ def _scan_double_quote(text: str, pos: int, cmd_subs: list[str] | None) -> tuple
         if ch == "$" and index + 1 < n:
             nxt = text[index + 1]
             if nxt == "(":
+                end = _scan_balanced_paren(text, index + 1)
                 if index + 2 < n and text[index + 2] == "(":
-                    end = _scan_balanced_paren(text, index + 1)
-                else:
-                    end = _scan_balanced_paren(text, index + 1)
-                    if cmd_subs is not None:
-                        cmd_subs.append(text[index + 2 : end - 1])
+                    _note_arith_cmd_subs(text, index, end, cmd_subs)
+                elif cmd_subs is not None:
+                    cmd_subs.append(text[index + 2 : end - 1])
                 out.append(text[index:end])
                 index = end
                 continue
@@ -839,6 +914,17 @@ def _scan_double_quote(text: str, pos: int, cmd_subs: list[str] | None) -> tuple
         out.append(ch)
         index += 1
     raise ValueError("No closing quotation")
+
+
+def _note_arith_cmd_subs(text: str, dollar_at: int, end: int, cmd_subs: list[str] | None) -> None:
+    """Collect ``$(...)`` and backticks inside the body of ``$(( ... ))``."""
+    if cmd_subs is None:
+        return
+    body_start = dollar_at + 3
+    body_end = end - 2
+    if body_end <= body_start:
+        return
+    cmd_subs.extend(_scan_heredoc_cmd_subs(text[body_start:body_end]))
 
 
 def _scan_heredoc_cmd_subs(body: str) -> list[str]:
@@ -861,9 +947,12 @@ def _scan_heredoc_cmd_subs(body: str) -> list[str]:
         if ch == "$" and index + 1 < n and body[index + 1] == "(":
             if index + 2 < n and body[index + 2] == "(":
                 try:
-                    index = _scan_balanced_paren(body, index + 1)
+                    end = _scan_balanced_paren(body, index + 1)
                 except ValueError:
                     index += 3
+                    continue
+                _note_arith_cmd_subs(body, index, end, subs)
+                index = end
                 continue
             try:
                 end = _scan_balanced_paren(body, index + 1)
@@ -945,12 +1034,11 @@ def _read_shell_word(
                 out.append(val)
                 continue
             if nxt == "(":
+                end = _scan_balanced_paren(text, index + 1)
                 if index + 2 < n and text[index + 2] == "(":
-                    end = _scan_balanced_paren(text, index + 1)
-                else:
-                    end = _scan_balanced_paren(text, index + 1)
-                    if cmd_subs is not None:
-                        cmd_subs.append(text[index + 2 : end - 1])
+                    _note_arith_cmd_subs(text, index, end, cmd_subs)
+                elif cmd_subs is not None:
+                    cmd_subs.append(text[index + 2 : end - 1])
                 out.append(text[index:end])
                 index = end
                 continue
@@ -1058,6 +1146,33 @@ def _peek_fd_redir(text: str, pos: int) -> int | None:
             return None
         return idx
     return None
+
+
+def _consume_function_name(text: str, pos: int, cmd_subs: list[str] | None) -> int:
+    """Skip the name in ``function name`` / ``function name()`` so the body is parsed."""
+    n = len(text)
+    while pos < n and text[pos] in " \t":
+        pos += 1
+    if pos < n and text[pos] not in "\n;&|(){}<>#":
+        _, pos, _ = _read_shell_word(text, pos, cmd_subs)
+    return pos
+
+
+def _consume_optional_coproc_name(text: str, pos: int, cmd_subs: list[str] | None) -> int:
+    """Skip ``NAME`` only in ``coproc NAME { ... }``. A simple command keeps its first word."""
+    n = len(text)
+    while pos < n and text[pos] in " \t":
+        pos += 1
+    if pos >= n or text[pos] in "\n;&|(){}<>#":
+        return pos
+    _, next_pos, quoted = _read_shell_word(text, pos, None)
+    look = next_pos
+    while look < n and text[look] in " \t":
+        look += 1
+    if quoted or look >= n or text[look] != "{":
+        return pos
+    _, pos, _ = _read_shell_word(text, pos, cmd_subs)
+    return pos
 
 
 def _parse_shell(command: str) -> list[tuple[str, object]]:
@@ -1191,6 +1306,17 @@ def _parse_shell(command: str) -> list[tuple[str, object]]:
             if word in _SHELL_KEYWORDS_END:
                 flush()
                 continue
+            if word == "function":
+                pos = _consume_function_name(text, pos, current.cmd_subs)
+                while pos < n and text[pos] in " \t":
+                    pos += 1
+                # `function name()` uses the same body rule as `name()`.
+                if text.startswith("()", pos):
+                    pos += 2
+                continue
+            if word == "coproc":
+                pos = _consume_optional_coproc_name(text, pos, current.cmd_subs)
+                continue
         current.words.append(word)
         at_command_start = False
 
@@ -1206,7 +1332,7 @@ def _segments(line: str) -> list[list[str]]:
 def _plan_cd(arguments: list[str], cwd: Path, cwd_computed: bool) -> tuple[str, Path, bool]:
     """Plan ``cd``/``pushd``. The kind is ``computed``, ``exists``, or ``missing``."""
     target = _cd_target(arguments)
-    if target == "-" or UNSURE.search(target):
+    if target == "-" or UNSURE.search(target) or glob.has_magic(target):
         return "computed", cwd, True
     expanded = os.path.expanduser(target)
     if not os.path.isabs(expanded) and cwd_computed:
@@ -1328,6 +1454,14 @@ def _command_targets(
                     found.extend(sub_found)
 
         head, rest = _head(cmd.words)
+        if _computed_command_head(head):
+            raise Unsure("computed command head")
+        if head == "eval":
+            script = " ".join(rest)
+            if script:
+                sub_found, _ = _command_targets(script, cwd, cwd_computed=cwd_computed)
+                found.extend(sub_found)
+            continue
         if head in {"cd", "pushd"}:
             pending_cd = _plan_cd(rest, cwd, cwd_computed)
             continue
@@ -1353,6 +1487,8 @@ def _command_targets(
             c_script = _shell_c_script(rest)
             if c_script is not None:
                 shell_scripts.append(c_script)
+            elif any(_is_process_sub_word(word) for word in rest):
+                raise Unsure("shell process substitution")
             shell_scripts.extend(hd.body for hd in cmd.heredocs)
             shell_scripts.extend(cmd.here_strings)
             shell_scripts.extend(piped_bodies)
@@ -1377,6 +1513,8 @@ def _command_targets(
 def _expand(raw: str, cwd: Path) -> list[Path]:
     if UNSURE.search(raw):
         raise Unsure(f"computed delete target: {raw}")
+    if _BRACE_EXPANSION.search(raw):
+        raise Unsure(f"brace-expanded delete target: {raw}")
     expanded = os.path.expanduser(raw)
     base = expanded if os.path.isabs(expanded) else str(cwd / expanded)
     if glob.has_magic(base):

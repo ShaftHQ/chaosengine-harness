@@ -217,6 +217,37 @@ class ExecWithSecretsTest(unittest.TestCase):
         self.assertNotIn(urllib.parse.quote(APP_ID, safe=""), combined)
         self.assertNotIn(urllib.parse.quote_plus(ACCESS_KEY), combined)
 
+    def test_exec_with_secrets_scrubs_lowercase_percent_encoding(self) -> None:
+        script = (
+            "import os, sys, urllib.parse\n"
+            "app = os.environ['BS_APP']\n"
+            "quoted = urllib.parse.quote(app, safe='')\n"
+            "plus = urllib.parse.quote_plus(app)\n"
+            "print(quoted.lower())\n"
+            "print(plus.lower(), file=sys.stderr)\n"
+            "mixed = quoted.replace('%3A', '%3a').replace('%2F', '%2f', 1)\n"
+            "print(mixed)\n"
+        )
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = self.guard.exec_with_secrets(
+                self.root,
+                [("browserstack.app", "BS_APP")],
+                [sys.executable, "-c", script],
+            )
+        self.assertEqual(0, code)
+        combined = out.getvalue() + err.getvalue()
+        quoted = urllib.parse.quote(APP_ID, safe="")
+        plus = urllib.parse.quote_plus(APP_ID)
+        self.assertIn("[REDACTED]", combined)
+        self.assertNotIn(quoted.lower(), combined)
+        self.assertNotIn(plus.lower(), combined)
+        self.assertNotIn("bs%3a%2f%2f", combined)
+        mixed = quoted.replace("%3A", "%3a").replace("%2F", "%2f", 1)
+        self.assertNotEqual(mixed, quoted)
+        self.assertNotEqual(mixed.lower(), mixed)
+        self.assertNotIn(mixed, combined)
+
     def test_exec_with_secrets_propagates_child_exit_code(self) -> None:
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
