@@ -29,7 +29,7 @@ CHAOS ENGINE
 ChaosEngine 0.4.20261115.5
   Project    /tmp/ce-frame-project
   Source     ShaftHQ/chaosengine-harness@main
-  Commit     abababababab…
+  Commit     abababababababababababababababababababab
 
   [⠋] Resolve source          running
       └─ 0/6 · Elapsed 00:00
@@ -50,7 +50,7 @@ CHAOS ENGINE
 ChaosEngine 0.4.20261115.5
   Project    /tmp/ce-frame-project
   Source     ShaftHQ/chaosengine-harness@main
-  Commit     abababababab…
+  Commit     abababababababababababababababababababab
 
   [✓] Resolve source          00:00
   [·] Download source
@@ -70,7 +70,7 @@ CHAOS ENGINE
 ChaosEngine 0.4.20261115.5
   Project    /tmp/ce-frame-project
   Source     ShaftHQ/chaosengine-harness@main
-  Commit     abababababab…
+  Commit     abababababababababababababababababababab
 
   [✓] Resolve source          00:00
   [⠏] Download source         running
@@ -92,7 +92,7 @@ CHAOS ENGINE
 ChaosEngine 0.4.20261115.5
   Project    /tmp/ce-frame-project
   Source     ShaftHQ/chaosengine-harness@main
-  Commit     abababababab…
+  Commit     abababababababababababababababababababab
 
   [✓] Resolve source          00:00
   [⠏] Download source         running
@@ -114,7 +114,7 @@ CHAOS ENGINE
 ChaosEngine 0.4.20261115.5
   Project    /tmp/ce-frame-project
   Source     ShaftHQ/chaosengine-harness@main
-  Commit     abababababab…
+  Commit     abababababababababababababababababababab
 
   [✓] Resolve source          00:00
   [✓] Download source         00:00
@@ -134,7 +134,7 @@ CHAOS ENGINE
 ChaosEngine 0.4.20261115.5
   Project    /tmp/ce-frame-project
   Source     ShaftHQ/chaosengine-harness@main
-  Commit     abababababab…
+  Commit     abababababababababababababababababababab
 
   [✓] Resolve source          00:00
   [✓] Download source         00:00
@@ -154,7 +154,7 @@ CHAOS ENGINE
 ChaosEngine 0.4.20261115.5
   Project    /tmp/ce-frame-project
   Source     ShaftHQ/chaosengine-harness@main
-  Commit     abababababab…
+  Commit     abababababababababababababababababababab
 
   [✓] Resolve source          00:00
   [✓] Download source         00:00
@@ -177,7 +177,7 @@ CHAOS ENGINE
 ChaosEngine 0.4.20261115.5
   Project    /tmp/ce-frame-project
   Source     ShaftHQ/chaosengine-harness@main
-  Commit     abababababab…
+  Commit     abababababababababababababababababababab
 
   [✓] Resolve source          00:00
   [✓] Download source         00:00
@@ -200,7 +200,7 @@ CHAOS ENGINE
 ChaosEngine 0.4.20261115.5
   Project    /tmp/ce-frame-project
   Source     ShaftHQ/chaosengine-harness@main
-  Commit     abababababab…
+  Commit     abababababababababababababababababababab
 
   [✓] Resolve source          00:00
   [✓] Download source         00:00
@@ -221,7 +221,7 @@ CHAOS ENGINE
 ChaosEngine 0.4.20261115.5
   Project    /tmp/ce-frame-project
   Source     ShaftHQ/chaosengine-harness@main
-  Commit     abababababab…
+  Commit     abababababababababababababababababababab
 
   [✓] Resolve source          00:00
   [✓] Download source         00:00
@@ -243,7 +243,7 @@ CHAOS ENGINE
 ChaosEngine 0.4.20261115.5
   Project    /tmp/ce-frame-project
   Source     ShaftHQ/chaosengine-harness@main
-  Commit     abababababab…
+  Commit     abababababababababababababababababababab
 
   [✓] Resolve source          00:00
   [✓] Download source         00:00

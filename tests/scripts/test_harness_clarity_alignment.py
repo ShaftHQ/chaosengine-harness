@@ -42,16 +42,20 @@ def test_f4_pdca_cap_is_three_not_a_quota():
     assert "review 1 with the self-accept push" in skill
 
 
-def test_f5_ethics_check_is_on_the_person_only_and_tier2_paths():
+def test_f5_ethics_check_is_on_the_gate_docs_not_the_ethics_card():
     ethics = _read("companions/ethics-card.md")
-    person = next(line for line in ethics.splitlines() if line.startswith("- Person-only"))
-    assert "tool.py ethics-check" in person
+    assert "tool.py ethics-check" not in ethics
     assert len(ethics.encode("utf-8")) < 1024
     gates = _read("references/bot-entry.md").split("## Mechanical gates", 1)[1].split("##", 1)[0]
     assert "tool.py ethics-check" in gates
     for relative in ("references/host-parity-matrix.md", "references/lifecycle-hooks.md"):
         tier2 = next(line for line in _read(relative).splitlines() if line.startswith("| Tier 2"))
         assert "tool.py ethics-check" in tier2
+    wanted = {"antigravity.md", "cursor.md", "grok-bot.md", "opencode.md"}
+    found = {path.name for path in (ROOT / "guides/tools").glob("*.md")}
+    assert wanted <= found
+    for name in sorted(wanted):
+        assert "tool.py ethics-check" in _read(f"guides/tools/{name}"), name
 
 
 def test_f1_stop_is_observe_only_or_continue_outside_enforce_hosts():
