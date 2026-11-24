@@ -91,14 +91,25 @@ def policy_drift(files: dict[str, str] | None = None) -> list[str]:
     Import pointers must stay `@AGENTS.md`. Marker files must match
     hosts.normalize_marker_policy(instruction_block()). Mechanical Codex and
     Grok files must not carry a second copy of that sentence.
+
+    With no file map, read the checkout root. AGENTS.md is required. Other
+    entry files count only when that path exists on disk.
     """
     import hosts
 
-    files = generated_entry_bodies() if files is None else files
+    supplied = files is not None
+    if files is None:
+        root = Path(__file__).resolve().parents[1]
+        files = {}
+        for relative in GENERATED_ENTRY_FILES:
+            path = root / relative
+            if path.is_file():
+                files[relative] = path.read_text(encoding="utf-8")
     expected = hosts.normalize_marker_policy(hosts.instruction_block())
     router = router_skill_path()
     errors: list[str] = []
-    for relative in GENERATED_ENTRY_FILES:
+    required = GENERATED_ENTRY_FILES if supplied else ("AGENTS.md",)
+    for relative in required:
         if relative not in files:
             errors.append(f"{relative}: missing from generated set")
     for relative, text in files.items():

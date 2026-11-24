@@ -95,6 +95,25 @@ class RulesSourceTests(unittest.TestCase):
             (root / "AGENTS.md").write_text("Only root\n", encoding="utf-8")
             self.assertEqual("Only root", self.hosts.load_project_agents(root, root / "src" / "a.py"))
 
+    def test_checkout_agents_drift_is_caught_and_the_real_tree_is_clean(self):
+        self.assertEqual([], self.rules.policy_drift())
+        self.assertEqual([], self.hosts.competing_policy_errors(ROOT))
+        agents = ROOT / "AGENTS.md"
+        original = agents.read_bytes()
+        mutated = original.replace(b"Before every task", b"Before some tasks", 1)
+        self.assertNotEqual(original, mutated)
+        try:
+            agents.write_bytes(mutated)
+            self.assertIn("AGENTS.md: policy sentence drifted", self.rules.policy_drift())
+            self.assertIn(
+                "AGENTS.md: policy sentence drifted",
+                self.hosts.competing_policy_errors(ROOT),
+            )
+        finally:
+            agents.write_bytes(original)
+        self.assertEqual([], self.rules.policy_drift())
+        self.assertEqual([], self.hosts.competing_policy_errors(ROOT))
+
 
 if __name__ == "__main__":
     unittest.main()

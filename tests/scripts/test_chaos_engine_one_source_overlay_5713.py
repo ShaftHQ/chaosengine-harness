@@ -36,8 +36,11 @@ class OneSourceOverlayTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.hosts = load(HOSTS, "ce_hosts_5713")
-        cls.inventory = load(INVENTORY, "ce_skill_inventory_5713")
-        cls.overlay = load(OVERLAY_TEMP, "ce_overlay_temp_5713")
+        # The port left these paths behind. Inventory has no module in this
+        # checkout; the overlay helper lives under tests/scripts/.
+        cls.inventory = load(INVENTORY, "ce_skill_inventory_5713") if INVENTORY.is_file() else None
+        overlay_path = OVERLAY_TEMP if OVERLAY_TEMP.is_file() else ROOT / "tests/scripts/overlay_in_temp.py"
+        cls.overlay = load(overlay_path, "ce_overlay_temp_5713")
 
     def test_adopter_gitignore_runtime_does_not_force_include_overlay(self):
         """Install dir is local; RUNTIME no longer allowlists `.chaos-engine/` (#5839)."""
@@ -102,6 +105,39 @@ class OneSourceOverlayTests(unittest.TestCase):
     def test_marker_bodies_are_policy_identical(self):
         errors = self.hosts.competing_policy_errors(ROOT)
         self.assertEqual(errors, [])
+
+    def test_mutated_agents_marker_is_policy_drift(self):
+        rules = load(ROOT / "runtime" / "rules_source.py", "ce_rules_source_5713")
+        self.assertEqual([], rules.policy_drift())
+        self.assertEqual([], self.hosts.competing_policy_errors(ROOT))
+        agents = ROOT / "AGENTS.md"
+        original = agents.read_bytes()
+        mutated = original.replace(b"Before every task", b"Before some tasks", 1)
+        self.assertNotEqual(original, mutated)
+        try:
+            agents.write_bytes(mutated)
+            self.assertIn("AGENTS.md: policy sentence drifted", rules.policy_drift())
+            self.assertIn(
+                "AGENTS.md: policy sentence drifted",
+                self.hosts.competing_policy_errors(ROOT),
+            )
+        finally:
+            agents.write_bytes(original)
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            (project / "AGENTS.md").write_text(
+                self.hosts.instruction_block().replace(
+                    "Before every task", "Before some tasks", 1
+                ),
+                encoding="utf-8",
+            )
+            (project / "CLAUDE.md").write_text("@AGENTS.md\n", encoding="utf-8")
+            self.assertIn(
+                "AGENTS.md: policy sentence drifted",
+                self.hosts.competing_policy_errors(project),
+            )
+            self.assertEqual([], rules.policy_drift())
+            self.assertEqual([], self.hosts.competing_policy_errors(ROOT))
 
     def test_claude_md_has_no_graphify_essay(self):
         text = (ROOT / "CLAUDE.md").read_text(encoding="utf-8")

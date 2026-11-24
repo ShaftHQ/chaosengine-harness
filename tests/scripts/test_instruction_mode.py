@@ -66,7 +66,7 @@ class PlacementTests(unittest.TestCase):
         self.assertEqual(first, second)
         text = first.decode()
         self.assertLess(text.index(HOSTS.START), text.index("Keep me"))
-        self.assertIn("primary harness", text)
+        self.assertIn("Before every task, follow the canonical", text)
         self.assertLessEqual(text.count("\n"), 12)
 
     def test_front_matter_bom_and_crlf_stay(self):
