@@ -36,6 +36,7 @@ CASES = (
     ("preview_at_real_width", {}, "missing-orchestrator-pass"),
     ("public_facts", {"trainee_count": "484", "assert_founded_year": False}, "superseded-trainee-count-484"),
     ("remote_credential_guard", "https://user:secret@example.com/repo", "userinfo-password"),
+    ("test_quality_gate", "time.sleep(1)\n", "sleep"),
     ("verify_dropped", "redo the task", "missing-live-state-receipt"),
     ("web_ui_gate", {}, "bidi-not-ok"),
 )

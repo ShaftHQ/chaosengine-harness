@@ -1,22 +1,15 @@
 ---
 name: job-search
-description: >-
-  Use when searching for jobs: two-channel discovery, eligibility-first filter,
-  verify work mode on the job page, End-key scroll, share-profile approval gate,
-  and tracker hygiene. On demand only.
+description: "Use when searching for jobs: eligibility filter, verified work mode, End-key scroll, and tracker hygiene."
 license: MIT
-permissions:
-  - bash
-  - read
-  - write
-  - env
 ---
 
 # Job search
 
 Load this skill when the deliverable is **find job openings** (guest jobs API,
-recruiter posts, external apply URLs) before any apply/draft work. Pair with
-[job-apply](../job-apply/SKILL.md) once a role is ready to draft or submit.
+recruiter posts, external apply URLs) before any apply/draft work. Hand a
+ready role to [job-apply](../job-apply/SKILL.md). Send and share authority is
+[outbound-send.md](../../references/outbound-send.md).
 
 **Applicant / search profile (private):** base country, remote rule, seniority
 targets, excluded regions, currency preferences, and tracker paths live in a
@@ -71,20 +64,18 @@ bash chaos-engine/skills/job-search/scripts/check_abstraction.sh
    search results, repeated mouse-wheel scroll hangs the remote desktop browser
    (heavy DOM + lazy load). Prefer the `End` key or `Page Down`, wait briefly,
    extract in batches. See [browser](references/browser.md).
-5. **Share-profile apply dialog = write step.** Clicking Apply on some
-   external-apply jobs opens a LinkedIn dialog offering to share the profile
-   with the employer. Confirming shares data with a third party — treat it as
-   an **irreversible / externally visible** action that needs **explicit user
-   approval** before Confirm. To read the external URL without applying: dismiss
-   the dialog, or read the URL from job-page markup / guest API. See
-   [approval-gate](references/approval-gate.md).
+5. **Share-profile apply dialog = write step.** Do not confirm it. Follow
+   [approval-gate](references/approval-gate.md) and
+   [outbound-send.md](../../references/outbound-send.md). Read the external URL
+   without applying when the user has not approved the share.
 6. **Tracker hygiene.** One row per opening: stable ID | status
    (Found / Applied / Not applied / ...) | source permalink | contact | apply
    method | fit flags. Add rows as Found at discovery; move to Applied only after
    an actual send/submit with read-back verification. **Read back after every
    write** to the tracker.
-7. **Hand off to job-apply** only for roles that pass eligibility + verified
-   work mode and that the user wants drafted or submitted.
+7. **Hand off to job-apply** only for roles that pass eligibility and verified
+   work mode and that the user wants drafted or submitted. The apply procedure
+   and the send rule live in [job-apply](../job-apply/SKILL.md), not here.
 
 Detail cards: [channels](references/channels.md),
 [browser](references/browser.md), [approval-gate](references/approval-gate.md),

@@ -16,7 +16,10 @@ Checks one markdown report (PR body, handoff note, status doc):
 Exit 0 pass, 1 findings, 2 usage error. ``--gate OBS.json`` is the mechanical
 done gate: exit 0 pass, 1 a rule was skipped, 2 usage or bad JSON.
 ``--shell-check [PROJECT_ROOT]`` checks edited shell scripts for syntax errors
-and new CR bytes: exit 0 pass, 1 findings, 2 usage error. Stdlib only.
+and new CR bytes: exit 0 pass, 1 findings, 2 usage error. A ``diff`` or
+``diff_text`` on the gate object, or the working tree when a root is set and
+no diff is passed, is scored by the test quality gate so instruction-only
+hosts and GAP-EXIT2 hosts see the same findings. Stdlib only.
 """
 
 from __future__ import annotations
@@ -183,6 +186,7 @@ _READER_SUFFIXES = frozenset({
     ".py", ".java", ".js", ".ts", ".md", ".properties", ".xml", ".yml", ".yaml", ".json", ".feature", ".kt",
 })
 _BRIDGE = None
+_QUALITY = None
 
 
 def _line_literals(line: str) -> set[str]:
@@ -533,6 +537,91 @@ def _rules_bridge():
     return module
 
 
+def _test_quality_module():
+    """Load the test quality gate. Missing file fails open."""
+    global _QUALITY
+    if _QUALITY is not None:
+        return _QUALITY
+    path = Path(__file__).resolve().parents[1] / "rules" / "test_quality_gate.py"
+    if not path.is_file():
+        return None
+    spec = importlib.util.spec_from_file_location("ce_test_quality_gate", path)
+    if spec is None or spec.loader is None:
+        return None
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+    except (OSError, ImportError, SyntaxError, AttributeError):
+        return None
+    _QUALITY = module
+    return module
+
+
+def _test_quality_findings(diff_text: str) -> list[str]:
+    module = _test_quality_module()
+    if module is None or not str(diff_text or "").strip():
+        return []
+    try:
+        report = module.evaluate_git_diff(str(diff_text))
+    except (OSError, TypeError, ValueError, AttributeError):
+        return []
+    if not isinstance(report, dict) or report.get("ok", True):
+        return []
+    found: list[str] = []
+    for hit in report.get("hits") or []:
+        if not isinstance(hit, dict):
+            continue
+        code = hit.get("code") or "test-quality"
+        file_path = hit.get("path") or report.get("path") or ""
+        line = hit.get("line", "")
+        detail = hit.get("detail") or ""
+        found.append(f"test-quality:{code}:{file_path}:{line}:{detail}")
+    return found
+
+
+def _git_bytes(root: Path, args: list[str]) -> bytes:
+    try:
+        completed = subprocess.run(
+            ["git", "-C", str(root), *args],
+            capture_output=True,
+            check=False,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return b""
+    if completed.returncode != 0:
+        return b""
+    return completed.stdout or b""
+
+
+def _working_tree_test_diff(root: Path) -> str:
+    """Unified diff of tracked edits plus synthetic diffs for untracked test files."""
+    module = _test_quality_module()
+    if module is None or not root.is_dir():
+        return ""
+    parts = [_git_bytes(root, ["diff", "--unified=3", "HEAD"]).decode("utf-8", errors="replace")]
+    listed = _git_bytes(root, ["ls-files", "--others", "--exclude-standard", "-z"])
+    for entry in listed.split(b"\0"):
+        if not entry:
+            continue
+        rel = entry.decode("utf-8", errors="surrogateescape").replace("\\", "/")
+        if not module.is_test_path(rel):
+            continue
+        target = root / rel
+        try:
+            if not target.is_file() or target.stat().st_size > 1_000_000:
+                continue
+            text = target.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            continue
+        body = "".join(f"+{line}\n" for line in text.splitlines())
+        parts.append(
+            f"diff --git a/{rel} b/{rel}\nnew file mode 100644\n--- /dev/null\n+++ b/{rel}\n"
+            f"@@ -0,0 +1,{max(text.count(chr(10)) + (0 if text.endswith(chr(10)) or not text else 1), 1)} @@\n{body}"
+        )
+    return "\n".join(part for part in parts if part.strip())
+
+
 def apply_wired_rules(payload: object) -> list[str]:
     """Run wired rules/*.py functions when the gate payload names them."""
     if not isinstance(payload, dict) or not payload:
@@ -610,6 +699,12 @@ def mechanical_problems(obs: dict) -> list[str]:
     root = obs.get("project_root") or obs.get("root")
     if diff and root:
         found.extend(check_replaced_literal_readers(str(diff), root))
+    if isinstance(diff, str) and diff.strip():
+        found.extend(_test_quality_findings(diff))
+    elif root:
+        root_path = Path(str(root))
+        if root_path.is_dir():
+            found.extend(_test_quality_findings(_working_tree_test_diff(root_path)))
     shell_files = obs.get("shell_files")
     shell_check = obs.get("shell_check")
     if root and (shell_check is True or shell_files is not None):

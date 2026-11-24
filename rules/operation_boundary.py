@@ -993,14 +993,40 @@ def observe_commands(root: Path, commands: list[str] | tuple[str, ...], *, faile
     return None
 
 
+# Base64 alphabet plus wrapping whitespace. A character outside this class ends
+# the run, so punctuation keeps unrelated prose tokens from being joined.
+_B64_WS_RUN = re.compile(r"[A-Za-z0-9+/=_-]+(?:[ \t\r\n\f\v]+[A-Za-z0-9+/=_-]+)*")
+
+
+def _base64_whitespace_blobs(text: str) -> list[bytes]:
+    """Collapse whitespace inside each base64 run of at least 16 alphabet chars.
+
+    Contiguous runs are skipped; the direct form check already covers them.
+    Whitespace is stripped only inside the matched run.
+    """
+    blobs: list[bytes] = []
+    for match in _B64_WS_RUN.finditer(text):
+        piece = match.group(0)
+        if not any(char.isspace() for char in piece):
+            continue
+        compact = "".join(char for char in piece if not char.isspace())
+        if len(compact) >= 16:
+            blobs.append(compact.encode("ascii", errors="ignore"))
+    return blobs
+
+
 def _output_has_guarded_secret(guard: Any, encoded: bytes, values: set[bytes]) -> bool:
     """True when output holds a guarded value or a base64 / percent-encoded form.
 
     Forms come from ``secret_guard`` (raw, standard and URL-safe base64 with and
     without ``=``, ``quote`` and ``quote_plus``). ``%HH`` hex digits match in
-    any case. ``unquote`` and ``unquote_plus`` of the output are checked against
-    the raw values so an unreserved character encoded as ``%HH`` (``c`` as
-    ``%63``) is withheld too. Decoding uses ``guard.urllib.parse``. This module
+    any case. ``unquote`` and ``unquote_plus`` each run up to two passes,
+    stopping when a pass does not change the text. Each pass is checked against
+    the raw values, so a double encoding (``c`` as ``%2563``, or
+    ``quote(quote(...))``) is withheld and a third encoding is not. Maximal
+    runs of the base64 alphabet plus whitespace whose non-whitespace length is
+    at least 16 are collapsed inside that run only and checked against
+    ``_secret_byte_forms``. Decoding uses ``guard.urllib.parse``. This module
     does not import ``base64`` or ``urllib.parse``.
     """
     forms: set[bytes] = set()
@@ -1010,6 +1036,7 @@ def _output_has_guarded_secret(guard: Any, encoded: bytes, values: set[bytes]) -
             continue
         raws.append(value)
         forms.update(guard._secret_byte_forms(value))
+    ordered: list[bytes] = []
     if forms:
         ordered = sorted(forms, key=len, reverse=True)
         if guard._scrub_bytes(encoded, ordered) != encoded:
@@ -1019,11 +1046,23 @@ def _output_has_guarded_secret(guard: Any, encoded: bytes, values: set[bytes]) -
     text = encoded.decode("utf-8", errors="ignore")
     parse = guard.urllib.parse
     ordered_raw = sorted(set(raws), key=len, reverse=True)
-    for decoded in (parse.unquote(text), parse.unquote_plus(text)):
-        raw_decoded = decoded.encode("utf-8", errors="ignore")
-        if raw_decoded == encoded:
-            continue
-        if guard._scrub_bytes(raw_decoded, ordered_raw) != raw_decoded:
+
+    def _percent_chain(decoder: Any) -> bool:
+        current = text
+        for _pass in range(2):
+            decoded = decoder(current)
+            if decoded == current:
+                return False
+            raw_decoded = decoded.encode("utf-8", errors="ignore")
+            if guard._scrub_bytes(raw_decoded, ordered_raw) != raw_decoded:
+                return True
+            current = decoded
+        return False
+
+    if _percent_chain(parse.unquote) or _percent_chain(parse.unquote_plus):
+        return True
+    for blob in _base64_whitespace_blobs(text):
+        if ordered and guard._scrub_bytes(blob, ordered) != blob:
             return True
     return False
 

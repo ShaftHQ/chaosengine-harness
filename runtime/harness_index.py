@@ -64,8 +64,8 @@ SKILLS = (
      "Use when opening or rewriting a work item on any git-based SCM. Source-control agnostic; "
      "GitHub, GitLab, and Azure Boards are adapters only.", "delivery"),
     ("self-improve", "portable", "skills/self-improve/SKILL.md",
-     "Use when running ChaosEngine Learning Session self-improve. Harness lessons "
-     "are GitHub issues only. Product lessons may queue after delivery or on request.", "learning"),
+     "Use after final delivery for a Learning Session. Harness lessons are GitHub issues; product lessons may queue.",
+     "learning"),
     ("learn-from-external-harnesses", "portable", "skills/learn-from-external-harnesses/SKILL.md",
      "Use when asked to scan, analyze, or learn from an external repository, "
      "skill set, or agent harness.",
@@ -77,21 +77,20 @@ SKILLS = (
      "Use for design-level judgement: requirements, quality attributes, trade-offs, ADR, contracts, resilience, security, observability, refactor, debug, review, debt.", "delivery"),
     # On demand: one grouped core-card row. Bodies stay unloaded until that route matches.
     ("technical-presentations", "portable", "skills/technical-presentations/SKILL.md",
-     "Use when planning, building, refactoring, or reviewing technical talks or training decks: "
-     "story arc, claim titles, visual evidence, code slides, checkpoints. On demand only.", "on-demand"),
+     "Use when planning, building, or reviewing a technical talk or training deck. On demand only.",
+     "on-demand"),
     # On demand: linked from the core card, bot-entry, and done/handoff paths.
     ("pre-done-self-review", "portable", "skills/pre-done-self-review/SKILL.md",
      "Use before claiming Done, signing off, or handing off: reconcile every item. "
      "On demand only.", "on-demand"),
     # On demand: core-card group row when applying for a job.
     ("job-apply", "portable", "skills/job-apply/SKILL.md",
-     "Use when applying for a job. Default is draft only. A recorded owner standing send permission that names the channel class may send only after the shared gate passes on the exact final text.",
+     "Use when applying for one job. Default is draft only until a named send permission and the gate both pass.",
      "on-demand"),
     # On demand: core-card group row when searching for jobs.
     ("job-search", "portable", "skills/job-search/SKILL.md",
-     "Use when searching for jobs: two-channel discovery, eligibility-first filter, "
-     "verify work mode on the job page, End-key scroll, share-profile approval gate, "
-     "and tracker hygiene. On demand only.", "on-demand"),
+     "Use when searching for jobs: eligibility filter, verified work mode, End-key scroll, and tracker hygiene.",
+     "on-demand"),
     # On demand: core-card group row for multi-channel applications.
     ("job-applications", "portable", "skills/job-applications/SKILL.md",
      "Use when applying to jobs for the user by email, LinkedIn, or an ATS form.",
@@ -108,7 +107,23 @@ SKILLS = (
      "Use when PR merge waits are long or CI/CD is being designed, audited, or sped up.",
      "delivery"),
     ("security-audit", "portable", "skills/security-audit/SKILL.md",
-     "Use when auditing a repository we own. A second pass confirms.",
+     "Use when auditing a repository we own or designing executable security tests in that repository. An independent second pass confirms each finding.",
+     "on-demand"),
+    # On demand: testing skills stay in the level-1 catalog, not the always-loaded router.
+    ("test-engineering", "portable", "skills/test-engineering/SKILL.md",
+     "Use when you route test analysis, coverage evidence, flake triage, and an ISO 29119 report.",
+     "on-demand"),
+    ("web-e2e-automation", "portable", "skills/web-e2e-automation/SKILL.md",
+     "Use when writing web end-to-end tests: locators, network faults, Playwright, and Selenium BiDi. Load one reference per turn.",
+     "on-demand"),
+    ("api-integration-testing", "portable", "skills/api-integration-testing/SKILL.md",
+     "Use when testing an HTTP, event, or contract API. Delegate installed pack client syntax via route() and keep coverage, schema, and review gates here.",
+     "on-demand"),
+    ("test-env-setup", "portable", "skills/test-env-setup/SKILL.md",
+     "Use when a web, grid, mobile, or API test host needs tools: run the read-only doctor and ask before any install, pull, SDK download, or boot.",
+     "on-demand"),
+    ("mobile-testing", "portable", "skills/mobile-testing/SKILL.md",
+     "Use when authoring or running Android or iOS UI tests: probe the host, then apply locator, deep-link, permission, and reset patterns.",
      "on-demand"),
     ("local-agency", "portable", "skills/local-agency/SKILL.md",
      "Use when the adopter asks to delegate to local OSS agents (OpenCode) on a READY local runtime.", "delegation"),

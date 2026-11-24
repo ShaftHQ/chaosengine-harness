@@ -33,6 +33,7 @@ WIRED = (
     "preview_at_real_width",
     "public_facts",
     "remote_credential_guard",
+    "test_quality_gate",
     "verify_dropped",
     "web_ui_gate",
 )
@@ -137,6 +138,7 @@ _CALLERS = {
     "preview_at_real_width": _evaluate,
     "public_facts": _evaluate,
     "remote_credential_guard": _remote,
+    "test_quality_gate": _evaluate,
     "verify_dropped": _evaluate,
     "web_ui_gate": _evaluate,
 }

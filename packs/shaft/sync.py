@@ -128,6 +128,17 @@ def _stored(project: Path) -> dict:
     return document if isinstance(document, dict) else {}
 
 
+def doctor_note(project: Path) -> dict[str, str] | None:
+    """Warn on a user-project version mismatch, or when skills were never installed.
+
+    Kind ``none`` and ``core`` stay quiet. A denied user project
+    (``--without-shaft-engine-users``) stays quiet when the receipt tag is
+    missing. A known version that differs from the receipt tag still warns.
+    ``install.py`` loads ``detect.doctor_note``; this is the same warning.
+    """
+    return detect.doctor_note(Path(project))
+
+
 def resolve_pin(project: Path, info: dict[str, object], opener, override: str) -> tuple[str, str]:
     """Return ``(tag, commit)``. Unknown versions reuse releases/latest until they change."""
     version = str(info.get("version") or "")

@@ -3643,6 +3643,239 @@ def _deny(event: dict, event_name: str, tool_name: str, reason: str) -> int:
     return 2
 
 
+_QUALITY_TOOLS = frozenset({"Write", "Edit", "apply_patch"})
+_QUALITY_PATH_KEYS = (
+    "file_path",
+    "filePath",
+    "path",
+    "Path",
+    "AbsolutePath",
+    "target_file",
+    "targetFile",
+    "TargetFile",
+    "notebook_path",
+    "notebookPath",
+)
+_QUALITY_WRITE_KEYS = (
+    "CodeContent",
+    "content",
+    "contents",
+    "file_text",
+    "text",
+    "Content",
+    "Text",
+    "new_string",
+    "input",
+)
+_QUALITY_OLD_KEYS = (
+    "old_string",
+    "oldString",
+    "old_str",
+    "oldText",
+    "old_text",
+    "OldString",
+    "TargetContent",
+    "Target",
+    "old",
+)
+_QUALITY_NEW_KEYS = (
+    "new_string",
+    "newString",
+    "new_str",
+    "newText",
+    "new_text",
+    "NewString",
+    "ReplacementContent",
+    "Replacement",
+    "new",
+    "content",
+    "Content",
+)
+_QUALITY_CHUNK_KEYS = ("ReplacementChunks", "replacementChunks", "replacements")
+_QUALITY_PATCH_KEYS = ("input", "patch", "diff")
+_GAP_EXIT2_HOSTS = frozenset({"grok", "copilot", "cursor", "opencode"})
+
+
+def _test_quality_path() -> Path:
+    return Path(__file__).resolve().parents[1] / "rules" / "test_quality_gate.py"
+
+
+def _test_quality_api():
+    """Load the test quality gate. A missing file fails open and is not cached."""
+    cached = getattr(_test_quality_api, "module", None)
+    if cached is not None:
+        return cached
+    path = _test_quality_path()
+    if not path.is_file():
+        return None
+    spec = importlib.util.spec_from_file_location("chaos_engine_test_quality_gate", path)
+    if spec is None or spec.loader is None:
+        return None
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+    except Exception:
+        return None
+    _test_quality_api.module = module
+    return module
+
+
+def _quality_tool_name(tool_name: str) -> str:
+    try:
+        return str(_kernel._tool_name(tool_name) or "")
+    except Exception:
+        return str(tool_name or "")
+
+
+def _first_str(tool_input: Mapping, keys: tuple[str, ...]) -> str | None:
+    for key in keys:
+        value = tool_input.get(key)
+        if isinstance(value, str):
+            return value
+    return None
+
+
+def _quality_target_path(tool_input: object) -> str:
+    if not isinstance(tool_input, Mapping):
+        return ""
+    found = _first_str(tool_input, _QUALITY_PATH_KEYS)
+    return found.strip() if isinstance(found, str) else ""
+
+
+def _quality_existing_text(event: dict, path: str) -> str | None:
+    if not path:
+        return None
+    cwd = Path(str(event.get("cwd") or Path.cwd()))
+    candidate = Path(path)
+    if not candidate.is_absolute():
+        candidate = cwd / candidate
+    try:
+        if candidate.is_file() and candidate.stat().st_size <= 1_000_000:
+            return candidate.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return None
+    return None
+
+
+def _quality_reason(report: dict) -> str:
+    parts: list[str] = []
+    for hit in (report.get("hits") or [])[:8]:
+        if not isinstance(hit, dict):
+            continue
+        parts.append(f"{hit.get('code')}@{hit.get('line')}: {hit.get('detail')}")
+    detail = "; ".join(parts) or "test quality gate"
+    target = report.get("path") or "test file"
+    return (
+        "Test quality gate blocked this edit "
+        f"({target}): {detail}. "
+        "Fix the test or add the matching inline allow token."
+    )
+
+
+def _append_gap_exit2(host: str, reason: str) -> str:
+    """GAP-EXIT2 hosts ignore exit 2. Put the matrix sentence in the native deny text."""
+    if host not in _GAP_EXIT2_HOSTS or "GAP-EXIT2" in reason:
+        return reason
+    sentence = str(getattr(_kernel, "GAP_EXIT2_SENTENCE", "") or "")
+    if not sentence:
+        return reason
+    return f"{reason} {sentence}"
+
+
+def _quality_chunks(tool_input: Mapping) -> list:
+    """Replacement arrays under every supported chunk key, in key order."""
+    found: list = []
+    for key in _QUALITY_CHUNK_KEYS:
+        chunks = tool_input.get(key)
+        if isinstance(chunks, list) and chunks:
+            found.extend(chunks)
+    return found
+
+
+def _quality_edit_report(module, path: str, tool_input: Mapping, existing: str | None):
+    """Score one Edit payload, including replacement chunk arrays.
+
+    An edit with no recognized old/new keys is not a whole-file delete.
+    """
+    chunks = _quality_chunks(tool_input)
+    if chunks:
+        current = existing
+        report = None
+        recognized = False
+        for chunk in chunks:
+            if not isinstance(chunk, Mapping):
+                continue
+            old_string = _first_str(chunk, _QUALITY_OLD_KEYS)
+            new_string = _first_str(chunk, _QUALITY_NEW_KEYS)
+            if old_string is None and new_string is None:
+                continue
+            recognized = True
+            report = module.evaluate_edit(
+                path,
+                "" if old_string is None else old_string,
+                "" if new_string is None else new_string,
+                current,
+            )
+            if current is not None and old_string and old_string in current:
+                current = current.replace(old_string, "" if new_string is None else new_string, 1)
+            elif current is not None and old_string is None:
+                current = "" if new_string is None else new_string
+            if isinstance(report, dict) and not report.get("ok", True):
+                return report
+        if recognized:
+            return report
+    old_string = _first_str(tool_input, _QUALITY_OLD_KEYS)
+    new_string = _first_str(tool_input, _QUALITY_NEW_KEYS)
+    if old_string is None and new_string is None:
+        return None
+    return module.evaluate_edit(
+        path,
+        "" if old_string is None else old_string,
+        "" if new_string is None else new_string,
+        existing,
+    )
+
+
+def _test_quality_block(
+    event: dict, event_name: str, tool_name: str, tool_input: object, host: str
+) -> int | None:
+    """PreToolUse Write/Edit/apply_patch on a test path. Missing gate fails open."""
+    if event_name != "PreToolUse":
+        return None
+    canonical = _quality_tool_name(tool_name)
+    if canonical not in _QUALITY_TOOLS:
+        return None
+    module = _test_quality_api()
+    if module is None or not isinstance(tool_input, Mapping):
+        return None
+    path = _quality_target_path(tool_input)
+    try:
+        if canonical == "apply_patch":
+            body = _first_str(tool_input, _QUALITY_PATCH_KEYS)
+            if body is None:
+                return None
+            report = module.evaluate_patch(body)
+        else:
+            if not path or not module.is_test_path(path):
+                return None
+            existing = _quality_existing_text(event, path)
+            if canonical == "Edit":
+                report = _quality_edit_report(module, path, tool_input, existing)
+                if report is None:
+                    return None
+            else:
+                content = _first_str(tool_input, _QUALITY_WRITE_KEYS)
+                if content is None:
+                    return None
+                report = module.evaluate_content(path, content, existing)
+    except Exception:
+        return None
+    if not isinstance(report, dict) or report.get("ok", True):
+        return None
+    reason = _append_gap_exit2(host, _quality_reason(report))
+    return _deny(event, event_name, tool_name, reason)
+
+
 def _large_read_api():
     cached = getattr(_large_read_api, "module", None)
     if cached is not None:
@@ -4186,6 +4419,12 @@ def _run_event(event: dict, _host: str) -> int:
     blocked = _stash_block(event, event_name, tool_name, commands)
     if blocked is not None:
         return blocked
+    # #219: preventive test-quality deny. Runs before the lifecycle kernel so a
+    # bad test edit is the reason the host sees. Non-test paths and a missing
+    # rules/test_quality_gate.py fall through. Inline allow tokens are the bypass.
+    quality = _test_quality_block(event, event_name, tool_name, tool_input, _host)
+    if quality is not None:
+        return quality
     session_id = _scope_session(event)
     kernel_blocked, _normalized = _kernel_block(
         event, event_name, tool_name, tool_input, commands, session_id, _host

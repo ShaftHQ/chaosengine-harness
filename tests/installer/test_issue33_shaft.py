@@ -4,15 +4,22 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 import threading
+import unittest
 import urllib.error
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
-import pytest
+# unittest discovery imports this module. pytest is not required for that path.
+try:
+    import pytest
+except ModuleNotFoundError:
+    pytest = None
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from bash_path import posix_bash  # noqa: E402
@@ -567,3 +574,95 @@ def test_harness_fixture_origin_does_not_capture_shaft_downloads(monkeypatch):
         sync._read(opener, url)
     assert seen == [url]
     assert headers == ["Bearer shaft-test-token"]
+
+
+_ABSENT = object()
+_MISSING_SKILLS = {
+    "warning": (
+        "SHAFT skills are not installed. "
+        "Run the installer or pass --with-shaft-engine-users."
+    ),
+    "fixNext": "fix-next: rerun the installer or pass --with-shaft-engine-users",
+}
+
+
+class DoctorNoteTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        if str(ROOT) not in sys.path:
+            sys.path.insert(0, str(ROOT))
+        cls.sync = _modules()[2]
+
+    def _project(self, *, version=None, tag=_ABSENT, denied=False, kind="user"):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        project = Path(directory.name)
+        if kind == "empty":
+            return project
+        if kind == "plain":
+            (project / "pom.xml").write_text(
+                "<project><artifactId>app</artifactId></project>\n",
+                encoding="utf-8",
+            )
+        elif kind == "core":
+            (project / "pom.xml").write_text(
+                "<project><artifactId>shaft-parent</artifactId></project>\n",
+                encoding="utf-8",
+            )
+        else:
+            (project / "pom.xml").write_text(_pom(version or NEW), encoding="utf-8")
+            if tag is not _ABSENT:
+                receipt = project / ".chaos-engine" / "addons" / "shaft-engine-users"
+                receipt.mkdir(parents=True)
+                (receipt / "receipt.json").write_text(
+                    json.dumps({"tag": tag}) + "\n",
+                    encoding="utf-8",
+                )
+        if denied:
+            state = project / ".chaos-engine-state"
+            state.mkdir(parents=True)
+            (state / "addon-denials.json").write_text(
+                json.dumps({"denied": ["shaft-engine-users"]}) + "\n",
+                encoding="utf-8",
+            )
+        return project
+
+    def test_missing_skills_warn_to_install(self):
+        self.assertEqual(_MISSING_SKILLS, self.sync.doctor_note(self._project()))
+        self.assertEqual(_MISSING_SKILLS, self.sync.doctor_note(self._project(tag="")))
+        self.assertEqual(
+            _MISSING_SKILLS,
+            self.sync.doctor_note(self._project(version="1.0-SNAPSHOT")),
+        )
+
+    def test_denied_and_kind_none_stay_silent(self):
+        self.assertIsNone(self.sync.doctor_note(self._project(denied=True)))
+        self.assertIsNone(self.sync.doctor_note(self._project(tag="", denied=True)))
+        self.assertIsNone(self.sync.doctor_note(self._project(kind="plain")))
+        self.assertIsNone(self.sync.doctor_note(self._project(kind="empty")))
+        self.assertIsNone(self.sync.doctor_note(self._project(kind="core")))
+        self.assertIsNone(self.sync.doctor_note(self._project(kind="plain", denied=True)))
+
+    def test_version_mismatch_matches_detect_including_when_denied(self):
+        project = self._project(version=NEW, tag=OLD)
+        note = self.sync.doctor_note(project)
+        self.assertEqual(self.sync.detect.doctor_note(project), note)
+        self.assertEqual(
+            f"SHAFT project version {NEW} differs from installed skills {OLD}",
+            note["warning"],
+        )
+        self.assertEqual(
+            "fix-next: rerun the install one-liner or pass --shaft-skills-version " + NEW,
+            note["fixNext"],
+        )
+        denied = self._project(version=NEW, tag=OLD, denied=True)
+        denied_note = self.sync.doctor_note(denied)
+        self.assertEqual(self.sync.detect.doctor_note(denied), denied_note)
+        self.assertEqual(note["warning"], denied_note["warning"])
+        self.assertEqual(note["fixNext"], denied_note["fixNext"])
+
+    def test_matching_tag_and_unknown_version_do_not_warn_of_mismatch(self):
+        self.assertIsNone(self.sync.doctor_note(self._project(version=NEW, tag=NEW)))
+        unknown = self._project(version="1.0-SNAPSHOT", tag=OLD)
+        self.assertIsNone(self.sync.doctor_note(unknown))
+        self.assertIsNone(self.sync.detect.doctor_note(unknown))

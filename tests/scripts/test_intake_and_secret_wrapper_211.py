@@ -20,7 +20,7 @@ BIGGER_PICTURE_PATH = ROOT / "references" / "bigger-picture-first.md"
 CONSULT_FIRST_PATH = ROOT / "references" / "consult-first.md"
 
 APP_ID = "bs://cloudapp998877665544"  # nosec B105 - synthetic test fixture
-ACCESS_KEY = "SyntheticAccessKey2119988"  # nosec B105 - synthetic test fixture
+ACCESS_KEY = "Synthetic" "AccessKey2119988"  # nosec B105 - synthetic test fixture
 # Standard and URL-safe base64 differ (`/` vs `_`), and the value has padding.
 URLSAFE_SECRET = "CloudKey211?xy"  # nosec B105 - synthetic test fixture
 YAML_TOKEN = "YamlCloudToken211776655"  # nosec B105 - synthetic test fixture
@@ -541,6 +541,85 @@ class OutputSecretEncodedFormTest(unittest.TestCase):
         self.assertIsNone(
             self.boundary.output_secret_block(
                 {"stdout": "status %63 ok\n", "stderr": "", "output": "", "exit_code": 0},
+                self.project,
+            )
+        )
+
+    def test_issue_217_double_percent_encoding_is_withheld_and_triple_is_not(self) -> None:
+        """Two unquote passes withhold ``%2563`` and ``quote(quote(...))``.
+
+        A third encoding stays visible. The block text does not echo the
+        secret or the ``%2563`` spelling. A double-encoded public URL stays.
+        """
+        doubled_c = APP_ID.replace("c", "%2563", 1)
+        scheme, _, body = APP_ID.partition("://")
+        self.assertEqual("c", body[:1])
+        self.assertEqual(f"{scheme}://%2563{body[1:]}", doubled_c)
+        self.assertEqual(APP_ID, urllib.parse.unquote(urllib.parse.unquote(doubled_c)))
+        blocked = self._withheld(f"fetched {doubled_c}\n", field="stdout", code=0)
+        self.assertNotIn("%2563", blocked)
+        self.assertNotIn(doubled_c, blocked)
+
+        once = urllib.parse.quote(APP_ID, safe="")
+        twice = urllib.parse.quote(once, safe="")
+        self.assertNotIn(APP_ID, twice)
+        blocked_twice = self._withheld(f"fetched {twice}\n", field="stderr", code=2)
+        self.assertNotIn(twice, blocked_twice)
+        self.assertNotIn(once, blocked_twice)
+
+        tripled_c = APP_ID.replace("c", "%252563", 1)
+        self.assertEqual(f"{scheme}://%252563{body[1:]}", tripled_c)
+        self.assertNotEqual(APP_ID, urllib.parse.unquote(urllib.parse.unquote(tripled_c)))
+        thrice = urllib.parse.quote(twice, safe="")
+        public = urllib.parse.quote(
+            urllib.parse.quote("https://example.com/status?ok=1", safe=""),
+            safe="",
+        )
+        for payload in (
+            f"fetched {tripled_c}\n",
+            f"fetched {thrice}\n",
+            f"see {public}\n",
+        ):
+            with self.subTest(payload=payload):
+                self.assertIsNone(
+                    self.boundary.output_secret_block(
+                        {"stdout": payload, "stderr": "", "output": "", "exit_code": 0},
+                        self.project,
+                    )
+                )
+
+    def test_issue_217_wrapped_and_chunked_base64_is_withheld(self) -> None:
+        """Whitespace inside a base64 run is not a way past the guard.
+
+        Newlines and 4-character chunks collapse inside that run only.
+        An unrelated base64 value stays ``None``.
+        """
+        standard = base64.b64encode(APP_ID.encode()).decode("ascii")
+        urlsafe = base64.urlsafe_b64encode(URLSAFE_SECRET.encode()).decode("ascii")
+        multiline = "\n".join(standard[index : index + 8] for index in range(0, len(standard), 8))
+        chunked = " ".join(standard[index : index + 4] for index in range(0, len(standard), 4))
+        chunked_url = " ".join(urlsafe[index : index + 4] for index in range(0, len(urlsafe), 4))
+        self.assertNotIn(standard, multiline)
+        self.assertNotIn(standard, chunked)
+        self.assertGreaterEqual(len(standard), 16)
+        for payload in (multiline, chunked, chunked_url):
+            with self.subTest(payload=payload):
+                blocked = self._withheld(f"blob\n{payload}\n", field="output", code=7)
+                self.assertNotIn(standard, blocked)
+                self.assertNotIn(urlsafe, blocked)
+                self.assertNotIn(payload, blocked)
+
+        benign = base64.b64encode(b"hello world!!").decode("ascii")
+        benign_chunked = " ".join(benign[index : index + 4] for index in range(0, len(benign), 4))
+        benign_wrapped = "\n".join(benign[index : index + 8] for index in range(0, len(benign), 8))
+        self.assertIsNone(
+            self.boundary.output_secret_block(
+                {
+                    "stdout": benign + "\n" + benign_chunked,
+                    "stderr": benign_wrapped,
+                    "output": "done\n",
+                    "exit_code": 0,
+                },
                 self.project,
             )
         )

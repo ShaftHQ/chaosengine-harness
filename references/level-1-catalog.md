@@ -11,6 +11,7 @@ sorted. Each row is a name, ≤2-line Use-when, and a path — no workflow dumps
 | Name | Use when | Path |
 | --- | --- | --- |
 | Add-ons | Optional design/video/project-pack bundles; opt-in flags, never default | [`addons.md`](addons.md) |
+| API integration testing | HTTP, event, or contract API tests; pack client syntax stays delegated | [`../skills/api-integration-testing/SKILL.md`](../skills/api-integration-testing/SKILL.md) |
 | Appium driver npm recover | Appium npm null-package; uninstall then install --source=npm | [`appium-driver-npm-recover.md`](appium-driver-npm-recover.md) |
 | CE brief | Locator-only system brief for local-agency design turns | [`../runtime/ce_brief.py`](../runtime/ce_brief.py) |
 | CE brief eval fixtures | Unit/eval contracts for locator-only brief + byte caps | [`../evals/ce-brief-unit-fixtures.json`](../evals/ce-brief-unit-fixtures.json) |
@@ -54,6 +55,7 @@ sorted. Each row is a name, ≤2-line Use-when, and a path — no workflow dumps
 | Local OpenAI-compat | Optional Ollama / LM Studio / llamacpp OpenAI-compat peers; never CE-installed; not OmniRoute/FreeToken plugins | [`../skills/local-openai-compat/SKILL.md`](../skills/local-runtimes/references/local-openai-compat.md) · guide (repo-only `chaos-engine/guides/local-openai-compat.md`) |
 | Memory provenance | Origin + trust on learned items; quarantine untrusted until verified | [`memory-provenance.md`](memory-provenance.md) |
 | Meta-optimize | Periodic offline review of shared logs; not continuous | [`meta-optimize.md`](meta-optimize.md) |
+| Mobile testing | Android or iOS UI tests: probe the host, then locators, deep links, permissions, and reset | [`../skills/mobile-testing/SKILL.md`](../skills/mobile-testing/SKILL.md) |
 | No proxy | A task would install or wrap a traffic proxy; never install one | [`no-proxy.md`](no-proxy.md) |
 | OmniRoute | Optional local transport; never required for canonical workflows | [`../skills/omniroute/SKILL.md`](../skills/local-runtimes/references/omniroute.md) |
 | Outbound send | Draft only unless a recorded standing send permission names the channel and the shared gate passes | [`outbound-send.md`](outbound-send.md) |
@@ -74,9 +76,12 @@ sorted. Each row is a name, ≤2-line Use-when, and a path — no workflow dumps
 | Skill compress audit | Propose-only SKILL.md bloat audit; never auto-apply | [`skill-compress-audit.md`](skill-compress-audit.md) |
 | Static-analysis ACTION_REQUIRED gate | Any ≥medium static-analysis ACTION_REQUIRED (any category) == unit red; never arm auto-merge on it | [`static-analysis-gate.md`](static-analysis-gate.md) |
 | Technical presentations | Plan, build, refactor, or review a technical talk or training deck; never remove slide content | [`../skills/technical-presentations/SKILL.md`](../skills/technical-presentations/SKILL.md) |
+| Test engineering | Test analysis, coverage evidence, flake triage, and ISO 29119 reports | [`../skills/test-engineering/SKILL.md`](../skills/test-engineering/SKILL.md) |
+| Test environment setup | Web, grid, mobile, or API test host: read-only doctor, then ask before any install | [`../skills/test-env-setup/SKILL.md`](../skills/test-env-setup/SKILL.md) |
 | Tip-churn preflight | Before push: B607, README inventory, Memory content_hash; batch micro-fixes | [`tip-churn-preflight.md`](tip-churn-preflight.md) |
 | Token budget modes | Choose or override ultra-lean / balanced / deep context spend | [`token-budget-modes.md`](token-budget-modes.md) |
 | UI delivery | User-visible UI change: red-then-green e2e, measured geometry, viewport x theme matrix, CI coverage gap | [`ui-delivery.md`](ui-delivery.md) |
+| Web E2E automation | Web end-to-end tests: locators, network faults, Playwright, and Selenium BiDi | [`../skills/web-e2e-automation/SKILL.md`](../skills/web-e2e-automation/SKILL.md) |
 | Workflow induction | Repeated successful step windows; skill publish behind the eval suite | [`workflow-induction.md`](workflow-induction.md) |
 | Zero-LLM catalog | Prefer doctor/repair/script paths before opening chat discovery | [`zero-llm-catalog.md`](zero-llm-catalog.md) |
 

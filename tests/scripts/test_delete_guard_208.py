@@ -1065,6 +1065,234 @@ class DeleteGuardIssue208Test(unittest.TestCase):
             with self.subTest(source=source):
                 self.assertEqual("", self.reason(self._py(source)))
 
+    def test_issue_217_cat_squeeze_passthrough_and_mutating_flags(self) -> None:
+        """``cat -s`` and ``--squeeze-blank`` still scan the upstream script.
+
+        Any other ``cat`` flag between a producer and a stdin shell, Python,
+        or ``source`` is refused closed because it can rewrite the script.
+        """
+        self._write_only()
+        refused = (
+            "echo 'rm -f only.txt' | cat -s | bash",
+            "echo 'rm -f only.txt' | cat --squeeze-blank | bash",
+            "echo 'rm -f only.txt' | cat -s -u | bash",
+            "echo 'rm -f only.txt' | cat -u | bash",
+        )
+        for cmd in refused:
+            with self.subTest(cmd=cmd):
+                reason = self.reason(cmd)
+                self.assertIn("untracked", reason)
+                self.assertIn("only.txt", reason)
+        for cmd in (
+            "echo 'echo ok' | cat -s | bash",
+            "echo 'echo ok' | cat --squeeze-blank | bash",
+            "echo 'echo ok' | cat -u | bash",
+        ):
+            with self.subTest(cmd=cmd):
+                self.assertEqual("", self.reason(cmd))
+        mutating = (
+            "echo 'rm -f only.txt' | cat -n | bash",
+            "echo 'rm -f only.txt' | cat -b | bash",
+            "echo 'rm -f only.txt' | cat -A | bash",
+            "echo 'rm -f only.txt' | cat -v | bash",
+            "echo 'rm -f only.txt' | cat -E | bash",
+            "echo 'rm -f only.txt' | cat -T | bash",
+            "echo 'rm -f only.txt' | cat -ns | bash",
+            "echo 'rm -f only.txt' | cat -sn | sh",
+            "echo 'echo ok' | cat -n | bash",
+            "echo 'import os; os.remove(\"only.txt\")' | cat -n | python3",
+            "echo 'rm -f only.txt' | cat -n | source /dev/stdin",
+            "echo 'rm -f only.txt' | cat -n | . /dev/stdin",
+        )
+        for cmd in mutating:
+            with self.subTest(cmd=cmd):
+                reason = self.reason(cmd)
+                self.assertIn("cannot tell", reason)
+                self.assertIn("cat flag changes the piped script", reason)
+
+    def test_issue_217_relative_command_sub_heads_are_computed(self) -> None:
+        """A relative or dot-prefixed printed head is not a read-only command.
+
+        ``$(echo ls)`` and ``$(echo /bin/ls)`` stay visible. ``./ls``,
+        ``../ls``, ``foo/ls``, and ``./cat`` stay computed heads.
+        """
+        self._write_only()
+        for cmd in (
+            "$(echo ls)",
+            "$(echo ls) -la",
+            "$(echo /bin/ls) -la",
+            "$(echo cat) only.txt",
+        ):
+            with self.subTest(cmd=cmd):
+                self.assertEqual("", self.reason(cmd))
+        refused = (
+            "$(echo ./ls)",
+            "$(echo ./ls) -la",
+            "$(echo ../ls)",
+            "$(echo foo/ls)",
+            "$(echo ./cat) only.txt",
+        )
+        for cmd in refused:
+            with self.subTest(cmd=cmd):
+                self.assertIn("computed command head", self.reason(cmd))
+
+    def test_issue_217_module_dict_subscript_delete_is_refused(self) -> None:
+        """``os.__dict__[key]()`` / ``shutil.__dict__[key]()`` are indirect deletes.
+
+        Folded strings count. A non-literal slice is refused. A read-only
+        literal such as ``getcwd`` stays allowed, as does a lookup that is
+        not called.
+        """
+        refused = (
+            "import os\nos.__dict__['remove']('only.txt')",
+            "import os\nos.__dict__['rem' + 'ove']('only.txt')",
+            "import os\nos.__dict__['un' + 'link']('only.txt')",
+            "import os\nos.__dict__['rm' + 'dir']('only.txt')",
+            "import os\nos.__dict__['removedirs']('only.txt')",
+            "import os as operating_system\noperating_system.__dict__['remove']('only.txt')",
+            "import os\nkey = 'remove'\nos.__dict__[key]('only.txt')",
+            "import os\nos.__dict__[f\"{'rem'}{'ove'}\"]('only.txt')",
+        )
+        for source in refused:
+            with self.subTest(source=source):
+                self.assertIn(
+                    "indirect Python delete via os.__dict__",
+                    self.reason(self._py(source)),
+                )
+        shutil_refused = (
+            "import shutil\nshutil.__dict__['rmtree']('only.txt')",
+            "import shutil\nshutil.__dict__['rm' + 'tree']('only.txt')",
+            "import shutil as su\nsu.__dict__['rmtree']('only.txt')",
+        )
+        for source in shutil_refused:
+            with self.subTest(source=source):
+                self.assertIn(
+                    "indirect Python delete via shutil.__dict__",
+                    self.reason(self._py(source)),
+                )
+        allowed = (
+            "import os\nos.__dict__['getcwd']()",
+            "import os\nos.__dict__['get' + 'cwd']()",
+            "import os as operating_system\noperating_system.__dict__['getcwd']()",
+            "import shutil\nshutil.__dict__['copy']",
+            "import os\nname = os.__dict__['remove']",
+        )
+        for source in allowed:
+            with self.subTest(source=source):
+                self.assertEqual("", self.reason(self._py(source)))
+
+    def test_f6_dict_get_and_aliased_calls_are_refused(self) -> None:
+        """``os.__dict__.get('remove')()`` and a later call through an alias are indirect."""
+        refused = (
+            "import os\nos.__dict__.get('remove')('only.txt')",
+            "import os\nos.__dict__.get('rem' + 'ove')('only.txt')",
+            "import os\nos.__dict__.pop('unlink')('only.txt')",
+            "import os\nos.__dict__.setdefault('rmdir')('only.txt')",
+            "import os\nname = 'remove'\nos.__dict__.get(name)('only.txt')",
+            "import os\nfn = os.__dict__['remove']\nfn('only.txt')",
+            "import os\nfn = os.__dict__.get('remove')\nfn('only.txt')",
+            "import os\nd = os.__dict__\nd['remove']('only.txt')",
+            "import os\nd = os.__dict__\nd.get('unlink')('only.txt')",
+            "import shutil\nshutil.__dict__.get('rmtree')('only.txt')",
+            "import shutil\nfn = shutil.__dict__['rmtree']\nfn('only.txt')",
+            "import shutil\nshutil.__dict__.pop('rm' + 'tree')('only.txt')",
+        )
+        for source in refused:
+            with self.subTest(source=source):
+                reason = self.reason(self._py(source))
+                self.assertIn("indirect Python delete via", reason)
+                self.assertIn(".__dict__", reason)
+        allowed = (
+            "import os\nos.__dict__.get('getcwd')()",
+            "import os\nos.__dict__.get('get' + 'cwd')()",
+            "import os\nfn = os.__dict__['getcwd']\nfn()",
+            "import os\nfn = os.__dict__.get('getcwd')\nfn()",
+            "import os\nd = os.__dict__\nd['getcwd']()",
+            "import shutil\nshutil.__dict__.get('copy')",
+            "import os\nfn = os.__dict__.get('remove')",
+        )
+        for source in allowed:
+            with self.subTest(source=source):
+                self.assertEqual("", self.reason(self._py(source)))
+
+    def test_f5_dict_get_keyword_key_is_classified(self) -> None:
+        """``.get(key='getcwd')`` is allowed. ``.get(key='remove')`` is refused."""
+        self.assertEqual(
+            "",
+            self.reason(self._py("import os\nos.__dict__.get(key='getcwd')()")),
+        )
+        reason = self.reason(self._py("import os\nos.__dict__.get(key='remove')('only.txt')"))
+        self.assertIn("indirect Python delete via os.__dict__", reason)
+        popped = self.reason(self._py("import shutil\nshutil.__dict__.pop(key='rmtree')('only.txt')"))
+        self.assertIn("indirect Python delete via shutil.__dict__", popped)
+
+    def test_f10_sibling_indirect_dict_deletes_are_refused(self) -> None:
+        """``__getitem__``, ``vars``, module rebinding, and ``getattr(..., '__dict__')``."""
+        refused = (
+            "import os\nos.__dict__.__getitem__('remove')('only.txt')",
+            "import shutil\nshutil.__dict__.__getitem__('rmtree')('only.txt')",
+            "import os\nvars(os)['remove']('only.txt')",
+            "import shutil\nvars(shutil)['rmtree']('only.txt')",
+            "import os\nvars(os).get('remove')('only.txt')",
+            "import os\nvars(os).__getitem__('unlink')('only.txt')",
+            "import os\nd = vars(os)\nd['remove']('only.txt')",
+            "import shutil\nd = vars(shutil)\nd.get('rmtree')('only.txt')",
+            "import os\nfn = vars(os)['remove']\nfn('only.txt')",
+            "import os\no = os\no.__dict__['remove']('only.txt')",
+            "import shutil\ns = shutil\ns.__dict__['rmtree']('only.txt')",
+            "import os\no = os\no.__dict__.get(key='rmdir')('only.txt')",
+            "import os\ngetattr(os, '__dict__')['remove']('only.txt')",
+            "import shutil\ngetattr(shutil, '__dict__')['rmtree']('only.txt')",
+            "import os\nd = getattr(os, '__dict__')\nd['remove']('only.txt')",
+            "import shutil\ngetattr(shutil, '__dict__').get('rmtree')('only.txt')",
+            "import shutil\nfn = getattr(shutil, '__dict__')['rmtree']\nfn('only.txt')",
+        )
+        for source in refused:
+            with self.subTest(source=source):
+                reason = self.reason(self._py(source))
+                self.assertIn("indirect Python delete via", reason)
+                self.assertIn(".__dict__", reason)
+        allowed = (
+            "import os\nos.__dict__.__getitem__('getcwd')()",
+            "import os\nvars(os)['getcwd']()",
+            "import os\nvars(os).get('getcwd')()",
+            "import os\nd = vars(os)\nd['getcwd']()",
+            "import os\no = os\no.__dict__['getcwd']()",
+            "import shutil\ns = shutil\ns.__dict__['copy']",
+            "import os\ngetattr(os, '__dict__')['getcwd']()",
+            "import os\ngetattr(os, '__dict__').get(key='getcwd')()",
+            "import shutil\ngetattr(shutil, '__dict__')['copy']",
+            "import os\nfn = vars(os)['getcwd']\nfn()",
+        )
+        for source in allowed:
+            with self.subTest(source=source):
+                self.assertEqual("", self.reason(self._py(source)))
+
+    def test_f7_cat_here_strings_and_stage_zero_flags(self) -> None:
+        """A here-string on ``cat`` is the script. A rewriting flag at stage 0 is closed."""
+        self._write_only()
+        refused = (
+            "cat <<< 'rm -f only.txt' | sh",
+            "cat -s <<< 'rm -f only.txt' | sh",
+            "cat <<'EOF' | sh\nrm -f only.txt\nEOF",
+        )
+        for cmd in refused:
+            with self.subTest(cmd=cmd):
+                reason = self.reason(cmd)
+                self.assertIn("untracked", reason)
+                self.assertIn("only.txt", reason)
+        mutating = (
+            "cat -v <<< 'rm -f only.txt' | sh",
+            "cat -n <<< 'rm -f only.txt' | sh",
+            "cat -n <<'EOF' | sh\nrm -f only.txt\nEOF",
+            "cat -v <<'EOF' | bash\necho ok\nEOF",
+        )
+        for cmd in mutating:
+            with self.subTest(cmd=cmd):
+                reason = self.reason(cmd)
+                self.assertIn("cannot tell", reason)
+                self.assertIn("cat flag changes the piped script", reason)
+
 
 if __name__ == "__main__":
     unittest.main()

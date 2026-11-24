@@ -186,13 +186,19 @@ _STDIN_SCRIPT_PATHS = frozenset({
     "/proc/thread-self/fd/0",
     "/dev/fd/0",
 })
-# A literal ``$(echo ...)`` / ``$(printf ...)`` head is rewritten only when its
-# basename is one of these read-only commands. ``perl``, ``ruby``, ``node``,
-# shells, and delete tools stay computed heads.
+# A literal ``$(echo ...)`` / ``$(printf ...)`` head is rewritten only when the
+# printed token is absolute, or has no slash and no leading dot, and its
+# basename is one of these read-only commands. ``./ls``, ``../ls``, and
+# ``foo/ls`` stay computed heads. ``perl``, ``ruby``, ``node``, shells, and
+# delete tools stay computed heads.
 _SAFE_LITERAL_HEADS = frozenset({
     "ls", "echo", "printf", "pwd", "date", "true", "false",
     "uname", "whoami", "id", "cat", "head", "tail", "wc", "grep", "rg",
 })
+# ``cat`` copies a piped script unchanged for these flags only. ``-s`` and
+# ``--squeeze-blank`` drop extra blank lines but do not hide a one-line script.
+# Any other flag can rewrite the bytes a downstream shell would execute.
+_CAT_STDIN_FLAGS = frozenset({"-", "--", "-u", "-s", "--squeeze-blank"})
 _ECHO_OPTION = re.compile(r"^-[neE]+$")
 _PRINTF_STRING_FORMATS = frozenset({"%s", "%s\n", r"%s\n"})
 _NOT_LITERAL = object()
@@ -447,8 +453,15 @@ def _pure_command_sub_body(word: str) -> str | None:
 
 
 def _printed_head_is_safe(token: str) -> bool:
-    """True when ``token``'s basename is on the read-only command allowlist."""
+    """True when ``token``'s basename is on the read-only command allowlist.
+
+    A token that contains ``/`` or starts with ``.`` is a relative path
+    (``./ls``, ``../ls``, ``foo/ls``) unless ``os.path.isabs`` says it is
+    absolute. Absolute ``/bin/ls`` still uses the basename allowlist.
+    """
     if not re.fullmatch(r"[A-Za-z0-9._+/-]+", token):
+        return False
+    if (("/" in token) or token.startswith(".")) and not os.path.isabs(token):
         return False
     base = os.path.basename(token)
     if not base or base in {".", ".."} or not re.fullmatch(r"[A-Za-z0-9._+-]+", base):
@@ -1041,6 +1054,205 @@ def _is_indirect_getattr_delete(
     return not _is_plain_attr_lookup(attr)
 
 
+_DICT_LOOKUP_ATTRS = frozenset({"get", "pop", "setdefault", "__getitem__"})
+
+
+def _module_dict_subscript(func: ast.AST, os_mods: set[str], shutil_mods: set[str]) -> tuple[str, ast.AST] | None:
+    """``os.__dict__[key]`` / ``shutil.__dict__[key]``, including import aliases."""
+    if not isinstance(func, ast.Subscript):
+        return None
+    value = func.value
+    if not isinstance(value, ast.Attribute) or value.attr != "__dict__":
+        return None
+    base = value.value
+    if not isinstance(base, ast.Name):
+        return None
+    if base.id in os_mods:
+        return "os", func.slice
+    if base.id in shutil_mods:
+        return "shutil", func.slice
+    return None
+
+
+def _module_kind_name(name: str, os_mods: set[str], shutil_mods: set[str]) -> str | None:
+    if name in os_mods:
+        return "os"
+    if name in shutil_mods:
+        return "shutil"
+    return None
+
+
+def _vars_or_getattr_module_dict(
+    node: ast.AST,
+    os_mods: set[str],
+    shutil_mods: set[str],
+    getattr_names: set[str],
+    builtin_mods: set[str],
+) -> str | None:
+    """``vars(os)`` and ``getattr(os, '__dict__')`` are that module's ``__dict__``."""
+    if not isinstance(node, ast.Call):
+        return None
+    if isinstance(node.func, ast.Name) and node.func.id == "vars" and len(node.args) == 1:
+        arg = node.args[0]
+        if isinstance(arg, ast.Name):
+            return _module_kind_name(arg.id, os_mods, shutil_mods)
+        return None
+    if not _is_getattr_call(node.func, getattr_names, builtin_mods):
+        return None
+    receiver = _getattr_arg(node, 0, "object")
+    attr = _getattr_arg(node, 1, "name")
+    if not isinstance(receiver, ast.Name) or _fold_const_str(attr) != "__dict__":
+        return None
+    return _module_kind_name(receiver.id, os_mods, shutil_mods)
+
+
+def _dict_object_kind(
+    node: ast.AST,
+    os_mods: set[str],
+    shutil_mods: set[str],
+    dict_aliases: dict[str, str],
+    getattr_names: set[str],
+    builtin_mods: set[str],
+) -> str | None:
+    """``os.__dict__`` / ``shutil.__dict__``, ``vars``, ``getattr``, or an alias."""
+    found = _vars_or_getattr_module_dict(node, os_mods, shutil_mods, getattr_names, builtin_mods)
+    if found is not None:
+        return found
+    if isinstance(node, ast.Name):
+        return dict_aliases.get(node.id)
+    if not isinstance(node, ast.Attribute) or node.attr != "__dict__":
+        return None
+    base = node.value
+    if not isinstance(base, ast.Name):
+        return None
+    return _module_kind_name(base.id, os_mods, shutil_mods)
+
+
+def _dict_key_arg(node: ast.Call) -> ast.AST | None:
+    """Positional key, otherwise the ``key=`` keyword. ``.get(key='getcwd')`` counts."""
+    if node.args:
+        return node.args[0]
+    for keyword in node.keywords:
+        if keyword.arg == "key":
+            return keyword.value
+    return None
+
+
+def _dict_lookup(
+    node: ast.AST,
+    os_mods: set[str],
+    shutil_mods: set[str],
+    dict_aliases: dict[str, str],
+    getattr_names: set[str],
+    builtin_mods: set[str],
+) -> tuple[str, ast.AST | None] | None:
+    """``mod.__dict__[key]``, ``vars(mod)[key]``, or ``.get`` / ``.pop`` / ``.setdefault`` / ``.__getitem__``."""
+    if isinstance(node, ast.Subscript):
+        direct = _module_dict_subscript(node, os_mods, shutil_mods)
+        if direct is not None:
+            return direct
+        kind = _dict_object_kind(node.value, os_mods, shutil_mods, dict_aliases, getattr_names, builtin_mods)
+        if kind is None:
+            return None
+        return kind, node.slice
+    if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+        return None
+    if node.func.attr not in _DICT_LOOKUP_ATTRS:
+        return None
+    kind = _dict_object_kind(
+        node.func.value, os_mods, shutil_mods, dict_aliases, getattr_names, builtin_mods
+    )
+    if kind is None:
+        return None
+    return kind, _dict_key_arg(node)
+
+
+def _dict_key_class(key: ast.AST | None) -> str:
+    """``delete``, ``safe``, or ``unsure`` for a folded dict key."""
+    if key is None:
+        return "unsure"
+    folded = _fold_const_str(key)
+    if folded is None:
+        return "unsure"
+    if folded in _OS_DELETE_FUNCS or folded in _INDIRECT_PY_DELETES:
+        return "delete"
+    return "safe"
+
+
+def _assign_names(targets: list[ast.AST]) -> list[str]:
+    names: list[str] = []
+    for target in targets:
+        if isinstance(target, ast.Name):
+            names.append(target.id)
+        elif isinstance(target, (ast.Tuple, ast.List)):
+            names.extend(_assign_names(list(target.elts)))
+    return names
+
+
+def _bind_python_aliases(
+    targets: list[ast.AST],
+    value: ast.AST,
+    os_mods: set[str],
+    shutil_mods: set[str],
+    dict_aliases: dict[str, str],
+    func_aliases: dict[str, tuple[str, str]],
+    getattr_names: set[str],
+    builtin_mods: set[str],
+) -> None:
+    """Remember module aliases, ``d = os.__dict__``, and ``fn = os.__dict__['remove']``."""
+    names = _assign_names(targets)
+    if not names:
+        return
+    if isinstance(value, ast.Name):
+        if value.id in os_mods:
+            os_mods.update(names)
+        elif value.id in shutil_mods:
+            shutil_mods.update(names)
+    lookup = _dict_lookup(value, os_mods, shutil_mods, dict_aliases, getattr_names, builtin_mods)
+    kind = (
+        None
+        if lookup is not None
+        else _dict_object_kind(value, os_mods, shutil_mods, dict_aliases, getattr_names, builtin_mods)
+    )
+    for name in names:
+        dict_aliases.pop(name, None)
+        func_aliases.pop(name, None)
+        if lookup is not None:
+            found, key = lookup
+            func_aliases[name] = (found, _dict_key_class(key))
+        elif kind is not None:
+            dict_aliases[name] = kind
+
+
+def _module_dict_delete_label(
+    node: ast.Call,
+    os_mods: set[str],
+    shutil_mods: set[str],
+    dict_aliases: dict[str, str] | None = None,
+    getattr_names: set[str] | None = None,
+    builtin_mods: set[str] | None = None,
+) -> str | None:
+    """``os.__dict__['remove']()``, ``vars``, ``getattr(..., '__dict__')``, and ``.get``.
+
+    Folded keys count, including ``key=``. A non-literal key is refused.
+    ``getcwd`` is not a delete. The same rule covers ``shutil`` and aliases.
+    """
+    found = _dict_lookup(
+        node.func,
+        os_mods,
+        shutil_mods,
+        dict_aliases or {},
+        getattr_names if getattr_names is not None else {"getattr"},
+        builtin_mods if builtin_mods is not None else {"builtins", "__builtins__"},
+    )
+    if found is None:
+        return None
+    kind, key = found
+    if _dict_key_class(key) == "safe":
+        return None
+    return kind
+
+
 def _python_entries(segment: str) -> list[tuple[str, bool]]:
     """Return (path, follow_symlinks) for actual Python delete calls in ``segment`` via AST."""
     try:
@@ -1057,6 +1269,8 @@ def _python_entries(segment: str) -> list[tuple[str, bool]]:
     direct_funcs: dict[str, bool] = {}  # local name -> follow_symlinks
     builtin_mods: set[str] = {"builtins", "__builtins__"}
     getattr_names: set[str] = {"getattr"}
+    dict_aliases: dict[str, str] = {}
+    func_aliases: dict[str, tuple[str, str]] = {}
 
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
@@ -1082,17 +1296,38 @@ def _python_entries(segment: str) -> list[tuple[str, bool]]:
                     path_ctors.add(bound)
                 elif node.level == 0 and mod == "builtins" and alias.name == "getattr":
                     getattr_names.add(bound)
-        elif isinstance(node, ast.Assign) and _is_getattr_value(node.value, getattr_names, builtin_mods):
-            for target in node.targets:
-                if isinstance(target, ast.Name):
-                    getattr_names.add(target.id)
+        elif isinstance(node, ast.Assign):
+            if _is_getattr_value(node.value, getattr_names, builtin_mods):
+                for target in node.targets:
+                    if isinstance(target, ast.Name):
+                        getattr_names.add(target.id)
+            _bind_python_aliases(
+                list(node.targets),
+                node.value,
+                os_mods,
+                shutil_mods,
+                dict_aliases,
+                func_aliases,
+                getattr_names,
+                builtin_mods,
+            )
         elif (
             isinstance(node, ast.AnnAssign)
             and isinstance(node.target, ast.Name)
             and node.value is not None
-            and _is_getattr_value(node.value, getattr_names, builtin_mods)
         ):
-            getattr_names.add(node.target.id)
+            if _is_getattr_value(node.value, getattr_names, builtin_mods):
+                getattr_names.add(node.target.id)
+            _bind_python_aliases(
+                [node.target],
+                node.value,
+                os_mods,
+                shutil_mods,
+                dict_aliases,
+                func_aliases,
+                getattr_names,
+                builtin_mods,
+            )
 
     entries: list[tuple[str, bool]] = []
     for node in ast.walk(tree):
@@ -1102,6 +1337,15 @@ def _python_entries(segment: str) -> list[tuple[str, bool]]:
             node, os_mods, shutil_mods, pathlib_mods, path_ctors, getattr_names, builtin_mods
         ):
             raise Unsure("indirect Python delete via getattr")
+        dict_label = _module_dict_delete_label(
+            node, os_mods, shutil_mods, dict_aliases, getattr_names, builtin_mods
+        )
+        if dict_label is not None:
+            raise Unsure(f"indirect Python delete via {dict_label}.__dict__")
+        if isinstance(node.func, ast.Name) and node.func.id in func_aliases:
+            alias_kind, alias_class = func_aliases[node.func.id]
+            if alias_class != "safe":
+                raise Unsure(f"indirect Python delete via {alias_kind}.__dict__")
         func = node.func
         if isinstance(func, ast.Name) and func.id in direct_funcs:
             arg = _call_path_arg(node)
@@ -2003,8 +2247,8 @@ def _stdin_passthrough(command: _SimpleCommand) -> bool:
     """True when ``cat`` or ``tee`` copies stdin to stdout unchanged.
 
     ``tee`` always copies stdin to stdout. ``cat`` does so with no file
-    operands (``-``, ``--``, and ``-u`` only). A heredoc or here-string
-    replaces that stdin.
+    operands and only ``-``, ``--``, ``-u``, ``-s``, or ``--squeeze-blank``.
+    A heredoc or here-string replaces that stdin.
     """
     if command.heredocs or command.here_strings:
         return False
@@ -2015,7 +2259,31 @@ def _stdin_passthrough(command: _SimpleCommand) -> bool:
         return False
     if any("$" in item or "`" in item for item in rest):
         return False
-    return all(item in {"-", "--", "-u"} for item in rest)
+    return all(item in _CAT_STDIN_FLAGS for item in rest)
+
+
+def _cat_flag_changes_script(command: _SimpleCommand) -> bool:
+    """True when ``cat`` carries a flag outside the stdin passthrough set.
+
+    A here-doc or here-string is the script text. It does not exempt ``-n``,
+    ``-v``, or any other flag that rewrites those bytes.
+    """
+    head, rest = _head(command.words)
+    if head != "cat":
+        return False
+    return any(item.startswith("-") and item not in _CAT_STDIN_FLAGS for item in rest)
+
+
+def _mutating_cat_between(pipeline: list[_SimpleCommand]) -> bool:
+    """True when a rewriting ``cat`` is any producer stage, including stage 0.
+
+    The stdin consumer is not part of ``pipeline``, so every stage here is
+    upstream of the shell, Python, or ``source`` that reads the pipe.
+    """
+    for stage in pipeline:
+        if _cat_flag_changes_script(stage):
+            return True
+    return False
 
 
 def _pipeline_producer(pipeline: list[_SimpleCommand]) -> _SimpleCommand | None:
@@ -2040,7 +2308,7 @@ def _piped_stdin_bodies(
     A shell without ``-c``, Python without ``-c``, or ``source`` / ``.`` of
     stdin raises ``Unsure`` when the producer is computed.
 
-    Heredoc bodies and a literal ``echo`` / ``printf`` string both count.
+    Heredoc bodies, here-strings, and a literal ``echo`` / ``printf`` string count.
     ``cat`` and ``tee`` stages between the producer and ``command`` are
     skipped. The receiver has no heredoc or here-string of its own. Relative
     ``source`` operands resolve against ``cwd``.
@@ -2066,10 +2334,15 @@ def _piped_stdin_bodies(
         executes_stdin = True
     else:
         return None
+    # A flag outside the passthrough set rewrites the script. Refuse closed
+    # instead of scanning the pre-image and missing the transformed bytes.
+    if _mutating_cat_between(pipeline):
+        raise Unsure("cat flag changes the piped script")
     producer = _pipeline_producer(pipeline)
     if producer is None:
         return None
     bodies = [item.body for item in producer.heredocs]
+    bodies.extend(producer.here_strings)
     if executes_stdin or forwards_stdin:
         printed = _literal_echo_printf_text(producer)
         if printed is _NOT_LITERAL:

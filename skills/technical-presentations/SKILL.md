@@ -1,9 +1,6 @@
 ---
 name: technical-presentations
-description: >-
-  Use when planning, building, refactoring, or reviewing technical talks or
-  training decks: story arc, claim titles, visual evidence, code slides,
-  checkpoints. On demand only.
+description: "Use when planning, building, or reviewing a technical talk or training deck. On demand only."
 license: MIT
 permissions:
   - read

@@ -10284,7 +10284,7 @@ def _engine_doctor_lines(document: dict[str, object]) -> list[str]:
 
 
 def attach_engine_doctor(result: dict, project: Path) -> dict:
-    """Warn when the detected engine version and the installed skills tag differ."""
+    """Warn on a skills-tag mismatch, or when a detected user project has no skills."""
     if not isinstance(result, dict):
         return result
     engine = _load_engine_detect(project / INSTALL_DIRECTORY)
