@@ -570,6 +570,46 @@ class MavenWrapperFetchFallback209Test(unittest.TestCase):
             self.assertEqual(1, len(managed_calls))
             self.assertEqual(1, len(published))
 
+    def test_review1_could_not_download_is_wrapper_scoped(self):
+        """``could not download`` is a bootstrap-line marker, not a global one.
+
+        An ordinary artifact line does not fall back. ``mvnw:`` on the same
+        line still does.
+        """
+        ordinary = "Could not download artifact com.example:foo:1.0\n"
+        self.assertNotIn("could not download", JAVA_INSTALLER._MAVEN_WRAPPER_FETCH_MARKERS)
+        self.assertIn("could not download", JAVA_INSTALLER._MAVEN_WRAPPER_SCOPED_FETCH_MARKERS)
+        self.assertFalse(JAVA_INSTALLER._is_maven_wrapper_fetch_failure(ordinary))
+        self.assertFalse(INSTALL._is_maven_wrapper_fetch_failure(ordinary))
+        scoped_cases = (
+            "mvnw: could not download https://example.invalid/maven-wrapper.jar\n",
+            "Could not download https://repo.maven.apache.org/maven2/org/apache/maven/wrapper/maven-wrapper.jar\n",
+        )
+        for output in scoped_cases:
+            with self.subTest(output=output):
+                self.assertTrue(JAVA_INSTALLER._is_maven_wrapper_fetch_failure(output))
+                self.assertTrue(INSTALL._is_maven_wrapper_fetch_failure(output))
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            managed_mvn = self._make_managed_mvn(root)
+            trace: dict[str, list] = {}
+            error = subprocess.CalledProcessError(
+                1,
+                ["mvnw", "-B", "clean", "package"],
+                output=ordinary,
+                stderr="",
+            )
+            with self.assertRaises(subprocess.CalledProcessError):
+                self._run_build(
+                    root,
+                    wrapper_error=error,
+                    managed_return=managed_mvn,
+                    module=INSTALL,
+                    trace=trace,
+                )
+            self.assertEqual([], trace["managed_calls"])
+            self.assertEqual(1, len(trace["build_clis"]))
+
 
 class LegacyMigrationSafety209Test(unittest.TestCase):
     def test_nested_symlink_blocks_backup_rmtree_and_records_summary(self):

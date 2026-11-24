@@ -146,7 +146,7 @@ DELETE_WORD = re.compile(
 UNSURE = re.compile(r"\$|`|<\(|>\(")
 # `{a,b}` and `{1..3}` are shell brace lists. A literal `{name}` is not.
 _BRACE_EXPANSION = re.compile(r"\{[^{}]*(?:,|\.\.)[^{}]*\}")
-_INDIRECT_PY_DELETES = frozenset({"remove", "unlink", "rmtree", "rmdir"})
+_INDIRECT_PY_DELETES = frozenset({"remove", "unlink", "rmtree", "rmdir", "removedirs"})
 RMTREE = re.compile(
     r"(?:shutil\.rmtree|os\.remove|os\.unlink|os\.rmdir|os\.removedirs|\.unlink|\.rmtree|\.rmdir)\s*\(\s*(?P<arg>[^)]*)\)"
 )
@@ -179,15 +179,23 @@ _TIME_SHORT_ARGS = frozenset("of")
 _STDBUF_LONG_VALUES = ("--input", "--output", "--error")
 _SCRIPT_DOT_COMMANDS = frozenset({"source", "."})
 # ``source`` / ``.`` read these paths from the attached heredoc, here-string, or pipe.
-_STDIN_SCRIPT_PATHS = frozenset({"/dev/stdin", "/proc/self/fd/0", "/dev/fd/0"})
-# Printed by a literal echo/printf, these names stay computed heads. Rewriting
-# them would either hide a delete or depend on a second dispatch pass.
-_UNTRUSTED_LITERAL_HEADS = frozenset({
-    "rm", "unlink", "shred", "rmdir",
-    "mv", "rsync", "find", "git",
-    "xargs", "parallel", "eval",
-    "busybox", "coproc", "time", "stdbuf",
+# ``/proc/thread-self/fd/0`` is the same open file description as ``/proc/self/fd/0``.
+_STDIN_SCRIPT_PATHS = frozenset({
+    "/dev/stdin",
+    "/proc/self/fd/0",
+    "/proc/thread-self/fd/0",
+    "/dev/fd/0",
 })
+# A literal ``$(echo ...)`` / ``$(printf ...)`` head is rewritten only when its
+# basename is one of these read-only commands. ``perl``, ``ruby``, ``node``,
+# shells, and delete tools stay computed heads.
+_SAFE_LITERAL_HEADS = frozenset({
+    "ls", "echo", "printf", "pwd", "date", "true", "false",
+    "uname", "whoami", "id", "cat", "head", "tail", "wc", "grep", "rg",
+})
+_ECHO_OPTION = re.compile(r"^-[neE]+$")
+_PRINTF_STRING_FORMATS = frozenset({"%s", "%s\n", r"%s\n"})
+_NOT_LITERAL = object()
 
 
 def _match_long_option(arg: str, flag_opts: tuple[str, ...], value_opts: tuple[str, ...]) -> str | None:
@@ -363,9 +371,41 @@ def _computed_command_head(head: str) -> bool:
     return "$" in head or "`" in head
 
 
-def _is_stdin_script_path(path: str) -> bool:
-    """True when ``source`` / ``.`` would read the script from this process's stdin."""
-    return os.path.normpath(path) in _STDIN_SCRIPT_PATHS
+def _collapse_leading_slashes(path: str) -> str:
+    """``//dev/stdin`` and ``///dev/stdin`` are both ``/dev/stdin`` on Linux.
+
+    ``os.path.normpath`` keeps a leading double slash, so collapse first.
+    """
+    if path.startswith("//"):
+        return "/" + path.lstrip("/")
+    return path
+
+
+def _is_stdin_script_path(path: str, cwd: Path | None = None) -> bool:
+    """True when ``source`` / ``.`` would read the script from this process's stdin.
+
+    Leading extra slashes collapse. A relative operand is resolved against
+    ``cwd`` when that directory is known (``cd /dev && source stdin``).
+    ``cd /dev/fd`` follows the symlink to ``/proc/<pid>/fd``, so ``source 0``
+    is also stdin when it is the same open file as ``/dev/fd/0``.
+    """
+    if not path or "$" in path or "`" in path:
+        return False
+    candidate = _collapse_leading_slashes(path)
+    if cwd is not None and not os.path.isabs(candidate):
+        candidate = _collapse_leading_slashes(os.path.join(os.fspath(cwd), candidate))
+    normalized = os.path.normpath(candidate)
+    if normalized.startswith("//"):
+        normalized = _collapse_leading_slashes(normalized)
+    if normalized in _STDIN_SCRIPT_PATHS:
+        return True
+    for known in _STDIN_SCRIPT_PATHS:
+        try:
+            if os.path.samefile(normalized, known):
+                return True
+        except OSError:
+            continue
+    return False
 
 
 def _dot_script_operand(arguments: list[str]) -> str | None:
@@ -400,17 +440,13 @@ def _pure_command_sub_body(word: str) -> str | None:
 
 
 def _printed_head_is_safe(token: str) -> bool:
-    """True when ``token`` cannot itself delete or dispatch another command."""
+    """True when ``token``'s basename is on the read-only command allowlist."""
     if not re.fullmatch(r"[A-Za-z0-9._+/-]+", token):
         return False
     base = os.path.basename(token)
     if not base or base in {".", ".."} or not re.fullmatch(r"[A-Za-z0-9._+-]+", base):
         return False
-    if _is_python(base):
-        return False
-    if base in _UNTRUSTED_LITERAL_HEADS or base in WRAPPERS or base in SHELLS or base in _SCRIPT_DOT_COMMANDS:
-        return False
-    return True
+    return base in _SAFE_LITERAL_HEADS
 
 
 def _literal_stdio_command(inner: str) -> str | None:
@@ -454,10 +490,11 @@ def _literal_stdio_command(inner: str) -> str | None:
 
 
 def _trusted_command_sub_head(word: str) -> str | None:
-    """Safe command name printed by ``$(echo ls)`` / ``$(printf echo)``, else None.
+    """Read-only command name printed by ``$(echo ls)`` / ``$(printf echo)``, else None.
 
-    ``$(echo rm)``, ``$(printf 'rm')``, ``$(printf '%s%s' r m)``, and
-    ``$(echo r; echo m)`` return None so the raw substitution stays a computed head.
+    The printed basename must be on ``_SAFE_LITERAL_HEADS``. ``$(echo perl)``,
+    ``$(echo ruby)``, ``$(echo node)``, ``$(echo rm)``, and ``$(echo r; echo m)``
+    return None so the raw substitution stays a computed head.
     """
     inner = _pure_command_sub_body(word)
     if inner is None:
@@ -466,6 +503,34 @@ def _trusted_command_sub_head(word: str) -> str | None:
     if printed is None or not _printed_head_is_safe(printed):
         return None
     return printed
+
+
+def _literal_echo_printf_text(command: _SimpleCommand) -> str | object | None:
+    """Stdout of one ``echo`` or ``printf``, when a pipe feeds it to a shell.
+
+    ``None`` means the command is not ``echo`` or ``printf``. ``_NOT_LITERAL``
+    means it is, but the text is computed or not a proven literal. A string is
+    the proven text (``echo 'rm -f only.txt'`` and ``printf '%s' 'rm -f only.txt'``).
+    """
+    head, rest = _head(command.words)
+    if head not in {"echo", "printf"}:
+        return None
+    if command.cmd_subs or command.heredocs or command.here_strings:
+        return _NOT_LITERAL
+    if any("$" in item or "`" in item for item in rest):
+        return _NOT_LITERAL
+    if head == "echo":
+        args: list[str] = []
+        for item in rest:
+            if not args and _ECHO_OPTION.fullmatch(item):
+                continue
+            args.append(item)
+        return " ".join(args)
+    if len(rest) == 1 and "%" not in rest[0] and "\\" not in rest[0]:
+        return rest[0]
+    if len(rest) == 2 and rest[0] in _PRINTF_STRING_FORMATS and "%" not in rest[1] and "\\" not in rest[1]:
+        return rest[1]
+    return _NOT_LITERAL
 
 
 def _is_process_sub_word(word: str) -> bool:
@@ -890,21 +955,36 @@ def _is_known_py_delete_receiver(
     return isinstance(node, ast.Call) and _ast_is_path_ctor(node.func, path_ctors, pathlib_mods)
 
 
+def _is_getattr_call(func: ast.AST, getattr_names: set[str], builtin_mods: set[str]) -> bool:
+    """Bare ``getattr``, ``builtins.getattr``, or an import alias of either."""
+    if isinstance(func, ast.Name):
+        return func.id in getattr_names
+    return (
+        isinstance(func, ast.Attribute)
+        and func.attr == "getattr"
+        and isinstance(func.value, ast.Name)
+        and func.value.id in builtin_mods
+    )
+
+
 def _is_indirect_getattr_delete(
     node: ast.Call,
     os_mods: set[str],
     shutil_mods: set[str],
     pathlib_mods: set[str],
     path_ctors: set[str],
+    getattr_names: set[str],
+    builtin_mods: set[str],
 ) -> bool:
-    """``getattr(obj, "remove"|"unlink"|"rmtree"|"rmdir")``, including folded strings.
+    """``getattr(obj, "remove"|"unlink"|"rmtree"|"rmdir"|"removedirs")``, folded strings too.
 
+    ``builtins.getattr``, ``__builtins__.getattr``, ``import builtins as b``,
+    and ``from builtins import getattr as ga`` match a bare ``getattr``.
     ``getattr(os, 'rem' + 'ove')``, f-strings, and ``''.join([...])`` count.
     An unfoldable name on ``os`` / ``shutil`` / ``pathlib`` / ``Path(...)`` is refused.
     ``getattr(os, 'getcwd')`` and ``getattr(obj, key)`` are not.
     """
-    func = node.func
-    if not isinstance(func, ast.Name) or func.id != "getattr":
+    if not _is_getattr_call(node.func, getattr_names, builtin_mods):
         return False
     attr = _getattr_arg(node, 1, "name")
     if attr is None:
@@ -934,6 +1014,8 @@ def _python_entries(segment: str) -> list[tuple[str, bool]]:
     pathlib_mods: set[str] = {"pathlib"}
     path_ctors: set[str] = set(_PATH_CTORS)
     direct_funcs: dict[str, bool] = {}  # local name -> follow_symlinks
+    builtin_mods: set[str] = {"builtins", "__builtins__"}
+    getattr_names: set[str] = {"getattr"}
 
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
@@ -945,6 +1027,8 @@ def _python_entries(segment: str) -> list[tuple[str, bool]]:
                     os_mods.add(bound)
                 elif alias.name == "pathlib":
                     pathlib_mods.add(bound)
+                elif alias.name == "builtins":
+                    builtin_mods.add(bound)
         elif isinstance(node, ast.ImportFrom):
             mod = node.module or ""
             for alias in node.names:
@@ -955,12 +1039,16 @@ def _python_entries(segment: str) -> list[tuple[str, bool]]:
                     direct_funcs[bound] = False
                 elif mod == "pathlib" and alias.name in _PATH_CTORS:
                     path_ctors.add(bound)
+                elif node.level == 0 and mod == "builtins" and alias.name == "getattr":
+                    getattr_names.add(bound)
 
     entries: list[tuple[str, bool]] = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
-        if _is_indirect_getattr_delete(node, os_mods, shutil_mods, pathlib_mods, path_ctors):
+        if _is_indirect_getattr_delete(
+            node, os_mods, shutil_mods, pathlib_mods, path_ctors, getattr_names, builtin_mods
+        ):
             raise Unsure("indirect Python delete via getattr")
         func = node.func
         if isinstance(func, ast.Name) and func.id in direct_funcs:
@@ -1859,29 +1947,47 @@ def _commit_cd(
     return proposed, False
 
 
-def _piped_stdin_bodies(previous: _SimpleCommand, command: _SimpleCommand) -> list[str] | None:
-    """Heredoc bodies of ``previous`` when a pipe feeds them to a shell or Python.
+def _piped_stdin_bodies(
+    previous: _SimpleCommand,
+    command: _SimpleCommand,
+    cwd: Path | None = None,
+) -> list[str] | None:
+    """Stdin text of ``previous`` when a pipe feeds a shell, Python, or ``source``.
 
-    The receiver is a shell in ``SHELLS``, ``python`` (or ``env`` plus one of
-    those), or ``source`` / ``.`` of stdin, with no ``-c`` script and no heredoc
-    or here-string of its own.
+    Heredoc bodies feed a shell in ``SHELLS``, ``python`` (or ``env`` plus one
+    of those), or ``source`` / ``.`` of stdin. A literal ``echo`` / ``printf``
+    string feeds a shell or ``source`` / ``.`` of stdin. The receiver has no
+    ``-c`` script and no heredoc or here-string of its own. Relative ``source``
+    operands resolve against ``cwd``.
     """
     if command.heredocs or command.here_strings:
         return None
     head, rest = _head(command.words)
+    shell_stdin = False
     if head in SHELLS:
         if _shell_c_script(rest) is not None:
             return None
+        shell_stdin = True
     elif _is_python(head):
         if _python_code_from_args(rest) is not None:
             return None
     elif head in _SCRIPT_DOT_COMMANDS:
         operand = _dot_script_operand(rest)
-        if operand is None or not _is_stdin_script_path(operand):
+        if operand is None or not _is_stdin_script_path(operand, cwd):
             return None
+        shell_stdin = True
     else:
         return None
-    return [item.body for item in previous.heredocs]
+    bodies = [item.body for item in previous.heredocs]
+    if shell_stdin:
+        printed = _literal_echo_printf_text(previous)
+        if printed is _NOT_LITERAL:
+            raise Unsure("computed piped script")
+        if isinstance(printed, str) and printed:
+            bodies.append(printed)
+    if not bodies:
+        return None
+    return bodies
 
 
 def _command_targets(
@@ -1936,7 +2042,7 @@ def _command_targets(
         last_sep = None
         piped_bodies: list[str] = []
         if incoming in {"|", "|&"} and isinstance(previous, _SimpleCommand):
-            bodies = _piped_stdin_bodies(previous, cmd)
+            bodies = _piped_stdin_bodies(previous, cmd, None if cwd_computed else cwd)
             if bodies:
                 piped_bodies = bodies
 
@@ -1957,9 +2063,16 @@ def _command_targets(
         if _computed_command_head(head):
             raise Unsure("computed command head")
         if head == "eval":
+            scripts: list[str] = []
             script = " ".join(rest)
             if script:
-                sub_found, _ = _command_targets(script, cwd, cwd_computed=cwd_computed)
+                scripts.append(script)
+            scripts.extend(item.body for item in cmd.heredocs)
+            scripts.extend(cmd.here_strings)
+            for item in scripts:
+                if not item:
+                    continue
+                sub_found, _ = _command_targets(item, cwd, cwd_computed=cwd_computed)
                 found.extend(sub_found)
             continue
         if head in {"cd", "pushd"}:
@@ -1986,7 +2099,11 @@ def _command_targets(
             if any(_is_process_sub_word(word) for word in rest):
                 raise Unsure("shell process substitution")
             operand = _dot_script_operand(rest)
-            if operand is not None and _is_stdin_script_path(operand):
+            incoming_pipe = incoming in {"|", "|&"} and isinstance(previous, _SimpleCommand)
+            attached = bool(cmd.heredocs or cmd.here_strings or incoming_pipe)
+            if operand is not None and attached and ("$" in operand or "`" in operand):
+                raise Unsure("computed source path")
+            if operand is not None and _is_stdin_script_path(operand, None if cwd_computed else cwd):
                 stdin_scripts = [hd.body for hd in cmd.heredocs]
                 stdin_scripts.extend(cmd.here_strings)
                 stdin_scripts.extend(piped_bodies)

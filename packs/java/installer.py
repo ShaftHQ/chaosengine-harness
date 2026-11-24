@@ -818,15 +818,16 @@ _MAVEN_WRAPPER_FETCH_MARKERS = (
     "wget:",
     "cannot download",
     "unable to download",
-    "could not download",
     "invoke-webrequest",
     'exception calling "downloadfile"',
 )
 # These match only on a wrapper-bootstrap line. A global hit is a plugin or
-# dependency log (``curl: command failed``, ``Failed to download artifact``).
+# dependency log (``curl: command failed``, ``Failed to download artifact``,
+# ``Could not download artifact``).
 _MAVEN_WRAPPER_SCOPED_FETCH_MARKERS = (
     "curl:",
     "failed to download",
+    "could not download",
 )
 _MAVEN_WRAPPER_BOOTSTRAP_CONTEXT = (
     "mvnw",
@@ -859,10 +860,10 @@ def _is_maven_wrapper_fetch_failure(maven_out: str) -> bool:
 
     A log that merely contains both ``maven-wrapper`` and ``error`` is a
     compile failure. Fallback requires an unconditional fetch marker, a
-    ``curl:`` or ``failed to download`` line that also names the wrapper
-    bootstrap, a missing ``maven-wrapper.jar`` on the same line as the
-    missing-file wording, a failed fetch/download of ``maven-wrapper`` on
-    one line, or ``MavenWrapperMain`` not loading.
+    ``curl:``, ``failed to download``, or ``could not download`` line that
+    also names the wrapper bootstrap, a missing ``maven-wrapper.jar`` on the
+    same line as the missing-file wording, a failed fetch/download of
+    ``maven-wrapper`` on one line, or ``MavenWrapperMain`` not loading.
 
     ``error`` is a whole word (``\\berror\\b``). ``\\b`` treats the hyphen in
     ``error-prone`` as a boundary, so that token does not count.

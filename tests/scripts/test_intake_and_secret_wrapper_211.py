@@ -493,6 +493,58 @@ class OutputSecretEncodedFormTest(unittest.TestCase):
             )
         )
 
+    def test_overencoded_unreserved_percent_is_withheld(self) -> None:
+        """``c`` encoded as ``%63`` still withholds the raw guarded value.
+
+        ``quote`` leaves unreserved characters alone, so this form is not one of
+        the canonical percent spellings. ``unquote`` restores a literal ``+``.
+        ``unquote_plus`` restores a ``+`` that stands for a space.
+        """
+        over = APP_ID.replace("c", "%63", 1)
+        canonical = urllib.parse.quote(APP_ID, safe="")
+        self.assertEqual("bs://%63loudapp998877665544", over)
+        self.assertNotIn("%63", canonical)
+        self.assertEqual(APP_ID, urllib.parse.unquote(over))
+        self.assertEqual(APP_ID, urllib.parse.unquote_plus(over))
+        blocked = self._withheld(f"fetched {over}\n", field="stdout", code=0)
+        self.assertNotIn(over, blocked)
+        mixed = canonical.replace("c", "%63", 1)
+        self.assertIn("%63", mixed)
+        self.assertNotEqual(mixed, canonical)
+        self.assertEqual(APP_ID, urllib.parse.unquote(mixed))
+        blocked_mixed = self._withheld(f"fetched {mixed}\n", field="stderr", code=3)
+        self.assertNotIn(mixed, blocked_mixed)
+        self.assertNotIn(mixed.lower(), blocked_mixed)
+
+        plus_secret = "Cloud+Key211xy"
+        self.assertGreaterEqual(len(plus_secret), 12)
+        self.assertIn("+", plus_secret)
+        (self.project / "browserstack.yml").write_text(
+            f"app: {APP_ID}\nkey: {plus_secret}\n",
+            encoding="utf-8",
+        )
+        plus_over = plus_secret.replace("C", "%43", 1)
+        self.assertEqual("%43loud+Key211xy", plus_over)
+        self.assertEqual(plus_secret, urllib.parse.unquote(plus_over))
+        self.assertNotEqual(plus_secret, urllib.parse.unquote_plus(plus_over))
+        blocked_plus = self._withheld(f"token {plus_over}\n", field="output", code=4)
+        self.assertNotIn(plus_secret, blocked_plus)
+        self.assertNotIn(plus_over, blocked_plus)
+
+        guard = _load(GUARD_PATH, "secret_guard_211_overencode")
+        spaced = b"cloud app99887766"
+        payload = b"saw %63loud+app99887766\n"
+        self.assertNotIn(spaced, urllib.parse.unquote(payload.decode("ascii")).encode("ascii"))
+        self.assertIn(spaced, urllib.parse.unquote_plus(payload.decode("ascii")).encode("ascii"))
+        self.assertNotIn(spaced, payload)
+        self.assertTrue(self.boundary._output_has_guarded_secret(guard, payload, {spaced}))
+        self.assertIsNone(
+            self.boundary.output_secret_block(
+                {"stdout": "status %63 ok\n", "stderr": "", "output": "", "exit_code": 0},
+                self.project,
+            )
+        )
+
 
 class IntakeFeasibilityGateDocsTest(unittest.TestCase):
     def test_bigger_picture_first_defines_intake_feasibility_gate_and_three_options(self) -> None:
