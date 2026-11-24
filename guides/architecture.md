@@ -506,6 +506,35 @@ Repository policy requires companion functional documentation in
 `ShaftHQ/shafthq.github.io` through a separate documentation pull request,
 reviewed and delivered in the same delivery campaign as behavior changes.
 
+## Nine host launch path
+
+Claude, Codex, Grok, Copilot, OpenCode, Cursor, and Antigravity enter through
+[hooks/launch.py](../hooks/launch.py). Gemini enters through
+[hooks/launch.js](../hooks/launch.js). Both launchers call
+[hooks/guard.py](../hooks/guard.py), which calls
+[hooks/kernel.py](../hooks/kernel.py) and
+[hooks/lifecycle.py](../hooks/lifecycle.py). Grok Bot does not launch a hook.
+It reads the [bot entry card](../references/bot-entry.md).
+
+```mermaid
+flowchart LR
+    accTitle: Nine host launch path
+    accDescr: Eight hook hosts enter through launch.py or launch.js, then guard.py, kernel.py, and lifecycle.py. Grok Bot stays on the bot entry card.
+    Claude[Claude] --> LaunchPy[hooks/launch.py]
+    Codex[Codex] --> LaunchPy[hooks/launch.py]
+    Grok[Grok] --> LaunchPy[hooks/launch.py]
+    Copilot[Copilot] --> LaunchPy[hooks/launch.py]
+    OpenCode[OpenCode] --> LaunchPy[hooks/launch.py]
+    Cursor[Cursor] --> LaunchPy[hooks/launch.py]
+    Antigravity[Antigravity] --> LaunchPy[hooks/launch.py]
+    Gemini[Gemini] --> LaunchJs[hooks/launch.js]
+    LaunchPy[hooks/launch.py] --> Guard[hooks/guard.py]
+    LaunchJs[hooks/launch.js] --> Guard[hooks/guard.py]
+    Guard[hooks/guard.py] --> Kernel[hooks/kernel.py]
+    Guard[hooks/guard.py] --> Lifecycle[hooks/lifecycle.py]
+    GrokBot[Grok Bot] -.-> BotCard[bot entry card]
+```
+
 ## Trust boundaries
 
 ChaosEngine is deliberately conservative around state and authority:
