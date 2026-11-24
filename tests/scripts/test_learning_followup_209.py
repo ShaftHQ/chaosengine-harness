@@ -154,9 +154,32 @@ class MavenWrapperFetchFallback209Test(unittest.TestCase):
         return build_clis, managed_calls, published, spec, opener, reporter, confirmer
 
     def test_wrapper_fetch_failure_falls_back_to_managed_maven_and_publishes(self):
-        cases = (
+        unscoped = (
             ("failed_to_fetch", "Failed to fetch https://repo.maven.apache.org/maven2/...\n", ""),
             ("wget_error", "wget: unable to resolve host address 'repo.maven.apache.org'\n", ""),
+        )
+        for label, stderr, stdout in unscoped:
+            with self.subTest(case=label), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                managed_mvn = self._make_managed_mvn(root)
+                combined = (stderr + "\n" + stdout).strip()
+                self.assertFalse(JAVA_INSTALLER._is_maven_wrapper_fetch_failure(combined))
+                self.assertFalse(INSTALL._is_maven_wrapper_fetch_failure(combined))
+                trace: dict[str, list] = {}
+                error = subprocess.CalledProcessError(
+                    1, ["mvnw", "-B", "clean", "package"], output=stdout, stderr=stderr
+                )
+                with self.assertRaises(subprocess.CalledProcessError):
+                    self._run_build(
+                        root,
+                        wrapper_error=error,
+                        managed_return=managed_mvn,
+                        module=INSTALL,
+                        trace=trace,
+                    )
+                self.assertEqual([], trace["managed_calls"])
+                self.assertEqual(1, len(trace["build_clis"]))
+        cases = (
             (
                 "curl_error",
                 "curl: (22) The requested URL returned error: 503 "
@@ -239,7 +262,10 @@ class MavenWrapperFetchFallback209Test(unittest.TestCase):
             managed_mvn = self._make_managed_mvn(root)
             trace: dict[str, list] = {}
             wrapper_error = subprocess.CalledProcessError(
-                1, ["mvnw"], output="", stderr="Failed to fetch https://example.invalid/maven.zip\n"
+                1,
+                ["mvnw"],
+                output="",
+                stderr="mvnw: Failed to fetch https://example.invalid/maven-wrapper.jar\n",
             )
             managed_error = subprocess.CalledProcessError(
                 1, ["mvn"], output="", stderr="Failed to fetch artifact from mirror\n"
@@ -407,9 +433,35 @@ class MavenWrapperFetchFallback209Test(unittest.TestCase):
                 "",
                 "Error: Could not find or load main class org.apache.maven.wrapper.MavenWrapperMain\n",
             ),
+        )
+        unscoped = (
             ("failed_to_fetch", "", "Failed to fetch https://repo.maven.apache.org/maven2/...\n"),
             ("wget", "wget: unable to resolve host address 'repo.maven.apache.org'\n", ""),
         )
+        for label, stdout, stderr in unscoped:
+            with self.subTest(case=label), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                managed_mvn = self._make_managed_mvn(root)
+                combined = (stderr + "\n" + stdout).strip()
+                self.assertFalse(JAVA_INSTALLER._is_maven_wrapper_fetch_failure(combined))
+                self.assertFalse(INSTALL._is_maven_wrapper_fetch_failure(combined))
+                trace: dict[str, list] = {}
+                error = subprocess.CalledProcessError(
+                    1,
+                    ["mvnw", "-B", "clean", "package"],
+                    output=stdout,
+                    stderr=stderr,
+                )
+                with self.assertRaises(subprocess.CalledProcessError):
+                    self._run_build(
+                        root,
+                        wrapper_error=error,
+                        managed_return=managed_mvn,
+                        module=INSTALL,
+                        trace=trace,
+                    )
+                self.assertEqual([], trace["managed_calls"])
+                self.assertEqual(1, len(trace["build_clis"]))
         for label, stdout, stderr in cases:
             with self.subTest(case=label), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary)
@@ -614,8 +666,8 @@ class MavenWrapperFetchFallback209Test(unittest.TestCase):
         """Maven Central and archive.apache.org are ordinary dependency hosts.
 
         A failed Guava or other artifact download must not fall back. Wrapper
-        tokens, ``MavenWrapperMain``, and unscoped ``wget:`` / ``failed to fetch``
-        still do.
+        tokens and ``MavenWrapperMain`` still do. Bare ``wget:`` does not.
+        ``Failed to fetch`` does only on a wrapper-bootstrap line.
         """
         self.assertNotIn("repo.maven.apache.org", JAVA_INSTALLER._MAVEN_WRAPPER_BOOTSTRAP_CONTEXT)
         self.assertNotIn("archive.apache.org", JAVA_INSTALLER._MAVEN_WRAPPER_BOOTSTRAP_CONTEXT)
@@ -634,6 +686,7 @@ class MavenWrapperFetchFallback209Test(unittest.TestCase):
             "https://repo.maven.apache.org/maven2/com/example/foo/1.0/foo-1.0.jar\n",
             "Could not download https://repo.maven.apache.org/maven2/com/example/foo/1.0/foo-1.0.jar\n",
             "curl: (22) The requested URL returned error: 404 https://archive.apache.org/dist/foo/foo.jar\n",
+            "wget: unable to resolve host\n",
         )
         for output in negatives:
             with self.subTest(output=output):
@@ -645,7 +698,6 @@ class MavenWrapperFetchFallback209Test(unittest.TestCase):
             "Failed to download apache-maven distribution for the wrapper\n",
             "could not download wrapper.properties\n",
             "Error: Could not find or load main class org.apache.maven.wrapper.MavenWrapperMain\n",
-            "wget: unable to resolve host\n",
             "Failed to fetch https://example.invalid/maven-wrapper.jar\n",
         )
         for output in positives:
@@ -672,6 +724,75 @@ class MavenWrapperFetchFallback209Test(unittest.TestCase):
                 )
             self.assertEqual([], trace["managed_calls"])
             self.assertEqual(1, len(trace["build_clis"]))
+
+    def test_issue_217_context_fetch_markers_need_wrapper_lookback(self):
+        """``wget:``, ``failed to fetch``, and ``cannot download`` are not global.
+
+        They match when the same line, or one of the previous three lines,
+        names the wrapper bootstrap. ``unable to download`` stays global.
+        The ``error`` comment cites the ``\\berror\\b(?!-)`` lookahead.
+        """
+        for name in ("cannot download", "failed to fetch", "wget:"):
+            self.assertNotIn(name, JAVA_INSTALLER._MAVEN_WRAPPER_FETCH_MARKERS)
+            self.assertIn(name, JAVA_INSTALLER._MAVEN_WRAPPER_CONTEXT_FETCH_MARKERS)
+            self.assertIn(name, INSTALL._MAVEN_WRAPPER_CONTEXT_FETCH_MARKERS)
+        for name in (
+            "unable to download",
+            "invoke-webrequest",
+            'exception calling "downloadfile"',
+        ):
+            self.assertIn(name, JAVA_INSTALLER._MAVEN_WRAPPER_FETCH_MARKERS)
+            self.assertIn(name, INSTALL._MAVEN_WRAPPER_FETCH_MARKERS)
+        doc = JAVA_INSTALLER._is_maven_wrapper_fetch_failure.__doc__ or ""
+        install_doc = INSTALL._is_maven_wrapper_fetch_failure.__doc__ or ""
+        self.assertIn(r"\berror\b(?!-)", doc)
+        self.assertIn(r"\berror\b(?!-)", install_doc)
+        self.assertIn("error-prone", doc)
+        negatives = (
+            "cannot download artifact com.example:foo:1.0\n",
+            "wget: unable to resolve host\n",
+            "Failed to fetch https://example.invalid/maven.zip\n",
+            (
+                "Downloading https://repo.maven.apache.org/maven2/org/apache/maven/wrapper/"
+                "maven-wrapper/3.2.0/maven-wrapper.jar\n"
+                "note\n"
+                "note\n"
+                "note\n"
+                "wget: unable to resolve host\n"
+            ),
+        )
+        positives = (
+            (
+                "Downloading https://repo.maven.apache.org/maven2/org/apache/maven/wrapper/"
+                "maven-wrapper/3.2.0/maven-wrapper.jar\n"
+                "wget: unable to resolve host\n"
+            ),
+            (
+                "mvnw: starting wrapper bootstrap\n"
+                "resolving distribution\n"
+                "trying mirror\n"
+                "cannot download https://example.invalid/dist.zip\n"
+            ),
+            (
+                "Downloading https://repo.maven.apache.org/maven2/org/apache/maven/wrapper/"
+                "maven-wrapper/3.2.0/maven-wrapper.jar\n"
+                "note\n"
+                "note\n"
+                "Failed to fetch https://example.invalid/dist.zip\n"
+            ),
+            "Failed to fetch https://example.invalid/maven-wrapper.jar\n",
+            "unable to download https://example.invalid/file.jar\n",
+            "Invoke-WebRequest failed without a wrapper token\n",
+            'Exception calling "DownloadFile" with no wrapper token\n',
+        )
+        for output in negatives:
+            with self.subTest(output=output):
+                self.assertFalse(JAVA_INSTALLER._is_maven_wrapper_fetch_failure(output))
+                self.assertFalse(INSTALL._is_maven_wrapper_fetch_failure(output))
+        for output in positives:
+            with self.subTest(output=output):
+                self.assertTrue(JAVA_INSTALLER._is_maven_wrapper_fetch_failure(output))
+                self.assertTrue(INSTALL._is_maven_wrapper_fetch_failure(output))
 
 
 class LegacyMigrationSafety209Test(unittest.TestCase):

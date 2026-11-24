@@ -186,13 +186,19 @@ _STDIN_SCRIPT_PATHS = frozenset({
     "/proc/thread-self/fd/0",
     "/dev/fd/0",
 })
-# A literal ``$(echo ...)`` / ``$(printf ...)`` head is rewritten only when its
-# basename is one of these read-only commands. ``perl``, ``ruby``, ``node``,
-# shells, and delete tools stay computed heads.
+# A literal ``$(echo ...)`` / ``$(printf ...)`` head is rewritten only when the
+# printed token is absolute, or has no slash and no leading dot, and its
+# basename is one of these read-only commands. ``./ls``, ``../ls``, and
+# ``foo/ls`` stay computed heads. ``perl``, ``ruby``, ``node``, shells, and
+# delete tools stay computed heads.
 _SAFE_LITERAL_HEADS = frozenset({
     "ls", "echo", "printf", "pwd", "date", "true", "false",
     "uname", "whoami", "id", "cat", "head", "tail", "wc", "grep", "rg",
 })
+# ``cat`` copies a piped script unchanged for these flags only. ``-s`` and
+# ``--squeeze-blank`` drop extra blank lines but do not hide a one-line script.
+# Any other flag can rewrite the bytes a downstream shell would execute.
+_CAT_STDIN_FLAGS = frozenset({"-", "--", "-u", "-s", "--squeeze-blank"})
 _ECHO_OPTION = re.compile(r"^-[neE]+$")
 _PRINTF_STRING_FORMATS = frozenset({"%s", "%s\n", r"%s\n"})
 _NOT_LITERAL = object()
@@ -447,8 +453,15 @@ def _pure_command_sub_body(word: str) -> str | None:
 
 
 def _printed_head_is_safe(token: str) -> bool:
-    """True when ``token``'s basename is on the read-only command allowlist."""
+    """True when ``token``'s basename is on the read-only command allowlist.
+
+    A token that contains ``/`` or starts with ``.`` is a relative path
+    (``./ls``, ``../ls``, ``foo/ls``) unless ``os.path.isabs`` says it is
+    absolute. Absolute ``/bin/ls`` still uses the basename allowlist.
+    """
     if not re.fullmatch(r"[A-Za-z0-9._+/-]+", token):
+        return False
+    if (("/" in token) or token.startswith(".")) and not os.path.isabs(token):
         return False
     base = os.path.basename(token)
     if not base or base in {".", ".."} or not re.fullmatch(r"[A-Za-z0-9._+-]+", base):
@@ -1041,6 +1054,41 @@ def _is_indirect_getattr_delete(
     return not _is_plain_attr_lookup(attr)
 
 
+def _module_dict_subscript(func: ast.AST, os_mods: set[str], shutil_mods: set[str]) -> tuple[str, ast.AST] | None:
+    """``os.__dict__[key]`` / ``shutil.__dict__[key]``, including import aliases."""
+    if not isinstance(func, ast.Subscript):
+        return None
+    value = func.value
+    if not isinstance(value, ast.Attribute) or value.attr != "__dict__":
+        return None
+    base = value.value
+    if not isinstance(base, ast.Name):
+        return None
+    if base.id in os_mods:
+        return "os", func.slice
+    if base.id in shutil_mods:
+        return "shutil", func.slice
+    return None
+
+
+def _module_dict_delete_label(node: ast.Call, os_mods: set[str], shutil_mods: set[str]) -> str | None:
+    """``os.__dict__['remove']()`` and folded keys. A non-literal key is refused.
+
+    ``os.__dict__['getcwd']()`` is not a delete. The same rule covers ``shutil``
+    and ``rmtree``. The slice is folded with ``_fold_const_str``.
+    """
+    found = _module_dict_subscript(node.func, os_mods, shutil_mods)
+    if found is None:
+        return None
+    kind, key = found
+    folded = _fold_const_str(key)
+    if folded is None:
+        return kind
+    if folded in _OS_DELETE_FUNCS or folded in _INDIRECT_PY_DELETES:
+        return kind
+    return None
+
+
 def _python_entries(segment: str) -> list[tuple[str, bool]]:
     """Return (path, follow_symlinks) for actual Python delete calls in ``segment`` via AST."""
     try:
@@ -1102,6 +1150,9 @@ def _python_entries(segment: str) -> list[tuple[str, bool]]:
             node, os_mods, shutil_mods, pathlib_mods, path_ctors, getattr_names, builtin_mods
         ):
             raise Unsure("indirect Python delete via getattr")
+        dict_label = _module_dict_delete_label(node, os_mods, shutil_mods)
+        if dict_label is not None:
+            raise Unsure(f"indirect Python delete via {dict_label}.__dict__")
         func = node.func
         if isinstance(func, ast.Name) and func.id in direct_funcs:
             arg = _call_path_arg(node)
@@ -2003,8 +2054,8 @@ def _stdin_passthrough(command: _SimpleCommand) -> bool:
     """True when ``cat`` or ``tee`` copies stdin to stdout unchanged.
 
     ``tee`` always copies stdin to stdout. ``cat`` does so with no file
-    operands (``-``, ``--``, and ``-u`` only). A heredoc or here-string
-    replaces that stdin.
+    operands and only ``-``, ``--``, ``-u``, ``-s``, or ``--squeeze-blank``.
+    A heredoc or here-string replaces that stdin.
     """
     if command.heredocs or command.here_strings:
         return False
@@ -2015,7 +2066,25 @@ def _stdin_passthrough(command: _SimpleCommand) -> bool:
         return False
     if any("$" in item or "`" in item for item in rest):
         return False
-    return all(item in {"-", "--", "-u"} for item in rest)
+    return all(item in _CAT_STDIN_FLAGS for item in rest)
+
+
+def _cat_flag_changes_script(command: _SimpleCommand) -> bool:
+    """True when ``cat`` carries a flag outside the stdin passthrough set."""
+    if command.heredocs or command.here_strings:
+        return False
+    head, rest = _head(command.words)
+    if head != "cat":
+        return False
+    return any(item.startswith("-") and item not in _CAT_STDIN_FLAGS for item in rest)
+
+
+def _mutating_cat_between(pipeline: list[_SimpleCommand]) -> bool:
+    """True when a rewriting ``cat`` sits after an upstream producer."""
+    for index, stage in enumerate(pipeline):
+        if index and _cat_flag_changes_script(stage):
+            return True
+    return False
 
 
 def _pipeline_producer(pipeline: list[_SimpleCommand]) -> _SimpleCommand | None:
@@ -2066,6 +2135,10 @@ def _piped_stdin_bodies(
         executes_stdin = True
     else:
         return None
+    # A flag outside the passthrough set rewrites the script. Refuse closed
+    # instead of scanning the pre-image and missing the transformed bytes.
+    if _mutating_cat_between(pipeline):
+        raise Unsure("cat flag changes the piped script")
     producer = _pipeline_producer(pipeline)
     if producer is None:
         return None
