@@ -1293,6 +1293,102 @@ class DeleteGuardIssue208Test(unittest.TestCase):
                 self.assertIn("cannot tell", reason)
                 self.assertIn("cat flag changes the piped script", reason)
 
+    def test_issue_229_absolute_heads_stay_in_trusted_bin_dirs(self) -> None:
+        """An absolute printed head is visible only in ``/bin`` or ``/usr/bin``.
+
+        Lexical ``..`` and extra slashes collapse. ``/usr/local/bin``,
+        ``/opt/homebrew/bin``, ``/tmp``, a different case, and any subdirectory
+        stay computed heads.
+        """
+        self._write_only()
+        allowed = (
+            "$(echo /bin/ls) -la",
+            "$(echo /usr/bin/ls) -la",
+            "$(echo /bin/./ls) -la",
+            "$(echo /bin/../bin/ls) -la",
+            "$(echo //bin/ls) -la",
+        )
+        for cmd in allowed:
+            with self.subTest(cmd=cmd):
+                self.assertEqual("", self.reason(cmd))
+        refused = (
+            "$(echo /tmp/evil/ls) victim.txt",
+            "$(echo /var/tmp/ls) victim.txt",
+            "$(echo /usr/local/bin/ls) -la",
+            "$(echo /opt/homebrew/bin/ls) -la",
+            "$(echo /bin/../tmp/evil/ls) victim.txt",
+            "$(echo /Bin/ls) -la",
+            "$(echo /usr/bin/X11/ls) -la",
+        )
+        for cmd in refused:
+            with self.subTest(cmd=cmd):
+                self.assertIn("computed command head", self.reason(cmd))
+
+    def test_issue_229_windows_system32_heads_are_exact(self) -> None:
+        """Windows drive paths trust only ``System32`` under the injected root.
+
+        The check is lexical (``ntpath``), casefolds the parent, and strips one
+        trailing ``.exe``. Other directories, extensions, ADS, and prefixes refuse.
+        """
+        root = r"C:\Windows"
+        allowed = (
+            r"C:\Windows\System32\ls.exe",
+            r"C:\WINDOWS\SYSTEM32\ls.exe",
+            r"C:\Windows\System32\ls.EXE",
+        )
+        for token in allowed:
+            with self.subTest(token=token):
+                self.assertTrue(GUARD._printed_head_is_safe(token, system_root=root), token)
+        self.assertTrue(
+            GUARD._printed_head_is_safe(r"D:\Windows\System32\ls.exe", system_root=r"D:\Windows")
+        )
+        self.assertFalse(
+            GUARD._printed_head_is_safe(r"C:\Windows\System32\ls.exe", system_root=r"D:\Windows")
+        )
+        refused = (
+            r"C:\Windows\System32\..\Temp\ls.exe",
+            r"C:\Temp\ls.exe",
+            r"%SystemRoot%\System32\ls.exe",
+            r"C:\Windows\System32\ls.exe:evil",
+            r"C:\Windows\System32\ls.cmd",
+            r"C:\Windows\System32\ls.bat",
+            r"C:\Windows\System32\ls.com",
+            r"C:\Windows\System32\ls.exe.",
+            r"C:\Windows\System32\ls.exe ",
+            r"C:\Windows\System32\WindowsPowerShell\v1.0\ls.exe",
+            r"\\?\C:\Windows\System32\ls.exe",
+            r"\\Windows\System32\ls.exe",
+            r"C:Windows\System32\ls.exe",
+        )
+        for token in refused:
+            with self.subTest(token=token):
+                self.assertFalse(GUARD._printed_head_is_safe(token, system_root=root), token)
+
+    def test_issue_230_vars_aliases_are_module_dict_deletes(self) -> None:
+        """``vars`` aliases and ``builtins.vars`` are the same delete as ``vars``."""
+        refused = (
+            "v = vars; v(os)['remove']('only.txt')",
+            "v1 = vars; v2 = v1; v2(os)['remove']('only.txt')",
+            "from builtins import vars as v; v(os)['remove']('only.txt')",
+            "import builtins as b; b.vars(shutil)['rmtree']('dir')",
+            "__builtins__.vars(os)['unlink']('only.txt')",
+            "a = b = vars; a(os)['remove']('only.txt')",
+            "v: object = vars\nv(os)['unlink']('only.txt')",
+        )
+        for source in refused:
+            with self.subTest(source=source):
+                reason = self.reason(self._py(source))
+                self.assertIn("indirect Python delete via", reason)
+                self.assertIn(".__dict__", reason)
+        allowed = (
+            "v = vars; v(os)['getcwd']()",
+            "from builtins import vars as v; v(os)['getcwd']()",
+            "v = vars; v()",
+        )
+        for source in allowed:
+            with self.subTest(source=source):
+                self.assertEqual("", self.reason(self._py(source)))
+
 
 if __name__ == "__main__":
     unittest.main()
