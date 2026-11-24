@@ -35,24 +35,73 @@ are orchestrator, implementer, reviewer, tester, and mechanical-helper. See
 
 ```mermaid
 flowchart LR
-    accTitle: ChaosEngine delivery loop
-    accDescr: A task moves through Plan, Do, Check, Act, delivery, and one durable learning decision without microstep loops.
-    T[Task and triage] --> R[Live research]
-    R --> P[Plan complete scope]
-    P --> D[Do complete implementation]
-    D --> F[Final scope commit]
-    F --> A[Automated CI and comment fixes]
-    A --> X[Adversarial review 1<br/>with the self-accept push]
-    X --> V[Extra local tests]
-    V --> G[Merge]
-    G --> M[Confirmed merge]
-    M --> L[Learning Session]
+    accTitle: Delivery and verification cycle
+    accDescr: A task moves from triage through retrieve, plan, implement, a three-iteration local PDCA cap, self-accept push, CI with adversarial review 1, reconcile, a second review check, merge, and a Learning Session.
+    Triage[Triage] --> Retrieve[Retrieve]
+    Retrieve --> Plan[Plan]
+    Plan --> Implement[Implement]
+    Implement --> Pdca[Local PDCA cap 3]
+    Pdca --> Push[Self-accept push]
+    Push --> Review[CI + Adversarial review 1]
+    Review --> Reconcile[Reconcile]
+    Reconcile --> Second[Second review check]
+    Second --> Merge[Merge]
+    Merge --> Learn[Learning Session]
 ```
 
 The canonical rules live in
 [skills/chaos-engine/SKILL.md](../skills/chaos-engine/SKILL.md). That entrypoint
 sizes the task, loads the one relevant routed surface, and keeps detailed
 guidance out of the always-loaded context until it is needed.
+
+## Capability map
+
+One map of what ChaosEngine supports. The policy owner stays
+[skills/chaos-engine/SKILL.md](../skills/chaos-engine/SKILL.md). Token modes are
+[ultra-lean, balanced, and deep](../references/token-budget-modes.md).
+
+```mermaid
+mindmap
+  root((ChaosEngine))
+    Roles
+      Tester
+      Frontend
+      Backend
+      Product Owner
+      Scrum Master
+    Delivery Loop
+      Triage
+      Retrieve
+      Plan
+      Implement
+      Local PDCA
+      Review and CI
+      Learn
+    Testing and Automation Consultant Stack
+      Test Analysis and Design
+      Static Coverage SARIF
+      API and Contract
+      Web E2E BiDi and Playwright
+      Mobile Appium and AVD
+      Security Pyramid
+      Read-Only Env Doctor
+      SHAFT Pack
+    Nine AI Hosts and Parity Hooks
+      Claude
+      Codex
+      Gemini
+      Grok
+      Copilot
+      OpenCode
+      Cursor
+      Antigravity
+      Grok Bot
+    Memory and Token Economy
+      Memory
+      MemPalace
+      Graphify
+      ultra-lean / balanced / deep
+```
 
 ## Supported hosts
 

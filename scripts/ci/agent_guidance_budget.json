@@ -1,5 +1,16 @@
 {
   "max_skill_listing_chars": 4000,
+  "host_skill_metadata_globs": {
+    "claude": ["skills/*/SKILL.md"],
+    "codex": ["skills/*/SKILL.md"],
+    "copilot": ["skills/*/SKILL.md"],
+    "gemini": ["skills/*/SKILL.md"],
+    "grok": ["skills/*/SKILL.md"],
+    "opencode": ["skills/*/SKILL.md"],
+    "cursor": ["skills/*/SKILL.md"],
+    "antigravity": ["skills/*/SKILL.md"],
+    "grok-bot": ["skills/*/SKILL.md"]
+  },
   "skill_budgets": {
     "skills": {
       "max_skill_md_bytes": 20000

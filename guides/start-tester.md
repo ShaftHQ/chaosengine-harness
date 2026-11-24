@@ -25,3 +25,30 @@ The [product owner](start-product-owner.md) writes the story. The [scrum master]
 ```bash
 python3 -m unittest tests.scripts.test_sdlc_flows_8059
 ```
+
+## Test automation consultant workflow
+
+After the five steps above, route the evidence. The story is ready before any tool runs. Test analysis and the plan come next. A read-only environment doctor (test_env_doctor.py, once that script is on this branch) checks the machine without installing or mutating it. Specialized testing skills then produce the checks. Standardized reporting and the quality gates collect one result. Intent-match review asks whether those checks match the story.
+
+The consultant stack, named here until the skill files land: Test Analysis and Design; Unit, Static, and Coverage; API and Contract; Web E2E BiDi and Playwright; Mobile Appium and AVD; Security Pyramid; SHAFT Pack.
+
+```mermaid
+flowchart TD
+    accTitle: Tester evidence router
+    accDescr: A ready story moves through test analysis, a read-only environment doctor, specialized testing skills, standardized reporting and quality gates, and an intent-match review.
+    Ready[Ready Story] --> Analysis[Test Analysis and Plan]
+    Analysis --> Doctor[Read-Only Env Doctor]
+    Doctor --> Unit[Unit Static Coverage]
+    Doctor --> Api[API and Contract]
+    Doctor --> Web[Web E2E BiDi and Playwright]
+    Doctor --> Mobile[Mobile Appium and AVD]
+    Doctor --> Security[Security Pyramid]
+    Doctor --> Shaft[SHAFT Pack]
+    Unit --> Report[Standardized Reporting and Quality Gates]
+    Api --> Report
+    Web --> Report
+    Mobile --> Report
+    Security --> Report
+    Shaft --> Report
+    Report --> Review[Intent-Match Review]
+```

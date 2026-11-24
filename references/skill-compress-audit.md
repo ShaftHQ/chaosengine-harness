@@ -25,11 +25,13 @@ python3 .chaos-engine/runtime/skill_compress_audit.py audit --strict   # exit 1 
 
 The same audit checks Agent Skills `name` and `description`: `name` is 1–64
 characters, lowercase letters, digits, and single hyphens, and it equals the
-parent directory. `description` is 1–1024 characters. Vendor and plugin-adapter
-`SKILL.md` files are included; a short adapter is not exempt, because it can
-still name the wrong directory. `permissions:` is unused ChaosEngine-only
-metadata. The installer, the index, and this audit do not read it. Do not add
-`allowed-tools`.
+parent directory. An indexed skill `description` is 60–220 characters, the
+same band as the skill-index parity gate. The audit script's absolute ceiling
+stays 1–1024 characters and does not replace that gate. Vendor and
+plugin-adapter `SKILL.md` files are included; a short adapter is not exempt,
+because it can still name the wrong directory. `permissions:` is unused
+ChaosEngine-only metadata. The installer, the index, and this audit do not
+read it. Do not add `allowed-tools`.
 
 ## Apply gate — opt-in draft PRs
 
