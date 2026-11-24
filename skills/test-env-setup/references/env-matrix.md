@@ -1,6 +1,6 @@
 # Environment matrix
 
-Run `python3 scripts/ci/test_env_doctor.py` first. Ask the owner before every install, image pull, SDK download, or emulator boot. Pins below are exact. Grid, Appium, and Playwright commands are the same on Linux, macOS, and Windows when the binary is on PATH. Android acceleration and iOS differ by OS.
+Run `python3 .chaos-engine/scripts/ci/test_env_doctor.py` first. Ask the owner before every install, image pull, SDK download, or emulator boot. Pins below are exact. Grid, Appium, and Playwright commands are the same on Linux, macOS, and Windows when the binary is on PATH. Android acceleration and iOS differ by OS.
 
 ## Selenium Grid 4
 

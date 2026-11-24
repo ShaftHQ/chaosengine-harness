@@ -28,9 +28,9 @@ python3 -m unittest tests.scripts.test_sdlc_flows_8059
 
 ## Test automation consultant workflow
 
-After the five steps above, route the evidence. The story is ready before any tool runs. Test analysis and the plan come next. A read-only environment doctor (test_env_doctor.py, once that script is on this branch) checks the machine without installing or mutating it. Specialized testing skills then produce the checks. Standardized reporting and the quality gates collect one result. Intent-match review asks whether those checks match the story.
+After the five steps above, route the evidence. The story is ready before any tool runs. Test analysis and the plan come next. A read-only environment doctor (`scripts/ci/test_env_doctor.py`) checks the machine without installing or mutating it. Specialized testing skills then produce the checks. Standardized reporting and the quality gates collect one result. Intent-match review asks whether those checks match the story.
 
-The consultant stack, named here until the skill files land: Test Analysis and Design; Unit, Static, and Coverage; API and Contract; Web E2E BiDi and Playwright; Mobile Appium and AVD; Security Pyramid; SHAFT Pack.
+The consultant stack is on demand: [test engineering](../skills/test-engineering/SKILL.md), [API integration testing](../skills/api-integration-testing/SKILL.md), [web end-to-end automation](../skills/web-e2e-automation/SKILL.md), [mobile testing](../skills/mobile-testing/SKILL.md), [test environment setup](../skills/test-env-setup/SKILL.md), and [security audit](../skills/security-audit/SKILL.md). SHAFT pack routing stays with the detected project.
 
 ```mermaid
 flowchart TD

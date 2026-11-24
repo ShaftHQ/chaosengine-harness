@@ -10,7 +10,7 @@ On demand. Load this file only when a test host needs setup.
 
 ## 1. Doctor first
 
-Run `python3 scripts/ci/test_env_doctor.py` before you suggest or run any setup command. Read states in [test-env-doctor](../../references/test-env-doctor.md). `ready` needs nothing. `absent` and `unready` need a fix. `skipped` does not apply on this OS.
+Run `python3 .chaos-engine/scripts/ci/test_env_doctor.py` before you suggest or run any setup command. Read states in [test-env-doctor](../../references/test-env-doctor.md). `ready` needs nothing. `absent` and `unready` need a fix. `skipped` does not apply on this OS.
 
 ## 2. Ask before change
 

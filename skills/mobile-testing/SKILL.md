@@ -10,7 +10,7 @@ On demand. Load this file only for a mobile UI run.
 
 ## 1. Environment
 
-Run `python3 scripts/ci/test_env_doctor.py` before the run. When a required check is `absent` or `unready`, route to the `test-env-setup` skill. Installs and boots go through that skill after the owner says yes.
+Run `python3 .chaos-engine/scripts/ci/test_env_doctor.py` before the run. When a required check is `absent` or `unready`, route to the `test-env-setup` skill. Installs and boots go through that skill after the owner says yes.
 
 ## 2. Safety cards
 

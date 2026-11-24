@@ -4,7 +4,7 @@ Read-only probe of the local test host. It checks binaries, versions, env vars, 
 
 ## Run
 
-`python3 scripts/ci/test_env_doctor.py`
+`python3 .chaos-engine/scripts/ci/test_env_doctor.py`
 
 Add `--text` for a table. JSON is the default (`--json` is the same). `--strict web|grid|mobile-android|mobile-ios|api|all` exits 1 when a required check is `absent` or `unready`, and 0 otherwise. Report mode exits 0 even when tools are absent. Bad arguments exit 2.
 

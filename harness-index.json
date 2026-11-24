@@ -37,7 +37,7 @@
       "path": "skills/work-item/SKILL.md"
     },
     {
-      "description": "Use when running ChaosEngine Learning Session self-improve. Harness lessons are GitHub issues only. Product lessons may queue after delivery or on request.",
+      "description": "Use after final delivery for a Learning Session. Harness lessons are GitHub issues; product lessons may queue.",
       "family": "learning",
       "hosts": {
         "antigravity": "catalog",
@@ -109,7 +109,7 @@
       "path": "skills/architect/SKILL.md"
     },
     {
-      "description": "Use when planning, building, refactoring, or reviewing technical talks or training decks: story arc, claim titles, visual evidence, code slides, checkpoints. On demand only.",
+      "description": "Use when planning, building, or reviewing a technical talk or training deck. On demand only.",
       "family": "on-demand",
       "hosts": {
         "antigravity": "catalog",
@@ -145,7 +145,7 @@
       "path": "skills/pre-done-self-review/SKILL.md"
     },
     {
-      "description": "Use when applying for a job. Default is draft only. A recorded owner standing send permission that names the channel class may send only after the shared gate passes on the exact final text.",
+      "description": "Use when applying for one job. Default is draft only until a named send permission and the gate both pass.",
       "family": "on-demand",
       "hosts": {
         "antigravity": "catalog",
@@ -163,7 +163,7 @@
       "path": "skills/job-apply/SKILL.md"
     },
     {
-      "description": "Use when searching for jobs: two-channel discovery, eligibility-first filter, verify work mode on the job page, End-key scroll, share-profile approval gate, and tracker hygiene. On demand only.",
+      "description": "Use when searching for jobs: eligibility filter, verified work mode, End-key scroll, and tracker hygiene.",
       "family": "on-demand",
       "hosts": {
         "antigravity": "catalog",
@@ -253,7 +253,7 @@
       "path": "skills/ci-cd/SKILL.md"
     },
     {
-      "description": "Use when auditing a repository we own. A second pass confirms.",
+      "description": "Use when auditing a repository we own or designing executable security tests in that repository. An independent second pass confirms each finding.",
       "family": "on-demand",
       "hosts": {
         "antigravity": "catalog",
@@ -269,6 +269,96 @@
       "kind": "portable",
       "name": "security-audit",
       "path": "skills/security-audit/SKILL.md"
+    },
+    {
+      "description": "Use when you route test analysis, coverage evidence, flake triage, and an ISO 29119 report.",
+      "family": "on-demand",
+      "hosts": {
+        "antigravity": "catalog",
+        "claude": "plugin",
+        "codex": "plugin",
+        "copilot": "catalog",
+        "cursor": "catalog",
+        "gemini": "catalog",
+        "grok": "catalog",
+        "grok-bot": "catalog",
+        "opencode": "catalog"
+      },
+      "kind": "portable",
+      "name": "test-engineering",
+      "path": "skills/test-engineering/SKILL.md"
+    },
+    {
+      "description": "Use when writing web end-to-end tests: locators, network faults, Playwright, and Selenium BiDi. Load one reference per turn.",
+      "family": "on-demand",
+      "hosts": {
+        "antigravity": "catalog",
+        "claude": "plugin",
+        "codex": "plugin",
+        "copilot": "catalog",
+        "cursor": "catalog",
+        "gemini": "catalog",
+        "grok": "catalog",
+        "grok-bot": "catalog",
+        "opencode": "catalog"
+      },
+      "kind": "portable",
+      "name": "web-e2e-automation",
+      "path": "skills/web-e2e-automation/SKILL.md"
+    },
+    {
+      "description": "Use when testing an HTTP, event, or contract API. Delegate installed pack client syntax via route() and keep coverage, schema, and review gates here.",
+      "family": "on-demand",
+      "hosts": {
+        "antigravity": "catalog",
+        "claude": "plugin",
+        "codex": "plugin",
+        "copilot": "catalog",
+        "cursor": "catalog",
+        "gemini": "catalog",
+        "grok": "catalog",
+        "grok-bot": "catalog",
+        "opencode": "catalog"
+      },
+      "kind": "portable",
+      "name": "api-integration-testing",
+      "path": "skills/api-integration-testing/SKILL.md"
+    },
+    {
+      "description": "Use when a web, grid, mobile, or API test host needs tools: run the read-only doctor and ask before any install, pull, SDK download, or boot.",
+      "family": "on-demand",
+      "hosts": {
+        "antigravity": "catalog",
+        "claude": "plugin",
+        "codex": "plugin",
+        "copilot": "catalog",
+        "cursor": "catalog",
+        "gemini": "catalog",
+        "grok": "catalog",
+        "grok-bot": "catalog",
+        "opencode": "catalog"
+      },
+      "kind": "portable",
+      "name": "test-env-setup",
+      "path": "skills/test-env-setup/SKILL.md"
+    },
+    {
+      "description": "Use when authoring or running Android or iOS UI tests: probe the host, then apply locator, deep-link, permission, and reset patterns.",
+      "family": "on-demand",
+      "hosts": {
+        "antigravity": "catalog",
+        "claude": "plugin",
+        "codex": "plugin",
+        "copilot": "catalog",
+        "cursor": "catalog",
+        "gemini": "catalog",
+        "grok": "catalog",
+        "grok-bot": "catalog",
+        "opencode": "catalog"
+      },
+      "kind": "portable",
+      "name": "mobile-testing",
+      "path": "skills/mobile-testing/SKILL.md"
     },
     {
       "description": "Use when the adopter asks to delegate to local OSS agents (OpenCode) on a READY local runtime.",

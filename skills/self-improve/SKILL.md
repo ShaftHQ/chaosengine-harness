@@ -1,8 +1,6 @@
 ---
 name: self-improve
-description: >-
-  Use when running ChaosEngine Learning Session self-improve. Harness lessons
-  are GitHub issues only. Product lessons may queue after delivery or on request.
+description: "Use after final delivery for a Learning Session. Harness lessons are GitHub issues; product lessons may queue."
 ---
 
 # self-improve — ChaosEngine learning & adapting
@@ -42,6 +40,8 @@ A lesson that cannot name an outcome does not become a skill.
 `meta_optimize.py review` is the offline cadence. `draft_skill_pr.py` is opt-in only (default OFF, never auto-merge). See [meta-optimize](../../references/meta-optimize.md) and [draft-skill-pr](../../references/draft-skill-pr.md).
 
 ## Retrospective close
+
+Write the learning retrospective only after the merge SHA exists and after subagents and monitors have exited. A non-required check must not start the note and must not be the only reason the note waits.
 
 The note names what happened, why, continue, stop, start, and next action: one change, or nothing actionable.
 

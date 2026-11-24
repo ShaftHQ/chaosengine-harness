@@ -1,9 +1,6 @@
 ---
 name: job-search
-description: >-
-  Use when searching for jobs: two-channel discovery, eligibility-first filter,
-  verify work mode on the job page, End-key scroll, share-profile approval gate,
-  and tracker hygiene. On demand only.
+description: "Use when searching for jobs: eligibility filter, verified work mode, End-key scroll, and tracker hygiene."
 license: MIT
 ---
 

@@ -331,16 +331,28 @@ def names_to_drop(project: Path) -> set[str]:
 
 
 def doctor_note(project: Path) -> dict[str, str] | None:
-    info = detect(project)
-    if info["kind"] != "user" or not _known(str(info.get("version") or "")):
+    """Warn on a user-project version mismatch, or when skills were never installed.
+
+    Kind ``none`` and ``core`` stay quiet. A denied user project stays quiet
+    when the receipt tag is missing. A known version that differs from the
+    receipt tag still warns. ``install.py`` loads this function.
+    """
+    info = detect(Path(project))
+    if info.get("kind") != "user":
         return None
-    receipt = _receipt(project)
-    installed = str(receipt.get("tag") or "")
     version = str(info.get("version") or "")
-    if not installed or installed == version:
+    installed = str(_receipt(Path(project)).get("tag") or "")
+    if _known(version) and installed and installed != version:
+        warning = f"SHAFT project version {version} differs from installed skills {installed}"
+        fix = "fix-next: rerun the install one-liner or pass --shaft-skills-version " + version
+        return {"warning": warning, "fixNext": fix}
+    if installed or USER in denied(Path(project)):
         return None
-    warning = f"SHAFT project version {version} differs from installed skills {installed}"
-    fix = "fix-next: rerun the install one-liner or pass --shaft-skills-version " + version
+    warning = (
+        "SHAFT skills are not installed. "
+        "Run the installer or pass --with-shaft-engine-users."
+    )
+    fix = "fix-next: rerun the installer or pass --with-shaft-engine-users"
     return {"warning": warning, "fixNext": fix}
 
 

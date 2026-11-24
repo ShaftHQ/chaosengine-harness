@@ -134,24 +134,9 @@ def doctor_note(project: Path) -> dict[str, str] | None:
     Kind ``none`` and ``core`` stay quiet. A denied user project
     (``--without-shaft-engine-users``) stays quiet when the receipt tag is
     missing. A known version that differs from the receipt tag still warns.
+    ``install.py`` loads ``detect.doctor_note``; this is the same warning.
     """
-    info = detect.detect(Path(project))
-    if info.get("kind") != "user":
-        return None
-    version = str(info.get("version") or "")
-    installed = str(_stored(Path(project)).get("tag") or "")
-    if detect._known(version) and installed and installed != version:
-        warning = f"SHAFT project version {version} differs from installed skills {installed}"
-        fix = "fix-next: rerun the install one-liner or pass --shaft-skills-version " + version
-        return {"warning": warning, "fixNext": fix}
-    if installed or detect.USER in detect.denied(Path(project)):
-        return None
-    warning = (
-        "SHAFT skills are not installed. "
-        "Run the installer or pass --with-shaft-engine-users."
-    )
-    fix = "fix-next: rerun the installer or pass --with-shaft-engine-users"
-    return {"warning": warning, "fixNext": fix}
+    return detect.doctor_note(Path(project))
 
 
 def resolve_pin(project: Path, info: dict[str, object], opener, override: str) -> tuple[str, str]:

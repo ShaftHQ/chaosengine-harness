@@ -39,6 +39,7 @@ Fix the loop first, then the slowest leg. Commands and diagnostics: [references/
 - One PR at a time. Babysit it to merged. Read `mergeQueueEntry`, not a null `autoMergeRequest`.
 - A required check uses its own concurrency group (`github.run_id`) and `cancel-in-progress: false`.
 - Pin actions to a full commit SHA. `permissions: contents: read` is the floor.
+- Checked action docs: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax.md, https://docs.github.com/en/actions/reference/security/secure-use.md, https://docs.github.com/en/actions/tutorials/store-and-share-data.md, https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/run-job-variations.md, and https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/find-and-customize-actions.md.
 
 ## Report
 

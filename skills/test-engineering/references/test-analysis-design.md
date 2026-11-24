@@ -1,6 +1,6 @@
 # Test analysis and design
 
-Load this for new tests, a test plan, or analysis of acceptance criteria, an ADR, or a diff. The technique menu and the negative-check rule stay in [test-design.md](../../../references/test-design.md). RED-GREEN-REFACTOR stays in [tdd.md](../../../references/tdd.md) and [tdd-failure-modes.md](../../../references/tdd-failure-modes.md). An AI subject also loads [ai-sut](../../../profiles/ai-sut/README.md).
+Load this for new tests, a test plan, or analysis of acceptance criteria, an ADR, or a diff. The technique menu and the negative-check rule stay in [test-design.md](../../../references/test-design.md). RED-GREEN-REFACTOR stays in [tdd.md](../../../references/tdd.md) and [tdd-failure-modes.md](../../../references/tdd-failure-modes.md). An AI subject also loads `profiles/ai-sut/README.md` (source profile, not in the portable payload).
 
 ## Shift-left
 

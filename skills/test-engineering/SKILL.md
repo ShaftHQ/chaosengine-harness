@@ -1,6 +1,6 @@
 ---
 name: test-engineering
-description: On-demand router for test analysis, coverage evidence, flake triage, and ISO 29119 reports.
+description: Use when you route test analysis, coverage evidence, flake triage, and an ISO 29119 report.
 license: MIT
 ---
 
@@ -21,7 +21,7 @@ Link these. Do not copy them.
 - Techniques: [test-design.md](../../references/test-design.md)
 - RED-GREEN-REFACTOR: [tdd.md](../../references/tdd.md) and [tdd-failure-modes.md](../../references/tdd-failure-modes.md)
 - Merge policy: [static-analysis-gate.md](../../references/static-analysis-gate.md) and [complexity-gate.md](../../references/complexity-gate.md)
-- AI system under test: [ai-sut/README.md](../../profiles/ai-sut/README.md)
+- AI system under test: `profiles/ai-sut/README.md` (source profile, not in the portable payload).
 
 ## Rules
 

@@ -1,7 +1,8 @@
 ---
 name: web-e2e-automation
 description: >-
-  On-demand router for web end-to-end tests: locators, network faults, Playwright, and Selenium BiDi. Load one reference per turn.
+  Use when writing web end-to-end tests: locators, network faults,
+  Playwright, and Selenium BiDi. Load one reference per turn.
 license: MIT
 ---
 
