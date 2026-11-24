@@ -6,6 +6,8 @@ met, stays in the adversarial review.
 
 from __future__ import annotations
 
+from datetime import date, timedelta
+from pathlib import Path
 import re
 
 UNTESTABLE_CRITERIA = frozenset({"make it nice"})
@@ -321,14 +323,14 @@ def _input_bearing(criterion: object) -> bool:
 
 
 def _is_negative_check(check: dict) -> bool:
+    """An invalid partition or a non-empty boundary value. A technique name is not enough."""
     partition = str(check.get("partition") or "").strip().casefold()
     if partition in _INVALID_PARTITIONS:
         return True
     boundary = check.get("boundary")
-    if boundary not in (None, "", False):
-        return True
-    technique = str(check.get("technique") or "").strip().casefold()
-    return technique in {"bva", "boundary", "boundary-value"}
+    if boundary is False or boundary is None:
+        return False
+    return not _blank(boundary)
 
 
 def negative_check_gate(criteria, checks) -> dict:
@@ -466,9 +468,39 @@ _ISO_ALIAS = {
     "incident": "incident report",
     "incident report": "incident report",
 }
-_TRACE_ROW = re.compile(r"^\|[^|]+\|[^|]+\|[^|]+\|\s*$", re.M)
+_SEPARATOR_CELL = re.compile(r"^[:\- ]+$")
+_TRACE_HEADER_WORDS = frozenset({"requirement", "check", "result"})
 ORACLE_TYPES = frozenset({"specified", "derived", "metamorphic", "differential", "human"})
 _DIFF_PATH = re.compile(r"^diff --git a/(.+?) b/(.+)$", re.M)
+
+
+def _trace_data_line(line: str) -> bool:
+    """A markdown trace row with real cells. Headers and dash separators are not data."""
+    text = line.strip()
+    if len(text) < 2 or not text.startswith("|") or not text.endswith("|"):
+        return False
+    cells = [cell.strip() for cell in text[1:-1].split("|")]
+    if len(cells) < 3:
+        return False
+    for cell in cells:
+        if not cell or _SEPARATOR_CELL.fullmatch(cell):
+            return False
+        if cell.casefold() in _TRACE_HEADER_WORDS:
+            return False
+    return True
+
+
+class _TraceRowFinder:
+    """Stand-in for the old row regex. `.search` returns the first real data row."""
+
+    def search(self, body: str):
+        for line in (body or "").splitlines():
+            if _trace_data_line(line):
+                return line
+        return None
+
+
+_TRACE_ROW = _TraceRowFinder()
 
 
 def quality_checklist() -> dict:
@@ -566,3 +598,442 @@ def rerun_flake(results) -> dict:
     if len(shown) < 3 or len({str(item) for item in shown[:3]}) != 1:
         return {"ok": False, "flake": True, "reasons": ["rerun-to-flake"], "runs": len(shown)}
     return {"ok": True, "flake": False, "reasons": [], "runs": len(shown)}
+
+
+_FULL_TRACE_KEYS = ("requirement", "risk", "technique", "check", "result", "defect")
+_FULL_TRACE_HEADER = (
+    "| Requirement | Risk | Technique | Check | Result | Defect |\n"
+    "| --- | --- | --- | --- | --- | --- |\n"
+)
+_DEEP_TECHNIQUES = frozenset({"decision-table", "state-transition"})
+_BVA_PAIRS = ({"min-1", "min+1"}, {"max-1", "max+1"})
+FLAKE_CAUSES = frozenset({
+    "timing-async",
+    "state-leakage",
+    "network-env",
+    "locator",
+    "order-dependence",
+    "time-random",
+})
+_FAIL_TOKENS = frozenset({"fail", "failed", "failure", "error", "false", "red"})
+_PASS_TOKENS = frozenset({"pass", "passed", "ok", "green", "true"})
+_SCOPE_MARKS = frozenset({"in", "out"})
+_SARIF_BLOCK = frozenset({"error", "warning", ""})
+_SARIF_NOTE = frozenset({"note", "none"})
+_TEST_ATTR = re.compile(
+    r"(?:#\[(?:[\w:]+::)?test\]|@Test\b|\[(?:Fact|Theory|TestMethod|Test)\b)"
+)
+_TEST_HEADER = re.compile(
+    r"(?:"
+    r"(?:async\s+)?def\s+test_\w+"
+    r"|(?:\bit|\btest)\s*\("
+    r"|func\s+Test\w+\s*\("
+    r")"
+)
+_ASSERT_SIGNAL = re.compile(
+    r"(?:"
+    r"\bassert(?:_eq!|_ne!|!|(?!\w))"
+    r"|\bexpect\s*\("
+    r"|\braise\b"
+    r"|pytest\.raises\b"
+    r"|\bself\.assert\w+"
+    r"|\bt\.(?:Error|Errorf|Fatal|Fatalf|Fail|FailNow)\b"
+    r"|should_panic\b"
+    r"|\bAssert\.\w+"
+    r"|\.Should\s*\("
+    r"|\bassert(?:Equal|Equals|True|False|That|Throws|Null|NotNull)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _risk_at_least(risk_level: object, floor: int) -> bool:
+    if isinstance(risk_level, bool) or not isinstance(risk_level, int):
+        return False
+    return risk_level >= floor
+
+
+def _cell(value: object) -> str:
+    if value is None:
+        return ""
+    return str(value).strip().replace("|", "/").replace("\n", " ")
+
+
+def _full_trace_cells(row: object) -> list[str] | None:
+    if isinstance(row, dict):
+        folded = {str(key).strip().casefold(): value for key, value in row.items()}
+        return [_cell(folded.get(key)) for key in _FULL_TRACE_KEYS]
+    if isinstance(row, (list, tuple)) and not isinstance(row, str):
+        cells = [_cell(item) for item in row]
+        if len(cells) < len(_FULL_TRACE_KEYS):
+            cells.extend("" for _ in range(len(_FULL_TRACE_KEYS) - len(cells)))
+        return cells[: len(_FULL_TRACE_KEYS)]
+    return None
+
+
+def traceability_matrix_full(rows) -> dict:
+    """Six-column requirement trace. A blank required cell is incomplete-trace-row."""
+    items = list(rows or [])
+    if not items:
+        return {
+            "ok": False,
+            "reasons": ["incomplete-trace-row"],
+            "missing": [],
+            "matrix": _FULL_TRACE_HEADER,
+        }
+    body = [_FULL_TRACE_HEADER.rstrip("\n")]
+    missing: list[int] = []
+    for index, row in enumerate(items):
+        cells = _full_trace_cells(row)
+        if cells is None or any(not cell for cell in cells):
+            missing.append(index)
+            cells = cells or [""] * len(_FULL_TRACE_KEYS)
+        body.append("| " + " | ".join(cells) + " |")
+    reasons = ["incomplete-trace-row"] if missing else []
+    return {
+        "ok": not reasons,
+        "reasons": reasons,
+        "missing": missing,
+        "matrix": "\n".join(body) + "\n",
+    }
+
+
+def _technique_name(check: dict) -> str:
+    text = str(check.get("technique") or "").strip().casefold().replace("_", " ").replace("-", " ")
+    return "-".join(text.split())
+
+
+def _boundary_tokens(check: dict) -> set[str]:
+    raw: list[object] = []
+    for key in ("boundary", "boundaries", "points"):
+        value = check.get(key)
+        if isinstance(value, str):
+            raw.extend(re.split(r"[,/\s]+", value))
+        elif isinstance(value, (list, tuple)) and not isinstance(value, str):
+            raw.extend(value)
+    tokens = set()
+    for item in raw:
+        text = str(item).strip().casefold().replace(" ", "")
+        if text:
+            tokens.add(text)
+    return tokens
+
+
+def bva_depth_gate(risk_level, check) -> dict:
+    """Level 8 and above needs 3-value BVA, two boundary points, or a table or transition."""
+    if not _risk_at_least(risk_level, 8):
+        return {"ok": True, "reasons": []}
+    row = check if isinstance(check, dict) else {}
+    if _technique_name(row) in _DEEP_TECHNIQUES:
+        return {"ok": True, "reasons": []}
+    tokens = _boundary_tokens(row)
+    if len(tokens) >= 2 or any(pair <= tokens for pair in _BVA_PAIRS):
+        return {"ok": True, "reasons": []}
+    return {"ok": False, "reasons": ["insufficient-bva-depth"]}
+
+
+def _mutation_target_exists(target: str, repo_root) -> bool:
+    root = Path(repo_root).resolve()
+    candidate = Path(target)
+    if not candidate.is_absolute():
+        candidate = root / candidate
+    try:
+        resolved = candidate.resolve()
+    except OSError:
+        return False
+    if resolved != root and root not in resolved.parents:
+        return False
+    return resolved.is_file()
+
+
+def _survivors_present(survivors: object) -> bool:
+    if survivors is None or isinstance(survivors, (str, bytes)):
+        return False
+    try:
+        return len(list(survivors)) > 0
+    except TypeError:
+        return False
+
+
+def mutation_target_gate(risk_level, target, *, repo_root=None, survivors=None) -> dict:
+    """Level 8 and above needs a real mutation target and no survivor on a changed line."""
+    if not _risk_at_least(risk_level, 8):
+        return {"ok": True, "reasons": []}
+    reasons: list[str] = []
+    text = str(target or "").strip()
+    if not text or (repo_root is not None and not _mutation_target_exists(text, repo_root)):
+        reasons.append("missing-mutation-target")
+    if _survivors_present(survivors):
+        reasons.append("survived-mutant")
+    return {"ok": not reasons, "reasons": reasons}
+
+
+def _number(value: object) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value)
+
+
+def coverage_gate(patch_percent, repo_percent, repo_percent_base, *, strict: bool = False) -> dict:
+    """Patch floor is 80, or 90 when strict. Repo coverage may not fall below its base."""
+    reasons: list[str] = []
+    patch = _number(patch_percent)
+    floor = 90.0 if strict else 80.0
+    if patch is None or patch < floor:
+        reasons.append("patch-coverage")
+    current = _number(repo_percent)
+    base = _number(repo_percent_base)
+    if current is None or base is None or current < base:
+        reasons.append("coverage-ratchet")
+    return {"ok": not reasons, "reasons": reasons}
+
+
+def quality_scope_gate(plan_scope, *, subject: str = "software") -> dict:
+    """Every quality characteristic is explicitly in or out. AI subjects add ISO 25059."""
+    names = list(ISO_25010)
+    if str(subject or "").strip().casefold() == "ai":
+        names.extend(ISO_25059)
+    scope = plan_scope if isinstance(plan_scope, dict) else {}
+    folded = {str(key).strip().casefold(): value for key, value in scope.items()}
+    missing = [
+        name
+        for name in names
+        if str(folded.get(name) or "").strip().casefold() not in _SCOPE_MARKS
+    ]
+    return {
+        "ok": not missing,
+        "reasons": ["missing-quality-scope"] if missing else [],
+        "missing": missing,
+    }
+
+
+def _posix_rel(value: object) -> str:
+    text = str(value or "").strip().replace("\\", "/")
+    if "://" in text:
+        text = text.split("://", 1)[1]
+    while text.startswith("./"):
+        text = text[2:]
+    return text.lstrip("/")
+
+
+def _uri_matches(uri: str, changed: list[str]) -> bool:
+    norm = _posix_rel(uri)
+    for path in changed:
+        item = _posix_rel(path)
+        if item and (norm == item or norm.endswith("/" + item) or item.endswith("/" + norm)):
+            return True
+    return False
+
+
+def _sarif_message(result: dict) -> str:
+    message = result.get("message")
+    if isinstance(message, dict):
+        text = str(message.get("text") or message.get("markdown") or "")
+    else:
+        text = str(message or "")
+    return " ".join(text.split())[:180]
+
+
+def _sarif_results(sarif_doc: dict) -> list[dict]:
+    found: list[dict] = []
+    runs = sarif_doc.get("runs")
+    if not isinstance(runs, list):
+        return found
+    for run in runs:
+        if not isinstance(run, dict):
+            continue
+        results = run.get("results")
+        if isinstance(results, list):
+            found.extend(item for item in results if isinstance(item, dict))
+    return found
+
+
+def _sarif_uris(result: dict) -> list[str]:
+    uris: list[str] = []
+    locations = result.get("locations")
+    if not isinstance(locations, list):
+        return uris
+    for location in locations:
+        if not isinstance(location, dict):
+            continue
+        physical = location.get("physicalLocation")
+        if not isinstance(physical, dict):
+            continue
+        artifact = physical.get("artifactLocation")
+        if isinstance(artifact, dict) and artifact.get("uri"):
+            uris.append(str(artifact["uri"]))
+    return uris
+
+
+def sarif_gate(sarif_doc, changed_paths, *, max_rows: int = 20) -> dict:
+    """SARIF 2.1.0. Error, warning, and omitted level block on changed paths. Note does not."""
+    if not isinstance(sarif_doc, dict) or str(sarif_doc.get("version") or "").strip() != "2.1.0":
+        return {"ok": False, "reasons": ["sarif-version"], "rows": [], "notes": [], "blocked": 0}
+    if isinstance(changed_paths, str):
+        changed = [_posix_rel(changed_paths)]
+    else:
+        changed = [_posix_rel(path) for path in (changed_paths or [])]
+    cap = max(0, int(max_rows)) if isinstance(max_rows, int) and not isinstance(max_rows, bool) else 20
+    rows: list[dict] = []
+    notes: list[dict] = []
+    blocked = 0
+    for result in _sarif_results(sarif_doc):
+        level = result.get("level")
+        folded = "" if level is None else str(level).strip().casefold()
+        matched = next((uri for uri in _sarif_uris(result) if _uri_matches(uri, changed)), "")
+        if not matched:
+            continue
+        row = {
+            "path": _posix_rel(matched),
+            "level": folded or "omitted",
+            "rule": str(result.get("ruleId") or ""),
+            "message": _sarif_message(result),
+        }
+        if folded in _SARIF_NOTE:
+            if len(notes) < cap:
+                notes.append(row)
+            continue
+        if folded not in _SARIF_BLOCK:
+            continue
+        blocked += 1
+        if len(rows) < cap:
+            rows.append(row)
+    reasons = ["static-finding"] if blocked else []
+    return {"ok": not reasons, "reasons": reasons, "rows": rows, "notes": notes, "blocked": blocked}
+
+
+def _run_token(item: object) -> str:
+    if isinstance(item, dict):
+        item = item.get("result", item.get("status", item.get("outcome", "")))
+    return str(item).strip().casefold()
+
+
+def _as_date(value: object) -> date | None:
+    if isinstance(value, date):
+        return date(value.year, value.month, value.day)
+    text = str(value or "").strip()
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
+        return None
+    try:
+        return date.fromisoformat(text)
+    except ValueError:
+        return None
+
+
+def _expiry_in_window(expires: str, today: date) -> bool:
+    day = _as_date(expires)
+    if day is None:
+        return False
+    return today <= day <= today + timedelta(days=30)
+
+
+def _quarantine_fields(quarantine: object, today: date) -> tuple[list[str], str]:
+    record = quarantine if isinstance(quarantine, dict) else None
+    if record is None:
+        return ["flake-quarantine"], ""
+    owner = str(record.get("owner") or "").strip()
+    ticket = str(record.get("ticket") or "").strip()
+    cause = str(record.get("cause") or "").strip()
+    expires = str(record.get("expires") or "").strip()
+    known = cause in FLAKE_CAUSES
+    if owner and ticket and known and _expiry_in_window(expires, today):
+        return [], cause
+    return ["flake-quarantine"], cause if known else ""
+
+
+def flake_quarantine_gate(runs, quarantine=None, *, today=None) -> dict:
+    """Three identical failures are a defect. A flake needs a quarantine and is never a pass."""
+    judged = rerun_flake(runs)
+    window = [_run_token(item) for item in list(runs or [])[:3]]
+    anchor = _as_date(today) if today is not None else date.today()
+    if anchor is None:
+        anchor = date.today()
+    base = {
+        "flake": judged["flake"],
+        "runs": judged["runs"],
+        "defect_type": "",
+        "quarantined": False,
+        "passed": False,
+    }
+    if not judged["flake"] and len(window) >= 3 and all(token in _FAIL_TOKENS for token in window):
+        return {**base, "ok": False, "reasons": ["stable-failure"], "flake": False}
+    if not judged["flake"]:
+        passed = len(window) >= 3 and all(token in _PASS_TOKENS for token in window)
+        return {**base, "ok": True, "reasons": [], "passed": passed}
+    reasons, cause = _quarantine_fields(quarantine, anchor)
+    return {
+        **base,
+        "ok": not reasons,
+        "reasons": reasons,
+        "defect_type": cause,
+        "quarantined": not reasons,
+        "passed": False,
+    }
+
+
+def _diff_source_lines(diff_text: str) -> list[tuple[str, str]]:
+    rows: list[tuple[str, str]] = []
+    for raw in (diff_text or "").splitlines():
+        if not raw or raw.startswith(("diff ", "index ", "@@", "\\", "+++", "---")):
+            continue
+        mark = raw[0]
+        if mark in "+- ":
+            if mark == "-":
+                continue
+            rows.append((mark, raw[1:]))
+            continue
+        rows.append(("+", raw))
+    return rows
+
+
+def _sibling_function(text: str) -> bool:
+    if not text or text[0].isspace() or text[0] in "})]":
+        return False
+    if _TEST_HEADER.search(text) or _TEST_ATTR.search(text):
+        return False
+    return bool(re.match(r"(?:async\s+def |def |func |fn |class )\w", text))
+
+
+def _added_test_lines(diff_text: str) -> list[str]:
+    rows = _diff_source_lines(diff_text)
+    saw = False
+    in_test = False
+    armed = False
+    captured: list[str] = []
+    for mark, text in rows:
+        if _TEST_ATTR.search(text):
+            saw = True
+            in_test = True
+            armed = True
+            if mark == "+":
+                captured.append(text)
+            continue
+        if armed:
+            armed = False
+            in_test = True
+            if mark == "+":
+                captured.append(text)
+            continue
+        if _TEST_HEADER.search(text):
+            saw = True
+            in_test = True
+            if mark == "+":
+                captured.append(text)
+            continue
+        if in_test and _sibling_function(text):
+            in_test = False
+        if in_test and mark == "+":
+            captured.append(text)
+    if not saw:
+        return [text for mark, text in rows if mark == "+"]
+    return captured
+
+
+def assertion_signal_gate(diff_text, *, is_new_file: bool = True) -> dict:
+    """A new test file with no assertion signal blocks. An edit without one is a review warning."""
+    lines = _added_test_lines(diff_text or "")
+    if lines and not any(_ASSERT_SIGNAL.search(line) for line in lines):
+        if is_new_file:
+            return {"ok": False, "status": "block", "reasons": ["assertion-free"]}
+        return {"ok": True, "status": "review", "reasons": ["assertion-free"]}
+    return {"ok": True, "status": "pass", "reasons": []}
