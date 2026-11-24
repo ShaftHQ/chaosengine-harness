@@ -70,6 +70,7 @@ _TRIVIAL_ASSERT_EXPR = re.compile(
     r"(?:True|False|None|\d+(?:\.\d+)?|[A-Za-z_]\w*"
     r"|not\s+(?:True|False|None|\d+(?:\.\d+)?|[A-Za-z_]\w*))\Z"
 )
+_TRIVIAL_ASSERT_ATOM = re.compile(r"True|False|None|\d+(?:\.\d+)?|[A-Za-z_]\w*")
 _JS_LINE_MARKERS = ("=>", ";", "{", "}", "const ", "let ", "var ", "function ", "it(", "test(")
 _FLOOR_BEFORE = re.compile(r"(?:\)|\]|\d|[A-Za-z_]\w*)$")
 _FLOOR_AFTER = re.compile(
@@ -586,16 +587,41 @@ def _unwrap_assert_parens(expr: str) -> str:
     return text
 
 
+def _normalize_trivial_assert(expr: str) -> str:
+    """Rewrite ``not (atom)`` to ``not atom`` so the trivial-assert check sees it.
+
+    Outer parentheses unwrap first. When ``not`` is followed by whitespace or
+    ``(``, one parenthesized operand unwraps repeatedly. An exact atom
+    (``True``, ``False``, ``None``, a number, or a name) becomes ``not <atom>``.
+    Any other operand is left as written, so ``not (x == 5)``, ``not (fn(x))``,
+    ``not (a and b)``, and ``not (flag) and other`` stay strong.
+    """
+    text = _unwrap_assert_parens(expr)
+    match = re.match(r"not(?=\s|\()", text)
+    if match is None:
+        return text
+    operand = text[match.end() :].strip()
+    if operand.startswith("("):
+        inner = _unwrap_assert_parens(operand)
+        if inner != operand and _TRIVIAL_ASSERT_ATOM.fullmatch(inner):
+            return f"not {inner}"
+        return text
+    if _TRIVIAL_ASSERT_ATOM.fullmatch(operand):
+        return f"not {operand}"
+    return text
+
+
 def _bare_assert_strength(line: str) -> tuple[int, int]:
     """Strong and weak counts for bare ``assert`` statements on one line.
 
-    ``assert True``, ``assert (True)``, ``assert 1``, ``assert flag``, and
-    ``assert not flag`` are weak. Comparisons, membership, and calls stay strong.
+    ``assert True``, ``assert (True)``, ``assert 1``, ``assert flag``,
+    ``assert not flag``, and ``assert not (flag)`` are weak. Comparisons,
+    membership, calls, and ``assert not (x == 5)`` stay strong.
     """
     strong = 0
     weak = 0
     for match in _BARE_ASSERT.finditer(line):
-        expr = _unwrap_assert_parens(_assert_expression(line[match.end() :]))
+        expr = _normalize_trivial_assert(_assert_expression(line[match.end() :]))
         if _TRIVIAL_ASSERT_EXPR.fullmatch(expr):
             weak += 1
         else:

@@ -23,10 +23,12 @@ core; every host hook calls this module. Host adapters keep no second copy.
 from __future__ import annotations
 
 import contextlib
+import importlib.util
 import json
 import os
 import re
 import subprocess  # nosec B404 - fixed git argv for worktree scope
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -1616,24 +1618,61 @@ def _shell_block(project: Path, commands: tuple[str, ...], session_id: str | Non
     return None
 
 
+def _payload_api():
+    cached = getattr(_payload_api, "module", None)
+    if cached is not None:
+        return cached
+    loaded = sys.modules.get("chaos_engine_kernel")
+    if loaded is not None and hasattr(loaded, "extract_file_payload"):
+        _payload_api.module = loaded
+        return loaded
+    path = Path(__file__).resolve().parent / "kernel.py"
+    spec = importlib.util.spec_from_file_location("chaos_engine_kernel_payload", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("ChaosEngine policy kernel is unavailable")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    _payload_api.module = module
+    return module
+
+
 def _input_paths(tool_input: dict) -> list[str]:
+    if not isinstance(tool_input, dict):
+        return []
+    payload = _payload_api().extract_file_payload("", tool_input)
     paths: list[str] = []
-    for key in ("file_path", "filePath", "path", "target_file", "target_directory", "notebook_path"):
-        value = tool_input.get(key)
-        if isinstance(value, str) and value.strip():
-            paths.append(value.strip())
+    if isinstance(payload.path, str) and payload.path.strip():
+        paths.append(payload.path.strip())
+    # Glob/Grep may name a directory. The file extractor does not own that key.
+    directory = tool_input.get("target_directory")
+    if isinstance(directory, str) and directory.strip():
+        folded = directory.strip()
+        if folded not in paths:
+            paths.append(folded)
     return paths
 
 
-# Normalized edit tools plus Codex apply_patch. Cursor and OpenCode are hook hosts.
+# Canonical file mutations. Kinds are write/edit/patch. NotebookEdit stays
+# named because the extractor classifies it as other.
 EDIT_TOOLS = frozenset({
     "Write",
     "Edit",
-    "StrReplace",
-    "MultiEdit",
-    "NotebookEdit",
     "apply_patch",
+    "NotebookEdit",
+    "write",
+    "edit",
+    "patch",
 })
+
+
+def _impact_edit(tool_name: str, tool_input: dict | None) -> bool:
+    if tool_name in EDIT_TOOLS:
+        return True
+    payload = _payload_api().extract_file_payload(
+        tool_name, tool_input if isinstance(tool_input, dict) else None
+    )
+    return payload.kind in {"write", "edit", "patch"}
 IMPACT_EDIT_BLOCK = (
     "Impact receipt missing for this task area. "
     "Run `python3 .chaos-engine/tool.py retrieve --store graphify \"impact of this edit\"` "
@@ -1826,7 +1865,7 @@ def impact_edit_block_reason(
     refresh first. Reads do not deny. A write under the declared scratch
     directory needs no receipt.
     """
-    if event_name != "PreToolUse" or tool_name not in EDIT_TOOLS:
+    if event_name != "PreToolUse" or not _impact_edit(tool_name, tool_input):
         return None
     if _scratch_edit(project, tool_input):
         return None

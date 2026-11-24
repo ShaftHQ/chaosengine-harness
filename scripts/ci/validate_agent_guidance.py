@@ -116,6 +116,21 @@ def owned_guidance_markdown(root: Path) -> list[Path]:
     guides = root / "guides"
     if guides.is_dir():
         paths.extend(guides.glob("*.md"))
+        tools = guides / "tools"
+        if tools.is_dir():
+            paths.extend(tools.glob("*.md"))
+    companions = root / "companions"
+    if companions.is_dir():
+        paths.extend(companions.glob("*.md"))
+    for name in (
+        "host-parity-matrix.md",
+        "hook-trigger-map.md",
+        "lifecycle-hooks.md",
+        "parallel-streams.md",
+    ):
+        path = refs / name
+        if path.is_file():
+            paths.append(path)
     return sorted(set(paths))
 
 

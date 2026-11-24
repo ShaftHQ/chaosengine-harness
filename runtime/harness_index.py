@@ -21,7 +21,7 @@ HERE = Path(__file__).resolve().parents[1]
 INDEX_NAME = "harness-index.json"
 CATALOG = "references/catalog.md"
 HOSTS = ("claude", "codex", "copilot", "gemini", "grok", "opencode", "cursor", "grok-bot", "antigravity")
-HOOK_HOSTS = ("claude", "codex", "copilot", "gemini", "grok")
+HOOK_HOSTS = ("claude", "codex", "copilot", "gemini", "grok", "opencode", "cursor", "antigravity")
 HARNESS_ROOTS = (
     ".chaos-engine/",
     "chaos-engine/",
@@ -93,7 +93,7 @@ SKILLS = (
      "on-demand"),
     # On demand: core-card group row for multi-channel applications.
     ("job-applications", "portable", "skills/job-applications/SKILL.md",
-     "Use when applying to jobs for the user by email, LinkedIn, or an ATS form.",
+     "Use when choosing only the application channel (email, LinkedIn, or ATS). Draft and send stay in job-apply.",
      "on-demand"),
     # On demand: source-of-truth docs, status vocabulary, journey maps (#7726).
     ("docs-hygiene", "portable", "skills/docs-hygiene/SKILL.md",
@@ -201,7 +201,7 @@ ROUTES = (
     ("No proxy", "references/no-proxy.md",
      "Use when a task would install, pin, or wrap a traffic proxy. Never install one."),
     ("GAP-EXIT2 UX", "references/host-parity-matrix.md",
-     "Use when Grok or Copilot may not honor an exit-2 hard block and the compensating checklist applies."),
+     "Use when Grok, Copilot, Cursor, or OpenCode may not honor an exit-2 hard block and the compensating checklist applies."),
     ("Add-ons", "references/addons.md",
      "Use when a task fits an optional add-on (design, video, or a project pack): list, install, remove, or load one."),
     ("Complexity gate", "references/complexity-gate.md",

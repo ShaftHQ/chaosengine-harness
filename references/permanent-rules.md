@@ -38,10 +38,9 @@ Assistant memory keeps only this pointer: "Follow the ChaosEngine core card
 | Single thread by default; delegate when the owner enables delegation, or when a bounded read-only firewall/consultant is authorized ([consult-first](consult-first.md), [context firewall](context-firewall.md)) | [delegation](delegation.md) |
 | Default delivery is a small vertical slice (~90 changed lines or a named size_waiver). One grouped pull request is allowed when an epic or batch waiver names it | [kanban](../skills/kanban/SKILL.md) |
 | After each delivery run `tool.py maintain` (fast-forward keeping edits, reinstall, doctor, refresh, reload) | [kanban](../skills/kanban/SKILL.md) |
-| Status reports are tables | [core card](../skills/chaos-engine/SKILL.md) |
+| Status reports are tables | [kanban](../skills/kanban/SKILL.md) |
 | Each pull request carries exactly one release-note label and uses the merge rule above; static analysis blocks | [static-analysis gate](static-analysis-gate.md) |
 | Work in the agent's own sandbox when cost is equal; the owner workstation only runs the final install and doctor | [task isolation](task-isolation.md) |
 | Short messages; no duplicate verification; one cheap call per status check | [CI status economy](ci-status-economy.md) |
 | Retrieve and load companion cards at task start; store runs stop only on a stall, never a fixed timeout | [retrieve-first](retrieve-first.md) |
-| The chaos-engine skill forbids a maven repository that returns 200 for any coordinate other than the intended artifact; a repository that 404s every other coordinate stays allowed | [permanent rules](permanent-rules.md) |
 | Non-TTY shells: always pass a path to `rg` (it otherwise waits on stdin) | [eliminate-waste](eliminate-waste.md) |

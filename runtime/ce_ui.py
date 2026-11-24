@@ -367,9 +367,19 @@ def layout_lines(text: str, width: int, *, hyperlinks: bool = False) -> list[str
     return lines or [""]
 
 
+_COMMIT_SHA_ROW = re.compile(r"Commit\b.*\b([0-9a-fA-F]{40})\s*$")
+
+
+def _commit_row_keeps_full_sha(line: str) -> bool:
+    """A Commit row that already ends in a 40-hex SHA must stay intact."""
+    return _COMMIT_SHA_ROW.search(line) is not None
+
+
 def line_may_exceed_width(line: str) -> bool:
-    """True when the line is only an unbreakable URL or an OSC 8 label that holds one."""
+    """True for an unbreakable URL, an OSC 8 label, or a full 40-hex Commit row."""
     if "\x1b]8;;" in line:
+        return True
+    if _commit_row_keeps_full_sha(line):
         return True
     return _URL_RE.fullmatch(line.strip()) is not None
 

@@ -662,6 +662,61 @@ def _has_commit(cwd: Path) -> bool:
     return True
 
 
+def _git_metadata_husk(cwd: Path) -> bool:
+    """True when ``.git`` is a husk: missing objects/refs, or a born HEAD object is gone.
+
+    A symbolic unborn HEAD stays a normal empty repository. Only a linked
+    worktree (``worktrees/<name>``) climbs to the common dir, so a valid
+    worktree is not a husk and a ``modules/`` gitdir stays one. This check
+    does not import the installer and does not suggest a commit on a husk.
+    """
+    marker = cwd / ".git"
+    if not marker.exists():
+        return False
+    common = marker
+    if marker.is_file():
+        try:
+            raw = marker.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return True
+        target: Path | None = None
+        for line in raw.splitlines():
+            if line.startswith("gitdir:"):
+                target = Path(line.split(":", 1)[1].strip())
+                break
+        if target is None:
+            return True
+        if not target.is_absolute():
+            target = (marker.parent / target).resolve()
+        else:
+            target = target.resolve()
+        # Only …/worktrees/<name> climbs; a modules/ gitdir stays on its own gitdir.
+        if target.parent.name == "worktrees" and (target.parent.parent / "objects").is_dir():
+            common = target.parent.parent
+        else:
+            common = target
+    objects = common / "objects"
+    refs = common / "refs"
+    if not objects.is_dir() or not refs.is_dir():
+        return True
+    head = common / "HEAD"
+    try:
+        text = head.read_text(encoding="utf-8", errors="replace").strip()
+    except OSError:
+        return True
+    if text.startswith("ref:"):
+        return False
+    if len(text) < 4 or any(character not in "0123456789abcdefABCDEF" for character in text):
+        return False
+    loose = objects / text[:2] / text[2:]
+    if loose.is_file():
+        return False
+    pack = objects / "pack"
+    if pack.is_dir() and any(pack.glob("*.pack")):
+        return False
+    return True
+
+
 def graphify_doctor_row(cwd: Path) -> dict[str, str] | None:
     """Doctor row for an existing shared graph. Missing caches stay the setup plan."""
     graph_out = resolve_graph_out(cwd)
@@ -670,6 +725,17 @@ def graphify_doctor_row(cwd: Path) -> dict[str, str] | None:
     fresh, message = graph_freshness(cwd)
     if fresh:
         return {"status": "healthy", "detail": message}
+    # Classify a husk before git rev-parse. A directory .git missing objects/refs
+    # makes HEAD^{commit} walk into a parent repository and look committed.
+    if _git_metadata_husk(cwd):
+        return {
+            "status": "absent",
+            "detail": "git-husk blocks Graphify until git metadata is restored",
+            "fixNext": (
+                "git-husk: restore git metadata using references/box-durability.md "
+                "before Graphify can index"
+            ),
+        }
     if not is_git_work_tree(cwd):
         # #7487: fingerprint-stale → repair. Never-indexed keeps #7303 warning detail.
         fix = (
@@ -688,7 +754,7 @@ def graphify_doctor_row(cwd: Path) -> dict[str, str] | None:
             "status": "absent",
             "detail": "waiting for the first commit - Graphify indexes a revision",
             "fixNext": (
-                "commit once (git add -A && git commit -m init), then "
+                "commit once (git add <tracked-safe paths> && git commit -m init), then "
                 f"{python_cli()} .chaos-engine/install.py repair --project . --component graphify"
             ),
         }
@@ -1953,6 +2019,9 @@ def refresh(
     unknown = selected - {"graphify", "mempalace"}
     if unknown:
         raise RuntimeError(f"unsupported store component: {sorted(unknown)[0]}")
+    if _git_metadata_husk(Path(cwd)):
+        # Do not index a husk. Git would walk into a parent repository.
+        return 0
     common = resolve_common_dir(cwd)
     if common is None and not is_git_work_tree(cwd):
         # #7487: non-git projects bind both stores to one content fingerprint.

@@ -37,7 +37,9 @@ import glob
 import hashlib
 import hmac
 import json
+import ntpath
 import os
+import posixpath
 import re
 import secrets
 import stat
@@ -195,6 +197,10 @@ _SAFE_LITERAL_HEADS = frozenset({
     "ls", "echo", "printf", "pwd", "date", "true", "false",
     "uname", "whoami", "id", "cat", "head", "tail", "wc", "grep", "rg",
 })
+# Absolute POSIX heads are trusted only in these directories. Subdirectories,
+# ``/usr/local/bin``, ``/opt/homebrew/bin``, and ``/tmp`` stay computed heads.
+_POSIX_TRUSTED_BIN_DIRS = frozenset({"/bin", "/usr/bin"})
+_WIN_DRIVE_ABS = re.compile(r"^[A-Za-z]:[/\\]")
 # ``cat`` copies a piped script unchanged for these flags only. ``-s`` and
 # ``--squeeze-blank`` drop extra blank lines but do not hide a one-line script.
 # Any other flag can rewrite the bytes a downstream shell would execute.
@@ -452,18 +458,72 @@ def _pure_command_sub_body(word: str) -> str | None:
     return None
 
 
-def _printed_head_is_safe(token: str) -> bool:
-    """True when ``token``'s basename is on the read-only command allowlist.
+def _windows_system_root(system_root: str | None) -> str:
+    """``SystemRoot`` on Windows. Tests on other hosts pass ``system_root``."""
+    if system_root is not None:
+        return system_root
+    if os.name == "nt":
+        return os.environ.get("SystemRoot", r"C:\Windows")
+    return r"C:\Windows"
 
-    A token that contains ``/`` or starts with ``.`` is a relative path
-    (``./ls``, ``../ls``, ``foo/ls``) unless ``os.path.isabs`` says it is
-    absolute. Absolute ``/bin/ls`` still uses the basename allowlist.
+
+def _windows_printed_head_is_safe(token: str, system_root: str | None) -> bool:
+    """True when a drive path's parent is exactly ``System32`` and the base is safe.
+
+    One trailing ``.exe`` is stripped. ``.cmd`` / ``.bat`` / ``.com``, ADS
+    (``name:stream``), trailing dots or spaces, UNC, ``\\\\?\\``, drive-relative
+    paths, and subdirectories are refused. Comparison is lexical ``ntpath`` only.
     """
+    if not _WIN_DRIVE_ABS.match(token):
+        return False
+    tail = token[2:]
+    for part in re.split(r"[/\\]", tail):
+        if not part or part in {".", ".."}:
+            continue
+        if ":" in part or part.endswith(".") or part.endswith(" "):
+            return False
+    normalized = ntpath.normpath(_collapse_leading_slashes(token))
+    parent = ntpath.dirname(normalized)
+    trusted = ntpath.normcase(
+        ntpath.normpath(ntpath.join(_windows_system_root(system_root), "System32"))
+    )
+    if ntpath.normcase(parent) != trusted:
+        return False
+    base = ntpath.basename(normalized)
+    if len(base) >= 4 and base[-4:].casefold() == ".exe":
+        base = base[:-4]
+    if not base or not re.fullmatch(r"[A-Za-z0-9._+-]+", base):
+        return False
+    return base in _SAFE_LITERAL_HEADS
+
+
+def _printed_head_is_safe(token: str, *, system_root: str | None = None) -> bool:
+    """True when ``token`` is a read-only command in a trusted location.
+
+    A bare name such as ``ls`` is allowed. ``./ls``, ``../ls``, and ``foo/ls``
+    are not. An absolute POSIX path must normalize, with
+    ``_collapse_leading_slashes`` and ``posixpath.normpath``, so its parent is
+    exactly ``/bin`` or ``/usr/bin``. A Windows drive path is trusted only on
+    Windows, or when ``system_root`` is injected for a lexical test. On POSIX
+    ``C:/Windows/System32/ls.exe`` is a relative path and is refused. Never
+    resolves the filesystem and never uses a prefix check.
+    """
+    if _WIN_DRIVE_ABS.match(token):
+        # Drive letters are absolute only on Windows. POSIX treats them as relative.
+        if os.name != "nt" and system_root is None:
+            return False
+        return _windows_printed_head_is_safe(token, system_root)
     if not re.fullmatch(r"[A-Za-z0-9._+/-]+", token):
         return False
-    if (("/" in token) or token.startswith(".")) and not os.path.isabs(token):
+    if (("/" in token) or token.startswith(".")) and not posixpath.isabs(token):
         return False
-    base = os.path.basename(token)
+    if posixpath.isabs(token):
+        normalized = posixpath.normpath(_collapse_leading_slashes(token))
+        if posixpath.dirname(normalized) not in _POSIX_TRUSTED_BIN_DIRS:
+            return False
+        base = posixpath.basename(normalized)
+    else:
+        base = posixpath.basename(token)
     if not base or base in {".", ".."} or not re.fullmatch(r"[A-Za-z0-9._+-]+", base):
         return False
     return base in _SAFE_LITERAL_HEADS
@@ -1020,6 +1080,71 @@ def _is_getattr_value(node: ast.AST, getattr_names: set[str], builtin_mods: set[
     )
 
 
+def _is_vars_value(
+    node: ast.AST,
+    vars_names: set[str],
+    builtin_mods: set[str],
+    getattr_names: set[str] | None = None,
+) -> bool:
+    """True when ``node`` evaluates to the ``vars`` builtin.
+
+    Covers ``vars``, ``v = vars``, ``(v := vars)``, ``builtins.vars``,
+    ``__builtins__['vars']`` / ``builtins['vars']`` (folded keys included),
+    ``getattr(builtins, 'vars')``, ``vars.__call__``,
+    ``builtins.__dict__['vars']``, ``getattr(builtins, '__dict__')['vars']``,
+    and ``getattr(vars, '__call__')``.
+    """
+    getters = getattr_names if getattr_names is not None else {"getattr"}
+    if isinstance(node, ast.Name):
+        return node.id in vars_names
+    if isinstance(node, ast.NamedExpr):
+        return _is_vars_value(node.value, vars_names, builtin_mods, getters)
+    if isinstance(node, ast.Subscript) and _fold_const_str(node.slice) == "vars":
+        base = node.value
+        if isinstance(base, ast.Name) and base.id in builtin_mods:
+            return True
+        if (
+            isinstance(base, ast.Attribute)
+            and base.attr == "__dict__"
+            and isinstance(base.value, ast.Name)
+            and base.value.id in builtin_mods
+        ):
+            return True
+        if isinstance(base, ast.Call) and _is_getattr_call(base.func, getters, builtin_mods):
+            receiver = _getattr_arg(base, 0, "object")
+            attr = _getattr_arg(base, 1, "name")
+            return (
+                isinstance(receiver, ast.Name)
+                and receiver.id in builtin_mods
+                and _fold_const_str(attr) == "__dict__"
+            )
+        return False
+    if isinstance(node, ast.Call) and _is_getattr_call(node.func, getters, builtin_mods):
+        receiver = _getattr_arg(node, 0, "object")
+        attr = _getattr_arg(node, 1, "name")
+        folded = _fold_const_str(attr)
+        if (
+            folded == "__call__"
+            and receiver is not None
+            and _is_vars_value(receiver, vars_names, builtin_mods, getters)
+        ):
+            return True
+        return (
+            isinstance(receiver, ast.Name)
+            and receiver.id in builtin_mods
+            and folded == "vars"
+        )
+    if not isinstance(node, ast.Attribute):
+        return False
+    if node.attr == "__call__":
+        return _is_vars_value(node.value, vars_names, builtin_mods, getters)
+    return (
+        node.attr == "vars"
+        and isinstance(node.value, ast.Name)
+        and node.value.id in builtin_mods
+    )
+
+
 def _is_indirect_getattr_delete(
     node: ast.Call,
     os_mods: set[str],
@@ -1082,17 +1207,79 @@ def _module_kind_name(name: str, os_mods: set[str], shutil_mods: set[str]) -> st
     return None
 
 
+def _vars_invocation_shape(
+    node: ast.Call,
+    os_mods: set[str],
+    shutil_mods: set[str],
+    getattr_names: set[str],
+    builtin_mods: set[str],
+    vars_names: set[str],
+) -> str:
+    """``zero``, ``plain``, ``ambiguous``, or ``""`` when ``node`` is not ``vars(...)``.
+
+    ``vars()`` is ``zero``. ``vars(os)`` / ``vars(shutil)`` with one plain name
+    is ``plain``. A star, a keyword, or any other argument is ``ambiguous``.
+    """
+    if not _is_vars_value(node.func, vars_names, builtin_mods, getattr_names):
+        return ""
+    if node.keywords or any(isinstance(arg, ast.Starred) for arg in node.args):
+        return "ambiguous"
+    if not node.args:
+        return "zero"
+    if (
+        len(node.args) == 1
+        and isinstance(node.args[0], ast.Name)
+        and _module_kind_name(node.args[0].id, os_mods, shutil_mods) is not None
+    ):
+        return "plain"
+    return "ambiguous"
+
+
+def _ambiguous_vars_lookup(
+    node: ast.AST,
+    os_mods: set[str],
+    shutil_mods: set[str],
+    getattr_names: set[str],
+    builtin_mods: set[str],
+    vars_names: set[str],
+) -> bool:
+    """True when a non-plain ``vars(...)`` result is subscripted or dict-called."""
+    target: ast.AST | None = None
+    if isinstance(node, ast.Subscript):
+        target = node.value
+    elif (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr in _DICT_LOOKUP_ATTRS
+    ):
+        target = node.func.value
+    if not isinstance(target, ast.Call):
+        return False
+    return (
+        _vars_invocation_shape(
+            target, os_mods, shutil_mods, getattr_names, builtin_mods, vars_names
+        )
+        == "ambiguous"
+    )
+
+
 def _vars_or_getattr_module_dict(
     node: ast.AST,
     os_mods: set[str],
     shutil_mods: set[str],
     getattr_names: set[str],
     builtin_mods: set[str],
+    vars_names: set[str] | None = None,
 ) -> str | None:
-    """``vars(os)`` and ``getattr(os, '__dict__')`` are that module's ``__dict__``."""
+    """``vars(os)`` and ``getattr(os, '__dict__')`` are that module's ``__dict__``.
+
+    ``vars`` includes aliases (``v = vars``, ``from builtins import vars as v``)
+    and ``builtins.vars`` / ``__builtins__.vars``. ``vars()`` with no argument is not.
+    """
     if not isinstance(node, ast.Call):
         return None
-    if isinstance(node.func, ast.Name) and node.func.id == "vars" and len(node.args) == 1:
+    names = vars_names if vars_names is not None else {"vars"}
+    if _is_vars_value(node.func, names, builtin_mods, getattr_names) and len(node.args) == 1:
         arg = node.args[0]
         if isinstance(arg, ast.Name):
             return _module_kind_name(arg.id, os_mods, shutil_mods)
@@ -1113,9 +1300,12 @@ def _dict_object_kind(
     dict_aliases: dict[str, str],
     getattr_names: set[str],
     builtin_mods: set[str],
+    vars_names: set[str] | None = None,
 ) -> str | None:
     """``os.__dict__`` / ``shutil.__dict__``, ``vars``, ``getattr``, or an alias."""
-    found = _vars_or_getattr_module_dict(node, os_mods, shutil_mods, getattr_names, builtin_mods)
+    found = _vars_or_getattr_module_dict(
+        node, os_mods, shutil_mods, getattr_names, builtin_mods, vars_names
+    )
     if found is not None:
         return found
     if isinstance(node, ast.Name):
@@ -1145,13 +1335,16 @@ def _dict_lookup(
     dict_aliases: dict[str, str],
     getattr_names: set[str],
     builtin_mods: set[str],
+    vars_names: set[str] | None = None,
 ) -> tuple[str, ast.AST | None] | None:
     """``mod.__dict__[key]``, ``vars(mod)[key]``, or ``.get`` / ``.pop`` / ``.setdefault`` / ``.__getitem__``."""
     if isinstance(node, ast.Subscript):
         direct = _module_dict_subscript(node, os_mods, shutil_mods)
         if direct is not None:
             return direct
-        kind = _dict_object_kind(node.value, os_mods, shutil_mods, dict_aliases, getattr_names, builtin_mods)
+        kind = _dict_object_kind(
+            node.value, os_mods, shutil_mods, dict_aliases, getattr_names, builtin_mods, vars_names
+        )
         if kind is None:
             return None
         return kind, node.slice
@@ -1160,7 +1353,7 @@ def _dict_lookup(
     if node.func.attr not in _DICT_LOOKUP_ATTRS:
         return None
     kind = _dict_object_kind(
-        node.func.value, os_mods, shutil_mods, dict_aliases, getattr_names, builtin_mods
+        node.func.value, os_mods, shutil_mods, dict_aliases, getattr_names, builtin_mods, vars_names
     )
     if kind is None:
         return None
@@ -1198,6 +1391,7 @@ def _bind_python_aliases(
     func_aliases: dict[str, tuple[str, str]],
     getattr_names: set[str],
     builtin_mods: set[str],
+    vars_names: set[str] | None = None,
 ) -> None:
     """Remember module aliases, ``d = os.__dict__``, and ``fn = os.__dict__['remove']``."""
     names = _assign_names(targets)
@@ -1208,11 +1402,15 @@ def _bind_python_aliases(
             os_mods.update(names)
         elif value.id in shutil_mods:
             shutil_mods.update(names)
-    lookup = _dict_lookup(value, os_mods, shutil_mods, dict_aliases, getattr_names, builtin_mods)
+    lookup = _dict_lookup(
+        value, os_mods, shutil_mods, dict_aliases, getattr_names, builtin_mods, vars_names
+    )
     kind = (
         None
         if lookup is not None
-        else _dict_object_kind(value, os_mods, shutil_mods, dict_aliases, getattr_names, builtin_mods)
+        else _dict_object_kind(
+            value, os_mods, shutil_mods, dict_aliases, getattr_names, builtin_mods, vars_names
+        )
     )
     for name in names:
         dict_aliases.pop(name, None)
@@ -1231,11 +1429,13 @@ def _module_dict_delete_label(
     dict_aliases: dict[str, str] | None = None,
     getattr_names: set[str] | None = None,
     builtin_mods: set[str] | None = None,
+    vars_names: set[str] | None = None,
 ) -> str | None:
     """``os.__dict__['remove']()``, ``vars``, ``getattr(..., '__dict__')``, and ``.get``.
 
     Folded keys count, including ``key=``. A non-literal key is refused.
-    ``getcwd`` is not a delete. The same rule covers ``shutil`` and aliases.
+    ``getcwd`` is not a delete. The same rule covers ``shutil`` and aliases,
+    including a bound ``vars`` name.
     """
     found = _dict_lookup(
         node.func,
@@ -1244,6 +1444,7 @@ def _module_dict_delete_label(
         dict_aliases or {},
         getattr_names if getattr_names is not None else {"getattr"},
         builtin_mods if builtin_mods is not None else {"builtins", "__builtins__"},
+        vars_names if vars_names is not None else {"vars"},
     )
     if found is None:
         return None
@@ -1269,6 +1470,7 @@ def _python_entries(segment: str) -> list[tuple[str, bool]]:
     direct_funcs: dict[str, bool] = {}  # local name -> follow_symlinks
     builtin_mods: set[str] = {"builtins", "__builtins__"}
     getattr_names: set[str] = {"getattr"}
+    vars_names: set[str] = {"vars"}
     dict_aliases: dict[str, str] = {}
     func_aliases: dict[str, tuple[str, str]] = {}
 
@@ -1296,11 +1498,17 @@ def _python_entries(segment: str) -> list[tuple[str, bool]]:
                     path_ctors.add(bound)
                 elif node.level == 0 and mod == "builtins" and alias.name == "getattr":
                     getattr_names.add(bound)
+                elif node.level == 0 and mod == "builtins" and alias.name == "vars":
+                    vars_names.add(bound)
         elif isinstance(node, ast.Assign):
             if _is_getattr_value(node.value, getattr_names, builtin_mods):
                 for target in node.targets:
                     if isinstance(target, ast.Name):
                         getattr_names.add(target.id)
+            if _is_vars_value(node.value, vars_names, builtin_mods, getattr_names):
+                for target in node.targets:
+                    if isinstance(target, ast.Name):
+                        vars_names.add(target.id)
             _bind_python_aliases(
                 list(node.targets),
                 node.value,
@@ -1310,7 +1518,11 @@ def _python_entries(segment: str) -> list[tuple[str, bool]]:
                 func_aliases,
                 getattr_names,
                 builtin_mods,
+                vars_names,
             )
+        elif isinstance(node, ast.NamedExpr) and isinstance(node.target, ast.Name):
+            if _is_vars_value(node.value, vars_names, builtin_mods, getattr_names):
+                vars_names.add(node.target.id)
         elif (
             isinstance(node, ast.AnnAssign)
             and isinstance(node.target, ast.Name)
@@ -1318,6 +1530,8 @@ def _python_entries(segment: str) -> list[tuple[str, bool]]:
         ):
             if _is_getattr_value(node.value, getattr_names, builtin_mods):
                 getattr_names.add(node.target.id)
+            if _is_vars_value(node.value, vars_names, builtin_mods, getattr_names):
+                vars_names.add(node.target.id)
             _bind_python_aliases(
                 [node.target],
                 node.value,
@@ -1327,10 +1541,15 @@ def _python_entries(segment: str) -> list[tuple[str, bool]]:
                 func_aliases,
                 getattr_names,
                 builtin_mods,
+                vars_names,
             )
 
     entries: list[tuple[str, bool]] = []
     for node in ast.walk(tree):
+        if _ambiguous_vars_lookup(
+            node, os_mods, shutil_mods, getattr_names, builtin_mods, vars_names
+        ):
+            raise Unsure("indirect Python delete")
         if not isinstance(node, ast.Call):
             continue
         if _is_indirect_getattr_delete(
@@ -1338,7 +1557,7 @@ def _python_entries(segment: str) -> list[tuple[str, bool]]:
         ):
             raise Unsure("indirect Python delete via getattr")
         dict_label = _module_dict_delete_label(
-            node, os_mods, shutil_mods, dict_aliases, getattr_names, builtin_mods
+            node, os_mods, shutil_mods, dict_aliases, getattr_names, builtin_mods, vars_names
         )
         if dict_label is not None:
             raise Unsure(f"indirect Python delete via {dict_label}.__dict__")

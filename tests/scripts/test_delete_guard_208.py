@@ -1293,6 +1293,199 @@ class DeleteGuardIssue208Test(unittest.TestCase):
                 self.assertIn("cannot tell", reason)
                 self.assertIn("cat flag changes the piped script", reason)
 
+    def test_issue_229_absolute_heads_stay_in_trusted_bin_dirs(self) -> None:
+        """An absolute printed head is visible only in ``/bin`` or ``/usr/bin``.
+
+        Lexical ``..`` and extra slashes collapse. ``/usr/local/bin``,
+        ``/opt/homebrew/bin``, ``/tmp``, a different case, and any subdirectory
+        stay computed heads.
+        """
+        self._write_only()
+        allowed = (
+            "$(echo /bin/ls) -la",
+            "$(echo /usr/bin/ls) -la",
+            "$(echo /bin/./ls) -la",
+            "$(echo /bin/../bin/ls) -la",
+            "$(echo //bin/ls) -la",
+        )
+        for cmd in allowed:
+            with self.subTest(cmd=cmd):
+                self.assertEqual("", self.reason(cmd))
+        refused = (
+            "$(echo /tmp/evil/ls) victim.txt",
+            "$(echo /var/tmp/ls) victim.txt",
+            "$(echo /usr/local/bin/ls) -la",
+            "$(echo /opt/homebrew/bin/ls) -la",
+            "$(echo /bin/../tmp/evil/ls) victim.txt",
+            "$(echo /Bin/ls) -la",
+            "$(echo /usr/bin/X11/ls) -la",
+        )
+        for cmd in refused:
+            with self.subTest(cmd=cmd):
+                self.assertIn("computed command head", self.reason(cmd))
+
+    def test_issue_229_windows_system32_heads_are_exact(self) -> None:
+        """Windows drive paths trust only ``System32`` under the injected root.
+
+        The check is lexical (``ntpath``), casefolds the parent, and strips one
+        trailing ``.exe``. Other directories, extensions, ADS, and prefixes refuse.
+        """
+        root = r"C:\Windows"
+        allowed = (
+            r"C:\Windows\System32\ls.exe",
+            r"C:\WINDOWS\SYSTEM32\ls.exe",
+            r"C:\Windows\System32\ls.EXE",
+        )
+        for token in allowed:
+            with self.subTest(token=token):
+                self.assertTrue(GUARD._printed_head_is_safe(token, system_root=root), token)
+        self.assertTrue(
+            GUARD._printed_head_is_safe(r"D:\Windows\System32\ls.exe", system_root=r"D:\Windows")
+        )
+        self.assertFalse(
+            GUARD._printed_head_is_safe(r"C:\Windows\System32\ls.exe", system_root=r"D:\Windows")
+        )
+        refused = (
+            r"C:\Windows\System32\..\Temp\ls.exe",
+            r"C:\Temp\ls.exe",
+            r"%SystemRoot%\System32\ls.exe",
+            r"C:\Windows\System32\ls.exe:evil",
+            r"C:\Windows\System32\ls.cmd",
+            r"C:\Windows\System32\ls.bat",
+            r"C:\Windows\System32\ls.com",
+            r"C:\Windows\System32\ls.exe.",
+            r"C:\Windows\System32\ls.exe ",
+            r"C:\Windows\System32\WindowsPowerShell\v1.0\ls.exe",
+            r"\\?\C:\Windows\System32\ls.exe",
+            r"\\Windows\System32\ls.exe",
+            r"C:Windows\System32\ls.exe",
+        )
+        for token in refused:
+            with self.subTest(token=token):
+                self.assertFalse(GUARD._printed_head_is_safe(token, system_root=root), token)
+
+    @unittest.skipIf(os.name == "nt", "POSIX shells treat a drive-letter token as a relative path")
+    def test_posix_drive_letter_printed_head_is_a_computed_command_head(self) -> None:
+        """``C:/Windows/...`` is ``./C:/Windows/...`` on POSIX, not System32.
+
+        Lexical ``system_root=`` tests still trust that drive path. A live
+        ``block_reason`` call does not inject ``system_root``, so the printed
+        head stays computed.
+        """
+        self._write_only()
+        reason = GUARD.block_reason(
+            "$(echo C:/Windows/System32/ls.exe) only.txt", self.repo
+        )
+        self.assertIn("computed command head", reason)
+
+    def test_issue_230_vars_aliases_are_module_dict_deletes(self) -> None:
+        """``vars`` aliases and ``builtins.vars`` are the same delete as ``vars``."""
+        refused = (
+            "v = vars; v(os)['remove']('only.txt')",
+            "v1 = vars; v2 = v1; v2(os)['remove']('only.txt')",
+            "from builtins import vars as v; v(os)['remove']('only.txt')",
+            "import builtins as b; b.vars(shutil)['rmtree']('dir')",
+            "__builtins__.vars(os)['unlink']('only.txt')",
+            "a = b = vars; a(os)['remove']('only.txt')",
+            "v: object = vars\nv(os)['unlink']('only.txt')",
+        )
+        for source in refused:
+            with self.subTest(source=source):
+                reason = self.reason(self._py(source))
+                self.assertIn("indirect Python delete via", reason)
+                self.assertIn(".__dict__", reason)
+        allowed = (
+            "v = vars; v(os)['getcwd']()",
+            "from builtins import vars as v; v(os)['getcwd']()",
+            "v = vars; v()",
+        )
+        for source in allowed:
+            with self.subTest(source=source):
+                self.assertEqual("", self.reason(self._py(source)))
+
+    def test_vars_walrus_subscript_getattr_and_dunder_call_are_refused(self) -> None:
+        """Walrus, builtin subscript, folded getattr, and ``__call__`` are still ``vars``.
+
+        ``getcwd`` through the same shapes stays allowed.
+        """
+        refused = (
+            "(v := vars)(os)['remove']('only.txt')",
+            "(v := vars)(os)['unlink']('only.txt')",
+            "(v := vars)(shutil)['rmtree']('only.txt')",
+            "(v := vars)\nv(os)['remove']('only.txt')",
+            "(v := __builtins__['vars'])(os)['unlink']('only.txt')",
+            "__builtins__['vars'](os)['remove']('only.txt')",
+            "__builtins__['vars'](os)['unlink']('only.txt')",
+            "__builtins__['vars'](shutil)['rmtree']('only.txt')",
+            "__builtins__['va' + 'rs'](os)['remove']('only.txt')",
+            "builtins['vars'](os)['remove']('only.txt')",
+            "builtins['vars'](os)['unlink']('only.txt')",
+            "builtins['vars'](shutil)['rmtree']('only.txt')",
+            "import builtins as b\nb['vars'](os)['unlink']('only.txt')",
+            "getattr(builtins, 'vars')(os)['remove']('only.txt')",
+            "getattr(builtins, 'vars')(os)['unlink']('only.txt')",
+            "getattr(builtins, 'vars')(shutil)['rmtree']('only.txt')",
+            "getattr(__builtins__, 'vars')(os)['remove']('only.txt')",
+            "getattr(builtins, 'va' + 'rs')(os)['unlink']('only.txt')",
+            "g = getattr\ng(builtins, 'vars')(os)['remove']('only.txt')",
+            "from builtins import getattr as ga\nga(__builtins__, 'vars')(shutil)['rmtree']('only.txt')",
+            "v = getattr(builtins, 'vars')\nv(os)['remove']('only.txt')",
+            "vars.__call__(os)['remove']('only.txt')",
+            "vars.__call__(os)['unlink']('only.txt')",
+            "vars.__call__(shutil)['rmtree']('only.txt')",
+            "v = vars\nv.__call__(os)['remove']('only.txt')",
+            "v = vars\nv.__call__(os)['unlink']('only.txt')",
+            "v = vars\nv.__call__(shutil)['rmtree']('only.txt')",
+            "__builtins__.vars.__call__(os)['unlink']('only.txt')",
+        )
+        for source in refused:
+            with self.subTest(source=source):
+                reason = self.reason(self._py(source))
+                self.assertIn("indirect Python delete via", reason)
+                self.assertIn(".__dict__", reason)
+        allowed = (
+            "(v := vars)(os)['getcwd']()",
+            "__builtins__['vars'](os)['getcwd']()",
+            "builtins['vars'](os)['getcwd']()",
+            "getattr(builtins, 'vars')(os)['getcwd']()",
+            "getattr(__builtins__, 'vars')(os)['getcwd']()",
+            "vars.__call__(os)['getcwd']()",
+            "v = vars\nv.__call__(os)['getcwd']()",
+        )
+        for source in allowed:
+            with self.subTest(source=source):
+                self.assertEqual("", self.reason(self._py(source)))
+
+    def test_vars_star_dict_subscript_and_getattr_call_are_refused(self) -> None:
+        """Starred ``vars`` and builtin-dict / ``__call__`` lookups stay deletes.
+
+        ``getcwd`` through a plain module argument, and ``vars()`` with no
+        argument, stay allowed. A starred argument is not that plain shape.
+        """
+        refused = (
+            "import os\nvars(*(os,))['remove']('only.txt')",
+            "import os\nvars(*(os,))['getcwd']()",
+            "import os\nbuiltins.__dict__['vars'](os)['remove']('only.txt')",
+            "import os\ngetattr(builtins, '__dict__')['vars'](os)['remove']('only.txt')",
+            "import os\ngetattr(vars, '__call__')(os)['remove']('only.txt')",
+        )
+        for source in refused:
+            with self.subTest(source=source):
+                self.assertIn("indirect Python delete", self.reason(self._py(source)))
+        allowed = (
+            "import os\nvars(os)['getcwd']()",
+            "vars()",
+            "import os\nbuiltins.__dict__['vars'](os)['getcwd']()",
+            "import os\nbuiltins.__dict__['vars']()",
+            "import os\ngetattr(builtins, '__dict__')['vars'](os)['getcwd']()",
+            "import os\ngetattr(builtins, '__dict__')['vars']()",
+            "import os\ngetattr(vars, '__call__')(os)['getcwd']()",
+            "import os\ngetattr(vars, '__call__')()",
+        )
+        for source in allowed:
+            with self.subTest(source=source):
+                self.assertEqual("", self.reason(self._py(source)))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -122,11 +122,56 @@ def _git_objects_healthy(common_dir: Path) -> bool:
     return objects.is_dir() and refs.is_dir()
 
 
+def _owned_common_dir(marker: Path) -> Path | None:
+    """Common dir named by this project's own ``.git`` marker.
+
+    Git's discovery walks past a husk (HEAD present, no ``objects``/``refs``)
+    into a parent worktree. That walk must not decide the guard's status.
+    """
+    if marker.is_file():
+        try:
+            raw = marker.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return None
+        target: Path | None = None
+        for line in raw.splitlines():
+            if line.startswith("gitdir:"):
+                target = Path(line.split(":", 1)[1].strip())
+                break
+        if target is None:
+            return None
+        if not target.is_absolute():
+            target = (marker.parent / target).resolve()
+        else:
+            target = target.resolve()
+        # Only …/worktrees/<name> climbs; a modules/ gitdir stays on its own gitdir.
+        if target.parent.name == "worktrees" and (target.parent.parent / "objects").is_dir():
+            return target.parent.parent
+        return target
+    if marker.is_dir():
+        return marker.resolve()
+    return None
+
+
+def _husk_failure(common_dir: Path) -> dict[str, object]:
+    return {
+        "status": "failed",
+        "reason": (
+            f"broken git metadata (missing objects/refs under {common_dir}); "
+            "git-husk: restore the clone using references/box-durability.md"
+        ),
+    }
+
+
 def install_secret_guard(project: Path, guard_source: Path) -> dict[str, object]:
     """Wire the guard into the clone at ``project``; return what was done."""
     if os.environ.get("CHAOS_ENGINE_SECRET_GUARD", "1").strip().casefold() in {"0", "false", "no", "off"}:
         return {"status": "skipped", "reason": "CHAOS_ENGINE_SECRET_GUARD=0"}
     marker = _git_dir_marker(project)
+    if marker is not None:
+        owned = _owned_common_dir(marker)
+        if owned is None or not _git_objects_healthy(owned):
+            return _husk_failure(owned if owned is not None else marker)
     common = _git(project, "rev-parse", "--git-common-dir", missing_ok=True)
     if not common:
         if marker is not None:
@@ -136,19 +181,13 @@ def install_secret_guard(project: Path, guard_source: Path) -> dict[str, object]
                 "status": "failed",
                 "reason": (
                     "broken git metadata (.git present but rev-parse failed); "
-                    "repair the clone before install, or pass --no-secret-guard"
+                    "git-husk: restore the clone using references/box-durability.md"
                 ),
             }
         return {"status": "skipped", "reason": "not a git repository"}
     common_dir = Path(common) if Path(common).is_absolute() else (project / common)
     if not _git_objects_healthy(common_dir.resolve()):
-        return {
-            "status": "failed",
-            "reason": (
-                f"broken git metadata (missing objects/refs under {common_dir}); "
-                "repair the clone before install, or pass --no-secret-guard"
-            ),
-        }
+        return _husk_failure(common_dir)
     top = _git(project, "rev-parse", "--show-toplevel", missing_ok=True)
     if not top or Path(top).resolve() != project.resolve():
         return {"status": "skipped", "reason": "not the root of its git repository"}

@@ -21,7 +21,7 @@ routes are reached through `local-runtimes`; roles through their adapters.
 | pre-done-self-review | Use before claiming Done, signing off, or handing off: reconcile every item. On demand only. | `skills/pre-done-self-review/SKILL.md` | [portable](../skills/pre-done-self-review/SKILL.md) |
 | job-apply | Use when applying for one job. Default is draft only until a named send permission and the gate both pass. | `skills/job-apply/SKILL.md` | [portable](../skills/job-apply/SKILL.md) |
 | job-search | Use when searching for jobs: eligibility filter, verified work mode, End-key scroll, and tracker hygiene. | `skills/job-search/SKILL.md` | [portable](../skills/job-search/SKILL.md) |
-| job-applications | Use when applying to jobs for the user by email, LinkedIn, or an ATS form. | `skills/job-applications/SKILL.md` | [portable](../skills/job-applications/SKILL.md) |
+| job-applications | Use when choosing only the application channel (email, LinkedIn, or ATS). Draft and send stay in job-apply. | `skills/job-applications/SKILL.md` | [portable](../skills/job-applications/SKILL.md) |
 | docs-hygiene | Use when editing source-of-truth docs or status tables: three sources, Done / In progress / Not started, and live hour formulas. On demand only. | `skills/docs-hygiene/SKILL.md` | [portable](../skills/docs-hygiene/SKILL.md) |
 | git-cleanup | Use when a git worktree is dirty or another local branch or worktree exists. Ask before cleanup unless the session is unattended. | `skills/git-cleanup/SKILL.md` | [portable](../skills/git-cleanup/SKILL.md) |
 | ci-cd | Use when PR merge waits are long or CI/CD is being designed, audited, or sped up. | `skills/ci-cd/SKILL.md` | [portable](../skills/ci-cd/SKILL.md) |
@@ -63,7 +63,7 @@ routes are reached through `local-runtimes`; roles through their adapters.
 | Eliminate waste | Use when a hop, retry, or duplicate tool does not change the next decision and should be dropped. | `references/eliminate-waste.md` | [route](../references/eliminate-waste.md) |
 | Prefer CLI over MCP | Use when CLI and MCP both fit the same job; prefer the CLI, and gh when it is configured. | `references/prefer-cli-over-mcp.md` | [route](../references/prefer-cli-over-mcp.md) |
 | No proxy | Use when a task would install, pin, or wrap a traffic proxy. Never install one. | `references/no-proxy.md` | [route](../references/no-proxy.md) |
-| GAP-EXIT2 UX | Use when Grok or Copilot may not honor an exit-2 hard block and the compensating checklist applies. | `references/host-parity-matrix.md` | [route](../references/host-parity-matrix.md) |
+| GAP-EXIT2 UX | Use when Grok, Copilot, Cursor, or OpenCode may not honor an exit-2 hard block and the compensating checklist applies. | `references/host-parity-matrix.md` | [route](../references/host-parity-matrix.md) |
 | Add-ons | Use when a task fits an optional add-on (design, video, or a project pack): list, install, remove, or load one. | `references/addons.md` | [route](../references/addons.md) |
 | Complexity gate | Use when a hot-spot dispatch change must treat a static-analysis Complexity ACTION_REQUIRED as a unit failure. | `references/complexity-gate.md` | [route](../references/complexity-gate.md) |
 | Durable jobs | Use when work runs longer than a few minutes and must survive the agent session being killed, with no duplicate workers. | `references/durable-jobs.md` | [route](../references/durable-jobs.md) |

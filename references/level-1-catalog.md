@@ -44,7 +44,7 @@ sorted. Each row is a name, ≤2-line Use-when, and a path — no workflow dumps
 | Harness eval suite | Capability + regression pass@k gate for chaos-engine changes | [`harness-eval-suite.md`](harness-eval-suite.md) |
 | Harness learn | Tune git-tracked harness from traces; never user-home skill copies | [`harness-learn.md`](harness-learn.md) |
 | Heal route | Install drifted, wiped runtime, missing core, or unhealthy doctor fix-next | [`heal-route.md`](heal-route.md) |
-| Host parity / GAP-EXIT2 | Host deny fidelity differs (Grok/Copilot); compensating UX checklist | [`host-parity-matrix.md`](host-parity-matrix.md) |
+| Host parity / GAP-EXIT2 | Host deny fidelity differs (Grok, Copilot, Cursor, OpenCode). Antigravity denies with decision=deny; Stop is decision=continue on exit 0. | [`host-parity-matrix.md`](host-parity-matrix.md) |
 | ICM Architect | Design/restructure ICM workspaces (advisory companion) | [`icm-architect.md`](icm-architect.md) |
 | Insight extract | Success/failure pair insights with ExpeL vote lifecycle | [`insight-extract.md`](insight-extract.md) |
 | Job applications | Channel routing for that same apply job: email, LinkedIn, and ATS. Same send authority | [`../skills/job-applications/SKILL.md`](../skills/job-applications/SKILL.md) |
