@@ -21,7 +21,41 @@ from typing import Iterable
 
 _EXCLUDE = frozenset({"vendor", "node_modules"})
 _DIR_MARKERS = frozenset({"tests", "test", "e2e"})
-_TEST_SUFFIXES = (".spec.ts", ".spec.js", ".test.ts", ".test.js")
+_CODE_SUFFIXES = (
+    ".py",
+    ".ts",
+    ".tsx",
+    ".js",
+    ".jsx",
+    ".mjs",
+    ".cjs",
+    ".java",
+    ".kt",
+    ".go",
+    ".rs",
+    ".cs",
+    ".rb",
+)
+_JS_TEST_SUFFIXES = (
+    ".spec.ts",
+    ".spec.tsx",
+    ".spec.js",
+    ".spec.jsx",
+    ".spec.mjs",
+    ".spec.cjs",
+    ".test.ts",
+    ".test.tsx",
+    ".test.js",
+    ".test.jsx",
+    ".test.mjs",
+    ".test.cjs",
+)
+_EXCLUDED_DIR_NAMES = frozenset({"fixtures", "pages", "page_objects", "utils", "support"})
+_EXCLUDED_BASENAMES = frozenset({"conftest.py", "__init__.py", "helpers.py"})
+_BARE_ASSERT = re.compile(r"\bassert\b(?![A-Za-z])")
+_TRIVIAL_ASSERT_EXPR = re.compile(
+    r"(?:True|False|None|\d+(?:\.\d+)?|not\s+(?:True|False|None|\d+(?:\.\d+)?)|[A-Za-z_]\w*)\Z"
+)
 
 # Detector text is concatenated so this rule module does not contain the
 # literals it flags. The file name matches test_*.py, so a rewrite is scanned.
@@ -41,7 +75,16 @@ _FULL_SOURCE = re.compile(
     + "document\\.document" + "Element\\.outer" + "HTML"
 )
 _HTML = "/ht" + "ml"
-_XPATH = re.compile(_HTML + "/body|" + "[" + "\"'`" + "]" + r"\s*" + _HTML + r"(?:/|\b)")
+# Locator context, or an element step under the html root. A URL path is not.
+_XPATH = re.compile(
+    _HTML + r"/(?:body|head|div)\b"
+    + "|"
+    + _HTML + r"\["
+    + r"|xpath\s*=\s*['\"]?\s*" + _HTML
+    + r"|By\.xpath\(\s*['\"]\s*" + _HTML
+    + r"|locator\(\s*['\"]\s*" + _HTML
+    + r"|find_element\s*\([^)\n]*['\"]\s*" + _HTML
+)
 _STRING = re.compile(r"""(?P<q>['"`])(?P<body>(?:\\.|(?!(?P=q)).)*)(?P=q)""")
 _CHILD = re.compile(r"(?<![=<-])>(?!=)")
 _TEST_DEF = re.compile(
@@ -61,7 +104,6 @@ _WEAK = re.compile(
     r"\bassert(?:True|False|IsNone|IsNotNone)\b"
     r"|\.toBe(?:Truthy|Falsy|Nullish|Null|Undefined|Defined|Nil)\b"
 )
-_PLAIN_ASSERT = re.compile(r"\bassert\b(?![A-Za-z])")
 _ANY_ASSERT = re.compile(
     r"\bassert(?:Equal|NotEqual|AlmostEqual|GreaterEqual|Greater|LessEqual|Less|"
     r"Regex|NotIn|In|IsNotNone|IsNone|IsNot|Is|True|False|DictEqual|ListEqual|"
@@ -80,8 +122,27 @@ _CODE_ORDER = {
 }
 
 
+def _named_test_file(name: str) -> bool:
+    """True when ``name`` is an executable test source, not a helper."""
+    if name in _EXCLUDED_BASENAMES:
+        return False
+    if (name.startswith("test_") and name.endswith(".py")) or name.endswith("_test.py"):
+        return True
+    if name.endswith(("Test.java", "Tests.java", "IT.java", "Steps.java", "Test.kt")):
+        return True
+    if name.endswith("_test.go") or name.endswith("_spec.rb") or name.endswith("Tests.cs"):
+        return True
+    return name.endswith(_JS_TEST_SUFFIXES)
+
+
 def is_test_path(path: str) -> bool:
-    """True for test and e2e paths. ``vendor/`` and ``node_modules/`` never match."""
+    """True for executable test sources.
+
+    ``vendor/`` and ``node_modules/`` never match. Helpers, fixtures, page
+    objects, and non-code files never match, including inside ``tests/``.
+    A code file in ``tests/``, ``test/``, or ``e2e/`` still matches when it
+    is not one of those excluded names.
+    """
     if not isinstance(path, str):
         return False
     raw = path.strip().replace("\\", "/")
@@ -93,15 +154,15 @@ def is_test_path(path: str) -> bool:
     if any(part in _EXCLUDE for part in parts):
         return False
     name = parts[-1]
-    if any(part in _DIR_MARKERS for part in parts[:-1]):
+    if any(part in _EXCLUDED_DIR_NAMES for part in parts[:-1]):
+        return False
+    if name in _EXCLUDED_BASENAMES:
+        return False
+    if not name.endswith(_CODE_SUFFIXES):
+        return False
+    if _named_test_file(name):
         return True
-    if name.endswith("_test.py") or (name.startswith("test_") and name.endswith(".py")):
-        return True
-    if name.endswith("Test.java") or name.endswith("Steps.java"):
-        return True
-    if name.endswith("_test.go"):
-        return True
-    return name.endswith(_TEST_SUFFIXES)
+    return any(part in _DIR_MARKERS for part in parts[:-1])
 
 
 def evaluate_content(path: str, new_text: str, old_text: str | None = None) -> dict:
@@ -151,6 +212,11 @@ def evaluate_edit(
     if not old_string:
         return evaluate_content(path, new_string, None)
     return evaluate_content(path, new_string, old_string)
+
+
+def evaluate_patch(text: str) -> dict:
+    """Score a Codex or OpenCode ``apply_patch`` body, or a unified diff."""
+    return evaluate_git_diff("" if text is None else str(text))
 
 
 def evaluate_git_diff(diff_text: str) -> dict:
@@ -352,11 +418,54 @@ def _pass_is_only_body(lines_by_no: dict[int, str], pass_line: int) -> bool:
     return True
 
 
+def _assert_expression(rest: str) -> str:
+    """Expression after ``assert``, without a trailing message or comment."""
+    depth = 0
+    out: list[str] = []
+    for char in rest:
+        if char == "#" and depth == 0:
+            break
+        if char in "([{":
+            depth += 1
+        elif char in ")]}":
+            depth = max(0, depth - 1)
+        elif char == "," and depth == 0:
+            break
+        out.append(char)
+    return "".join(out).strip()
+
+
+def _bare_assert_strength(line: str) -> tuple[int, int]:
+    """Strong and weak counts for bare ``assert`` statements on one line.
+
+    ``assert True``, ``assert 1``, ``assert not False``, and ``assert name``
+    are weak. Comparisons, membership, and calls stay strong.
+    """
+    strong = 0
+    weak = 0
+    for match in _BARE_ASSERT.finditer(line):
+        expr = _assert_expression(line[match.end() :])
+        if _TRIVIAL_ASSERT_EXPR.fullmatch(expr):
+            weak += 1
+        else:
+            strong += 1
+    return strong, weak
+
+
 def _counts(text: str) -> tuple[int, int, int]:
-    strong = len(_STRONG.findall(text or ""))
-    weak = len(_WEAK.findall(text or ""))
-    plain = len(_PLAIN_ASSERT.findall(text or ""))
-    return strong, weak, strong + weak + plain
+    strong = 0
+    weak = 0
+    for line in (text or "").splitlines():
+        # A weak matcher on the line is only weak. ``expect().toBeTruthy()``
+        # must not also count the ``expect(`` as strong.
+        if _WEAK.search(line):
+            weak += len(_WEAK.findall(line))
+            continue
+        strong += len(_STRONG.findall(line))
+        bare_strong, bare_weak = _bare_assert_strength(line)
+        strong += bare_strong
+        weak += bare_weak
+    return strong, weak, strong + weak
 
 
 def _weakened(old_text: str, new_text: str) -> bool:

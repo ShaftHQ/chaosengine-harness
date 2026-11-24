@@ -613,3 +613,37 @@ def test_assertion_tokens_across_stacks(body):
     assert result["ok"] is True
     assert result["status"] == "pass"
     assert result["reasons"] == []
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        '+it("should raise", () => {})\n',
+        "+def test_amount():\n+    # assert x == 1\n",
+        '+def test_amount():\n+    """Does not raise."""\n',
+        "+def test_amount():\n+    // assert x == 1\n",
+        "+def test_amount():\n+    /* assert x == 1 */\n",
+        "+def test_amount():\n+    note = 'assert x == 1'\n",
+        "+def test_amount():\n+    /*\n+    assert x == 1\n+    */\n",
+    ],
+)
+def test_f5_comments_and_strings_do_not_count_as_assertions(body):
+    result = sdlc_flows.assertion_signal_gate(_diff(body))
+    assert result == {"ok": False, "status": "block", "reasons": ["assertion-free"]}
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "+def test_amount():\n+    assert x == 1\n",
+        "+def test_amount():\n+    self.assertEqual(a, b)\n",
+        "+def test_amount():\n+    expect(res).toBe(200)\n",
+        "+def test_amount():\n+    with pytest.raises(ValueError):\n+        pay(None)\n",
+        "+def test_amount():\n+    assert 4 // 2 == 2\n",
+        '+it("should raise", () => {\n+  expect(res).toBe(200);\n+})\n',
+        "+def test_amount():\n+    note = 'no assert here'\n+    assert y == 2\n",
+    ],
+)
+def test_f5_real_assertions_still_pass(body):
+    result = sdlc_flows.assertion_signal_gate(_diff(body))
+    assert result == {"ok": True, "status": "pass", "reasons": []}

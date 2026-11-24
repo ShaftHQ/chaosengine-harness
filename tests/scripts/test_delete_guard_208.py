@@ -1181,6 +1181,65 @@ class DeleteGuardIssue208Test(unittest.TestCase):
             with self.subTest(source=source):
                 self.assertEqual("", self.reason(self._py(source)))
 
+    def test_f6_dict_get_and_aliased_calls_are_refused(self) -> None:
+        """``os.__dict__.get('remove')()`` and a later call through an alias are indirect."""
+        refused = (
+            "import os\nos.__dict__.get('remove')('only.txt')",
+            "import os\nos.__dict__.get('rem' + 'ove')('only.txt')",
+            "import os\nos.__dict__.pop('unlink')('only.txt')",
+            "import os\nos.__dict__.setdefault('rmdir')('only.txt')",
+            "import os\nname = 'remove'\nos.__dict__.get(name)('only.txt')",
+            "import os\nfn = os.__dict__['remove']\nfn('only.txt')",
+            "import os\nfn = os.__dict__.get('remove')\nfn('only.txt')",
+            "import os\nd = os.__dict__\nd['remove']('only.txt')",
+            "import os\nd = os.__dict__\nd.get('unlink')('only.txt')",
+            "import shutil\nshutil.__dict__.get('rmtree')('only.txt')",
+            "import shutil\nfn = shutil.__dict__['rmtree']\nfn('only.txt')",
+            "import shutil\nshutil.__dict__.pop('rm' + 'tree')('only.txt')",
+        )
+        for source in refused:
+            with self.subTest(source=source):
+                reason = self.reason(self._py(source))
+                self.assertIn("indirect Python delete via", reason)
+                self.assertIn(".__dict__", reason)
+        allowed = (
+            "import os\nos.__dict__.get('getcwd')()",
+            "import os\nos.__dict__.get('get' + 'cwd')()",
+            "import os\nfn = os.__dict__['getcwd']\nfn()",
+            "import os\nfn = os.__dict__.get('getcwd')\nfn()",
+            "import os\nd = os.__dict__\nd['getcwd']()",
+            "import shutil\nshutil.__dict__.get('copy')",
+            "import os\nfn = os.__dict__.get('remove')",
+        )
+        for source in allowed:
+            with self.subTest(source=source):
+                self.assertEqual("", self.reason(self._py(source)))
+
+    def test_f7_cat_here_strings_and_stage_zero_flags(self) -> None:
+        """A here-string on ``cat`` is the script. A rewriting flag at stage 0 is closed."""
+        self._write_only()
+        refused = (
+            "cat <<< 'rm -f only.txt' | sh",
+            "cat -s <<< 'rm -f only.txt' | sh",
+            "cat <<'EOF' | sh\nrm -f only.txt\nEOF",
+        )
+        for cmd in refused:
+            with self.subTest(cmd=cmd):
+                reason = self.reason(cmd)
+                self.assertIn("untracked", reason)
+                self.assertIn("only.txt", reason)
+        mutating = (
+            "cat -v <<< 'rm -f only.txt' | sh",
+            "cat -n <<< 'rm -f only.txt' | sh",
+            "cat -n <<'EOF' | sh\nrm -f only.txt\nEOF",
+            "cat -v <<'EOF' | bash\necho ok\nEOF",
+        )
+        for cmd in mutating:
+            with self.subTest(cmd=cmd):
+                reason = self.reason(cmd)
+                self.assertIn("cannot tell", reason)
+                self.assertIn("cat flag changes the piped script", reason)
+
 
 if __name__ == "__main__":
     unittest.main()

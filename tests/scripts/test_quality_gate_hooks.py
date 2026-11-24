@@ -38,6 +38,30 @@ def sleep_call(prefix: str = "time.") -> str:
     return cat(prefix, "sleep(1)")
 
 
+def sleep_for(seconds: str = "5") -> str:
+    return cat("time.", "sleep(", seconds, ")")
+
+
+def quoted_root(tail: str) -> str:
+    return cat("'", "/", "ht", "ml", tail, "'")
+
+
+def xpath_eq() -> str:
+    return cat("xpath=", "/", "ht", "ml")
+
+
+def by_xpath() -> str:
+    return cat("By.xpath(", '"', "/", "ht", "ml")
+
+
+def locator_call() -> str:
+    return cat("locator(", '"', "/", "ht", "ml")
+
+
+def find_element_xpath() -> str:
+    return cat("find_element(", '"xpath", "', "/", "ht", "ml")
+
+
 def skip_mark(kind: str = "pytest") -> str:
     if kind == "pytest":
         return cat("@pytest.mark.", "skip")
@@ -93,6 +117,7 @@ class QualityGateTests(unittest.TestCase):
             "pkg/foo.spec.js",
             "pkg/foo.test.ts",
             "pkg/foo.test.js",
+            "pkg/FooTests.java",
             "./tests/nested/test_foo.py",
         )
         for path in matched:
@@ -102,7 +127,6 @@ class QualityGateTests(unittest.TestCase):
             "README.md",
             "vendor/tests/test_foo.py",
             "node_modules/pkg/foo.test.js",
-            "pkg/FooTests.java",
             "",
         ):
             self.assertFalse(gate.is_test_path(path), path)
@@ -310,6 +334,130 @@ class QualityGateTests(unittest.TestCase):
                 self.assertNotIn(token, source, path)
                 self.assertNotIn(token.casefold(), folded, path)
 
+    def test_f2_helpers_docs_and_page_objects_are_not_tests(self):
+        gate = self.gate
+        noisy = fn_with(f"    {sleep_for()}", "    assertEqual(1, 1)")
+        spared = (
+            "tests/conftest.py",
+            "tests/helpers.py",
+            "tests/__init__.py",
+            "tests/fixtures/data.json",
+            "tests/fixtures/test_data.py",
+            "tests/utils/helper.py",
+            "tests/support/flow.py",
+            "e2e/pages/LoginPage.ts",
+            "e2e/page_objects/LoginPage.ts",
+            "tests/README.md",
+            "tests/config.yaml",
+            "tests/notes.txt",
+        )
+        for path in spared:
+            with self.subTest(path=path):
+                self.assertFalse(gate.is_test_path(path), path)
+                report = gate.evaluate_content(path, noisy, None)
+                self.assertTrue(report["ok"], path)
+                self.assertEqual([], report["hits"])
+                diff = "\n".join(
+                    (
+                        f"diff --git a/{path} b/{path}",
+                        "new file mode 100644",
+                        "--- /dev/null",
+                        f"+++ b/{path}",
+                        "@@ -0,0 +1,3 @@",
+                        "+def test_pays():",
+                        "+    " + sleep_for(),
+                        "+    assertEqual(1, 1)",
+                    )
+                )
+                findings = self.pre_done.mechanical_problems({"proof_required": False, "diff": diff})
+                self.assertFalse(any(item.startswith("test-quality:") for item in findings), findings)
+        named = (
+            "pkg/FooTests.java",
+            "pkg/PayIT.java",
+            "pkg/PayTest.kt",
+            "pkg/pay_spec.rb",
+            "pkg/PayTests.cs",
+            "pkg/pay.spec.tsx",
+            "pkg/pay.test.mjs",
+            "pkg/pay.spec.cjs",
+            "pkg/pay.test.jsx",
+        )
+        for path in named:
+            self.assertTrue(gate.is_test_path(path), path)
+
+    def test_f4_weak_assertions_are_downgrades(self):
+        gate = self.gate
+        strong = fn_with("    assert x == 5")
+        for body in (
+            "    assert True",
+            "    assert 1",
+            "    assert not False",
+            "    assert flag",
+        ):
+            with self.subTest(body=body):
+                weakened = fn_with(body)
+                self.assertIn("assertion-weakening", self._hits(weakened, strong))
+                self.assertFalse(gate.evaluate_content("tests/test_bad.py", weakened, strong)["ok"])
+        justified = fn_with("    assert True  # assertion-justified: contract")
+        self.assertNotIn("assertion-weakening", self._hits(justified, strong))
+        self.assertTrue(
+            gate.evaluate_content(
+                "tests/test_ok.py",
+                fn_with("    assert 1 + 1 == 2"),
+                fn_with("    assert 1 == 1"),
+            )["ok"]
+        )
+        self.assertTrue(
+            gate.evaluate_content(
+                "tests/test_ok.py",
+                fn_with("    assert fn(x)"),
+                strong,
+            )["ok"]
+        )
+        self.assertTrue(
+            gate.evaluate_content(
+                "tests/test_ok.py",
+                fn_with("    assert a in b"),
+                strong,
+            )["ok"]
+        )
+        script = "pkg/pay.test.js"
+        before = "expect(res.status).toBe(200)\n"
+        for matcher in ("toBeTruthy", "toBeFalsy", "toBeNull", "toBeUndefined", "toBeNullish", "toBeDefined"):
+            after = f"expect(res.status).{matcher}()\n"
+            with self.subTest(matcher=matcher):
+                report = gate.evaluate_content(script, after, before)
+                self.assertFalse(report["ok"])
+                self.assertIn("assertion-weakening", {hit["code"] for hit in report["hits"]})
+        kept = gate.evaluate_content(script, "expect(a).toEqual(1)\n", "expect(a).toBe(1)\n")
+        self.assertTrue(kept["ok"], kept)
+        excused = "expect(res.status).toBeTruthy()  # assertion-justified: probe\n"
+        self.assertTrue(gate.evaluate_content(script, excused, before)["ok"])
+
+    def test_f8_html_urls_are_not_xpath(self):
+        gate = self.gate
+        for label, line in (
+            ("report", f"    client.get({quoted_root('/report')})"),
+            ("index", f"    page = {quoted_root('/index.html')}"),
+        ):
+            text = fn_with(line, "    assertEqual(1, 1)")
+            with self.subTest(label=label):
+                self.assertNotIn("absolute-xpath", self._hits(text))
+                self.assertTrue(gate.evaluate_content("tests/test_url.py", text)["ok"])
+        for label, line in (
+            ("body", f"    el = {quoted_root('/body')}"),
+            ("head", f"    el = {quoted_root('/head')}"),
+            ("div", f"    el = {quoted_root('/div')}"),
+            ("predicate", f"    el = {quoted_root('[')}"),
+            ("xpath-eq", f"    el = {xpath_eq()}"),
+            ("by-xpath", f"    el = {by_xpath()}"),
+            ("locator", f"    el = {locator_call()}"),
+            ("find-element", f"    el = {find_element_xpath()}"),
+        ):
+            text = fn_with(line, "    assertEqual(1, 1)")
+            with self.subTest(label=label):
+                self.assertIn("absolute-xpath", self._hits(text), text)
+
 
 class GuardParityTests(unittest.TestCase):
     @classmethod
@@ -502,6 +650,150 @@ class GuardParityTests(unittest.TestCase):
             self.assertNotIn("Test quality gate", clean_blob)
             self.assertEqual(0, clean.returncode, clean_blob)
             self.assertNotIn("GAP-EXIT2", clean_blob)
+
+    def _covered_project(self, root: Path) -> None:
+        (root / ".chaos-engine").mkdir()
+        (root / ".chaos-engine" / "install.py").write_text("# marker\n", encoding="utf-8")
+        state = root / ".chaos-engine-state"
+        state.mkdir()
+        (state / "research-receipt.md").write_text("retrieve: used\n", encoding="utf-8")
+
+    def _deny_payload(self, host: str, tool_name: str, tool_input: dict, cwd: str | None = None) -> dict:
+        completed = self._run(host, tool_name, tool_input, cwd=cwd)
+        self.assertEqual(0 if host == "antigravity" else 2, completed.returncode, completed.stdout + completed.stderr)
+        payload = self._payload(completed, host)
+        self.assertTrue(self._denied(payload), payload)
+        if host == "antigravity":
+            self.assertEqual("deny", payload.get("decision"))
+        self.assertIn("Test quality gate", self._reason(payload))
+        return payload
+
+    def test_f1_antigravity_edit_keys_and_unrecognized_payload(self):
+        sleep = "    " + sleep_for() + "\n    assertEqual(1, 1)"
+        edit = {
+            "Path": "tests/test_new.py",
+            "Target": "    assertEqual(1, 1)",
+            "Replacement": sleep,
+        }
+        self._deny_payload("antigravity", "edit_file", edit)
+        replace = {
+            "TargetFile": "tests/test_new.py",
+            "TargetContent": "    assertEqual(1, 1)",
+            "ReplacementContent": "    value = 1",
+        }
+        payload = self._deny_payload("antigravity", "replace_file_content", replace)
+        self.assertIn("assertion-weakening", self._reason(payload))
+        chunks = {
+            "TargetFile": "tests/test_new.py",
+            "ReplacementChunks": [
+                {
+                    "TargetContent": "    assertEqual(1, 1)",
+                    "ReplacementContent": sleep,
+                }
+            ],
+        }
+        self._deny_payload("antigravity", "multi_replace_file_content", chunks)
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            self._covered_project(project)
+            target = project / "tests" / "test_new.py"
+            target.parent.mkdir(parents=True)
+            target.write_text(fn_with("    assertEqual(1, 1)"), encoding="utf-8")
+            cwd = str(project)
+            kept = self._run(
+                "antigravity",
+                "edit_file",
+                {
+                    "Path": "tests/test_new.py",
+                    "Target": "    assertEqual(1, 1)",
+                    "Replacement": "    assertEqual(2, 2)",
+                },
+                cwd=cwd,
+            )
+            kept_blob = kept.stdout + kept.stderr
+            self.assertEqual(0, kept.returncode, kept_blob)
+            self.assertFalse(self._denied(self._payload(kept, "antigravity")), kept_blob)
+            self.assertNotIn("Test quality gate", kept_blob)
+            mystery = self._run(
+                "antigravity",
+                "Edit",
+                {"file_path": "tests/test_new.py", "mystery": "nope"},
+                cwd=cwd,
+            )
+            mystery_blob = mystery.stdout + mystery.stderr
+            self.assertEqual(0, mystery.returncode, mystery_blob)
+            self.assertFalse(self._denied(self._payload(mystery, "antigravity")), mystery_blob)
+            self.assertNotIn("Test quality gate", mystery_blob)
+            direct = self._block(
+                "PreToolUse",
+                "Edit",
+                {"file_path": "tests/test_new.py", "mystery": "nope"},
+            )
+            self.assertIsNone(direct[0])
+
+    def test_f3_write_to_file_and_apply_patch(self):
+        bad_write = {
+            "TargetFile": "tests/test_bad.py",
+            "CodeContent": fn_with(f"    {sleep_for()}", "    assertEqual(1, 1)"),
+        }
+        self._deny_payload("antigravity", "write_to_file", bad_write)
+        clean_body = fn_with("    assertEqual(1, 1)")
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            self._covered_project(project)
+            cwd = str(project)
+            clean = self._run(
+                "antigravity",
+                "write_to_file",
+                {"TargetFile": "tests/test_good.py", "CodeContent": clean_body},
+                cwd=cwd,
+            )
+            blob = clean.stdout + clean.stderr
+            self.assertEqual(0, clean.returncode, blob)
+            self.assertFalse(self._denied(self._payload(clean, "antigravity")), blob)
+            self.assertNotIn("Test quality gate", blob)
+        sleep_line = "+    " + sleep_for()
+        bad_patch = "\n".join(
+            (
+                "*** Begin Patch",
+                "*** Add File: tests/test_new.py",
+                "+def test_pays():",
+                sleep_line,
+                "+    assertEqual(1, 1)",
+                "*** End Patch",
+            )
+        )
+        clean_patch = "\n".join(
+            (
+                "*** Begin Patch",
+                "*** Add File: tests/test_new.py",
+                "+def test_pays():",
+                "+    assertEqual(1, 1)",
+                "*** End Patch",
+            )
+        )
+        for key in ("input", "patch", "diff"):
+            with self.subTest(key=key):
+                denied = self._run("codex", "apply_patch", {key: bad_patch})
+                denied_blob = denied.stdout + denied.stderr
+                self.assertEqual(2, denied.returncode, denied_blob)
+                payload = self._payload(denied, "codex")
+                self.assertTrue(self._denied(payload), payload)
+                self.assertIn("Test quality gate", self._reason(payload))
+                self.assertIn("sleep", self._reason(payload))
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            self._covered_project(project)
+            allowed = self._run(
+                "codex",
+                "apply_patch",
+                {"input": clean_patch},
+                cwd=str(project),
+            )
+            allowed_blob = allowed.stdout + allowed.stderr
+            self.assertEqual(0, allowed.returncode, allowed_blob)
+            self.assertFalse(self._denied(self._payload(allowed, "codex")), allowed_blob)
+            self.assertNotIn("Test quality gate", allowed_blob)
 
 
 class PreDoneParityTests(unittest.TestCase):

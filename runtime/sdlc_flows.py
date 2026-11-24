@@ -1029,9 +1029,104 @@ def _added_test_lines(diff_text: str) -> list[str]:
     return captured
 
 
+def _blank_keep_breaks(chunk: str) -> str:
+    return "".join("\n" if char == "\n" else " " for char in chunk)
+
+
+def _slash_line_comment(text: str, index: int) -> bool:
+    """True when ``//`` starts a comment, not Python floor division."""
+    if not text.startswith("//", index):
+        return False
+    line_start = text.rfind("\n", 0, index) + 1
+    prefix = text[line_start:index]
+    if prefix.strip() == "":
+        return True
+    return prefix.rstrip().endswith((";", "{", "}"))
+
+
+def _mask_source(text: str) -> str:
+    """Blank comments and string contents. Newlines stay so line counts hold."""
+    out: list[str] = []
+    index = 0
+    limit = len(text)
+    while index < limit:
+        if text.startswith(("'''", '"""'), index):
+            quote = text[index : index + 3]
+            out.append(quote)
+            end = text.find(quote, index + 3)
+            if end == -1:
+                out.append(_blank_keep_breaks(text[index + 3 :]))
+                break
+            out.append(_blank_keep_breaks(text[index + 3 : end]))
+            out.append(quote)
+            index = end + 3
+            continue
+        if text[index] in "\"'":
+            quote = text[index]
+            out.append(quote)
+            cursor = index + 1
+            while cursor < limit and text[cursor] != "\n":
+                if text[cursor] == "\\":
+                    out.append(" ")
+                    if cursor + 1 < limit and text[cursor + 1] != "\n":
+                        out.append(" ")
+                        cursor += 2
+                        continue
+                    cursor += 1
+                    continue
+                if text[cursor] == quote:
+                    out.append(quote)
+                    cursor += 1
+                    break
+                out.append(" ")
+                cursor += 1
+            index = cursor
+            continue
+        if text[index] == "#":
+            end = text.find("\n", index)
+            if end == -1:
+                out.append(" " * (limit - index))
+                break
+            out.append(" " * (end - index))
+            index = end
+            continue
+        if text.startswith("/*", index):
+            end = text.find("*/", index + 2)
+            if end == -1:
+                out.append(_blank_keep_breaks(text[index:]))
+                break
+            out.append(_blank_keep_breaks(text[index : end + 2]))
+            index = end + 2
+            continue
+        if _slash_line_comment(text, index):
+            end = text.find("\n", index)
+            if end == -1:
+                out.append(" " * (limit - index))
+                break
+            out.append(" " * (end - index))
+            index = end
+            continue
+        out.append(text[index])
+        index += 1
+    return "".join(out)
+
+
+def _mask_comments_and_strings(lines: list[str]) -> list[str]:
+    if not lines:
+        return lines
+    masked = _mask_source("\n".join(lines)).split("\n")
+    if len(masked) != len(lines):
+        return lines
+    return masked
+
+
 def assertion_signal_gate(diff_text, *, is_new_file: bool = True) -> dict:
-    """A new test file with no assertion signal blocks. An edit without one is a review warning."""
-    lines = _added_test_lines(diff_text or "")
+    """A new test file with no assertion signal blocks. An edit without one is a review warning.
+
+    Comments and string literals are blanked before the signal check, so a
+    title, a docstring, or a commented-out assert cannot satisfy it.
+    """
+    lines = _mask_comments_and_strings(_added_test_lines(diff_text or ""))
     if lines and not any(_ASSERT_SIGNAL.search(line) for line in lines):
         if is_new_file:
             return {"ok": False, "status": "block", "reasons": ["assertion-free"]}

@@ -3643,20 +3643,24 @@ def _deny(event: dict, event_name: str, tool_name: str, reason: str) -> int:
     return 2
 
 
-_QUALITY_TOOLS = frozenset({"Write", "Edit"})
+_QUALITY_TOOLS = frozenset({"Write", "Edit", "apply_patch"})
 _QUALITY_PATH_KEYS = (
     "file_path",
     "filePath",
     "path",
     "Path",
+    "AbsolutePath",
     "target_file",
     "targetFile",
+    "TargetFile",
     "notebook_path",
     "notebookPath",
 )
 _QUALITY_WRITE_KEYS = (
+    "CodeContent",
     "content",
     "contents",
+    "file_text",
     "text",
     "Content",
     "Text",
@@ -3664,8 +3668,29 @@ _QUALITY_WRITE_KEYS = (
     "newString",
     "input",
 )
-_QUALITY_OLD_KEYS = ("old_string", "old_str", "oldText", "old_text", "OldString")
-_QUALITY_NEW_KEYS = ("new_string", "new_str", "newText", "new_text", "NewString", "content", "Content")
+_QUALITY_OLD_KEYS = (
+    "old_string",
+    "old_str",
+    "oldText",
+    "old_text",
+    "OldString",
+    "TargetContent",
+    "Target",
+    "old",
+)
+_QUALITY_NEW_KEYS = (
+    "new_string",
+    "new_str",
+    "newText",
+    "new_text",
+    "NewString",
+    "ReplacementContent",
+    "Replacement",
+    "new",
+    "content",
+    "Content",
+)
+_QUALITY_PATCH_KEYS = ("input", "patch", "diff")
 _GAP_EXIT2_HOSTS = frozenset({"grok", "copilot", "cursor", "opencode"})
 
 
@@ -3755,35 +3780,80 @@ def _append_gap_exit2(host: str, reason: str) -> str:
     return f"{reason} {sentence}"
 
 
+def _quality_edit_report(module, path: str, tool_input: Mapping, existing: str | None):
+    """Score one Edit payload, including Antigravity replacement chunks.
+
+    An edit with no recognized old/new keys is not a whole-file delete.
+    """
+    chunks = tool_input.get("ReplacementChunks")
+    if isinstance(chunks, list) and chunks:
+        current = existing
+        report = None
+        recognized = False
+        for chunk in chunks:
+            if not isinstance(chunk, Mapping):
+                continue
+            old_string = _first_str(chunk, _QUALITY_OLD_KEYS)
+            new_string = _first_str(chunk, _QUALITY_NEW_KEYS)
+            if old_string is None and new_string is None:
+                continue
+            recognized = True
+            report = module.evaluate_edit(
+                path,
+                "" if old_string is None else old_string,
+                "" if new_string is None else new_string,
+                current,
+            )
+            if current is not None and old_string and old_string in current:
+                current = current.replace(old_string, "" if new_string is None else new_string, 1)
+            elif current is not None and old_string is None:
+                current = "" if new_string is None else new_string
+            if isinstance(report, dict) and not report.get("ok", True):
+                return report
+        if recognized:
+            return report
+    old_string = _first_str(tool_input, _QUALITY_OLD_KEYS)
+    new_string = _first_str(tool_input, _QUALITY_NEW_KEYS)
+    if old_string is None and new_string is None:
+        return None
+    return module.evaluate_edit(
+        path,
+        "" if old_string is None else old_string,
+        "" if new_string is None else new_string,
+        existing,
+    )
+
+
 def _test_quality_block(
     event: dict, event_name: str, tool_name: str, tool_input: object, host: str
 ) -> int | None:
-    """PreToolUse Write/Edit on a test path. Missing gate fails open. Non-tests pass."""
+    """PreToolUse Write/Edit/apply_patch on a test path. Missing gate fails open."""
     if event_name != "PreToolUse":
         return None
-    if _quality_tool_name(tool_name) not in _QUALITY_TOOLS:
+    canonical = _quality_tool_name(tool_name)
+    if canonical not in _QUALITY_TOOLS:
         return None
     module = _test_quality_api()
     if module is None or not isinstance(tool_input, Mapping):
         return None
     path = _quality_target_path(tool_input)
     try:
-        if not path or not module.is_test_path(path):
-            return None
-        existing = _quality_existing_text(event, path)
-        canonical = _quality_tool_name(tool_name)
-        if canonical == "Edit":
-            old_string = _first_str(tool_input, _QUALITY_OLD_KEYS)
-            new_string = _first_str(tool_input, _QUALITY_NEW_KEYS)
-            report = module.evaluate_edit(
-                path,
-                "" if old_string is None else old_string,
-                "" if new_string is None else new_string,
-                existing,
-            )
+        if canonical == "apply_patch":
+            body = _first_str(tool_input, _QUALITY_PATCH_KEYS)
+            if body is None:
+                return None
+            report = module.evaluate_patch(body)
         else:
-            content = _first_str(tool_input, _QUALITY_WRITE_KEYS)
-            report = module.evaluate_content(path, "" if content is None else content, existing)
+            if not path or not module.is_test_path(path):
+                return None
+            existing = _quality_existing_text(event, path)
+            if canonical == "Edit":
+                report = _quality_edit_report(module, path, tool_input, existing)
+                if report is None:
+                    return None
+            else:
+                content = _first_str(tool_input, _QUALITY_WRITE_KEYS)
+                report = module.evaluate_content(path, "" if content is None else content, existing)
     except Exception:
         return None
     if not isinstance(report, dict) or report.get("ok", True):
