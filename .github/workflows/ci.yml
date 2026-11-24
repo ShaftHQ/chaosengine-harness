@@ -110,6 +110,33 @@ jobs:
           git config --global user.email "chaosengine@mail.grokbot.com"
           python -m pytest -q -p no:cacheprovider -n auto tests
 
+      - name: Graphify CLI documentation regressions
+        run: |
+          set -eu
+          python -m venv "$RUNNER_TEMP/graphify-tests"
+          export PATH="$RUNNER_TEMP/graphify-tests/bin:$PATH"
+          python - <<'PY'
+          import json
+          import subprocess
+          import sys
+
+          spec = json.load(open("dependencies.json", encoding="utf-8"))
+          tool = spec["tools"]["graphify"]
+          pins = [str(tool["package"])]
+          pins.extend(
+              str(item) for item in tool.get("with", []) if str(item).startswith("anyio==")
+          )
+          if not any(pin.startswith("graphifyy==") for pin in pins):
+              sys.exit("dependencies.json is missing the graphifyy pin")
+          if not any(pin.startswith("anyio==") for pin in pins):
+              sys.exit("dependencies.json is missing the anyio pin")
+          subprocess.check_call([sys.executable, "-m", "pip", "install", "--quiet", *pins])
+          PY
+          graphify --version
+          python -B -m unittest discover -s tests/scripts -p test_chaos_engine_stores.py \
+            -k test_graphify_query_finds_text_under_a_sub_heading \
+            -k test_graphify_incremental_extraction_rebuilds_docs_and_preserves_code -v
+
       - name: Hook parity offline pin and installer surfaces
         run: python -m pytest -v -p no:cacheprovider tests/scripts/test_conformance_8052.py tests/installer/test_hook_parity.py
 

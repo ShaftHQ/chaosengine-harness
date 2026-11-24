@@ -21,6 +21,8 @@ CONSULT_FIRST_PATH = ROOT / "references" / "consult-first.md"
 
 APP_ID = "bs://cloudapp998877665544"  # nosec B105 - synthetic test fixture
 ACCESS_KEY = "SyntheticAccessKey2119988"  # nosec B105 - synthetic test fixture
+# Standard and URL-safe base64 differ (`/` vs `_`), and the value has padding.
+URLSAFE_SECRET = "CloudKey211?xy"  # nosec B105 - synthetic test fixture
 YAML_TOKEN = "YamlCloudToken211776655"  # nosec B105 - synthetic test fixture
 JSON_SECRET = "JsonCloudAppId211334455"  # nosec B105 - synthetic test fixture
 ENV_SECRET = "EnvCloudSecret211667788"  # nosec B105 - synthetic test fixture
@@ -372,6 +374,176 @@ class OutputSecretBlockHintTest(unittest.TestCase):
         self.assertIn("read_secret_key", blocked)
         self.assertNotIn(APP_ID, blocked)
         self.assertIsNone(clear)
+
+
+class OutputSecretEncodedFormTest(unittest.TestCase):
+    """#213: percent-encoded and base64 forms of guarded values are withheld."""
+
+    def setUp(self) -> None:
+        self.boundary = _load(BOUNDARY_PATH, "operation_boundary_213_encoded")
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.project = Path(self.temp.name)
+        (self.project / "browserstack.yml").write_text(
+            f"app: {APP_ID}\nkey: {URLSAFE_SECRET}\n",
+            encoding="utf-8",
+        )
+        self.quoted = urllib.parse.quote(APP_ID, safe="")
+        self.plus = urllib.parse.quote_plus(APP_ID)
+        self.standard = base64.b64encode(APP_ID.encode()).decode("ascii")
+        self.urlsafe = base64.urlsafe_b64encode(URLSAFE_SECRET.encode()).decode("ascii")
+        self.standard_marked = base64.b64encode(URLSAFE_SECRET.encode()).decode("ascii")
+
+    def _withheld(self, payload: str, *, field: str, code: int) -> str:
+        blocked = self.boundary.output_secret_block(
+            {field: payload, "exit_code": code},
+            self.project,
+        )
+        self.assertIsNotNone(blocked)
+        assert blocked is not None
+        self.assertIn("secret-in-output", blocked)
+        self.assertIn("output withheld", blocked)
+        self.assertIn(f"exit code {code}", blocked)
+        self.assertNotIn(APP_ID, blocked)
+        self.assertNotIn(URLSAFE_SECRET, blocked)
+        return blocked
+
+    def test_uppercase_percent_encoded_secret_in_stdout_is_withheld(self) -> None:
+        self.assertEqual("bs%3A%2F%2Fcloudapp998877665544", self.quoted)
+        blocked = self._withheld(f"fetched {self.quoted}\n", field="stdout", code=0)
+        self.assertNotIn(self.quoted, blocked)
+        self.assertNotIn(self.quoted.lower(), blocked)
+
+    def test_lowercase_percent_encoded_secret_in_stderr_is_withheld(self) -> None:
+        lowered = self.quoted.lower()
+        self.assertEqual("bs%3a%2f%2fcloudapp998877665544", lowered)
+        blocked = self._withheld(f"fetched {lowered}\n", field="stderr", code=2)
+        self.assertNotIn(lowered, blocked)
+        self.assertNotIn(self.quoted, blocked)
+
+    def test_mixed_case_percent_encoded_secret_in_output_is_withheld(self) -> None:
+        mixed_forms = (
+            "bs%3A%2f%2Fcloudapp998877665544",
+            "bs%3a%2F%2fcloudapp998877665544",
+            self.quoted.replace("%3A", "%3a").replace("%2F", "%2f", 1),
+        )
+        for mixed in mixed_forms:
+            with self.subTest(mixed=mixed):
+                self.assertNotEqual(mixed, self.quoted)
+                self.assertNotEqual(mixed, self.quoted.lower())
+                blocked = self._withheld(f"fetched {mixed}\n", field="output", code=1)
+                self.assertNotIn(mixed, blocked)
+                self.assertNotIn(self.quoted, blocked)
+                self.assertNotIn(self.quoted.lower(), blocked)
+
+    def test_quote_plus_secret_is_withheld(self) -> None:
+        self.assertEqual(self.plus, urllib.parse.quote(APP_ID, safe=""))
+        self.assertNotEqual(self.plus, urllib.parse.quote(APP_ID))
+        marked = urllib.parse.quote_plus(URLSAFE_SECRET)
+        self.assertIn("%3F", marked)
+        for payload in (f"form={self.plus}\n", f"form={marked}\n"):
+            with self.subTest(payload=payload):
+                blocked = self._withheld(payload, field="stdout", code=0)
+                self.assertNotIn(self.plus, blocked)
+                self.assertNotIn(marked, blocked)
+                self.assertNotIn(marked.lower(), blocked)
+
+    def test_base64_standard_and_urlsafe_forms_are_withheld(self) -> None:
+        self.assertNotEqual(self.standard_marked, self.urlsafe)
+        self.assertTrue(self.standard.endswith("="))
+        self.assertTrue(self.urlsafe.endswith("="))
+        forms = (
+            ("stdout", self.standard),
+            ("stderr", self.standard.rstrip("=")),
+            ("output", self.urlsafe),
+            ("stdout", self.urlsafe.rstrip("=")),
+            ("stderr", self.standard_marked),
+            ("output", self.standard_marked.rstrip("=")),
+        )
+        for field, form in forms:
+            with self.subTest(field=field, form=form):
+                blocked = self._withheld(f"blob {form}\n", field=field, code=5)
+                self.assertNotIn(form, blocked)
+                self.assertNotIn(self.standard, blocked)
+                self.assertNotIn(self.standard.rstrip("="), blocked)
+                self.assertNotIn(self.urlsafe, blocked)
+                self.assertNotIn(self.urlsafe.rstrip("="), blocked)
+                self.assertNotIn(self.standard_marked, blocked)
+                self.assertNotIn(self.standard_marked.rstrip("="), blocked)
+
+    def test_benign_output_with_unrelated_encodings_returns_none(self) -> None:
+        benign = "\n".join(
+            [
+                "all tests passed",
+                "https://example.com/status?ok=1",
+                "https%3A%2F%2Fexample.com%2Fstatus",
+                "bs%3A%2F%2Fotherapp",
+                "bs%3a%2f%2fotherapp",
+                "q=hello+world",
+                urllib.parse.quote_plus("ordinary status text"),
+                base64.b64encode(b"hello world!!").decode("ascii"),
+                base64.urlsafe_b64encode(b"hello world??").decode("ascii").rstrip("="),
+                "CloudKey211?x is not the guarded value",
+            ]
+        )
+        self.assertIsNone(
+            self.boundary.output_secret_block(
+                {"stdout": benign, "stderr": "done\n", "output": "ok\n", "exit_code": 0},
+                self.project,
+            )
+        )
+
+    def test_overencoded_unreserved_percent_is_withheld(self) -> None:
+        """``c`` encoded as ``%63`` still withholds the raw guarded value.
+
+        ``quote`` leaves unreserved characters alone, so this form is not one of
+        the canonical percent spellings. ``unquote`` restores a literal ``+``.
+        ``unquote_plus`` restores a ``+`` that stands for a space.
+        """
+        over = APP_ID.replace("c", "%63", 1)
+        canonical = urllib.parse.quote(APP_ID, safe="")
+        self.assertEqual("bs://%63loudapp998877665544", over)
+        self.assertNotIn("%63", canonical)
+        self.assertEqual(APP_ID, urllib.parse.unquote(over))
+        self.assertEqual(APP_ID, urllib.parse.unquote_plus(over))
+        blocked = self._withheld(f"fetched {over}\n", field="stdout", code=0)
+        self.assertNotIn(over, blocked)
+        mixed = canonical.replace("c", "%63", 1)
+        self.assertIn("%63", mixed)
+        self.assertNotEqual(mixed, canonical)
+        self.assertEqual(APP_ID, urllib.parse.unquote(mixed))
+        blocked_mixed = self._withheld(f"fetched {mixed}\n", field="stderr", code=3)
+        self.assertNotIn(mixed, blocked_mixed)
+        self.assertNotIn(mixed.lower(), blocked_mixed)
+
+        plus_secret = "Cloud+Key211xy"
+        self.assertGreaterEqual(len(plus_secret), 12)
+        self.assertIn("+", plus_secret)
+        (self.project / "browserstack.yml").write_text(
+            f"app: {APP_ID}\nkey: {plus_secret}\n",
+            encoding="utf-8",
+        )
+        plus_over = plus_secret.replace("C", "%43", 1)
+        self.assertEqual("%43loud+Key211xy", plus_over)
+        self.assertEqual(plus_secret, urllib.parse.unquote(plus_over))
+        self.assertNotEqual(plus_secret, urllib.parse.unquote_plus(plus_over))
+        blocked_plus = self._withheld(f"token {plus_over}\n", field="output", code=4)
+        self.assertNotIn(plus_secret, blocked_plus)
+        self.assertNotIn(plus_over, blocked_plus)
+
+        guard = _load(GUARD_PATH, "secret_guard_211_overencode")
+        spaced = b"cloud app99887766"
+        payload = b"saw %63loud+app99887766\n"
+        self.assertNotIn(spaced, urllib.parse.unquote(payload.decode("ascii")).encode("ascii"))
+        self.assertIn(spaced, urllib.parse.unquote_plus(payload.decode("ascii")).encode("ascii"))
+        self.assertNotIn(spaced, payload)
+        self.assertTrue(self.boundary._output_has_guarded_secret(guard, payload, {spaced}))
+        self.assertIsNone(
+            self.boundary.output_secret_block(
+                {"stdout": "status %63 ok\n", "stderr": "", "output": "", "exit_code": 0},
+                self.project,
+            )
+        )
 
 
 class IntakeFeasibilityGateDocsTest(unittest.TestCase):
