@@ -15,6 +15,8 @@ Triage already selected a depth past the trivial row. Name what good looks like 
 
 A trivial task never loads this file. If triage and the user's framing disagree about size, say so in one line and work to the larger. During planning, keep asking material follow-ups until the plan is decision-ready. After owner approval, execution is unattended; dispatch a consultant agent for implementation ambiguity. When the owner says not to ask again, or closes a decision with "you decide", do not reopen it. Dispatch a read-only consultant subagent for the remaining ambiguity and proceed on its guidance. Irreversible or externally visible actions still need explicit owner approval ([ethics card](../companions/ethics-card.md)).
 
+A primary use of a quick read-only consultant check is the [intake feasibility gate](bigger-picture-first.md#intake-feasibility-gate): before any code, confirm whether the requested acceptance state is reachable with the available test account or platform mocks without a state-changing write.
+
 Card precedence when cards disagree: [delivery-cycle](delivery-cycle.md) wins on review and merge, [kanban](../skills/kanban/SKILL.md) wins on WIP, the ethics card wins on irreversible or outbound actions, and the ChaosEngine skill wins on routing. The deeper file wins on its own topic.
 
 ## Full pass

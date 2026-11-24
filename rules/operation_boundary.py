@@ -1012,7 +1012,11 @@ def output_secret_block(result: object, root: Path | None = None) -> str | None:
     if not hits:
         return None
     code = result.get("exit_code", result.get("exitCode", 0))
-    return f"{hits[0]}; output withheld; the command already finished with exit code {code}"
+    return (
+        f"{hits[0]}; output withheld; the command already finished with exit code {code}; "
+        "to read secret-like IDs inside a script without echoing them, use "
+        "`secret_guard.py --exec-with-secret KEY=ENV_VAR -- <cmd>` or `read_secret_key`"
+    )
 
 
 def _git(root: Path, args: list[str]):
