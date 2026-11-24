@@ -134,8 +134,11 @@ Learning Session after every final delivery: when the owner approves the cut,
 the publish completes, or the final PR merges, run it at once without being
 asked ([router contract](../../../../references/router-contract.md#learning-session)).
 Diff the STATUS log, review log and failures against these cards. File one spec
-issue for what is new, then open ONE PR (`skip-release-notes`, auto-merge
-MERGE) and babysit it to merged. When nothing is new, write one report line
+issue for what is new, then open ONE PR (`skip-release-notes`) and babysit it
+to merged. Never run `gh pr merge --auto`. If the base ruleset has `merge_queue`,
+enqueue with `gh pr merge` and no strategy flag; otherwise run `gh pr merge --squash`
+only after required checks are green and review threads are resolved. When nothing
+is new, write one report line
 naming the card that already holds each lesson.
 
 ## Backup and recovery

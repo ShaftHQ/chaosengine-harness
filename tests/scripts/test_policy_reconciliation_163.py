@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -88,7 +89,7 @@ def test_c5_failure_caps_and_pr_babysit_coexist():
     for relative in ("skills/chaos-engine/SKILL.md", "references/bot-entry.md"):
         text = _read(relative)
         assert "Two failed attempts on one approach" in text or "two failed attempts on one approach" in text
-        assert "3 local PDCA" in text or "at most 3" in text
+        assert "3 local PDCA" in text or "at most 3" in text or "PDCA cap is 3" in text
         assert "blocking: unverifiable" in text
         assert "no retry cap" not in text
 
@@ -161,4 +162,38 @@ def test_always_loaded_budget_matches_the_measured_sum_and_ceiling(tmp_path: Pat
     assert measured <= CEILING
     assert measured <= int(BASELINE * 0.7)
     assert budget["bytes"] == measured
+    assert measured <= 16147
     assert "26635" in (ROOT / "always-loaded-budget.json").read_text(encoding="utf-8")
+
+
+_AUTO_MERGE_PHRASES = (
+    "arming auto-merge",
+    "arm auto-merge",
+    "auto-merges",
+    "confirm auto-merge",
+)
+
+
+def _negates_auto_merge(sentence: str) -> bool:
+    """A sentence that forbids the arm, including 'not a reason to arm'."""
+    lowered = sentence.casefold()
+    return any(
+        marker in lowered
+        for marker in ("never", "do not", "does not", "must not", "is not")
+    )
+
+
+def test_auto_merge_arming_language_is_explicitly_negated():
+    hits: list[str] = []
+    for folder in ("references", "skills", "addons"):
+        for path in (ROOT / folder).rglob("*.md"):
+            flat = re.sub(r"\s+", " ", path.read_text(encoding="utf-8"))
+            for sentence in re.split(r"(?<=[.!?])\s+", flat):
+                lowered = sentence.casefold()
+                if not any(phrase in lowered for phrase in _AUTO_MERGE_PHRASES):
+                    continue
+                if _negates_auto_merge(sentence):
+                    continue
+                relative = path.relative_to(ROOT).as_posix()
+                hits.append(f"{relative}: {sentence[:200]}")
+    assert hits == []

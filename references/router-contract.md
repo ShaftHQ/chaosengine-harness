@@ -74,8 +74,8 @@ would start without ChaosEngine.
 2. Read current instructions and live files before acting.
 3. Plan by uncertainty, blast radius, and reversibility; test the riskiest premise first. Planning phase: ask only questions whose answer changes the plan. Execution phase (after approval): go unattended; stop only for a genuine owner decision.
 4. Implement the full approved scope as one coherent batch. Fix root owner of
-   an invariant, not each symptom; do not interrupt implementation with review,
-   test, commit, push, or validation gates.
+   an invariant, not each symptom; do not interrupt implementation for review,
+   commit, push, or consolidated Check. RED-GREEN stays inside PDCA Do.
 5. After the final scope commit, follow [delivery cycle](delivery-cycle.md).
    Ordinary reversible changes get one fresh-context adversarial review.
    Public-contract or hard-to-reverse changes get two independent adversarial reviews before orchestrator sign-off, one after another. Do not start both reviewers in one step. Neither reviewer is the author.

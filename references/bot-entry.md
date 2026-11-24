@@ -10,7 +10,7 @@ Any AI client without native auto-load (chat bots, generic CLIs, custom agents, 
 
 ## Mechanical gates
 
-Judgement stays prose. `tool.py pre-done --gate OBS.json` (proof, tests, ~90 lines or `size_waiver`), `tool.py dod <PR>`, `tool.py delete-check <paths>`, `tool.py resume TASK`.
+Judgement stays prose. `tool.py pre-done --gate OBS.json` (proof, tests, ~90 lines or `size_waiver`), `tool.py dod <PR>`, `tool.py delete-check <paths>`, `tool.py ethics-check`, `tool.py resume TASK`.
 
 Default is a small vertical slice (~90 changed lines or a named `size_waiver`). One grouped pull request is allowed when an epic or batch waiver names it.
 

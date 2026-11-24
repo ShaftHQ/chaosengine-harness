@@ -1,6 +1,6 @@
 ---
 name: job-applications
-description: "Use when applying to jobs for the user by email, LinkedIn, or an ATS form."
+description: "Use when choosing only the application channel (email, LinkedIn, or ATS). Draft and send stay in job-apply."
 license: MIT
 ---
 

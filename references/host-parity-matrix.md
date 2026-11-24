@@ -1,5 +1,5 @@
 ---
-description: Use when Grok or Copilot may not honor an exit-2 hard block and the compensating checklist applies.
+description: Use when Grok, Copilot, Cursor, or OpenCode may not honor an exit-2 hard block and the compensating checklist applies.
 ---
 
 # Host Parity Matrix v0
@@ -19,8 +19,8 @@ valid Learning Session skip on any host.
 
 ## One implementation for every host
 
-Claude, Codex (the GPT host), Copilot, Gemini, Grok, OpenCode, Cursor, and
-Grok Bot run one portable implementation. Do not add a separate GPT adapter, and do not copy a rule
+Claude, Codex (the GPT host), Copilot, Gemini, Grok, OpenCode, Cursor,
+Antigravity, and Grok Bot run one portable implementation. Do not add a separate GPT adapter, and do not copy a rule
 into a host skill, a host guard, or a second policy file. A new harness
 rule is one shared row in `scripts/ci/agent_harness_parity.json`: every
 host column names the same evidence path, and one test runs that decision
@@ -66,19 +66,19 @@ The nine named hosts are not the whole set. Any other AI client uses the same ou
 | Tier | Capability | Do |
 | --- | --- | --- |
 | Tier 1 (Native hooks + shell) | Lifecycle hooks and a shell | Wire host hooks to `.chaos-engine/hooks/kernel.py`. Run `tool.py` directly. |
-| Tier 2 (Instruction discovery + shell, no native hooks) | Loads project instructions and can run a shell; no hook runtime | Load `AGENTS.md`, then `.chaos-engine/skills/chaos-engine/SKILL.md`. Self-enforce `tool.py entry`, `tool.py retrieve`, `tool.py delete-check`, `tool.py pre-done`, `tool.py dod`. |
+| Tier 2 (Instruction discovery + shell, no native hooks) | Loads project instructions and can run a shell; no hook runtime | Load `AGENTS.md`, then `.chaos-engine/skills/chaos-engine/SKILL.md`. Self-enforce `tool.py entry`, `tool.py retrieve`, `tool.py delete-check`, `tool.py ethics-check`, `tool.py pre-done`, `tool.py dod`. |
 | Tier 3 (Prompt/chat-only, no shell) | Prompt or chat only | Read `.chaos-engine/skills/chaos-engine/SKILL.md`, `identity.md`, and `companions/*.md`. Emit structured patches and a manual verification checklist. |
 
 | Surface | Universal / Any AI Client |
 | --- | --- |
-| Lifecycle hooks and `tool.py` | Tier 1: wire `hooks/kernel.py` and run the CLI. Tier 2: self-enforce the five `tool.py` commands above. Tier 3: read the skill, identity, and companions; emit patches plus a manual checklist. |
+| Lifecycle hooks and `tool.py` | Tier 1: wire `hooks/kernel.py` and run the CLI. Tier 2: self-enforce the six `tool.py` commands above. Tier 3: read the skill, identity, and companions; emit patches plus a manual checklist. |
 
 ## Measured gaps (severity)
 
 | ID | Host(s) | Severity | Gap | Evidence / next |
 | --- | --- | --- | --- | --- |
-| GAP-EXIT2 | Grok, Copilot | high | `HostCapability.process_exit2_honored=False`; ChaosEngine still returns deny exit 2 + native deny payload (`decision`/`permissionDecision`). Owner doctor surfaces `blockingGap`. | Proven by `tests/scripts/test_chaos_engine_exit2_fidelity.py`; fields on HOST_CAPABILITIES. |
-| GAP-SESSIONSTART | — (cleared) | info | ChaosEngine emits the same SessionStart context on all five hosts, including the identity Truth and Principles bullets, under `SESSION_START_MAX_BYTES`=4096. Grok copies that context into `systemMessage` and, when drift or unfinished-task lines would exceed the budget, falls back to the identity path line. A host that ignores SessionStart output still loads companions via the entrypoint. Codex post-compaction: after a root session compacts, Codex runs SessionStart with `source: "compact"` before the next model request and adds `hookSpecificOutput.additionalContext` to that continuation ([Codex hooks](https://developers.openai.com/codex/hooks)). | Proven by `tests/scripts/test_chaos_engine_sessionstart_locator_parity.py`. |
+| GAP-EXIT2 | Grok, Copilot, Cursor, OpenCode | high | `HostCapability.process_exit2_honored=False` for Grok and Copilot; Cursor and OpenCode also ignore exit 2. ChaosEngine still returns deny exit 2 + native deny payload (`decision`/`permissionDecision`). Owner doctor surfaces `blockingGap`. Antigravity denies with `decision=deny`, and Stop uses `decision=continue` on exit 0. | Proven by `tests/scripts/test_chaos_engine_exit2_fidelity.py`; fields on HOST_CAPABILITIES. |
+| GAP-SESSIONSTART | — (cleared) | info | ChaosEngine emits the same SessionStart context on all seven SessionStart hosts (Claude, Codex, Gemini, Grok, Copilot, Cursor, and Antigravity), including the identity Truth and Principles bullets, under `SESSION_START_MAX_BYTES`=4096. Grok copies that context into `systemMessage` and, when drift or unfinished-task lines would exceed the budget, falls back to the identity path line. A host that ignores SessionStart output still loads companions via the entrypoint. Codex post-compaction: after a root session compacts, Codex runs SessionStart with `source: "compact"` before the next model request and adds `hookSpecificOutput.additionalContext` to that continuation ([Codex hooks](https://developers.openai.com/codex/hooks)). | Proven by `tests/scripts/test_chaos_engine_sessionstart_locator_parity.py`. |
 | GAP-HOOK-TRUST | Grok | medium | Project hook trust (`/hooks-trust`, projectTrusted) is host-gated. `/hooks-trust` is the advisory only when `grok inspect --json` says the project is not trusted, or inspect did not return trust. A trusted project with `launch.py` hooks loaded is healthy. A trusted project missing an event names that event and does not ask for `/hooks-trust`. Doctor stays healthy and reports sync-advisory. Never flip overall doctor to recovery-required for Grok trust alone when hosts verify is healthy. | Host onboarding card + grok_runtime_status (advisory). |
 | GAP-GROK-LEAN | Grok | medium | Dual Claude-compat + native `.grok` hooks double CE context; installer merges lean `[compat.*]` into user `~/.grok/config.toml`; optional `--lean-grok-skills`; skill adapters stay pointers. | [`grok_lean_config.py`](../runtime/grok_lean_config.py) + doctor sync-advisory. |
 | GAP-IMPL-COMPANIONS | all | medium | Implementation must load Caveman+Ponytail at ultra via portable overlay; not optional and not SessionStart-only. Doctor **self-heals** missing companions from CE vendor (official publish); agentic handoff with official repair/install only if heal fails. | `rematerialize_companions` + doctor. |
@@ -87,7 +87,7 @@ The nine named hosts are not the whole set. Any other AI client uses the same ou
 | GAP-COPILOT-DETECT | Copilot | low | The wizard list is soft (`gh` / `code` / `cursor`). Host completion does not select Copilot from those programs. Name `copilot` with `--hosts` or `CHAOS_ENGINE_HOST`. | Onboarding card and [INSTALL.md](../INSTALL.md#clients-this-command-can-complete). |
 | GAP-GEMINI-NODE | Gemini | low | Hook launcher needs Node.js; unsupported native events remain explicit capability gaps. | Onboarding card + launch.js. |
 | GAP-OPENCODE-HOOKS | OpenCode | info | The plain JS plugin `.opencode/plugins/chaos-engine-receipt.js` calls `hooks/launch.py`. `tool.execute.before` / `execute.before` throw on deny. `session.idle` is observe-only. `session.created` has no documented context channel, so SessionStart stays G. Exit 2 stays G until a live probe. | `runtime/hook_surfaces.py`; `tests/scripts/test_hook_parity.py`. |
-| GAP-CURSOR-HOOKS | Cursor | info | `.cursor/hooks.json` version 1 calls `hooks/launch.py` for the ten agent events. Deny renders `permission`, `additional_context`, and `followup_message`. `failClosed` is set only on `preToolUse`. Exit 2 stays G until a live probe. One guard run per event stays unclaimed until a posted trace count. | `runtime/hook_surfaces.py`; `tests/scripts/test_hook_parity.py`. |
+| GAP-CURSOR-HOOKS | Cursor | info | `.cursor/hooks.json` version 1 calls `hooks/launch.py` for the ten agent events. Deny renders `permission`, `additional_context`, and `followup_message`. `failClosed` is set only on `preToolUse`. Exit 2 stays G until a live probe. One guard run per event stays unclaimed until a posted trace count. Cursor PostToolUse deny is fail-open: the adapter drops `decision` and `reason`; only PreToolUse `permission` denies. | `runtime/hook_surfaces.py`; `tests/scripts/test_hook_parity.py`. |
 | GAP-ANTIGRAVITY-HOOKS | Antigravity (`agy`) | info | `.agents/hooks.json` registers a named `"chaos-engine"` hook calling `hooks/launch.py`. PreToolUse and PostToolUse use the scoped `hooks/matchers.json` groups (including `run_command`, `run_workflow`, and `swarm`), not `.*`. Flat arrays are `SessionStart`, `PreInvocation`, and `Stop`. `PostInvocation` stays a kernel alias and is not a per-turn spawn. Antigravity treats non-zero hook exits as fail-open, so denies emit exit-0 JSON (`decision: "deny"`, `decision: "continue"` + `reason`, or `errorMessage` + `terminationBehavior: "terminate"`). A Stop with `fullyIdle: false` or terminal `terminationReason` does not emit `decision: "continue"`. SessionStart/PreInvocation inject context via `injectSteps`. MCP stays CLI-first: Antigravity reads `~/.gemini/config/mcp_config.json` or `plugins/<name>/mcp_config.json`, not `.mcp.json`, and a plugin bundle is `plugins/<name>/plugin.json`. | `runtime/hook_surfaces.py`; `tests/scripts/test_antigravity_support.py`. |
 | GAP-GROKBOT-HOOKS | Grok Bot | medium | Instruction-only agent: auto-loads nothing from the checkout and has no hook runtime. At task start it reads the core card and both companion cards itself, then runs one retrieve. Same receipt substitution; `worktree_overlay.py verify` reports it as instruction-only. | `hosts.INSTRUCTION_ONLY_HOSTS`; research receipt;. |
 | GAP-BOT-ENTRY | Independent bots (GPTs, Claude Projects, others) | medium | No checkout auto-load and no hooks: start from [bot entry](bot-entry.md) (`tool.py entry`, or an exported entry file for bots without repository access). Residual risk: a hookless bot can still submit a person-only assessment if it skips `tool.py ethics-check`. | `hosts.INSTRUCTION_ONLY_HOSTS`; research receipt;. |
