@@ -242,34 +242,34 @@
       }
     },
     "maven": {
-      "version": "3.10.1",
+      "version": "3.10.2",
       "minimumVersion": "3.9.0",
       "artifacts": {
         "windows-x64": {
-          "url": "https://archive.apache.org/dist/maven/maven-3/3.10.1/binaries/apache-maven-3.10.1-bin.zip",
-          "sha256": "9c1ef9174ef250a5009ed0dec97cbe8699acf7479add4e62bf7b0ea791c0adb5"
+          "url": "https://archive.apache.org/dist/maven/maven-3/3.10.2/binaries/apache-maven-3.10.2-bin.zip",
+          "sha256": "7d69999d218e025cf1c14691ba748a09706e47999bd505009403cef9d757c2df"
         },
         "windows-arm64": {
-          "url": "https://archive.apache.org/dist/maven/maven-3/3.10.1/binaries/apache-maven-3.10.1-bin.zip",
-          "sha256": "9c1ef9174ef250a5009ed0dec97cbe8699acf7479add4e62bf7b0ea791c0adb5",
+          "url": "https://archive.apache.org/dist/maven/maven-3/3.10.2/binaries/apache-maven-3.10.2-bin.zip",
+          "sha256": "7d69999d218e025cf1c14691ba748a09706e47999bd505009403cef9d757c2df",
           "artifactArchitecture": "x64",
           "emulated": true
         },
         "linux-x64": {
-          "url": "https://archive.apache.org/dist/maven/maven-3/3.10.1/binaries/apache-maven-3.10.1-bin.tar.gz",
-          "sha256": "810b8348f0a40f9116c202093fae007ebeabf67699bf34d81ee7e272289e085a"
+          "url": "https://archive.apache.org/dist/maven/maven-3/3.10.2/binaries/apache-maven-3.10.2-bin.tar.gz",
+          "sha256": "8ba13121794243e604dbca50439f6ae649ce602675a167129556fd502947b249"
         },
         "linux-arm64": {
-          "url": "https://archive.apache.org/dist/maven/maven-3/3.10.1/binaries/apache-maven-3.10.1-bin.tar.gz",
-          "sha256": "810b8348f0a40f9116c202093fae007ebeabf67699bf34d81ee7e272289e085a"
+          "url": "https://archive.apache.org/dist/maven/maven-3/3.10.2/binaries/apache-maven-3.10.2-bin.tar.gz",
+          "sha256": "8ba13121794243e604dbca50439f6ae649ce602675a167129556fd502947b249"
         },
         "macos-x64": {
-          "url": "https://archive.apache.org/dist/maven/maven-3/3.10.1/binaries/apache-maven-3.10.1-bin.tar.gz",
-          "sha256": "810b8348f0a40f9116c202093fae007ebeabf67699bf34d81ee7e272289e085a"
+          "url": "https://archive.apache.org/dist/maven/maven-3/3.10.2/binaries/apache-maven-3.10.2-bin.tar.gz",
+          "sha256": "8ba13121794243e604dbca50439f6ae649ce602675a167129556fd502947b249"
         },
         "macos-arm64": {
-          "url": "https://archive.apache.org/dist/maven/maven-3/3.10.1/binaries/apache-maven-3.10.1-bin.tar.gz",
-          "sha256": "810b8348f0a40f9116c202093fae007ebeabf67699bf34d81ee7e272289e085a"
+          "url": "https://archive.apache.org/dist/maven/maven-3/3.10.2/binaries/apache-maven-3.10.2-bin.tar.gz",
+          "sha256": "8ba13121794243e604dbca50439f6ae649ce602675a167129556fd502947b249"
         }
       }
     }
@@ -289,7 +289,7 @@
       ]
     },
     "graphify": {
-      "package": "graphifyy==0.9.113",
+      "package": "graphifyy==0.9.118",
       "with": [
         "tree-sitter-sql==0.3.11",
         "anyio==4.14.2"
