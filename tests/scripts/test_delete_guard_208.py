@@ -1389,6 +1389,59 @@ class DeleteGuardIssue208Test(unittest.TestCase):
             with self.subTest(source=source):
                 self.assertEqual("", self.reason(self._py(source)))
 
+    def test_vars_walrus_subscript_getattr_and_dunder_call_are_refused(self) -> None:
+        """Walrus, builtin subscript, folded getattr, and ``__call__`` are still ``vars``.
+
+        ``getcwd`` through the same shapes stays allowed.
+        """
+        refused = (
+            "(v := vars)(os)['remove']('only.txt')",
+            "(v := vars)(os)['unlink']('only.txt')",
+            "(v := vars)(shutil)['rmtree']('only.txt')",
+            "(v := vars)\nv(os)['remove']('only.txt')",
+            "(v := __builtins__['vars'])(os)['unlink']('only.txt')",
+            "__builtins__['vars'](os)['remove']('only.txt')",
+            "__builtins__['vars'](os)['unlink']('only.txt')",
+            "__builtins__['vars'](shutil)['rmtree']('only.txt')",
+            "__builtins__['va' + 'rs'](os)['remove']('only.txt')",
+            "builtins['vars'](os)['remove']('only.txt')",
+            "builtins['vars'](os)['unlink']('only.txt')",
+            "builtins['vars'](shutil)['rmtree']('only.txt')",
+            "import builtins as b\nb['vars'](os)['unlink']('only.txt')",
+            "getattr(builtins, 'vars')(os)['remove']('only.txt')",
+            "getattr(builtins, 'vars')(os)['unlink']('only.txt')",
+            "getattr(builtins, 'vars')(shutil)['rmtree']('only.txt')",
+            "getattr(__builtins__, 'vars')(os)['remove']('only.txt')",
+            "getattr(builtins, 'va' + 'rs')(os)['unlink']('only.txt')",
+            "g = getattr\ng(builtins, 'vars')(os)['remove']('only.txt')",
+            "from builtins import getattr as ga\nga(__builtins__, 'vars')(shutil)['rmtree']('only.txt')",
+            "v = getattr(builtins, 'vars')\nv(os)['remove']('only.txt')",
+            "vars.__call__(os)['remove']('only.txt')",
+            "vars.__call__(os)['unlink']('only.txt')",
+            "vars.__call__(shutil)['rmtree']('only.txt')",
+            "v = vars\nv.__call__(os)['remove']('only.txt')",
+            "v = vars\nv.__call__(os)['unlink']('only.txt')",
+            "v = vars\nv.__call__(shutil)['rmtree']('only.txt')",
+            "__builtins__.vars.__call__(os)['unlink']('only.txt')",
+        )
+        for source in refused:
+            with self.subTest(source=source):
+                reason = self.reason(self._py(source))
+                self.assertIn("indirect Python delete via", reason)
+                self.assertIn(".__dict__", reason)
+        allowed = (
+            "(v := vars)(os)['getcwd']()",
+            "__builtins__['vars'](os)['getcwd']()",
+            "builtins['vars'](os)['getcwd']()",
+            "getattr(builtins, 'vars')(os)['getcwd']()",
+            "getattr(__builtins__, 'vars')(os)['getcwd']()",
+            "vars.__call__(os)['getcwd']()",
+            "v = vars\nv.__call__(os)['getcwd']()",
+        )
+        for source in allowed:
+            with self.subTest(source=source):
+                self.assertEqual("", self.reason(self._py(source)))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -17,7 +17,7 @@ Program: epic plus native sub-issues; one orchestrator; local implementers; two 
 
 Rule every open design choice on the issue before the first implementing commit. A ticket that reaches code still choosing between candidate fixes converts that choice into review rounds. Before committing any subagent's work, and before reviewing or shipping any nontrivial diff, file deferred/out-of-scope/adjacent-finding/follow-up items.
 
-Complete approved scope. Run the local tests, self-accept, then follow [delivery cycle](delivery-cycle.md): review 1 with the push, reconcile, then review 2. Do not start both reviewers in one step. A CI-only repair on the final watch does not start a third reviewer. Squash, auto-merge, and the required-check gate are in [§7](#7-push-pr-green-merge-compact). Triage automated CI, annotations, bots, and PR comments; batch-fix applicable findings.
+Complete approved scope. Run the local tests, self-accept, then follow [delivery cycle](delivery-cycle.md): review 1 with the push, reconcile, then review 2. Do not start both reviewers in one step. A CI-only repair on the final watch does not start a third reviewer. Squash merge, merge queue, and the required-check gate are in [§7](#7-push-pr-green-merge-compact). Triage automated CI, annotations, bots, and PR comments; batch-fix applicable findings.
 Never push one tip per micro-fix when fresh-installer paths are implicated ([how](tip-churn-preflight.md)).
 Do not stop behavior work for per-step commits, tests, reviews, PR-body updates, or delivery receipts.
 

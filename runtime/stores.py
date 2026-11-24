@@ -665,7 +665,9 @@ def _has_commit(cwd: Path) -> bool:
 def _git_metadata_husk(cwd: Path) -> bool:
     """True when ``.git`` is a husk: missing objects/refs, or a born HEAD object is gone.
 
-    A symbolic unborn HEAD stays a normal empty repository. This check does not
+    A symbolic unborn HEAD stays a normal empty repository. A linked-worktree
+    gitfile resolves to the common dir (``worktrees/<name>`` -> parent of
+    ``worktrees``), so a valid worktree is not a husk. This check does not
     import the installer and does not suggest a commit on a husk.
     """
     marker = cwd / ".git"
@@ -677,14 +679,22 @@ def _git_metadata_husk(cwd: Path) -> bool:
             raw = marker.read_text(encoding="utf-8", errors="replace")
         except OSError:
             return True
-        common = None
+        target: Path | None = None
         for line in raw.splitlines():
             if line.startswith("gitdir:"):
                 target = Path(line.split(":", 1)[1].strip())
-                common = target if target.is_absolute() else (marker.parent / target)
                 break
-        if common is None:
+        if target is None:
             return True
+        if not target.is_absolute():
+            target = (marker.parent / target).resolve()
+        else:
+            target = target.resolve()
+        # Linked worktree: gitdir is …/worktrees/<name>; objects live in the common dir.
+        if target.name and (target.parent.parent / "objects").is_dir():
+            common = target.parent.parent
+        else:
+            common = target
     objects = common / "objects"
     refs = common / "refs"
     if not objects.is_dir() or not refs.is_dir():
@@ -715,6 +725,17 @@ def graphify_doctor_row(cwd: Path) -> dict[str, str] | None:
     fresh, message = graph_freshness(cwd)
     if fresh:
         return {"status": "healthy", "detail": message}
+    # Classify a husk before git rev-parse. A directory .git missing objects/refs
+    # makes HEAD^{commit} walk into a parent repository and look committed.
+    if _git_metadata_husk(cwd):
+        return {
+            "status": "absent",
+            "detail": "git-husk blocks Graphify until git metadata is restored",
+            "fixNext": (
+                "git-husk: restore git metadata using references/box-durability.md "
+                "before Graphify can index"
+            ),
+        }
     if not is_git_work_tree(cwd):
         # #7487: fingerprint-stale → repair. Never-indexed keeps #7303 warning detail.
         fix = (
@@ -729,16 +750,6 @@ def graphify_doctor_row(cwd: Path) -> dict[str, str] | None:
         }
     if not _has_commit(cwd):
         # #6499: repair cannot index a repository with no commits; say so.
-        # A husk must not be told to commit. Name box-durability instead.
-        if _git_metadata_husk(cwd):
-            return {
-                "status": "absent",
-                "detail": "git-husk blocks Graphify until git metadata is restored",
-                "fixNext": (
-                    "git-husk: restore git metadata using references/box-durability.md "
-                    "before Graphify can index"
-                ),
-            }
         return {
             "status": "absent",
             "detail": "waiting for the first commit - Graphify indexes a revision",
@@ -2008,6 +2019,9 @@ def refresh(
     unknown = selected - {"graphify", "mempalace"}
     if unknown:
         raise RuntimeError(f"unsupported store component: {sorted(unknown)[0]}")
+    if _git_metadata_husk(Path(cwd)):
+        # Do not index a husk. Git would walk into a parent repository.
+        return 0
     common = resolve_common_dir(cwd)
     if common is None and not is_git_work_tree(cwd):
         # #7487: non-git projects bind both stores to one content fingerprint.

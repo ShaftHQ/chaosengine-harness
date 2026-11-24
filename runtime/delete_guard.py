@@ -1076,13 +1076,44 @@ def _is_getattr_value(node: ast.AST, getattr_names: set[str], builtin_mods: set[
     )
 
 
-def _is_vars_value(node: ast.AST, vars_names: set[str], builtin_mods: set[str]) -> bool:
-    """True when ``node`` is ``vars`` or a simple alias such as ``v = vars``."""
+def _is_vars_value(
+    node: ast.AST,
+    vars_names: set[str],
+    builtin_mods: set[str],
+    getattr_names: set[str] | None = None,
+) -> bool:
+    """True when ``node`` evaluates to the ``vars`` builtin.
+
+    Covers ``vars``, ``v = vars``, ``(v := vars)``, ``builtins.vars``,
+    ``__builtins__['vars']`` / ``builtins['vars']`` (folded keys included),
+    ``getattr(builtins, 'vars')``, and ``vars.__call__``.
+    """
+    getters = getattr_names if getattr_names is not None else {"getattr"}
     if isinstance(node, ast.Name):
         return node.id in vars_names
+    if isinstance(node, ast.NamedExpr):
+        return _is_vars_value(node.value, vars_names, builtin_mods, getters)
+    if isinstance(node, ast.Subscript):
+        base = node.value
+        return (
+            isinstance(base, ast.Name)
+            and base.id in builtin_mods
+            and _fold_const_str(node.slice) == "vars"
+        )
+    if isinstance(node, ast.Call) and _is_getattr_call(node.func, getters, builtin_mods):
+        receiver = _getattr_arg(node, 0, "object")
+        attr = _getattr_arg(node, 1, "name")
+        return (
+            isinstance(receiver, ast.Name)
+            and receiver.id in builtin_mods
+            and _fold_const_str(attr) == "vars"
+        )
+    if not isinstance(node, ast.Attribute):
+        return False
+    if node.attr == "__call__":
+        return _is_vars_value(node.value, vars_names, builtin_mods, getters)
     return (
-        isinstance(node, ast.Attribute)
-        and node.attr == "vars"
+        node.attr == "vars"
         and isinstance(node.value, ast.Name)
         and node.value.id in builtin_mods
     )
@@ -1166,7 +1197,7 @@ def _vars_or_getattr_module_dict(
     if not isinstance(node, ast.Call):
         return None
     names = vars_names if vars_names is not None else {"vars"}
-    if _is_vars_value(node.func, names, builtin_mods) and len(node.args) == 1:
+    if _is_vars_value(node.func, names, builtin_mods, getattr_names) and len(node.args) == 1:
         arg = node.args[0]
         if isinstance(arg, ast.Name):
             return _module_kind_name(arg.id, os_mods, shutil_mods)
@@ -1392,7 +1423,7 @@ def _python_entries(segment: str) -> list[tuple[str, bool]]:
                 for target in node.targets:
                     if isinstance(target, ast.Name):
                         getattr_names.add(target.id)
-            if _is_vars_value(node.value, vars_names, builtin_mods):
+            if _is_vars_value(node.value, vars_names, builtin_mods, getattr_names):
                 for target in node.targets:
                     if isinstance(target, ast.Name):
                         vars_names.add(target.id)
@@ -1407,6 +1438,9 @@ def _python_entries(segment: str) -> list[tuple[str, bool]]:
                 builtin_mods,
                 vars_names,
             )
+        elif isinstance(node, ast.NamedExpr) and isinstance(node.target, ast.Name):
+            if _is_vars_value(node.value, vars_names, builtin_mods, getattr_names):
+                vars_names.add(node.target.id)
         elif (
             isinstance(node, ast.AnnAssign)
             and isinstance(node.target, ast.Name)
@@ -1414,7 +1448,7 @@ def _python_entries(segment: str) -> list[tuple[str, bool]]:
         ):
             if _is_getattr_value(node.value, getattr_names, builtin_mods):
                 getattr_names.add(node.target.id)
-            if _is_vars_value(node.value, vars_names, builtin_mods):
+            if _is_vars_value(node.value, vars_names, builtin_mods, getattr_names):
                 vars_names.add(node.target.id)
             _bind_python_aliases(
                 [node.target],

@@ -10421,7 +10421,7 @@ def _hooks_instruction_advisory(document: dict[str, object]) -> str | None:
     if not isinstance(rows, list) or not rows:
         return None
     commands = ", ".join(_SELF_ENFORCED_COMMANDS)
-    return f"hooks: GAP-GROKBOT-HOOKS self-enforced tool.py {commands}"
+    return f"hooks: GAP-GROKBOT-HOOKS GAP-BOT-ENTRY self-enforced tool.py {commands}"
 
 
 def _release_commit_advisory(commit: str, note: str = "") -> tuple[str, ...]:

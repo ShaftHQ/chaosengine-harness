@@ -292,7 +292,8 @@ class GitHuskTests(unittest.TestCase):
             self._husk(project, remote=True)
             guard = project / "secret_guard.py"
             guard.write_text("print('ok')\n", encoding="utf-8")
-            failed = self.hooks.install_secret_guard(project, guard)
+            with mock.patch.dict(os.environ, {"CHAOS_ENGINE_SECRET_GUARD": "1"}):
+                failed = self.hooks.install_secret_guard(project, guard)
         self.assertEqual("failed", failed["status"])
         self.assertIn("git-husk", str(failed["reason"]))
         self.assertIn("references/box-durability.md", str(failed["reason"]))
@@ -329,6 +330,77 @@ class GitHuskTests(unittest.TestCase):
         self.assertNotIn("git add -A", str(blocked["fixNext"]))
         self.assertNotIn("git commit", str(blocked["fixNext"]))
         self.assertIn("references/box-durability.md", str(blocked["fixNext"]))
+
+    def _commit_repo(self, project: Path) -> None:
+        _git(project, "init", "-q", "-b", "main")
+        _git(project, "config", "user.email", "husk@example.invalid")
+        _git(project, "config", "user.name", "Husk Test")
+        (project / "keep.txt").write_text("keep\n", encoding="utf-8")
+        _git(project, "add", "keep.txt")
+        _git(project, "commit", "-qm", "init")
+
+    def test_nested_directory_husk_is_not_hidden_by_parent_walk(self):
+        """A directory husk inside a committed repo must not inherit that commit."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            parent = root / "parent"
+            parent.mkdir()
+            self._commit_repo(parent)
+            graph = root / "graph"
+            graph.mkdir()
+            registry = root / "registry"
+            registry.mkdir()
+            env = os.environ.copy()
+            env["CHAOS_ENGINE_GRAPHIFY_OUT"] = str(graph)
+            env["CHAOS_ENGINE_STORE_REGISTRY"] = str(registry)
+            for label, extra in (
+                ("missing-objects-and-refs", ()),
+                ("missing-refs", ("objects",)),
+            ):
+                with self.subTest(label=label):
+                    nested = parent / label
+                    nested.mkdir()
+                    git_dir = nested / ".git"
+                    git_dir.mkdir()
+                    (git_dir / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+                    for name in extra:
+                        (git_dir / name).mkdir()
+                    calls: list[list[str]] = []
+                    with mock.patch.dict(os.environ, env, clear=True):
+                        self.assertTrue(self.stores._has_commit(nested))
+                        row = self.stores.graphify_doctor_row(nested)
+                        result = self.stores.refresh(
+                            nested, runner=lambda command, cwd: calls.append(command) or 0
+                        )
+                    self.assertIsNotNone(row)
+                    self.assertEqual("absent", row["status"])
+                    self.assertIn("references/box-durability.md", str(row["fixNext"]))
+                    self.assertNotIn("--component graphify", str(row["fixNext"]))
+                    self.assertNotIn("git commit", str(row["fixNext"]))
+                    self.assertEqual(0, result)
+                    self.assertEqual([], calls)
+
+    def test_linked_worktree_is_not_a_git_metadata_husk(self):
+        """A gitfile pointing at ``worktrees/<name>`` uses the common dir, not the gitdir."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            parent = root / "parent"
+            parent.mkdir()
+            self._commit_repo(parent)
+            linked = root / "linked"
+            _git(parent, "worktree", "add", "-q", "-b", "linked", str(linked))
+            self.assertTrue((linked / ".git").is_file())
+            self.assertFalse(self.stores._git_metadata_husk(linked))
+            self.assertFalse(self.stores._git_metadata_husk(parent))
+            manual = root / "manual"
+            manual.mkdir()
+            worktree_git = parent / ".git" / "worktrees" / "manual"
+            worktree_git.mkdir(parents=True)
+            (worktree_git / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+            (manual / ".git").write_text(
+                "gitdir: ../parent/.git/worktrees/manual\n", encoding="utf-8"
+            )
+            self.assertFalse(self.stores._git_metadata_husk(manual))
 
 
 class CompletionHookTests(unittest.TestCase):
@@ -527,6 +599,7 @@ class CompletionHookTests(unittest.TestCase):
         self.assertLessEqual(len(rendered.splitlines()), self.install.AGENT_SUMMARY_MAX_LINES)
         self.assertTrue(rendered.startswith("doctor: pass"))
         self.assertIn("GAP-GROKBOT-HOOKS", rendered)
+        self.assertIn("GAP-BOT-ENTRY", rendered)
         self.assertIn("tool.py", rendered)
         self.assertEqual(1, sum(1 for line in rendered.splitlines() if "GAP-GROKBOT-HOOKS" in line))
 
