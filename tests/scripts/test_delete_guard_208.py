@@ -1364,6 +1364,20 @@ class DeleteGuardIssue208Test(unittest.TestCase):
             with self.subTest(token=token):
                 self.assertFalse(GUARD._printed_head_is_safe(token, system_root=root), token)
 
+    @unittest.skipIf(os.name == "nt", "POSIX shells treat a drive-letter token as a relative path")
+    def test_posix_drive_letter_printed_head_is_a_computed_command_head(self) -> None:
+        """``C:/Windows/...`` is ``./C:/Windows/...`` on POSIX, not System32.
+
+        Lexical ``system_root=`` tests still trust that drive path. A live
+        ``block_reason`` call does not inject ``system_root``, so the printed
+        head stays computed.
+        """
+        self._write_only()
+        reason = GUARD.block_reason(
+            "$(echo C:/Windows/System32/ls.exe) only.txt", self.repo
+        )
+        self.assertIn("computed command head", reason)
+
     def test_issue_230_vars_aliases_are_module_dict_deletes(self) -> None:
         """``vars`` aliases and ``builtins.vars`` are the same delete as ``vars``."""
         refused = (
@@ -1437,6 +1451,36 @@ class DeleteGuardIssue208Test(unittest.TestCase):
             "getattr(__builtins__, 'vars')(os)['getcwd']()",
             "vars.__call__(os)['getcwd']()",
             "v = vars\nv.__call__(os)['getcwd']()",
+        )
+        for source in allowed:
+            with self.subTest(source=source):
+                self.assertEqual("", self.reason(self._py(source)))
+
+    def test_vars_star_dict_subscript_and_getattr_call_are_refused(self) -> None:
+        """Starred ``vars`` and builtin-dict / ``__call__`` lookups stay deletes.
+
+        ``getcwd`` through a plain module argument, and ``vars()`` with no
+        argument, stay allowed. A starred argument is not that plain shape.
+        """
+        refused = (
+            "import os\nvars(*(os,))['remove']('only.txt')",
+            "import os\nvars(*(os,))['getcwd']()",
+            "import os\nbuiltins.__dict__['vars'](os)['remove']('only.txt')",
+            "import os\ngetattr(builtins, '__dict__')['vars'](os)['remove']('only.txt')",
+            "import os\ngetattr(vars, '__call__')(os)['remove']('only.txt')",
+        )
+        for source in refused:
+            with self.subTest(source=source):
+                self.assertIn("indirect Python delete", self.reason(self._py(source)))
+        allowed = (
+            "import os\nvars(os)['getcwd']()",
+            "vars()",
+            "import os\nbuiltins.__dict__['vars'](os)['getcwd']()",
+            "import os\nbuiltins.__dict__['vars']()",
+            "import os\ngetattr(builtins, '__dict__')['vars'](os)['getcwd']()",
+            "import os\ngetattr(builtins, '__dict__')['vars']()",
+            "import os\ngetattr(vars, '__call__')(os)['getcwd']()",
+            "import os\ngetattr(vars, '__call__')()",
         )
         for source in allowed:
             with self.subTest(source=source):

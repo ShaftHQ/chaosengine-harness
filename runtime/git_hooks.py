@@ -144,8 +144,8 @@ def _owned_common_dir(marker: Path) -> Path | None:
             target = (marker.parent / target).resolve()
         else:
             target = target.resolve()
-        # Linked worktree: gitdir is …/worktrees/<name>; objects live in the common dir.
-        if target.name and (target.parent.parent / "objects").is_dir():
+        # Only …/worktrees/<name> climbs; a modules/ gitdir stays on its own gitdir.
+        if target.parent.name == "worktrees" and (target.parent.parent / "objects").is_dir():
             return target.parent.parent
         return target
     if marker.is_dir():

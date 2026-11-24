@@ -503,11 +503,15 @@ def _printed_head_is_safe(token: str, *, system_root: str | None = None) -> bool
     A bare name such as ``ls`` is allowed. ``./ls``, ``../ls``, and ``foo/ls``
     are not. An absolute POSIX path must normalize, with
     ``_collapse_leading_slashes`` and ``posixpath.normpath``, so its parent is
-    exactly ``/bin`` or ``/usr/bin``. A Windows drive path must normalize so its
-    parent is ``System32`` under ``system_root``. Never resolves the filesystem
-    and never uses a prefix check.
+    exactly ``/bin`` or ``/usr/bin``. A Windows drive path is trusted only on
+    Windows, or when ``system_root`` is injected for a lexical test. On POSIX
+    ``C:/Windows/System32/ls.exe`` is a relative path and is refused. Never
+    resolves the filesystem and never uses a prefix check.
     """
     if _WIN_DRIVE_ABS.match(token):
+        # Drive letters are absolute only on Windows. POSIX treats them as relative.
+        if os.name != "nt" and system_root is None:
+            return False
         return _windows_printed_head_is_safe(token, system_root)
     if not re.fullmatch(r"[A-Za-z0-9._+/-]+", token):
         return False
@@ -1086,27 +1090,49 @@ def _is_vars_value(
 
     Covers ``vars``, ``v = vars``, ``(v := vars)``, ``builtins.vars``,
     ``__builtins__['vars']`` / ``builtins['vars']`` (folded keys included),
-    ``getattr(builtins, 'vars')``, and ``vars.__call__``.
+    ``getattr(builtins, 'vars')``, ``vars.__call__``,
+    ``builtins.__dict__['vars']``, ``getattr(builtins, '__dict__')['vars']``,
+    and ``getattr(vars, '__call__')``.
     """
     getters = getattr_names if getattr_names is not None else {"getattr"}
     if isinstance(node, ast.Name):
         return node.id in vars_names
     if isinstance(node, ast.NamedExpr):
         return _is_vars_value(node.value, vars_names, builtin_mods, getters)
-    if isinstance(node, ast.Subscript):
+    if isinstance(node, ast.Subscript) and _fold_const_str(node.slice) == "vars":
         base = node.value
-        return (
-            isinstance(base, ast.Name)
-            and base.id in builtin_mods
-            and _fold_const_str(node.slice) == "vars"
-        )
+        if isinstance(base, ast.Name) and base.id in builtin_mods:
+            return True
+        if (
+            isinstance(base, ast.Attribute)
+            and base.attr == "__dict__"
+            and isinstance(base.value, ast.Name)
+            and base.value.id in builtin_mods
+        ):
+            return True
+        if isinstance(base, ast.Call) and _is_getattr_call(base.func, getters, builtin_mods):
+            receiver = _getattr_arg(base, 0, "object")
+            attr = _getattr_arg(base, 1, "name")
+            return (
+                isinstance(receiver, ast.Name)
+                and receiver.id in builtin_mods
+                and _fold_const_str(attr) == "__dict__"
+            )
+        return False
     if isinstance(node, ast.Call) and _is_getattr_call(node.func, getters, builtin_mods):
         receiver = _getattr_arg(node, 0, "object")
         attr = _getattr_arg(node, 1, "name")
+        folded = _fold_const_str(attr)
+        if (
+            folded == "__call__"
+            and receiver is not None
+            and _is_vars_value(receiver, vars_names, builtin_mods, getters)
+        ):
+            return True
         return (
             isinstance(receiver, ast.Name)
             and receiver.id in builtin_mods
-            and _fold_const_str(attr) == "vars"
+            and folded == "vars"
         )
     if not isinstance(node, ast.Attribute):
         return False
@@ -1179,6 +1205,62 @@ def _module_kind_name(name: str, os_mods: set[str], shutil_mods: set[str]) -> st
     if name in shutil_mods:
         return "shutil"
     return None
+
+
+def _vars_invocation_shape(
+    node: ast.Call,
+    os_mods: set[str],
+    shutil_mods: set[str],
+    getattr_names: set[str],
+    builtin_mods: set[str],
+    vars_names: set[str],
+) -> str:
+    """``zero``, ``plain``, ``ambiguous``, or ``""`` when ``node`` is not ``vars(...)``.
+
+    ``vars()`` is ``zero``. ``vars(os)`` / ``vars(shutil)`` with one plain name
+    is ``plain``. A star, a keyword, or any other argument is ``ambiguous``.
+    """
+    if not _is_vars_value(node.func, vars_names, builtin_mods, getattr_names):
+        return ""
+    if node.keywords or any(isinstance(arg, ast.Starred) for arg in node.args):
+        return "ambiguous"
+    if not node.args:
+        return "zero"
+    if (
+        len(node.args) == 1
+        and isinstance(node.args[0], ast.Name)
+        and _module_kind_name(node.args[0].id, os_mods, shutil_mods) is not None
+    ):
+        return "plain"
+    return "ambiguous"
+
+
+def _ambiguous_vars_lookup(
+    node: ast.AST,
+    os_mods: set[str],
+    shutil_mods: set[str],
+    getattr_names: set[str],
+    builtin_mods: set[str],
+    vars_names: set[str],
+) -> bool:
+    """True when a non-plain ``vars(...)`` result is subscripted or dict-called."""
+    target: ast.AST | None = None
+    if isinstance(node, ast.Subscript):
+        target = node.value
+    elif (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr in _DICT_LOOKUP_ATTRS
+    ):
+        target = node.func.value
+    if not isinstance(target, ast.Call):
+        return False
+    return (
+        _vars_invocation_shape(
+            target, os_mods, shutil_mods, getattr_names, builtin_mods, vars_names
+        )
+        == "ambiguous"
+    )
 
 
 def _vars_or_getattr_module_dict(
@@ -1464,6 +1546,10 @@ def _python_entries(segment: str) -> list[tuple[str, bool]]:
 
     entries: list[tuple[str, bool]] = []
     for node in ast.walk(tree):
+        if _ambiguous_vars_lookup(
+            node, os_mods, shutil_mods, getattr_names, builtin_mods, vars_names
+        ):
+            raise Unsure("indirect Python delete")
         if not isinstance(node, ast.Call):
             continue
         if _is_indirect_getattr_delete(

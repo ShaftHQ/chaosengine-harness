@@ -665,10 +665,10 @@ def _has_commit(cwd: Path) -> bool:
 def _git_metadata_husk(cwd: Path) -> bool:
     """True when ``.git`` is a husk: missing objects/refs, or a born HEAD object is gone.
 
-    A symbolic unborn HEAD stays a normal empty repository. A linked-worktree
-    gitfile resolves to the common dir (``worktrees/<name>`` -> parent of
-    ``worktrees``), so a valid worktree is not a husk. This check does not
-    import the installer and does not suggest a commit on a husk.
+    A symbolic unborn HEAD stays a normal empty repository. Only a linked
+    worktree (``worktrees/<name>``) climbs to the common dir, so a valid
+    worktree is not a husk and a ``modules/`` gitdir stays one. This check
+    does not import the installer and does not suggest a commit on a husk.
     """
     marker = cwd / ".git"
     if not marker.exists():
@@ -690,8 +690,8 @@ def _git_metadata_husk(cwd: Path) -> bool:
             target = (marker.parent / target).resolve()
         else:
             target = target.resolve()
-        # Linked worktree: gitdir is …/worktrees/<name>; objects live in the common dir.
-        if target.name and (target.parent.parent / "objects").is_dir():
+        # Only …/worktrees/<name> climbs; a modules/ gitdir stays on its own gitdir.
+        if target.parent.name == "worktrees" and (target.parent.parent / "objects").is_dir():
             common = target.parent.parent
         else:
             common = target

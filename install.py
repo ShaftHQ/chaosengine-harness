@@ -4665,7 +4665,11 @@ def _palace_dirs_for_migration(project: Path) -> list[Path]:
     found: list[Path] = []
     seen: set[str] = set()
     for candidate in candidates:
-        if is_link_or_reparse(candidate) or not candidate.is_dir():
+        # A gitfile makes ``.git/chaos-engine/...`` ENOTDIR. That is not a palace.
+        try:
+            if is_link_or_reparse(candidate) or not candidate.is_dir():
+                continue
+        except OSError:
             continue
         if under_test and not _path_inside(candidate, root):
             continue
@@ -9420,8 +9424,8 @@ def resolve_git_common_dir(project: Path) -> Path | None:
                 target = Path(line.split(":", 1)[1].strip())
                 if not target.is_absolute():
                     target = (marker.parent / target).resolve()
-                # linked worktree: gitdir points at …/worktrees/<name>; common is parent of that
-                if target.name and (target.parent.parent / "objects").is_dir():
+                # Only …/worktrees/<name> climbs; a modules/ gitdir stays on its own gitdir.
+                if target.parent.name == "worktrees" and (target.parent.parent / "objects").is_dir():
                     return target.parent.parent
                 return target
         return None

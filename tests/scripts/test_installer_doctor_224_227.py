@@ -402,6 +402,57 @@ class GitHuskTests(unittest.TestCase):
             )
             self.assertFalse(self.stores._git_metadata_husk(manual))
 
+    def test_submodule_shaped_husk_does_not_climb_to_the_parent_git_dir(self):
+        """``gitdir: ../.git/modules/child`` stays a husk when the parent has objects/.
+
+        Only ``worktrees/<name>`` climbs to the common dir. A modules gitdir
+        with no ``objects/`` or ``refs/`` blocks refresh and store repair
+        before the secret-guard schedule.
+        """
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            parent = root / "parent"
+            parent.mkdir()
+            self._commit_repo(parent)
+            module = parent / ".git" / "modules" / "child"
+            module.mkdir(parents=True)
+            (module / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+            child = parent / "child"
+            child.mkdir()
+            (child / ".git").write_text(
+                "gitdir: ../.git/modules/child\n", encoding="utf-8"
+            )
+            (child / ".chaos-engine").mkdir()
+
+            self.assertTrue(self.stores._git_metadata_husk(child))
+            self.assertTrue(self.install.is_husk_git(child))
+            owned = self.hooks._owned_common_dir(child / ".git")
+            self.assertIsNotNone(owned)
+            self.assertEqual(module.resolve(), Path(owned).resolve())
+            self.assertNotEqual((parent / ".git").resolve(), Path(owned).resolve())
+
+            calls: list[list[str]] = []
+            refreshed = self.stores.refresh(
+                child, runner=lambda command, cwd: calls.append(list(command)) or 0
+            )
+            self.assertEqual(0, refreshed)
+            self.assertEqual([], calls)
+
+            manifest = {"source": {"commit": "a" * 40}}
+            with mock.patch.object(self.install, "verify_install", return_value=manifest), \
+                    mock.patch.object(
+                        self.install, "load_installed_controller", return_value=mock.Mock()
+                    ), \
+                    mock.patch.object(self.install, "_install_store_schedule") as schedule:
+                graphify = self.install.repair_component(child, "graphify")
+                mempalace = self.install.repair_component(child, "mempalace")
+        schedule.assert_not_called()
+        for result, name in ((graphify, "graphify"), (mempalace, "mempalace")):
+            self.assertEqual("blocked", result["status"])
+            self.assertEqual(name, result["component"])
+            self.assertEqual("git-husk", result["blockedBy"])
+            self.assertIn("references/box-durability.md", str(result["fixNext"]))
+
 
 class CompletionHookTests(unittest.TestCase):
     @classmethod
