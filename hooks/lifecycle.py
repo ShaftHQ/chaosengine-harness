@@ -286,6 +286,35 @@ def _tool_output_locator() -> str:
     return ""
 
 
+def _wake_pack_module():
+    cached = getattr(_wake_pack_module, "module", None)
+    if cached is not None:
+        return cached
+    path = _overlay_module("wake_pack.py")
+    if not path.is_file():
+        return None
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("ce_wake_pack_locator", path)
+    if spec is None or spec.loader is None:
+        return None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    _wake_pack_module.module = module
+    return module
+
+
+def _env_memory_hints(max_bytes: int = 480) -> str:
+    """Pre-task OS/shell/tools memory index hints (#205). Returns '' when absent or unmatched."""
+    if max_bytes <= 0:
+        return ""
+    with contextlib.suppress(Exception):
+        module = _wake_pack_module()
+        if module is not None and hasattr(module, "env_memory_hints"):
+            return str(module.env_memory_hints(_state_root(), max_bytes=max_bytes) or "")
+    return ""
+
+
 def _identity_match() -> tuple[str, Path] | None:
     """Return the workspace locator and file for the first identity.md found."""
     for root in _search_roots():
@@ -501,6 +530,20 @@ def session_start_context(token: str | None, activation: str, session_id: str = 
         candidate = f"{rendered}\n{locator}"
         # Omit the locator rather than cross the hard cap, and do not let it
         # push a fitting identity body over the parity smoke.
+        within_hard = len(candidate.encode("utf-8")) <= SESSION_START_MAX_BYTES
+        keeps_smoke = not _identity_over_soft(candidate) or _identity_over_soft(rendered)
+        if within_hard and keeps_smoke:
+            rendered = candidate
+    rendered_bytes = len(rendered.encode("utf-8"))
+    hard_remaining = SESSION_START_MAX_BYTES - rendered_bytes - 1
+    if not _identity_over_soft(rendered):
+        soft_remaining = (_SESSION_START_SOFT_TOKENS * 4 + 3) - rendered_bytes - 1
+        allowed_hint_bytes = min(480, hard_remaining, soft_remaining)
+    else:
+        allowed_hint_bytes = min(480, hard_remaining)
+    env_hints = _env_memory_hints(max_bytes=allowed_hint_bytes)
+    if env_hints:
+        candidate = f"{rendered}\n{env_hints}"
         within_hard = len(candidate.encode("utf-8")) <= SESSION_START_MAX_BYTES
         keeps_smoke = not _identity_over_soft(candidate) or _identity_over_soft(rendered)
         if within_hard and keeps_smoke:
