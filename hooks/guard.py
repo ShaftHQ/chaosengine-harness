@@ -3501,18 +3501,30 @@ COMPLEXITY_GATE_HINT = (
 )
 
 
+def _blob_text(value: object) -> str:
+    if isinstance(value, str) and value.strip():
+        return value
+    return ""
+
+
 def _mutation_path_blobs(tool_name: str, tool_input: object, commands: tuple[str, ...]) -> str:
     """Flatten Write/Edit/patch/shell targets for classifier-path matching."""
     chunks: list[str] = []
     if isinstance(tool_input, Mapping):
-        for key in ("file_path", "filePath", "path", "notebook_path", "notebookPath"):
-            value = tool_input.get(key)
-            if isinstance(value, str) and value.strip():
-                chunks.append(value)
-        for key in ("old_string", "new_string", "content", "patch", "input", "command", "cmd"):
-            value = tool_input.get(key)
-            if isinstance(value, str) and value.strip():
-                chunks.append(value)
+        payload = _kernel.extract_file_payload(tool_name, dict(tool_input))
+        for value in (payload.path, payload.old_text, payload.new_text, payload.patch):
+            found = _blob_text(value)
+            if found:
+                chunks.append(found)
+        for chunk in payload.chunks:
+            for value in (chunk.old_text, chunk.new_text):
+                found = _blob_text(value)
+                if found:
+                    chunks.append(found)
+        for key in ("command", "cmd", "input"):
+            found = _blob_text(tool_input.get(key))
+            if found and found not in chunks:
+                chunks.append(found)
     elif isinstance(tool_input, str) and tool_input.strip():
         chunks.append(tool_input)
     chunks.extend(commands)
@@ -3644,55 +3656,6 @@ def _deny(event: dict, event_name: str, tool_name: str, reason: str) -> int:
 
 
 _QUALITY_TOOLS = frozenset({"Write", "Edit", "apply_patch"})
-_QUALITY_PATH_KEYS = (
-    "file_path",
-    "filePath",
-    "path",
-    "Path",
-    "AbsolutePath",
-    "target_file",
-    "targetFile",
-    "TargetFile",
-    "notebook_path",
-    "notebookPath",
-)
-_QUALITY_WRITE_KEYS = (
-    "CodeContent",
-    "content",
-    "contents",
-    "file_text",
-    "text",
-    "Content",
-    "Text",
-    "new_string",
-    "input",
-)
-_QUALITY_OLD_KEYS = (
-    "old_string",
-    "oldString",
-    "old_str",
-    "oldText",
-    "old_text",
-    "OldString",
-    "TargetContent",
-    "Target",
-    "old",
-)
-_QUALITY_NEW_KEYS = (
-    "new_string",
-    "newString",
-    "new_str",
-    "newText",
-    "new_text",
-    "NewString",
-    "ReplacementContent",
-    "Replacement",
-    "new",
-    "content",
-    "Content",
-)
-_QUALITY_CHUNK_KEYS = ("ReplacementChunks", "replacementChunks", "replacements")
-_QUALITY_PATCH_KEYS = ("input", "patch", "diff")
 _GAP_EXIT2_HOSTS = frozenset({"grok", "copilot", "cursor", "opencode"})
 
 
@@ -3725,21 +3688,6 @@ def _quality_tool_name(tool_name: str) -> str:
         return str(_kernel._tool_name(tool_name) or "")
     except Exception:
         return str(tool_name or "")
-
-
-def _first_str(tool_input: Mapping, keys: tuple[str, ...]) -> str | None:
-    for key in keys:
-        value = tool_input.get(key)
-        if isinstance(value, str):
-            return value
-    return None
-
-
-def _quality_target_path(tool_input: object) -> str:
-    if not isinstance(tool_input, Mapping):
-        return ""
-    found = _first_str(tool_input, _QUALITY_PATH_KEYS)
-    return found.strip() if isinstance(found, str) else ""
 
 
 def _quality_existing_text(event: dict, path: str) -> str | None:
@@ -3782,34 +3730,25 @@ def _append_gap_exit2(host: str, reason: str) -> str:
     return f"{reason} {sentence}"
 
 
-def _quality_chunks(tool_input: Mapping) -> list:
-    """Replacement arrays under every supported chunk key, in key order."""
-    found: list = []
-    for key in _QUALITY_CHUNK_KEYS:
-        chunks = tool_input.get(key)
-        if isinstance(chunks, list) and chunks:
-            found.extend(chunks)
-    return found
+def _edit_side(value: object) -> str | None:
+    """A real string side. ``UNREADABLE`` stays missing and is not ``""``."""
+    if isinstance(value, str):
+        return value
+    return None
 
 
-def _quality_edit_report(module, path: str, tool_input: Mapping, existing: str | None):
+def _quality_edit_report(module, path: str, payload, existing: str | None):
     """Score one Edit payload, including replacement chunk arrays.
 
     An edit with no recognized old/new keys is not a whole-file delete.
     """
-    chunks = _quality_chunks(tool_input)
-    if chunks:
+    recognized = [chunk for chunk in payload.chunks if chunk.recognized]
+    if recognized:
         current = existing
         report = None
-        recognized = False
-        for chunk in chunks:
-            if not isinstance(chunk, Mapping):
-                continue
-            old_string = _first_str(chunk, _QUALITY_OLD_KEYS)
-            new_string = _first_str(chunk, _QUALITY_NEW_KEYS)
-            if old_string is None and new_string is None:
-                continue
-            recognized = True
+        for chunk in recognized:
+            old_string = chunk.old_text
+            new_string = chunk.new_text
             report = module.evaluate_edit(
                 path,
                 "" if old_string is None else old_string,
@@ -3822,10 +3761,11 @@ def _quality_edit_report(module, path: str, tool_input: Mapping, existing: str |
                 current = "" if new_string is None else new_string
             if isinstance(report, dict) and not report.get("ok", True):
                 return report
-        if recognized:
-            return report
-    old_string = _first_str(tool_input, _QUALITY_OLD_KEYS)
-    new_string = _first_str(tool_input, _QUALITY_NEW_KEYS)
+        return report
+    if not payload.recognized:
+        return None
+    old_string = _edit_side(payload.old_text)
+    new_string = _edit_side(payload.new_text)
     if old_string is None and new_string is None:
         return None
     return module.evaluate_edit(
@@ -3848,26 +3788,29 @@ def _test_quality_block(
     module = _test_quality_api()
     if module is None or not isinstance(tool_input, Mapping):
         return None
-    path = _quality_target_path(tool_input)
+    payload = _kernel.extract_file_payload(str(tool_name or ""), dict(tool_input))
+    path = payload.path.strip()
     try:
-        if canonical == "apply_patch":
-            body = _first_str(tool_input, _QUALITY_PATCH_KEYS)
-            if body is None:
+        if payload.kind == "patch":
+            if not isinstance(payload.patch, str):
                 return None
-            report = module.evaluate_patch(body)
-        else:
+            report = module.evaluate_patch(payload.patch)
+        elif payload.kind == "edit":
             if not path or not module.is_test_path(path):
                 return None
             existing = _quality_existing_text(event, path)
-            if canonical == "Edit":
-                report = _quality_edit_report(module, path, tool_input, existing)
-                if report is None:
-                    return None
-            else:
-                content = _first_str(tool_input, _QUALITY_WRITE_KEYS)
-                if content is None:
-                    return None
-                report = module.evaluate_content(path, content, existing)
+            report = _quality_edit_report(module, path, payload, existing)
+            if report is None:
+                return None
+        elif payload.kind == "write":
+            if not path or not module.is_test_path(path):
+                return None
+            if not isinstance(payload.new_text, str):
+                return None
+            existing = _quality_existing_text(event, path)
+            report = module.evaluate_content(path, payload.new_text, existing)
+        else:
+            return None
     except Exception:
         return None
     if not isinstance(report, dict) or report.get("ok", True):

@@ -368,6 +368,8 @@ TOOL_ALIASES = {
     "run_in_terminal": "PowerShell",
     "runcommand": "PowerShell",
     "run_command": "PowerShell",
+    # Cursor names the tool Shell. Shell aliases share one canonical name.
+    "shell": "PowerShell",
     "read": "Read",
     "view": "Read",
     "viewfile": "Read",
@@ -386,6 +388,8 @@ TOOL_ALIASES = {
     "grepsearch": "Grep",
     "grep_search": "Grep",
     "edit": "Edit",
+    "strreplace": "Edit",
+    "multiedit": "Edit",
     "editfile": "Edit",
     "edit_file": "Edit",
     "replace": "Edit",
@@ -471,6 +475,168 @@ def _tool_name(value: object) -> str:
     return TOOL_ALIASES.get(key, rendered)
 
 
+# Absent or non-string body. An explicit "" is a real value and must not use this.
+UNREADABLE = object()
+
+_FILE_PATH_KEYS = (
+    "file_path",
+    "filePath",
+    "path",
+    "Path",
+    "AbsolutePath",
+    "target_file",
+    "targetFile",
+    "TargetFile",
+    "notebook_path",
+    "notebookPath",
+)
+# new_string and input are edit/patch fields. A Write that only has them is not a whole file.
+_WRITE_BODY_KEYS = (
+    "CodeContent",
+    "content",
+    "contents",
+    "file_text",
+    "text",
+    "Content",
+    "Text",
+)
+_OLD_TEXT_KEYS = (
+    "old_string",
+    "oldString",
+    "old_str",
+    "oldText",
+    "old_text",
+    "OldString",
+    "TargetContent",
+    "Target",
+    "old",
+)
+_NEW_TEXT_KEYS = (
+    "new_string",
+    "newString",
+    "new_str",
+    "newText",
+    "new_text",
+    "NewString",
+    "ReplacementContent",
+    "Replacement",
+    "replacement",
+    "new",
+    "content",
+    "Content",
+)
+_CHUNK_KEYS = ("ReplacementChunks", "replacementChunks", "replacements")
+_PATCH_BODY_KEYS = ("input", "patch", "diff")
+
+
+@dataclass(frozen=True)
+class FileChunk:
+    old_text: str | None
+    new_text: str | None
+    recognized: bool
+
+
+@dataclass(frozen=True)
+class FilePayload:
+    kind: str
+    path: str
+    old_text: object
+    new_text: object
+    chunks: tuple[FileChunk, ...]
+    patch: object
+    recognized: bool
+
+
+def _present_str(mapping: Mapping[str, object], keys: tuple[str, ...]) -> object:
+    """First string under ``keys``. Missing and non-strings are ``UNREADABLE``."""
+    for key in keys:
+        if key not in mapping:
+            continue
+        value = mapping[key]
+        if isinstance(value, str):
+            return value
+    return UNREADABLE
+
+
+def _file_chunks(mapping: Mapping[str, object]) -> tuple[FileChunk, ...]:
+    found: list[FileChunk] = []
+    for key in _CHUNK_KEYS:
+        raw = mapping.get(key)
+        if not isinstance(raw, list) or not raw:
+            continue
+        for item in raw:
+            if not isinstance(item, Mapping):
+                continue
+            old = _present_str(item, _OLD_TEXT_KEYS)
+            new = _present_str(item, _NEW_TEXT_KEYS)
+            old_text = old if isinstance(old, str) else None
+            new_text = new if isinstance(new, str) else None
+            found.append(
+                FileChunk(
+                    old_text=old_text,
+                    new_text=new_text,
+                    recognized=old_text is not None or new_text is not None,
+                )
+            )
+    return tuple(found)
+
+
+def extract_file_payload(tool_name: str, tool_input: dict | None) -> FilePayload:
+    """Read a Write, Edit, or apply_patch body. Does not mutate ``tool_input`` or the filesystem.
+
+    ``UNREADABLE`` means the host omitted that side. An explicit ``""`` stays ``""``.
+    """
+    mapping: Mapping[str, object] = tool_input if isinstance(tool_input, Mapping) else {}
+    found_path = _present_str(mapping, _FILE_PATH_KEYS)
+    path = found_path if isinstance(found_path, str) else ""
+    canonical = _tool_name(tool_name)
+    if canonical == "Write":
+        body = _present_str(mapping, _WRITE_BODY_KEYS)
+        return FilePayload(
+            kind="write",
+            path=path,
+            old_text=UNREADABLE,
+            new_text=body,
+            chunks=(),
+            patch=UNREADABLE,
+            recognized=isinstance(body, str),
+        )
+    if canonical == "Edit":
+        chunks = _file_chunks(mapping)
+        old = _present_str(mapping, _OLD_TEXT_KEYS)
+        new = _present_str(mapping, _NEW_TEXT_KEYS)
+        recognized = any(chunk.recognized for chunk in chunks) or isinstance(old, str) or isinstance(new, str)
+        return FilePayload(
+            kind="edit",
+            path=path,
+            old_text=old,
+            new_text=new,
+            chunks=chunks,
+            patch=UNREADABLE,
+            recognized=recognized,
+        )
+    if canonical == "apply_patch":
+        body = _present_str(mapping, _PATCH_BODY_KEYS)
+        return FilePayload(
+            kind="patch",
+            path=path,
+            old_text=UNREADABLE,
+            new_text=UNREADABLE,
+            chunks=(),
+            patch=body,
+            recognized=isinstance(body, str),
+        )
+    return FilePayload(
+        kind="other",
+        path=path,
+        old_text=UNREADABLE,
+        new_text=UNREADABLE,
+        chunks=(),
+        patch=UNREADABLE,
+        recognized=False,
+    )
+
+
 def _is_mutation(tool_name: str, _tool_input: Mapping[str, object]) -> bool:
     compact_name = re.sub(r"[^a-z]", "", tool_name.casefold())
     # Shell tools can execute configured helpers even for commands which look
@@ -520,11 +686,9 @@ def normalize_event(raw: Mapping[str, object], host: str | None = None) -> HookE
     if not isinstance(tool_input, Mapping):
         tool_input = {}
     tool_input = dict(tool_input)
-    if "file_path" not in tool_input and "filePath" in tool_input:
-        tool_input["file_path"] = tool_input["filePath"]
-    for alt_path in ("Path", "AbsolutePath", "TargetFile"):
-        if "file_path" not in tool_input and alt_path in tool_input:
-            tool_input["file_path"] = tool_input[alt_path]
+    payload = extract_file_payload(str(normalized.get("tool_name") or ""), tool_input)
+    if payload.path:
+        tool_input["file_path"] = payload.path
     for alt_dir in ("SearchDirectory", "SearchPath", "DirectoryPath"):
         if "path" not in tool_input and alt_dir in tool_input:
             tool_input["path"] = tool_input[alt_dir]

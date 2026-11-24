@@ -204,6 +204,10 @@ class AntigravitySupportTests(unittest.TestCase):
             {"additionalContext": "ignored"}, "PostToolUse", "antigravity", native_event="PostToolUse"
         )
         self.assertEqual({}, post)
+        post_deny = self.kernel.adapt_hook_output(
+            {"decision": "block", "reason": "no"}, "PostToolUse", "antigravity"
+        )
+        self.assertEqual({}, post_deny)
 
         stop = self.kernel.adapt_hook_output(
             {"decision": "block", "reason": "finish tests"}, "Stop", "antigravity"

@@ -6,12 +6,14 @@ import importlib.util
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
 import textwrap
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from unittest import mock
 from pathlib import Path
 
@@ -506,6 +508,66 @@ class HookParityTests(unittest.TestCase):
         )
         self.assertEqual("continue working", rendered_stop["followup_message"])
         self.assertIn("additional_context", rendered_stop)
+
+    def test_cursor_shell_strreplace_and_multiedit_reach_the_guard(self):
+        """Cursor Shell and edit tools must not be matcher-short-circuited."""
+        launch_path = ROOT / "hooks" / "launch.py"
+        payloads = (
+            ("PreToolUse", "Shell", {"command": "rm -rf /tmp/nope"}),
+            ("PostToolUse", "Shell", {"command": "rm -rf /tmp/nope"}),
+            ("PreToolUse", "StrReplace", {"path": "a.py", "old_string": "a", "new_string": "b"}),
+            ("PostToolUse", "StrReplace", {"path": "a.py", "old_string": "a", "new_string": "b"}),
+            ("PreToolUse", "MultiEdit", {"path": "a.py", "replacements": []}),
+            ("PostToolUse", "MultiEdit", {"path": "a.py", "replacements": []}),
+        )
+        for event, tool, tool_input in payloads:
+            with self.subTest(event=event, tool=tool):
+                data = json.dumps(
+                    {"hook_event_name": event, "tool_name": tool, "tool_input": tool_input}
+                )
+                self.assertEqual(data, self.launch.apply_matchers(launch_path, data, event))
+
+    def test_mutation_aliases_are_accepted_by_matchers(self):
+        policy = json.loads((ROOT / "hooks" / "matchers.json").read_text(encoding="utf-8"))
+        shell_tools = {"PowerShell", "Bash"}
+        for bucket in ("preventive", "observational"):
+            pattern = re.compile("(?:" + "|".join(policy[bucket]) + ")", re.I)
+            for raw, canonical in self.kernel.TOOL_ALIASES.items():
+                if canonical not in {"Write", "Edit", "apply_patch", *shell_tools}:
+                    continue
+                with self.subTest(bucket=bucket, raw=raw, canonical=canonical):
+                    self.assertIsNotNone(pattern.fullmatch(raw), raw)
+
+    def test_claude_pretooluse_callback_exception_fails_closed(self):
+        lifecycle = load(ROOT / "hooks" / "lifecycle.py", "ce_hook_parity_lifecycle_closed")
+
+        def boom(_event, _host):
+            raise RuntimeError("boom")
+
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            code = lifecycle.run_hook_protocol(
+                json.dumps(
+                    {
+                        "hook_event_name": "PreToolUse",
+                        "tool_name": "Bash",
+                        "tool_input": {"command": "true"},
+                    }
+                ),
+                {"PreToolUse": boom},
+                host_for_input=lambda _raw: "claude",
+                adapt_output=self.kernel.adapt_hook_output,
+            )
+        self.assertEqual(2, code)
+        self.assertEqual("", stdout.getvalue().strip())
+        rendered = [
+            line for line in stderr.getvalue().splitlines() if line.strip().startswith("{")
+        ]
+        self.assertTrue(rendered, stderr.getvalue())
+        payload = json.loads(rendered[-1])
+        self.assertEqual("block", payload.get("decision"))
+        self.assertEqual(lifecycle.HOOK_PROTOCOL_ERROR, payload.get("reason"))
 
 
 class RetrieveGateTests(unittest.TestCase):
