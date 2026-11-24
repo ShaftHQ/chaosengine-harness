@@ -418,6 +418,13 @@ def _dot_script_operand(arguments: list[str]) -> str | None:
     return arguments[index]
 
 
+def _relative_shell_operand(operand: str) -> bool:
+    """True when ``source`` / ``.`` resolves ``operand`` against the shell cwd."""
+    if not operand or "$" in operand or "`" in operand:
+        return False
+    return not os.path.isabs(os.path.expanduser(operand))
+
+
 def _pure_command_sub_body(word: str) -> str | None:
     """Inner script when ``word`` is exactly one ``$(...)`` or backtick command."""
     if word.startswith("$(") and not word.startswith("$(("):
@@ -505,12 +512,30 @@ def _trusted_command_sub_head(word: str) -> str | None:
     return printed
 
 
+def _echo_escape_option(token: str) -> bool:
+    """True when ``token`` is an ``echo`` cluster that includes ``-e`` or ``-E``.
+
+    ``-ne`` and ``-en`` count. ``-n`` alone does not.
+    """
+    return bool(_ECHO_OPTION.fullmatch(token) and any(char in "eE" for char in token[1:]))
+
+
+def _active_brace_operand(command: _SimpleCommand, arguments: list[str]) -> bool:
+    """True when an argument still has an unquoted brace expansion."""
+    masks = _suffix_masks(command.words, arguments, command.word_masks)
+    return any(_brace_expansion_is_active(item, mask) for item, mask in _zip_masks(arguments, masks))
+
+
 def _literal_echo_printf_text(command: _SimpleCommand) -> str | object | None:
     """Stdout of one ``echo`` or ``printf``, when a pipe feeds it to a shell.
 
     ``None`` means the command is not ``echo`` or ``printf``. ``_NOT_LITERAL``
     means it is, but the text is computed or not a proven literal. A string is
     the proven text (``echo 'rm -f only.txt'`` and ``printf '%s' 'rm -f only.txt'``).
+
+    ``echo -e`` / ``-E`` (including ``-ne`` and ``-en``), a backslash in an
+    ``echo`` operand, or an active unquoted brace expansion is not literal.
+    Quoted braces stay the literal characters.
     """
     head, rest = _head(command.words)
     if head not in {"echo", "printf"}:
@@ -519,17 +544,27 @@ def _literal_echo_printf_text(command: _SimpleCommand) -> str | object | None:
         return _NOT_LITERAL
     if any("$" in item or "`" in item for item in rest):
         return _NOT_LITERAL
+    if rest and _active_brace_operand(command, rest):
+        return _NOT_LITERAL
     if head == "echo":
         args: list[str] = []
         for item in rest:
             if not args and _ECHO_OPTION.fullmatch(item):
+                if _echo_escape_option(item):
+                    return _NOT_LITERAL
                 continue
+            if "\\" in item:
+                return _NOT_LITERAL
             args.append(item)
         return " ".join(args)
     if len(rest) == 1 and "%" not in rest[0] and "\\" not in rest[0]:
         return rest[0]
-    if len(rest) == 2 and rest[0] in _PRINTF_STRING_FORMATS and "%" not in rest[1] and "\\" not in rest[1]:
-        return rest[1]
+    if rest and rest[0] in _PRINTF_STRING_FORMATS:
+        printed = rest[1:]
+        if printed and all("%" not in item and "\\" not in item for item in printed):
+            if rest[0] == "%s":
+                return "".join(printed)
+            return "\n".join(printed)
     return _NOT_LITERAL
 
 
@@ -957,13 +992,18 @@ def _is_known_py_delete_receiver(
 
 def _is_getattr_call(func: ast.AST, getattr_names: set[str], builtin_mods: set[str]) -> bool:
     """Bare ``getattr``, ``builtins.getattr``, or an import alias of either."""
-    if isinstance(func, ast.Name):
-        return func.id in getattr_names
+    return _is_getattr_value(func, getattr_names, builtin_mods)
+
+
+def _is_getattr_value(node: ast.AST, getattr_names: set[str], builtin_mods: set[str]) -> bool:
+    """True when ``node`` is ``getattr`` or a simple alias such as ``g = getattr``."""
+    if isinstance(node, ast.Name):
+        return node.id in getattr_names
     return (
-        isinstance(func, ast.Attribute)
-        and func.attr == "getattr"
-        and isinstance(func.value, ast.Name)
-        and func.value.id in builtin_mods
+        isinstance(node, ast.Attribute)
+        and node.attr == "getattr"
+        and isinstance(node.value, ast.Name)
+        and node.value.id in builtin_mods
     )
 
 
@@ -979,7 +1019,8 @@ def _is_indirect_getattr_delete(
     """``getattr(obj, "remove"|"unlink"|"rmtree"|"rmdir"|"removedirs")``, folded strings too.
 
     ``builtins.getattr``, ``__builtins__.getattr``, ``import builtins as b``,
-    and ``from builtins import getattr as ga`` match a bare ``getattr``.
+    ``from builtins import getattr as ga``, and a simple ``g = getattr``
+    assignment match a bare ``getattr``.
     ``getattr(os, 'rem' + 'ove')``, f-strings, and ``''.join([...])`` count.
     An unfoldable name on ``os`` / ``shutil`` / ``pathlib`` / ``Path(...)`` is refused.
     ``getattr(os, 'getcwd')`` and ``getattr(obj, key)`` are not.
@@ -1041,6 +1082,17 @@ def _python_entries(segment: str) -> list[tuple[str, bool]]:
                     path_ctors.add(bound)
                 elif node.level == 0 and mod == "builtins" and alias.name == "getattr":
                     getattr_names.add(bound)
+        elif isinstance(node, ast.Assign) and _is_getattr_value(node.value, getattr_names, builtin_mods):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    getattr_names.add(target.id)
+        elif (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and node.value is not None
+            and _is_getattr_value(node.value, getattr_names, builtin_mods)
+        ):
+            getattr_names.add(node.target.id)
 
     entries: list[tuple[str, bool]] = []
     for node in ast.walk(tree):
@@ -1947,47 +1999,88 @@ def _commit_cd(
     return proposed, False
 
 
+def _stdin_passthrough(command: _SimpleCommand) -> bool:
+    """True when ``cat`` or ``tee`` copies stdin to stdout unchanged.
+
+    ``tee`` always copies stdin to stdout. ``cat`` does so with no file
+    operands (``-``, ``--``, and ``-u`` only). A heredoc or here-string
+    replaces that stdin.
+    """
+    if command.heredocs or command.here_strings:
+        return False
+    head, rest = _head(command.words)
+    if head == "tee":
+        return True
+    if head != "cat":
+        return False
+    if any("$" in item or "`" in item for item in rest):
+        return False
+    return all(item in {"-", "--", "-u"} for item in rest)
+
+
+def _pipeline_producer(pipeline: list[_SimpleCommand]) -> _SimpleCommand | None:
+    """Last pipeline stage that is not a ``cat`` / ``tee`` passthrough."""
+    for candidate in reversed(pipeline):
+        if _stdin_passthrough(candidate):
+            continue
+        return candidate
+    return None
+
+
 def _piped_stdin_bodies(
-    previous: _SimpleCommand,
+    pipeline: list[_SimpleCommand],
     command: _SimpleCommand,
     cwd: Path | None = None,
-) -> list[str] | None:
-    """Stdin text of ``previous`` when a pipe feeds a shell, Python, or ``source``.
+) -> tuple[list[str], bool] | None:
+    """Stdin of the pipeline producer when ``command`` reads it as a script.
 
-    Heredoc bodies feed a shell in ``SHELLS``, ``python`` (or ``env`` plus one
-    of those), or ``source`` / ``.`` of stdin. A literal ``echo`` / ``printf``
-    string feeds a shell or ``source`` / ``.`` of stdin. The receiver has no
-    ``-c`` script and no heredoc or here-string of its own. Relative ``source``
-    operands resolve against ``cwd``.
+    Returns ``(bodies, computed)``. ``computed`` is True when a shell ``-c``
+    script inherits a pipe whose text is not a proven literal. The caller
+    forwards that into the script. It does not execute the pipe beside ``-c``.
+    A shell without ``-c``, Python without ``-c``, or ``source`` / ``.`` of
+    stdin raises ``Unsure`` when the producer is computed.
+
+    Heredoc bodies and a literal ``echo`` / ``printf`` string both count.
+    ``cat`` and ``tee`` stages between the producer and ``command`` are
+    skipped. The receiver has no heredoc or here-string of its own. Relative
+    ``source`` operands resolve against ``cwd``.
     """
     if command.heredocs or command.here_strings:
         return None
     head, rest = _head(command.words)
-    shell_stdin = False
+    executes_stdin = False
+    forwards_stdin = False
     if head in SHELLS:
         if _shell_c_script(rest) is not None:
-            return None
-        shell_stdin = True
+            forwards_stdin = True
+        else:
+            executes_stdin = True
     elif _is_python(head):
         if _python_code_from_args(rest) is not None:
             return None
+        executes_stdin = True
     elif head in _SCRIPT_DOT_COMMANDS:
         operand = _dot_script_operand(rest)
         if operand is None or not _is_stdin_script_path(operand, cwd):
             return None
-        shell_stdin = True
+        executes_stdin = True
     else:
         return None
-    bodies = [item.body for item in previous.heredocs]
-    if shell_stdin:
-        printed = _literal_echo_printf_text(previous)
+    producer = _pipeline_producer(pipeline)
+    if producer is None:
+        return None
+    bodies = [item.body for item in producer.heredocs]
+    if executes_stdin or forwards_stdin:
+        printed = _literal_echo_printf_text(producer)
         if printed is _NOT_LITERAL:
-            raise Unsure("computed piped script")
+            if executes_stdin:
+                raise Unsure("computed piped script")
+            return [], True
         if isinstance(printed, str) and printed:
             bodies.append(printed)
     if not bodies:
         return None
-    return bodies
+    return bodies, False
 
 
 def _command_targets(
@@ -1995,9 +2088,16 @@ def _command_targets(
     cwd: Path,
     *,
     cwd_computed: bool = False,
+    stdin_bodies: list[str] | None = None,
+    stdin_computed: bool = False,
 ) -> tuple[list[tuple[Path, bool]], Path]:
-    """Every (path, follow_symlinks) a shell command would delete, against a tracked cwd."""
+    """Every (path, follow_symlinks) a shell command would delete, against a tracked cwd.
+
+    ``stdin_bodies`` is text already queued on this shell's stdin (a pipe into
+    ``sh -c``). ``stdin_computed`` means that text is not a proven literal.
+    """
     found: list[tuple[Path, bool]] = []
+    inherited_bodies = list(stdin_bodies or [])
     try:
         events = _parse_shell(command)
     except ValueError as error:
@@ -2011,40 +2111,45 @@ def _command_targets(
         return found, cwd
 
     subshell_stack: list[
-        tuple[Path, bool, _SimpleCommand | None, str | None, tuple[str, Path, bool] | None]
+        tuple[Path, bool, str | None, tuple[str, Path, bool] | None, list[_SimpleCommand]]
     ] = []
-    prev_cmd: _SimpleCommand | None = None
     last_sep: str | None = None
     pending_cd: tuple[str, Path, bool] | None = None
+    pipeline: list[_SimpleCommand] = []
     for kind, payload in events:
         if kind == "subshell_enter":
-            subshell_stack.append((cwd, cwd_computed, prev_cmd, last_sep, pending_cd))
-            prev_cmd = None
+            subshell_stack.append((cwd, cwd_computed, last_sep, pending_cd, pipeline))
             last_sep = None
             pending_cd = None
+            pipeline = []
             continue
         if kind == "subshell_exit":
             if subshell_stack:
-                cwd, cwd_computed, prev_cmd, last_sep, pending_cd = subshell_stack.pop()
+                cwd, cwd_computed, last_sep, pending_cd, pipeline = subshell_stack.pop()
             continue
         if kind == "sep":
             if pending_cd is not None:
                 cwd, cwd_computed = _commit_cd(pending_cd, str(payload), cwd, cwd_computed)
                 pending_cd = None
+            if str(payload) not in {"|", "|&"}:
+                pipeline = []
             last_sep = str(payload)
             continue
         if not isinstance(payload, _SimpleCommand):
             continue
         cmd = payload
-        previous = prev_cmd
-        prev_cmd = cmd
         incoming = last_sep
         last_sep = None
         piped_bodies: list[str] = []
-        if incoming in {"|", "|&"} and isinstance(previous, _SimpleCommand):
-            bodies = _piped_stdin_bodies(previous, cmd, None if cwd_computed else cwd)
-            if bodies:
-                piped_bodies = bodies
+        piped_computed = False
+        if incoming in {"|", "|&"} and pipeline:
+            piped = _piped_stdin_bodies(pipeline, cmd, None if cwd_computed else cwd)
+            if piped is not None:
+                piped_bodies, piped_computed = piped
+        if incoming not in {"|", "|&"}:
+            pipeline = []
+        incoming_pipe = incoming in {"|", "|&"} and bool(pipeline)
+        pipeline.append(cmd)
 
         # Inspect command substitutions $(...) / `...` in a subshell copy of cwd state.
         for sub_cmd in cmd.cmd_subs:
@@ -2086,7 +2191,14 @@ def _command_targets(
                 py_sources.append(c_code)
             py_sources.extend(hd.body for hd in cmd.heredocs)
             py_sources.extend(cmd.here_strings)
-            py_sources.extend(piped_bodies)
+            if c_code is None:
+                if piped_computed and not cmd.heredocs and not cmd.here_strings:
+                    raise Unsure("computed piped script")
+                py_sources.extend(piped_bodies)
+                if not py_sources:
+                    if stdin_computed:
+                        raise Unsure("computed piped script")
+                    py_sources.extend(inherited_bodies)
             for py_src in py_sources:
                 py_entries = _python_entries(py_src)
                 if py_entries and cwd_computed and _needs_computed_cwd([item for item, _follow in py_entries]):
@@ -2099,14 +2211,25 @@ def _command_targets(
             if any(_is_process_sub_word(word) for word in rest):
                 raise Unsure("shell process substitution")
             operand = _dot_script_operand(rest)
-            incoming_pipe = incoming in {"|", "|&"} and isinstance(previous, _SimpleCommand)
-            attached = bool(cmd.heredocs or cmd.here_strings or incoming_pipe)
+            attached = bool(
+                cmd.heredocs
+                or cmd.here_strings
+                or incoming_pipe
+                or inherited_bodies
+                or stdin_computed
+            )
             if operand is not None and attached and ("$" in operand or "`" in operand):
                 raise Unsure("computed source path")
+            if operand is not None and cwd_computed and attached and _relative_shell_operand(operand):
+                raise Unsure("computed cwd before a relative source")
             if operand is not None and _is_stdin_script_path(operand, None if cwd_computed else cwd):
                 stdin_scripts = [hd.body for hd in cmd.heredocs]
                 stdin_scripts.extend(cmd.here_strings)
                 stdin_scripts.extend(piped_bodies)
+                if not stdin_scripts:
+                    if piped_computed or stdin_computed:
+                        raise Unsure("computed piped script")
+                    stdin_scripts.extend(inherited_bodies)
                 for script in stdin_scripts:
                     if not script:
                         continue
@@ -2115,16 +2238,45 @@ def _command_targets(
             continue
 
         if head in SHELLS:
-            shell_scripts: list[str] = []
             c_script = _shell_c_script(rest)
             if c_script is not None:
-                shell_scripts.append(c_script)
-            elif any(_is_process_sub_word(word) for word in rest):
+                if cmd.heredocs or cmd.here_strings:
+                    forward_bodies: list[str] = []
+                    forward_computed = False
+                elif piped_bodies or piped_computed:
+                    forward_bodies = piped_bodies
+                    forward_computed = piped_computed
+                else:
+                    forward_bodies = inherited_bodies
+                    forward_computed = stdin_computed
+                sub_found, _ = _command_targets(
+                    c_script,
+                    cwd,
+                    cwd_computed=cwd_computed,
+                    stdin_bodies=forward_bodies,
+                    stdin_computed=forward_computed,
+                )
+                found.extend(sub_found)
+                for extra in [item.body for item in cmd.heredocs] + list(cmd.here_strings):
+                    if not extra:
+                        continue
+                    sub_found, _ = _command_targets(extra, cwd, cwd_computed=cwd_computed)
+                    found.extend(sub_found)
+                continue
+            if any(_is_process_sub_word(word) for word in rest):
                 raise Unsure("shell process substitution")
-            shell_scripts.extend(hd.body for hd in cmd.heredocs)
+            if piped_computed:
+                raise Unsure("computed piped script")
+            shell_scripts = [item.body for item in cmd.heredocs]
             shell_scripts.extend(cmd.here_strings)
             shell_scripts.extend(piped_bodies)
+            if not shell_scripts:
+                if stdin_computed:
+                    raise Unsure("computed piped script")
+                shell_scripts.extend(inherited_bodies)
             for script in shell_scripts:
+                if not script:
+                    continue
                 sub_found, _ = _command_targets(script, cwd, cwd_computed=cwd_computed)
                 found.extend(sub_found)
             continue

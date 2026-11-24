@@ -829,13 +829,13 @@ _MAVEN_WRAPPER_SCOPED_FETCH_MARKERS = (
     "failed to download",
     "could not download",
 )
+# Repository hosts are not bootstrap context. A dependency download from
+# Maven Central or archive.apache.org is an ordinary build failure.
 _MAVEN_WRAPPER_BOOTSTRAP_CONTEXT = (
     "mvnw",
     "maven-wrapper",
     "apache-maven",
     "wrapper.properties",
-    "repo.maven.apache.org",
-    "archive.apache.org",
 )
 _MAVEN_WRAPPER_FETCH_ACTIONS = (
     "fetch",

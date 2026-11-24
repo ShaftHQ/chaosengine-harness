@@ -912,6 +912,159 @@ class DeleteGuardIssue208Test(unittest.TestCase):
             with self.subTest(cmd=cmd):
                 self.assertEqual("", self.reason(cmd))
 
+    def test_review2_echo_escapes_are_not_literal(self) -> None:
+        """``echo -e``/``-E`` and any backslash operand are not a proven script.
+
+        ``echo -e 'rm\\040-f\\040only.txt' | bash`` and the ``\\x20`` form must
+        be refused. A plain ``-n`` echo of a real ``rm`` stays a literal delete.
+        """
+        self._write_only()
+        refused = (
+            "echo -e 'rm\\040-f\\040only.txt' | bash",
+            "echo -e 'rm\\x20-f\\x20only.txt' | bash",
+            "echo -E 'rm\\040-f\\040only.txt' | bash",
+            "echo -ne 'rm\\040-f\\040only.txt' | bash",
+            "echo -en 'rm\\x20-f\\x20only.txt' | sh",
+            "echo 'rm\\040-f\\040only.txt' | bash",
+            "echo -e 'hello' | bash",
+        )
+        for cmd in refused:
+            with self.subTest(cmd=cmd):
+                reason = self.reason(cmd)
+                self.assertNotEqual("", reason)
+                self.assertIn("cannot tell", reason)
+        self.assertIn("untracked", self.reason("echo -n 'rm -f only.txt' | bash"))
+        self.assertEqual("", self.reason("echo -n 'echo ok' | bash"))
+
+    def test_review2_unquoted_echo_printf_braces_are_not_literal(self) -> None:
+        """Unquoted ``echo``/``printf`` braces are not literal. Quoted braces are."""
+        self._write_only()
+        refused = (
+            "echo {rm,-f,only.txt} | bash",
+            "echo {rm,-f,only.txt} | sh",
+            "printf '%s' {rm,-f,only.txt} | bash",
+            "printf {rm,-f,only.txt} | bash",
+            "echo {hello,world} | bash",
+        )
+        for cmd in refused:
+            with self.subTest(cmd=cmd):
+                reason = self.reason(cmd)
+                self.assertNotEqual("", reason)
+                self.assertIn("cannot tell", reason)
+        for cmd in (
+            "echo '{rm,-f,only.txt}' | bash",
+            "printf '%s' '{rm,-f,only.txt}' | bash",
+        ):
+            with self.subTest(cmd=cmd):
+                self.assertEqual("", self.reason(cmd))
+
+    def test_review2_pipe_into_shell_c_source_stdin_is_refused(self) -> None:
+        """A pipe into ``sh -c``/``bash -c`` is stdin of that script.
+
+        ``source /dev/stdin`` and ``. /dev/stdin`` inside ``-c`` (including
+        ``-lc``) run the piped text. ``bash -c 'echo ok'`` does not.
+        """
+        self._write_only()
+        precious = str(self.precious)
+        refused = (
+            "echo 'rm -f only.txt' | bash -c 'source /dev/stdin'",
+            "echo 'rm -f only.txt' | bash -lc 'source /dev/stdin'",
+            "echo 'rm -f only.txt' | sh -c '. /dev/stdin'",
+            "echo 'rm -f only.txt' | bash -c 'source /dev/stdin'",
+            f"echo 'rm -f {precious}' | bash -c 'source /dev/stdin'",
+            "printf '%s\\n' 'rm -f only.txt' | bash -c '. /dev/stdin'",
+        )
+        for cmd in refused:
+            with self.subTest(cmd=cmd):
+                reason = self.reason(cmd)
+                self.assertIn("untracked", reason)
+                if precious in cmd:
+                    self.assertIn("precious.txt", reason)
+                else:
+                    self.assertIn("only.txt", reason)
+        for cmd in (
+            "echo 'rm -f only.txt' | bash -c 'echo ok'",
+            "echo 'rm -f only.txt' | bash -lc 'echo ok'",
+            "echo 'hello' | bash -c 'source /dev/stdin'",
+            "echo 'echo ok' | sh -c '. /dev/stdin'",
+            "echo 'rm -f only.txt' | bash -c 'echo ok'",
+        ):
+            with self.subTest(cmd=cmd):
+                self.assertEqual("", self.reason(cmd))
+
+    def test_review2_computed_cwd_relative_source_with_body_is_unsure(self) -> None:
+        """A relative ``source``/``.`` after a computed ``cd`` may be stdin.
+
+        An attached heredoc, here-string, or pipe is refused. A known cwd and
+        a non-stdin path such as ``./env.sh`` still treats the body as data.
+        """
+        self._write_only()
+        refused = (
+            "cd \"$(echo /dev)\" && source stdin <<'EOF'\nrm -f /abs/precious.txt\nEOF",
+            "cd \"$(echo /dev)\" && . stdin <<'EOF'\nrm -f /abs/precious.txt\nEOF",
+            "cd /dev && cd \"$(echo .)\" && source stdin <<'EOF'\nrm -f /abs/precious.txt\nEOF",
+            "cd /dev && cd \"$(echo .)\" && . stdin <<'EOF'\nrm -f /abs/precious.txt\nEOF",
+            "cd \"$(echo /dev)\" && source stdin <<< 'rm -f /abs/precious.txt'",
+            "cd \"$(echo /dev)\" && echo 'rm -f /abs/precious.txt' | source stdin",
+            "cd \"$(echo /dev)\" && echo 'rm -f /abs/precious.txt' | . stdin",
+            "cd \"$(echo /tmp)\" && source ./env.sh <<'EOF'\necho ok\nEOF",
+        )
+        for cmd in refused:
+            with self.subTest(cmd=cmd):
+                reason = self.reason(cmd)
+                self.assertNotEqual("", reason)
+                self.assertIn("cannot tell", reason)
+        for cmd in (
+            "source ./env.sh <<'EOF'\necho ok\nEOF",
+            "source ./env.sh <<'EOF'\nrm -f only.txt\nEOF",
+            ". ./env.sh <<'EOF'\nrm -f only.txt\nEOF",
+            "cd /tmp && source ./env.sh <<'EOF'\nrm -f only.txt\nEOF",
+            "cd /dev && source ./env.sh <<'EOF'\nrm -f only.txt\nEOF",
+            "source stdin <<'EOF'\nrm -f only.txt\nEOF",
+        ):
+            with self.subTest(cmd=cmd):
+                self.assertEqual("", self.reason(cmd))
+
+    def test_review2_cat_tee_and_python_pipes_and_getattr_alias(self) -> None:
+        """Pass-through ``cat``/``tee``, piped Python, and ``g = getattr`` are deletes."""
+        self._write_only()
+        refused = (
+            "echo 'rm -f only.txt' | cat | bash",
+            "echo 'rm -f only.txt' | tee /dev/null | bash",
+            "echo 'rm -f only.txt' | cat | tee /dev/null | bash",
+            "echo 'rm -f only.txt' | tee /dev/null | cat | sh",
+            "echo 'import os; os.remove(\"only.txt\")' | python3",
+            "echo 'import os; os.remove(\"only.txt\")' | python",
+            "printf '%s\\n' 'import os' 'os.remove(\"only.txt\")' | python3",
+            "echo 'import os; os.remove(\"only.txt\")' | cat | python3",
+        )
+        for cmd in refused:
+            with self.subTest(cmd=cmd):
+                reason = self.reason(cmd)
+                self.assertIn("untracked", reason)
+                self.assertIn("only.txt", reason)
+        for cmd in (
+            "echo 'print(1)' | python3",
+            "echo 'print(1)' | python",
+            "printf '%s\\n' 'print(1)' | python3",
+            "echo 'echo ok' | cat | bash",
+            "echo 'echo ok' | tee /dev/null | bash",
+        ):
+            with self.subTest(cmd=cmd):
+                self.assertEqual("", self.reason(cmd))
+        alias = "import os\ng = getattr\ng(os, 'remove')('only.txt')"
+        self.assertIn("indirect Python delete via getattr", self.reason(self._py(alias)))
+        builtin_alias = "import os\ng = builtins.getattr\ng(os, 'remove')('only.txt')"
+        self.assertIn("indirect Python delete via getattr", self.reason(self._py(builtin_alias)))
+        chained = "from builtins import getattr as ga\nimport os\ng = ga\ng(os, 'unlink')('only.txt')"
+        self.assertIn("indirect Python delete via getattr", self.reason(self._py(chained)))
+        for source in (
+            "import os\ng = getattr\ng(os, 'getcwd')()",
+            "import os\ng = len\n",
+        ):
+            with self.subTest(source=source):
+                self.assertEqual("", self.reason(self._py(source)))
+
 
 if __name__ == "__main__":
     unittest.main()
