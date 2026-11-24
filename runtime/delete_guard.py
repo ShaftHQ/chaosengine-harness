@@ -1054,7 +1054,7 @@ def _is_indirect_getattr_delete(
     return not _is_plain_attr_lookup(attr)
 
 
-_DICT_LOOKUP_ATTRS = frozenset({"get", "pop", "setdefault"})
+_DICT_LOOKUP_ATTRS = frozenset({"get", "pop", "setdefault", "__getitem__"})
 
 
 def _module_dict_subscript(func: ast.AST, os_mods: set[str], shutil_mods: set[str]) -> tuple[str, ast.AST] | None:
@@ -1074,13 +1074,50 @@ def _module_dict_subscript(func: ast.AST, os_mods: set[str], shutil_mods: set[st
     return None
 
 
+def _module_kind_name(name: str, os_mods: set[str], shutil_mods: set[str]) -> str | None:
+    if name in os_mods:
+        return "os"
+    if name in shutil_mods:
+        return "shutil"
+    return None
+
+
+def _vars_or_getattr_module_dict(
+    node: ast.AST,
+    os_mods: set[str],
+    shutil_mods: set[str],
+    getattr_names: set[str],
+    builtin_mods: set[str],
+) -> str | None:
+    """``vars(os)`` and ``getattr(os, '__dict__')`` are that module's ``__dict__``."""
+    if not isinstance(node, ast.Call):
+        return None
+    if isinstance(node.func, ast.Name) and node.func.id == "vars" and len(node.args) == 1:
+        arg = node.args[0]
+        if isinstance(arg, ast.Name):
+            return _module_kind_name(arg.id, os_mods, shutil_mods)
+        return None
+    if not _is_getattr_call(node.func, getattr_names, builtin_mods):
+        return None
+    receiver = _getattr_arg(node, 0, "object")
+    attr = _getattr_arg(node, 1, "name")
+    if not isinstance(receiver, ast.Name) or _fold_const_str(attr) != "__dict__":
+        return None
+    return _module_kind_name(receiver.id, os_mods, shutil_mods)
+
+
 def _dict_object_kind(
     node: ast.AST,
     os_mods: set[str],
     shutil_mods: set[str],
     dict_aliases: dict[str, str],
+    getattr_names: set[str],
+    builtin_mods: set[str],
 ) -> str | None:
-    """``os.__dict__`` / ``shutil.__dict__``, or a variable holding that dict."""
+    """``os.__dict__`` / ``shutil.__dict__``, ``vars``, ``getattr``, or an alias."""
+    found = _vars_or_getattr_module_dict(node, os_mods, shutil_mods, getattr_names, builtin_mods)
+    if found is not None:
+        return found
     if isinstance(node, ast.Name):
         return dict_aliases.get(node.id)
     if not isinstance(node, ast.Attribute) or node.attr != "__dict__":
@@ -1088,10 +1125,16 @@ def _dict_object_kind(
     base = node.value
     if not isinstance(base, ast.Name):
         return None
-    if base.id in os_mods:
-        return "os"
-    if base.id in shutil_mods:
-        return "shutil"
+    return _module_kind_name(base.id, os_mods, shutil_mods)
+
+
+def _dict_key_arg(node: ast.Call) -> ast.AST | None:
+    """Positional key, otherwise the ``key=`` keyword. ``.get(key='getcwd')`` counts."""
+    if node.args:
+        return node.args[0]
+    for keyword in node.keywords:
+        if keyword.arg == "key":
+            return keyword.value
     return None
 
 
@@ -1100,13 +1143,15 @@ def _dict_lookup(
     os_mods: set[str],
     shutil_mods: set[str],
     dict_aliases: dict[str, str],
+    getattr_names: set[str],
+    builtin_mods: set[str],
 ) -> tuple[str, ast.AST | None] | None:
-    """``mod.__dict__[key]`` or ``mod.__dict__.get/pop/setdefault(key)``."""
+    """``mod.__dict__[key]``, ``vars(mod)[key]``, or ``.get`` / ``.pop`` / ``.setdefault`` / ``.__getitem__``."""
     if isinstance(node, ast.Subscript):
         direct = _module_dict_subscript(node, os_mods, shutil_mods)
         if direct is not None:
             return direct
-        kind = _dict_object_kind(node.value, os_mods, shutil_mods, dict_aliases)
+        kind = _dict_object_kind(node.value, os_mods, shutil_mods, dict_aliases, getattr_names, builtin_mods)
         if kind is None:
             return None
         return kind, node.slice
@@ -1114,11 +1159,12 @@ def _dict_lookup(
         return None
     if node.func.attr not in _DICT_LOOKUP_ATTRS:
         return None
-    kind = _dict_object_kind(node.func.value, os_mods, shutil_mods, dict_aliases)
+    kind = _dict_object_kind(
+        node.func.value, os_mods, shutil_mods, dict_aliases, getattr_names, builtin_mods
+    )
     if kind is None:
         return None
-    key = node.args[0] if node.args else None
-    return kind, key
+    return kind, _dict_key_arg(node)
 
 
 def _dict_key_class(key: ast.AST | None) -> str:
@@ -1150,13 +1196,24 @@ def _bind_python_aliases(
     shutil_mods: set[str],
     dict_aliases: dict[str, str],
     func_aliases: dict[str, tuple[str, str]],
+    getattr_names: set[str],
+    builtin_mods: set[str],
 ) -> None:
-    """Remember ``d = os.__dict__`` and ``fn = os.__dict__['remove']``."""
+    """Remember module aliases, ``d = os.__dict__``, and ``fn = os.__dict__['remove']``."""
     names = _assign_names(targets)
     if not names:
         return
-    lookup = _dict_lookup(value, os_mods, shutil_mods, dict_aliases)
-    kind = None if lookup is not None else _dict_object_kind(value, os_mods, shutil_mods, dict_aliases)
+    if isinstance(value, ast.Name):
+        if value.id in os_mods:
+            os_mods.update(names)
+        elif value.id in shutil_mods:
+            shutil_mods.update(names)
+    lookup = _dict_lookup(value, os_mods, shutil_mods, dict_aliases, getattr_names, builtin_mods)
+    kind = (
+        None
+        if lookup is not None
+        else _dict_object_kind(value, os_mods, shutil_mods, dict_aliases, getattr_names, builtin_mods)
+    )
     for name in names:
         dict_aliases.pop(name, None)
         func_aliases.pop(name, None)
@@ -1172,13 +1229,22 @@ def _module_dict_delete_label(
     os_mods: set[str],
     shutil_mods: set[str],
     dict_aliases: dict[str, str] | None = None,
+    getattr_names: set[str] | None = None,
+    builtin_mods: set[str] | None = None,
 ) -> str | None:
-    """``os.__dict__['remove']()`` and ``.get`` / ``.pop`` / ``.setdefault``.
+    """``os.__dict__['remove']()``, ``vars``, ``getattr(..., '__dict__')``, and ``.get``.
 
-    Folded keys count. A non-literal key is refused. ``getcwd`` is not a delete.
-    The same rule covers ``shutil`` and a variable that holds ``__dict__``.
+    Folded keys count, including ``key=``. A non-literal key is refused.
+    ``getcwd`` is not a delete. The same rule covers ``shutil`` and aliases.
     """
-    found = _dict_lookup(node.func, os_mods, shutil_mods, dict_aliases or {})
+    found = _dict_lookup(
+        node.func,
+        os_mods,
+        shutil_mods,
+        dict_aliases or {},
+        getattr_names if getattr_names is not None else {"getattr"},
+        builtin_mods if builtin_mods is not None else {"builtins", "__builtins__"},
+    )
     if found is None:
         return None
     kind, key = found
@@ -1236,7 +1302,14 @@ def _python_entries(segment: str) -> list[tuple[str, bool]]:
                     if isinstance(target, ast.Name):
                         getattr_names.add(target.id)
             _bind_python_aliases(
-                list(node.targets), node.value, os_mods, shutil_mods, dict_aliases, func_aliases
+                list(node.targets),
+                node.value,
+                os_mods,
+                shutil_mods,
+                dict_aliases,
+                func_aliases,
+                getattr_names,
+                builtin_mods,
             )
         elif (
             isinstance(node, ast.AnnAssign)
@@ -1246,7 +1319,14 @@ def _python_entries(segment: str) -> list[tuple[str, bool]]:
             if _is_getattr_value(node.value, getattr_names, builtin_mods):
                 getattr_names.add(node.target.id)
             _bind_python_aliases(
-                [node.target], node.value, os_mods, shutil_mods, dict_aliases, func_aliases
+                [node.target],
+                node.value,
+                os_mods,
+                shutil_mods,
+                dict_aliases,
+                func_aliases,
+                getattr_names,
+                builtin_mods,
             )
 
     entries: list[tuple[str, bool]] = []
@@ -1257,7 +1337,9 @@ def _python_entries(segment: str) -> list[tuple[str, bool]]:
             node, os_mods, shutil_mods, pathlib_mods, path_ctors, getattr_names, builtin_mods
         ):
             raise Unsure("indirect Python delete via getattr")
-        dict_label = _module_dict_delete_label(node, os_mods, shutil_mods, dict_aliases)
+        dict_label = _module_dict_delete_label(
+            node, os_mods, shutil_mods, dict_aliases, getattr_names, builtin_mods
+        )
         if dict_label is not None:
             raise Unsure(f"indirect Python delete via {dict_label}.__dict__")
         if isinstance(node.func, ast.Name) and node.func.id in func_aliases:

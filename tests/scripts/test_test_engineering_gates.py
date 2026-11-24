@@ -647,3 +647,52 @@ def test_f5_comments_and_strings_do_not_count_as_assertions(body):
 def test_f5_real_assertions_still_pass(body):
     result = sdlc_flows.assertion_signal_gate(_diff(body))
     assert result == {"ok": True, "status": "pass", "reasons": []}
+
+
+@pytest.mark.parametrize(
+    ("body", "ok", "status", "reasons"),
+    [
+        (
+            "+it('t', () => { const note = `assert x` })\n",
+            False,
+            "block",
+            ["assertion-free"],
+        ),
+        (
+            "+it('t', () => { const note = `say \\`assert x\\`` })\n",
+            False,
+            "block",
+            ["assertion-free"],
+        ),
+        (
+            "+it('t', () => { const x = 1 // assert x })\n",
+            False,
+            "block",
+            ["assertion-free"],
+        ),
+        (
+            "+it('t', () => { const x = 1; // assert x })\n",
+            False,
+            "block",
+            ["assertion-free"],
+        ),
+        (
+            "+assert 4 // 2 == 2\n",
+            True,
+            "pass",
+            [],
+        ),
+        (
+            "+    const url = \"https://example.com\" // assert x\n",
+            False,
+            "block",
+            ["assertion-free"],
+        ),
+    ],
+)
+def test_f9_templates_and_midline_comments(body, ok, status, reasons):
+    assert sdlc_flows.assertion_signal_gate(_diff(body)) == {
+        "ok": ok,
+        "status": status,
+        "reasons": reasons,
+    }

@@ -1215,6 +1215,59 @@ class DeleteGuardIssue208Test(unittest.TestCase):
             with self.subTest(source=source):
                 self.assertEqual("", self.reason(self._py(source)))
 
+    def test_f5_dict_get_keyword_key_is_classified(self) -> None:
+        """``.get(key='getcwd')`` is allowed. ``.get(key='remove')`` is refused."""
+        self.assertEqual(
+            "",
+            self.reason(self._py("import os\nos.__dict__.get(key='getcwd')()")),
+        )
+        reason = self.reason(self._py("import os\nos.__dict__.get(key='remove')('only.txt')"))
+        self.assertIn("indirect Python delete via os.__dict__", reason)
+        popped = self.reason(self._py("import shutil\nshutil.__dict__.pop(key='rmtree')('only.txt')"))
+        self.assertIn("indirect Python delete via shutil.__dict__", popped)
+
+    def test_f10_sibling_indirect_dict_deletes_are_refused(self) -> None:
+        """``__getitem__``, ``vars``, module rebinding, and ``getattr(..., '__dict__')``."""
+        refused = (
+            "import os\nos.__dict__.__getitem__('remove')('only.txt')",
+            "import shutil\nshutil.__dict__.__getitem__('rmtree')('only.txt')",
+            "import os\nvars(os)['remove']('only.txt')",
+            "import shutil\nvars(shutil)['rmtree']('only.txt')",
+            "import os\nvars(os).get('remove')('only.txt')",
+            "import os\nvars(os).__getitem__('unlink')('only.txt')",
+            "import os\nd = vars(os)\nd['remove']('only.txt')",
+            "import shutil\nd = vars(shutil)\nd.get('rmtree')('only.txt')",
+            "import os\nfn = vars(os)['remove']\nfn('only.txt')",
+            "import os\no = os\no.__dict__['remove']('only.txt')",
+            "import shutil\ns = shutil\ns.__dict__['rmtree']('only.txt')",
+            "import os\no = os\no.__dict__.get(key='rmdir')('only.txt')",
+            "import os\ngetattr(os, '__dict__')['remove']('only.txt')",
+            "import shutil\ngetattr(shutil, '__dict__')['rmtree']('only.txt')",
+            "import os\nd = getattr(os, '__dict__')\nd['remove']('only.txt')",
+            "import shutil\ngetattr(shutil, '__dict__').get('rmtree')('only.txt')",
+            "import shutil\nfn = getattr(shutil, '__dict__')['rmtree']\nfn('only.txt')",
+        )
+        for source in refused:
+            with self.subTest(source=source):
+                reason = self.reason(self._py(source))
+                self.assertIn("indirect Python delete via", reason)
+                self.assertIn(".__dict__", reason)
+        allowed = (
+            "import os\nos.__dict__.__getitem__('getcwd')()",
+            "import os\nvars(os)['getcwd']()",
+            "import os\nvars(os).get('getcwd')()",
+            "import os\nd = vars(os)\nd['getcwd']()",
+            "import os\no = os\no.__dict__['getcwd']()",
+            "import shutil\ns = shutil\ns.__dict__['copy']",
+            "import os\ngetattr(os, '__dict__')['getcwd']()",
+            "import os\ngetattr(os, '__dict__').get(key='getcwd')()",
+            "import shutil\ngetattr(shutil, '__dict__')['copy']",
+            "import os\nfn = vars(os)['getcwd']\nfn()",
+        )
+        for source in allowed:
+            with self.subTest(source=source):
+                self.assertEqual("", self.reason(self._py(source)))
+
     def test_f7_cat_here_strings_and_stage_zero_flags(self) -> None:
         """A here-string on ``cat`` is the script. A rewriting flag at stage 0 is closed."""
         self._write_only()

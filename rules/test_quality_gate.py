@@ -50,12 +50,33 @@ _JS_TEST_SUFFIXES = (
     ".test.mjs",
     ".test.cjs",
 )
-_EXCLUDED_DIR_NAMES = frozenset({"fixtures", "pages", "page_objects", "utils", "support"})
-_EXCLUDED_BASENAMES = frozenset({"conftest.py", "__init__.py", "helpers.py"})
+_HELPER_DIR_NAMES = frozenset(
+    {
+        "helpers",
+        "helper",
+        "fixtures",
+        "pages",
+        "page_objects",
+        "page-objects",
+        "pageobjects",
+        "utils",
+        "support",
+    }
+)
+_EXCLUDED_BASENAMES = frozenset({"conftest.py", "__init__.py", "helpers.py", "helper.py"})
+_HELPER_SUFFIXES = ("page.ts", "page.js", "page.py", "helper.py", "helpers.py")
 _BARE_ASSERT = re.compile(r"\bassert\b(?![A-Za-z])")
 _TRIVIAL_ASSERT_EXPR = re.compile(
-    r"(?:True|False|None|\d+(?:\.\d+)?|not\s+(?:True|False|None|\d+(?:\.\d+)?)|[A-Za-z_]\w*)\Z"
+    r"(?:True|False|None|\d+(?:\.\d+)?|[A-Za-z_]\w*"
+    r"|not\s+(?:True|False|None|\d+(?:\.\d+)?|[A-Za-z_]\w*))\Z"
 )
+_JS_LINE_MARKERS = ("=>", ";", "{", "}", "const ", "let ", "var ", "function ", "it(", "test(")
+_FLOOR_BEFORE = re.compile(r"(?:\)|\]|\d|[A-Za-z_]\w*)$")
+_FLOOR_AFTER = re.compile(
+    r"(?:\d+|\(|\[|[A-Za-z_]\w*)\s*(?:==|!=|<=|>=|<|>|\+|-|\*|//|/|%|\)|\]|,|$)"
+)
+_COMMENT_KEYWORD = re.compile(r"(?:assert|expect|raise)\b")
+_PROSE_WORDS = re.compile(r"[A-Za-z_]\w*\s+[A-Za-z_]")
 
 # Detector text is concatenated so this rule module does not contain the
 # literals it flags. The file name matches test_*.py, so a rewrite is scanned.
@@ -75,16 +96,7 @@ _FULL_SOURCE = re.compile(
     + "document\\.document" + "Element\\.outer" + "HTML"
 )
 _HTML = "/ht" + "ml"
-# Locator context, or an element step under the html root. A URL path is not.
-_XPATH = re.compile(
-    _HTML + r"/(?:body|head|div)\b"
-    + "|"
-    + _HTML + r"\["
-    + r"|xpath\s*=\s*['\"]?\s*" + _HTML
-    + r"|By\.xpath\(\s*['\"]\s*" + _HTML
-    + r"|locator\(\s*['\"]\s*" + _HTML
-    + r"|find_element\s*\([^)\n]*['\"]\s*" + _HTML
-)
+_HTML_BODY = _HTML + "/bo" + "dy"
 _STRING = re.compile(r"""(?P<q>['"`])(?P<body>(?:\\.|(?!(?P=q)).)*)(?P=q)""")
 _CHILD = re.compile(r"(?<![=<-])>(?!=)")
 _TEST_DEF = re.compile(
@@ -98,11 +110,15 @@ _STRONG = re.compile(
     r"\bassert(?:Equal|NotEqual|AlmostEqual|GreaterEqual|Greater|LessEqual|Less|"
     r"Regex|NotIn|In|IsNot|Is|DictEqual|ListEqual|SetEqual|TupleEqual|CountEqual|"
     r"MultiLineEqual|SequenceEqual|RaisesRegex|Raises|Warns|Logs)\b"
-    r"|\bpytest\.raises\b|\bassertThat\b|\bexpect\s*\("
+    r"|\bpytest\.raises\b|\bassertThat\b"
 )
+_EXPECT = re.compile(r"\bexpect\s*\(")
 _WEAK = re.compile(
     r"\bassert(?:True|False|IsNone|IsNotNone)\b"
-    r"|\.toBe(?:Truthy|Falsy|Nullish|Null|Undefined|Defined|Nil)\b"
+    r"|\.toBe(?:Truthy|True|Falsy|False|Empty|Nullish|Null|Undefined|Defined|Nil)\b"
+)
+_WEAK_MATCHER = re.compile(
+    r"\.toBe(?:Truthy|True|Falsy|False|Empty|Nullish|Null|Undefined|Defined|Nil)\b"
 )
 _ANY_ASSERT = re.compile(
     r"\bassert(?:Equal|NotEqual|AlmostEqual|GreaterEqual|Greater|LessEqual|Less|"
@@ -138,10 +154,11 @@ def _named_test_file(name: str) -> bool:
 def is_test_path(path: str) -> bool:
     """True for executable test sources.
 
-    ``vendor/`` and ``node_modules/`` never match. Helpers, fixtures, page
-    objects, and non-code files never match, including inside ``tests/``.
-    A code file in ``tests/``, ``test/``, or ``e2e/`` still matches when it
-    is not one of those excluded names.
+    ``vendor/`` and ``node_modules/`` never match, and neither do non-code
+    extensions. An explicit test filename matches even inside helper, fixture,
+    page-object, util, or support directories. Those directories and helper
+    basenames are excluded only when the filename is not itself a test.
+    A code file in ``tests/``, ``test/``, or ``e2e/`` still matches otherwise.
     """
     if not isinstance(path, str):
         return False
@@ -151,18 +168,20 @@ def is_test_path(path: str) -> bool:
     parts = [part for part in raw.split("/") if part not in {"", "."}]
     if not parts:
         return False
-    if any(part in _EXCLUDE for part in parts):
+    folded = [part.casefold() for part in parts]
+    if any(part in _EXCLUDE for part in folded):
         return False
     name = parts[-1]
-    if any(part in _EXCLUDED_DIR_NAMES for part in parts[:-1]):
-        return False
-    if name in _EXCLUDED_BASENAMES:
-        return False
-    if not name.endswith(_CODE_SUFFIXES):
+    folded_name = folded[-1]
+    if not folded_name.endswith(_CODE_SUFFIXES):
         return False
     if _named_test_file(name):
         return True
-    return any(part in _DIR_MARKERS for part in parts[:-1])
+    if any(part in _HELPER_DIR_NAMES for part in folded[:-1]):
+        return False
+    if folded_name in _EXCLUDED_BASENAMES or folded_name.endswith(_HELPER_SUFFIXES):
+        return False
+    return any(part in _DIR_MARKERS for part in folded[:-1])
 
 
 def evaluate_content(path: str, new_text: str, old_text: str | None = None) -> dict:
@@ -324,6 +343,22 @@ def _has_token(lines_by_no: dict[int, str], number: int, tokens: tuple[str, ...]
     return False
 
 
+def _absolute_xpath(line: str) -> bool:
+    """Absolute XPath only: a quoted ``/html/body`` or an XPath locator with ``/html``."""
+    if any(_HTML_BODY in match.group("body") for match in _STRING.finditer(line)):
+        return True
+    html = re.escape(_HTML)
+    patterns = (
+        r"(?<![\w])xpath\s*=\s*['\"]?\s*" + html,
+        r"By\.xpath\s*\([^)\n]*" + html,
+        r"By\.XPATH\b[^)\n]*" + html,
+        r"find_element\s*\(\s*['\"]xpath['\"]\s*,[^)\n]*" + html,
+        r"find_element\s*\(\s*By\.XPATH\b[^)\n]*" + html,
+        r"locator\s*\(\s*['\"]xpath=[^'\"]*" + html,
+    )
+    return any(re.search(pattern, line) for pattern in patterns)
+
+
 def _pattern_hits(path: str, lines_by_no: dict[int, str], added: Iterable[tuple[int, str]]) -> list[dict]:
     hits: list[dict] = []
     for number, line in added:
@@ -333,7 +368,7 @@ def _pattern_hits(path: str, lines_by_no: dict[int, str], added: Iterable[tuple[
             hits.append(_hit("skip-or-only", number, line, path))
         if _FULL_SOURCE.search(line) and not _has_token(lines_by_no, number, ("full-source-justified:",)):
             hits.append(_hit("full-source", number, line, path))
-        if _XPATH.search(line):
+        if _absolute_xpath(line):
             hits.append(_hit("absolute-xpath", number, line, path))
         if _deep_css(line) and not _has_token(lines_by_no, number, ("e2e-allow-css:",)):
             hits.append(_hit("deep-css", number, line, path))
@@ -418,6 +453,99 @@ def _pass_is_only_body(lines_by_no: dict[int, str], pass_line: int) -> bool:
     return True
 
 
+def _is_floor_division(prefix: str, after: str) -> bool:
+    """True when ``//`` sits between two Python operands, not a comment."""
+    before = prefix.rstrip()
+    if not before or _FLOOR_BEFORE.search(before) is None:
+        return False
+    token = after.lstrip()
+    if _COMMENT_KEYWORD.match(token) or _PROSE_WORDS.search(token):
+        return False
+    return _FLOOR_AFTER.match(token) is not None
+
+
+def _opens_line_comment(text: str, index: int) -> bool:
+    """True when ``//`` starts a comment. URLs and floor division do not."""
+    if not text.startswith("//", index):
+        return False
+    if index > 0 and text[index - 1] == ":":
+        return False
+    line_start = text.rfind("\n", 0, index) + 1
+    line_end = text.find("\n", index)
+    if line_end == -1:
+        line_end = len(text)
+    line = text[line_start:line_end]
+    if _is_floor_division(text[line_start:index], text[index + 2 : line_end]) and not any(
+        marker in line for marker in _JS_LINE_MARKERS
+    ):
+        return False
+    return True
+
+
+def _mask_counted_source(text: str) -> str:
+    """Blank ``#``, ``//``, and ``/* */`` comments. Quoted markers stay."""
+    out: list[str] = []
+    index = 0
+    limit = len(text)
+    while index < limit:
+        if text.startswith(("'''", '"""'), index):
+            quote = text[index : index + 3]
+            end = text.find(quote, index + 3)
+            if end == -1:
+                out.append(text[index:])
+                break
+            out.append(text[index : end + 3])
+            index = end + 3
+            continue
+        if text[index] in "\"'`":
+            quote = text[index]
+            out.append(quote)
+            cursor = index + 1
+            while cursor < limit:
+                if text[cursor] == "\\" and cursor + 1 < limit:
+                    out.append(text[cursor : cursor + 2])
+                    cursor += 2
+                    continue
+                if text[cursor] == quote:
+                    out.append(quote)
+                    cursor += 1
+                    break
+                if text[cursor] == "\n" and quote != "`":
+                    break
+                out.append(text[cursor])
+                cursor += 1
+            index = cursor
+            continue
+        if text[index] == "#":
+            end = text.find("\n", index)
+            if end == -1:
+                out.append(" " * (limit - index))
+                break
+            out.append(" " * (end - index))
+            index = end
+            continue
+        if text.startswith("/*", index):
+            end = text.find("*/", index + 2)
+            stop = limit if end == -1 else end + 2
+            chunk = text[index:stop]
+            out.append("".join("\n" if char == "\n" else " " for char in chunk))
+            if end == -1:
+                break
+            index = end + 2
+            continue
+        if _opens_line_comment(text, index):
+            end = text.find("\n", index)
+            if end == -1:
+                out.append(" " * (limit - index))
+                break
+            out.append(" " * (end - index))
+            index = end
+            continue
+        out.append(text[index])
+        index += 1
+    return "".join(out)
+
+
 def _assert_expression(rest: str) -> str:
     """Expression after ``assert``, without a trailing message or comment."""
     depth = 0
@@ -429,22 +557,45 @@ def _assert_expression(rest: str) -> str:
             depth += 1
         elif char in ")]}":
             depth = max(0, depth - 1)
-        elif char == "," and depth == 0:
+        elif char in ",;" and depth == 0:
             break
         out.append(char)
     return "".join(out).strip()
 
 
+def _unwrap_assert_parens(expr: str) -> str:
+    """Drop outer parentheses so ``assert (True)`` and ``assert ((flag))`` classify."""
+    text = expr.strip()
+    while len(text) >= 2 and text[0] == "(" and text[-1] == ")":
+        depth = 0
+        wraps = True
+        for index, char in enumerate(text):
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+                if depth == 0 and index != len(text) - 1:
+                    wraps = False
+                    break
+            if depth < 0:
+                wraps = False
+                break
+        if not wraps or depth != 0:
+            break
+        text = text[1:-1].strip()
+    return text
+
+
 def _bare_assert_strength(line: str) -> tuple[int, int]:
     """Strong and weak counts for bare ``assert`` statements on one line.
 
-    ``assert True``, ``assert 1``, ``assert not False``, and ``assert name``
-    are weak. Comparisons, membership, and calls stay strong.
+    ``assert True``, ``assert (True)``, ``assert 1``, ``assert flag``, and
+    ``assert not flag`` are weak. Comparisons, membership, and calls stay strong.
     """
     strong = 0
     weak = 0
     for match in _BARE_ASSERT.finditer(line):
-        expr = _assert_expression(line[match.end() :])
+        expr = _unwrap_assert_parens(_assert_expression(line[match.end() :]))
         if _TRIVIAL_ASSERT_EXPR.fullmatch(expr):
             weak += 1
         else:
@@ -453,15 +604,18 @@ def _bare_assert_strength(line: str) -> tuple[int, int]:
 
 
 def _counts(text: str) -> tuple[int, int, int]:
+    """Count each assertion call. A weak matcher does not hide a sibling strong one."""
     strong = 0
     weak = 0
-    for line in (text or "").splitlines():
-        # A weak matcher on the line is only weak. ``expect().toBeTruthy()``
-        # must not also count the ``expect(`` as strong.
-        if _WEAK.search(line):
-            weak += len(_WEAK.findall(line))
-            continue
+    masked = _mask_counted_source(text or "")
+    for line in masked.splitlines():
+        weak += len(_WEAK.findall(line))
         strong += len(_STRONG.findall(line))
+        expects = list(_EXPECT.finditer(line))
+        for index, exp in enumerate(expects):
+            end = expects[index + 1].start() if index + 1 < len(expects) else len(line)
+            if _WEAK_MATCHER.search(line[exp.end() : end]) is None:
+                strong += 1
         bare_strong, bare_weak = _bare_assert_strength(line)
         strong += bare_strong
         weak += bare_weak
@@ -491,7 +645,12 @@ def _assertion_hits(
         hits.append(_hit("assertion-weakening", line_no, "assertion removed or downgraded", path))
     function_hits = _missing_test_functions(path, new_text, lines_by_no, None if is_new else added_numbers)
     hits.extend(function_hits)
-    if is_new and not function_hits and not _ANY_ASSERT.search(new_text) and "assert-justified:" not in new_text:
+    if (
+        is_new
+        and not function_hits
+        and not _ANY_ASSERT.search(_mask_counted_source(new_text))
+        and "assert-justified:" not in new_text
+    ):
         if new_text.strip():
             hits.append(_hit("assertion-weakening", 1, "new test file lacks an assertion", path))
     return hits
@@ -544,7 +703,7 @@ def _missing_python_tests(
             continue
         end = int(getattr(node, "end_lineno", node.lineno) or node.lineno)
         body = "\n".join(lines_by_no.get(index, "") for index in range(node.lineno, end + 1))
-        if _ANY_ASSERT.search(body) or "assert-justified:" in body:
+        if _ANY_ASSERT.search(_mask_counted_source(body)) or "assert-justified:" in body:
             continue
         if node.lineno > 1 and "assert-justified:" in lines_by_no.get(node.lineno - 1, ""):
             continue
@@ -580,7 +739,7 @@ def _missing_regex_tests(
             if later - number > 80:
                 break
         body = "\n".join(chunk)
-        if _ANY_ASSERT.search(body) or "assert-justified:" in body:
+        if _ANY_ASSERT.search(_mask_counted_source(body)) or "assert-justified:" in body:
             continue
         if number > 1 and "assert-justified:" in lines_by_no.get(number - 1, ""):
             continue

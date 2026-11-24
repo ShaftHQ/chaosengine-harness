@@ -3665,11 +3665,11 @@ _QUALITY_WRITE_KEYS = (
     "Content",
     "Text",
     "new_string",
-    "newString",
     "input",
 )
 _QUALITY_OLD_KEYS = (
     "old_string",
+    "oldString",
     "old_str",
     "oldText",
     "old_text",
@@ -3680,6 +3680,7 @@ _QUALITY_OLD_KEYS = (
 )
 _QUALITY_NEW_KEYS = (
     "new_string",
+    "newString",
     "new_str",
     "newText",
     "new_text",
@@ -3690,6 +3691,7 @@ _QUALITY_NEW_KEYS = (
     "content",
     "Content",
 )
+_QUALITY_CHUNK_KEYS = ("ReplacementChunks", "replacementChunks", "replacements")
 _QUALITY_PATCH_KEYS = ("input", "patch", "diff")
 _GAP_EXIT2_HOSTS = frozenset({"grok", "copilot", "cursor", "opencode"})
 
@@ -3780,13 +3782,23 @@ def _append_gap_exit2(host: str, reason: str) -> str:
     return f"{reason} {sentence}"
 
 
+def _quality_chunks(tool_input: Mapping) -> list:
+    """Replacement arrays under every supported chunk key, in key order."""
+    found: list = []
+    for key in _QUALITY_CHUNK_KEYS:
+        chunks = tool_input.get(key)
+        if isinstance(chunks, list) and chunks:
+            found.extend(chunks)
+    return found
+
+
 def _quality_edit_report(module, path: str, tool_input: Mapping, existing: str | None):
-    """Score one Edit payload, including Antigravity replacement chunks.
+    """Score one Edit payload, including replacement chunk arrays.
 
     An edit with no recognized old/new keys is not a whole-file delete.
     """
-    chunks = tool_input.get("ReplacementChunks")
-    if isinstance(chunks, list) and chunks:
+    chunks = _quality_chunks(tool_input)
+    if chunks:
         current = existing
         report = None
         recognized = False
@@ -3853,7 +3865,9 @@ def _test_quality_block(
                     return None
             else:
                 content = _first_str(tool_input, _QUALITY_WRITE_KEYS)
-                report = module.evaluate_content(path, "" if content is None else content, existing)
+                if content is None:
+                    return None
+                report = module.evaluate_content(path, content, existing)
     except Exception:
         return None
     if not isinstance(report, dict) or report.get("ok", True):

@@ -55,7 +55,11 @@ def by_xpath() -> str:
 
 
 def locator_call() -> str:
-    return cat("locator(", '"', "/", "ht", "ml")
+    return cat("locator(", '"', "xpath=", "/", "ht", "ml")
+
+
+def html_path(tail: str) -> str:
+    return cat("/", "ht", "ml", tail)
 
 
 def find_element_xpath() -> str:
@@ -342,7 +346,6 @@ class QualityGateTests(unittest.TestCase):
             "tests/helpers.py",
             "tests/__init__.py",
             "tests/fixtures/data.json",
-            "tests/fixtures/test_data.py",
             "tests/utils/helper.py",
             "tests/support/flow.py",
             "e2e/pages/LoginPage.ts",
@@ -439,6 +442,15 @@ class QualityGateTests(unittest.TestCase):
         for label, line in (
             ("report", f"    client.get({quoted_root('/report')})"),
             ("index", f"    page = {quoted_root('/index.html')}"),
+            ("bare-head", f"    el = {quoted_root('/head')}"),
+            ("bare-div", f"    el = {quoted_root('/div')}"),
+            ("bare-predicate", f"    el = {quoted_root('[')}"),
+            ("id-report", f"    driver.find_element('id', {quoted_root('/report')})"),
+            (
+                "css-report",
+                f"    driver.find_element('css selector', \"a[href={quoted_root('/report')}]\")",
+            ),
+            ("goto", f"    page.goto('https://example.com{html_path('/report')}')"),
         ):
             text = fn_with(line, "    assertEqual(1, 1)")
             with self.subTest(label=label):
@@ -446,9 +458,9 @@ class QualityGateTests(unittest.TestCase):
                 self.assertTrue(gate.evaluate_content("tests/test_url.py", text)["ok"])
         for label, line in (
             ("body", f"    el = {quoted_root('/body')}"),
-            ("head", f"    el = {quoted_root('/head')}"),
-            ("div", f"    el = {quoted_root('/div')}"),
-            ("predicate", f"    el = {quoted_root('[')}"),
+            ("head", f"    el = By.xpath({quoted_root('/head')})"),
+            ("div", f"    el = find_element('xpath', {quoted_root('/div')})"),
+            ("predicate", f"    el = {xpath_eq()}["),
             ("xpath-eq", f"    el = {xpath_eq()}"),
             ("by-xpath", f"    el = {by_xpath()}"),
             ("locator", f"    el = {locator_call()}"),
@@ -457,6 +469,156 @@ class QualityGateTests(unittest.TestCase):
             text = fn_with(line, "    assertEqual(1, 1)")
             with self.subTest(label=label):
                 self.assertIn("absolute-xpath", self._hits(text), text)
+
+    def test_f2_comments_do_not_change_assertion_counts(self):
+        gate = self.gate
+        commented = "assert x == 5  # .toBeTruthy was rejected\n"
+        self.assertEqual((1, 0), gate._counts(commented)[:2])
+        self.assertEqual((1, 0), gate._counts("assert x == 5  // .toBeTruthy was rejected\n")[:2])
+        self.assertEqual((1, 0), gate._counts("assert x == 5 /* .toBeTruthy() */\n")[:2])
+        self.assertEqual((0, 0), gate._counts("# assert x == 5\n")[:2])
+        self.assertEqual((0, 0), gate._counts("// assert x == 5\n")[:2])
+        self.assertEqual((0, 0), gate._counts("/* assert x == 5 */\n")[:2])
+        self.assertEqual((1, 0), gate._counts("assert 4 // 2 == 2\n")[:2])
+        self.assertEqual((1, 0), gate._counts("assert x // y == 1\n")[:2])
+        preserved = "note = \"# .toBeTruthy was rejected\"\n"
+        self.assertEqual(1, gate._counts(preserved)[1])
+        same = "expect(res.status).toBe(200); expect(res.ok).toBeTruthy()\n"
+        split = "expect(res.status).toBe(200)\nexpect(res.ok).toBeTruthy()\n"
+        self.assertEqual(gate._counts(same), gate._counts(split))
+        self.assertEqual((1, 1), gate._counts(same)[:2])
+        old = fn_with("    assert x == 5")
+        kept = fn_with("    assert x == 5  # .toBeTruthy was rejected")
+        self.assertTrue(gate.evaluate_content("tests/test_ok.py", kept, old)["ok"])
+        removed = fn_with("    # assert x == 5")
+        report = gate.evaluate_content("tests/test_bad.py", removed, old)
+        self.assertFalse(report["ok"])
+        self.assertIn("assertion-weakening", {hit["code"] for hit in report["hits"]})
+        script = "pkg/pay.test.js"
+        before = "expect(res.status).toBe(200)\nexpect(res.ok).toBeTruthy()\n"
+        after = "expect(res.status).toBe(200); expect(res.ok).toBeTruthy()\n"
+        self.assertTrue(gate.evaluate_content(script, after, before)["ok"])
+
+    def test_f3_f12_test_filename_beats_helper_directories(self):
+        gate = self.gate
+        matched = (
+            "e2e/pages/login.spec.ts",
+            "e2e/Pages/login.spec.ts",
+            "tests/utils/test_login.py",
+            "tests/support/flow.spec.ts",
+            "tests/fixtures/test_login.py",
+            "tests/fixtures/test_data.py",
+            "tests/helpers/test_common.py",
+            "tests/foo.py",
+        )
+        for path in matched:
+            self.assertTrue(gate.is_test_path(path), path)
+        spared = (
+            "tests/helpers/common.py",
+            "tests/Helpers/common.py",
+            "tests/helper.py",
+            "tests/Helper.py",
+            "e2e/page-objects/LoginPage.ts",
+            "e2e/pageobjects/LoginPage.ts",
+            "e2e/PageObjects/LoginPage.ts",
+            "tests/conftest.py",
+            "tests/fixtures/data.json",
+            "tests/README.md",
+            "vendor/tests/test_foo.py",
+            "Vendor/tests/test_foo.py",
+            "node_modules/pkg/foo.test.js",
+        )
+        noisy = fn_with(f"    {sleep_for()}", "    assertEqual(1, 1)")
+        for path in spared:
+            with self.subTest(path=path):
+                self.assertFalse(gate.is_test_path(path), path)
+                self.assertTrue(gate.evaluate_content(path, noisy, None)["ok"])
+        flagged = gate.evaluate_content("tests/fixtures/test_data.py", noisy, None)
+        self.assertFalse(flagged["ok"])
+        self.assertIn("sleep", {hit["code"] for hit in flagged["hits"]})
+        diff = "\n".join(
+            (
+                "diff --git a/tests/fixtures/test_data.py b/tests/fixtures/test_data.py",
+                "new file mode 100644",
+                "--- /dev/null",
+                "+++ b/tests/fixtures/test_data.py",
+                "@@ -0,0 +1,3 @@",
+                "+def test_pays():",
+                "+    " + sleep_for(),
+                "+    assertEqual(1, 1)",
+            )
+        )
+        findings = self.pre_done.mechanical_problems({"proof_required": False, "diff": diff})
+        self.assertTrue(any(item.startswith("test-quality:") for item in findings), findings)
+
+    def test_f4_xpath_needs_body_or_locator_context(self):
+        gate = self.gate
+        quiet = (
+            f"    driver.find_element('id', {quoted_root('/report')})",
+            f"    driver.find_element('css selector', \"a[href={quoted_root('/report')}]\")",
+            f"    client.get({quoted_root('/report')})",
+            f"    page.goto('https://example.com{html_path('/report')}')",
+            f"    el = {quoted_root('/head')}",
+            f"    locator({quoted_root('/report')})",
+        )
+        for line in quiet:
+            text = fn_with(line, "    assertEqual(1, 1)")
+            self.assertNotIn("absolute-xpath", self._hits(text), text)
+            self.assertTrue(gate.evaluate_content("tests/test_url.py", text)["ok"], text)
+        loud = (
+            f"    el = {quoted_root('/body')}",
+            f"    el = find_element(By.XPATH, {quoted_root('/head')})",
+            f"    el = find_element('xpath', {quoted_root('/report')})",
+            f"    el = find_element(\"xpath\", {quoted_root('/report')})",
+            f"    el = {locator_call()}",
+            f"    el = {xpath_eq()}",
+            f"    el = {by_xpath()}",
+        )
+        for line in loud:
+            text = fn_with(line, "    assertEqual(1, 1)")
+            self.assertIn("absolute-xpath", self._hits(text), text)
+
+    def test_f7_parenthesized_and_negated_bare_asserts_are_weak(self):
+        gate = self.gate
+        strong = fn_with("    assert x == 5")
+        for body in (
+            "    assert (True)",
+            "    assert ((flag))",
+            "    assert not flag",
+            "    assert (not flag)",
+            "    assert not False",
+            "    assert 1",
+            "    assert flag",
+        ):
+            with self.subTest(body=body):
+                weakened = fn_with(body)
+                self.assertIn("assertion-weakening", self._hits(weakened, strong))
+                self.assertFalse(gate.evaluate_content("tests/test_bad.py", weakened, strong)["ok"])
+        for body in (
+            "    assert x == 6",
+            "    assert a in b",
+            "    assert fn(x)",
+            "    assert len(xs) > 0",
+            "    assert (x == 5)",
+        ):
+            with self.subTest(body=body):
+                self.assertTrue(
+                    gate.evaluate_content("tests/test_ok.py", fn_with(body), strong)["ok"],
+                    body,
+                )
+
+    def test_f8_to_be_true_false_empty_are_weak(self):
+        gate = self.gate
+        script = "pkg/pay.test.js"
+        before = "expect(res.status).toBe(200)\n"
+        for matcher in ("toBeTrue", "toBeFalse", "toBeEmpty"):
+            after = f"expect(res.status).{matcher}()\n"
+            with self.subTest(matcher=matcher):
+                report = gate.evaluate_content(script, after, before)
+                self.assertFalse(report["ok"])
+                self.assertIn("assertion-weakening", {hit["code"] for hit in report["hits"]})
+        kept = gate.evaluate_content(script, "expect(a).toEqual(1)\n", before)
+        self.assertTrue(kept["ok"], kept)
 
 
 class GuardParityTests(unittest.TestCase):
@@ -794,6 +956,81 @@ class GuardParityTests(unittest.TestCase):
             self.assertEqual(0, allowed.returncode, allowed_blob)
             self.assertFalse(self._denied(self._payload(allowed, "codex")), allowed_blob)
             self.assertNotIn("Test quality gate", allowed_blob)
+
+    def test_f1_write_without_content_does_not_score_the_existing_file(self):
+        self.assertNotIn("newString", self.guard._QUALITY_WRITE_KEYS)
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            target = project / "tests" / "test_keep.py"
+            target.parent.mkdir(parents=True)
+            target.write_text(fn_with("    assertEqual(1, 1)"), encoding="utf-8")
+            event = {"hook_event_name": "PreToolUse", "cwd": str(project), "session_id": "f1"}
+            missing = {"file_path": "tests/test_keep.py"}
+            self.assertIsNone(
+                self.guard._test_quality_block(event, "PreToolUse", "Write", missing, "claude")
+            )
+            camel = {"TargetFile": "tests/test_keep.py", "newString": "    " + sleep_for()}
+            self.assertIsNone(
+                self.guard._test_quality_block(event, "PreToolUse", "write_to_file", camel, "claude")
+            )
+            bad = {
+                "file_path": "tests/test_keep.py",
+                "content": fn_with(f"    {sleep_for()}", "    assertEqual(1, 1)"),
+            }
+            self.assertEqual(
+                2, self.guard._test_quality_block(event, "PreToolUse", "Write", bad, "claude")
+            )
+
+    def test_f6_camel_case_and_chunk_arrays_score_edits(self):
+        self.assertIn("oldString", self.guard._QUALITY_OLD_KEYS)
+        self.assertIn("newString", self.guard._QUALITY_NEW_KEYS)
+        self.assertNotIn("newString", self.guard._QUALITY_WRITE_KEYS)
+        bad_new = "    " + sleep_for() + "\n    assertEqual(1, 1)"
+        clean = {
+            "filePath": "tests/test_new.py",
+            "old_string": "assertEqual(1, 1)",
+            "newString": "assertEqual(2, 2)",
+        }
+        self.assertIsNone(self._block("PreToolUse", "Edit", clean)[0])
+        denied = (
+            {
+                "filePath": "tests/test_new.py",
+                "oldString": "    assertEqual(1, 1)",
+                "newString": bad_new,
+            },
+            {
+                "filePath": "tests/test_new.py",
+                "replacements": [
+                    {"old_string": "    assertEqual(1, 1)", "new_string": bad_new},
+                ],
+            },
+            {
+                "filePath": "tests/test_new.py",
+                "replacementChunks": [
+                    {"oldString": "    assertEqual(1, 1)", "newString": bad_new},
+                ],
+            },
+            {
+                "filePath": "tests/test_new.py",
+                "ReplacementChunks": [
+                    {
+                        "old_string": "    assertEqual(1, 1)",
+                        "newString": bad_new,
+                    }
+                ],
+            },
+            {
+                "TargetFile": "tests/test_new.py",
+                "replacements": [
+                    {"TargetContent": "    assertEqual(1, 1)", "ReplacementContent": bad_new},
+                ],
+            },
+        )
+        for payload in denied:
+            with self.subTest(payload=sorted(payload)):
+                code, rendered = self._block("PreToolUse", "Edit", payload)
+                self.assertEqual(2, code, rendered)
+                self.assertIn("sleep", rendered)
 
 
 class PreDoneParityTests(unittest.TestCase):

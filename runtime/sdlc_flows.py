@@ -1033,15 +1033,46 @@ def _blank_keep_breaks(chunk: str) -> str:
     return "".join("\n" if char == "\n" else " " for char in chunk)
 
 
+_JS_LINE_MARKERS = ("=>", ";", "{", "}", "const ", "let ", "var ", "function ", "it(", "test(")
+_FLOOR_BEFORE = re.compile(r"(?:\)|\]|\d|[A-Za-z_]\w*)$")
+_FLOOR_AFTER = re.compile(
+    r"(?:\d+|\(|\[|[A-Za-z_]\w*)\s*(?:==|!=|<=|>=|<|>|\+|-|\*|//|/|%|\)|\]|,|$)"
+)
+_COMMENT_KEYWORD = re.compile(r"(?:assert|expect|raise)\b")
+_PROSE_WORDS = re.compile(r"[A-Za-z_]\w*\s+[A-Za-z_]")
+
+
+def _is_floor_division(prefix: str, after: str) -> bool:
+    """True when ``//`` sits between two Python operands, not a comment."""
+    before = prefix.rstrip()
+    if not before or _FLOOR_BEFORE.search(before) is None:
+        return False
+    token = after.lstrip()
+    if _COMMENT_KEYWORD.match(token) or _PROSE_WORDS.search(token):
+        return False
+    return _FLOOR_AFTER.match(token) is not None
+
+
 def _slash_line_comment(text: str, index: int) -> bool:
-    """True when ``//`` starts a comment, not Python floor division."""
+    """True when ``//`` starts a comment. URLs and Python floor division do not.
+
+    A code-marker line (``=>``, ``const``, ``it(``, and the rest) is a comment
+    even when the tail looks like floor division. ``http://`` stays.
+    """
     if not text.startswith("//", index):
         return False
+    if index > 0 and text[index - 1] == ":":
+        return False
     line_start = text.rfind("\n", 0, index) + 1
-    prefix = text[line_start:index]
-    if prefix.strip() == "":
-        return True
-    return prefix.rstrip().endswith((";", "{", "}"))
+    line_end = text.find("\n", index)
+    if line_end == -1:
+        line_end = len(text)
+    line = text[line_start:line_end]
+    if _is_floor_division(text[line_start:index], text[index + 2 : line_end]) and not any(
+        marker in line for marker in _JS_LINE_MARKERS
+    ):
+        return False
+    return True
 
 
 def _mask_source(text: str) -> str:
@@ -1060,6 +1091,23 @@ def _mask_source(text: str) -> str:
             out.append(_blank_keep_breaks(text[index + 3 : end]))
             out.append(quote)
             index = end + 3
+            continue
+        if text[index] == "`":
+            out.append("`")
+            cursor = index + 1
+            while cursor < limit:
+                if text[cursor] == "\\" and cursor + 1 < limit:
+                    out.append(" ")
+                    out.append("\n" if text[cursor + 1] == "\n" else " ")
+                    cursor += 2
+                    continue
+                if text[cursor] == "`":
+                    out.append("`")
+                    cursor += 1
+                    break
+                out.append("\n" if text[cursor] == "\n" else " ")
+                cursor += 1
+            index = cursor
             continue
         if text[index] in "\"'":
             quote = text[index]
