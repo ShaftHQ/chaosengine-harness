@@ -558,7 +558,7 @@ def _pure_command_sub_body(word: str) -> str | None:
     """Inner script when ``word`` is exactly one ``$(...)`` or backtick command."""
     if word.startswith("$(") and not word.startswith("$(("):
         try:
-            end = _scan_balanced_paren(word, 1, allow_heredocs=True)
+            end = _scan_balanced_paren(word, 1)
         except ValueError:
             return None
         if end != len(word):
@@ -2116,44 +2116,11 @@ def _scan_backtick(text: str, pos: int, *, in_dquote: bool) -> tuple[str, int]:
     raise ValueError("No closing quotation")
 
 
-def _consume_heredoc_bodies_in_paren(text: str, pos: int, pending: list[_Heredoc]) -> int:
-    """Consume queued heredoc bodies inside ``$(...)``, failing closed on ambiguity."""
-    n = len(text)
-    for hd in pending:
-        lines: list[str] = []
-        while pos < n:
-            nl = text.find("\n", pos)
-            if nl == -1:
-                line = text[pos:]
-                pos = n
-                has_nl = False
-            else:
-                line = text[pos:nl]
-                pos = nl + 1
-                has_nl = True
-            stripped = line.lstrip("\t") if hd.strip_tabs else line
-            if stripped == hd.delimiter:
-                hd.closed = True
-                break
-            # Bash may terminate a heredoc inside $(...) early when a line starts
-            # with the delimiter and contains ')'. Fail closed so trailing commands
-            # can never be smuggled past the heredoc body.
-            if stripped.startswith(hd.delimiter) and ")" in stripped[len(hd.delimiter) :]:
-                raise ValueError("heredoc delimiter shares line with ')'")
-            lines.append((stripped if hd.strip_tabs else line) + ("\n" if has_nl else ""))
-        hd.body = "".join(lines)
-        if not hd.closed:
-            raise ValueError("unclosed heredoc")
-    pending.clear()
-    return pos
-
-
-def _scan_balanced_paren(text: str, pos: int, *, allow_heredocs: bool = False) -> int:
+def _scan_balanced_paren(text: str, pos: int) -> int:
     """Given text[pos] == '(', return index right after matching ')'. Raises ValueError if unclosed."""
     depth = 0
     index = pos
     n = len(text)
-    pending_heredocs: list[_Heredoc] = []
     while index < n:
         ch = text[index]
         if ch == "\\":
@@ -2165,13 +2132,6 @@ def _scan_balanced_paren(text: str, pos: int, *, allow_heredocs: bool = False) -
         if ch == "$" and index + 1 < n and text[index + 1] == "'":
             _, index = _scan_ansi_c_quote(text, index)
             continue
-        if ch == "$" and index + 1 < n and text[index + 1] == "{":
-            index = _scan_balanced_brace(text, index, None)
-            continue
-        if ch == "$" and index + 1 < n and text[index + 1] == "(":
-            is_arith = index + 2 < n and text[index + 2] == "("
-            index = _scan_balanced_paren(text, index + 1, allow_heredocs=not is_arith)
-            continue
         if ch == '"':
             _, index = _scan_double_quote(text, index, None)
             continue
@@ -2180,37 +2140,15 @@ def _scan_balanced_paren(text: str, pos: int, *, allow_heredocs: bool = False) -
             continue
         if ch == "#" and (index == pos or text[index - 1] in " \t\n;&|("):
             nl = text.find("\n", index)
-            index = n if nl == -1 else nl
+            index = n if nl == -1 else nl + 1
             continue
-        if ch == "\n":
-            index += 1
-            if pending_heredocs:
-                index = _consume_heredoc_bodies_in_paren(text, index, pending_heredocs)
-            continue
-        if allow_heredocs and ch in "<>" and index + 1 < n and text[index + 1] == "(":
-            index = _scan_balanced_paren(text, index + 1, allow_heredocs=True)
-            continue
-        if allow_heredocs and ch == "<":
-            if text.startswith("<<<", index):
-                index += 3
-                continue
-            if text.startswith("<<-", index) or text.startswith("<<", index):
-                strip_tabs = text.startswith("<<-", index)
-                delim, quoted, index = _read_heredoc_delimiter(text, index + (3 if strip_tabs else 2))
-                pending_heredocs.append(_Heredoc(delimiter=delim, strip_tabs=strip_tabs, quoted=quoted))
-                continue
         if ch == "(":
-            if allow_heredocs and index > pos and text.startswith("((", index):
-                index = _scan_balanced_paren(text, index, allow_heredocs=False)
-                continue
             depth += 1
             index += 1
         elif ch == ")":
             depth -= 1
             index += 1
             if depth == 0:
-                if pending_heredocs:
-                    raise ValueError("unclosed heredoc")
                 return index
         else:
             index += 1
@@ -2242,9 +2180,8 @@ def _scan_balanced_brace(text: str, pos: int, cmd_subs: list[str] | None) -> int
                 cmd_subs.append(inner)
             continue
         if ch == "$" and index + 1 < n and text[index + 1] == "(":
-            is_arith = index + 2 < n and text[index + 2] == "("
-            end = _scan_balanced_paren(text, index + 1, allow_heredocs=not is_arith)
-            if is_arith:
+            end = _scan_balanced_paren(text, index + 1)
+            if index + 2 < n and text[index + 2] == "(":
                 _note_arith_cmd_subs(text, index, end, cmd_subs)
             elif cmd_subs is not None:
                 cmd_subs.append(text[index + 2 : end - 1])
@@ -2295,9 +2232,8 @@ def _scan_double_quote(text: str, pos: int, cmd_subs: list[str] | None) -> tuple
         if ch == "$" and index + 1 < n:
             nxt = text[index + 1]
             if nxt == "(":
-                is_arith = index + 2 < n and text[index + 2] == "("
-                end = _scan_balanced_paren(text, index + 1, allow_heredocs=not is_arith)
-                if is_arith:
+                end = _scan_balanced_paren(text, index + 1)
+                if index + 2 < n and text[index + 2] == "(":
                     _note_arith_cmd_subs(text, index, end, cmd_subs)
                 elif cmd_subs is not None:
                     cmd_subs.append(text[index + 2 : end - 1])
@@ -2325,16 +2261,6 @@ def _note_arith_cmd_subs(text: str, dollar_at: int, end: int, cmd_subs: list[str
     cmd_subs.extend(_scan_heredoc_cmd_subs(text[body_start:body_end]))
 
 
-def _has_delete_hint(text: str) -> bool:
-    """True when ``text`` contains a visible shell or Python delete marker."""
-    return bool(
-        DELETE_WORD.search(text)
-        or RMTREE.search(text)
-        or PATHLIB_DELETE.search(text)
-        or PY_DELETE_HINT.search(text)
-    )
-
-
 def _scan_heredoc_cmd_subs(body: str) -> list[str]:
     """Extract unescaped $(...) and `...` substitutions from an unquoted heredoc body."""
     subs: list[str] = []
@@ -2349,36 +2275,25 @@ def _scan_heredoc_cmd_subs(body: str) -> list[str]:
             try:
                 inner, index = _scan_backtick(body, index, in_dquote=False)
                 subs.append(inner)
-            except ValueError as error:
-                if _has_delete_hint(body[index:]):
-                    raise Unsure(f"unparsable delete: {error}") from error
+            except ValueError:
                 index += 1
             continue
         if ch == "$" and index + 1 < n and body[index + 1] == "(":
             if index + 2 < n and body[index + 2] == "(":
                 try:
                     end = _scan_balanced_paren(body, index + 1)
-                except ValueError as error:
-                    prefix = (
-                        "unparsable delete"
-                        if _has_delete_hint(body[index:])
-                        else "unparsable command substitution"
-                    )
-                    raise Unsure(f"{prefix}: {error}") from error
+                except ValueError:
+                    index += 3
+                    continue
                 _note_arith_cmd_subs(body, index, end, subs)
                 index = end
                 continue
             try:
-                end = _scan_balanced_paren(body, index + 1, allow_heredocs=True)
+                end = _scan_balanced_paren(body, index + 1)
                 subs.append(body[index + 2 : end - 1])
                 index = end
-            except ValueError as error:
-                prefix = (
-                    "unparsable delete"
-                    if _has_delete_hint(body[index:])
-                    else "unparsable command substitution"
-                )
-                raise Unsure(f"{prefix}: {error}") from error
+            except ValueError:
+                index += 2
             continue
         index += 1
     return subs
@@ -2409,7 +2324,7 @@ def _read_shell_word(
         if ch in " \t\n;&|()<>":
             # Process substitution <(...) or >(...) is part of a word.
             if ch in "<>" and index + 1 < n and text[index + 1] == "(":
-                end = _scan_balanced_paren(text, index + 1, allow_heredocs=True)
+                end = _scan_balanced_paren(text, index + 1)
                 if cmd_subs is not None:
                     cmd_subs.append(text[index + 2 : end - 1])
                 push(text[index:end], False)
@@ -2463,9 +2378,8 @@ def _read_shell_word(
                 push(val, True)
                 continue
             if nxt == "(":
-                is_arith = index + 2 < n and text[index + 2] == "("
-                end = _scan_balanced_paren(text, index + 1, allow_heredocs=not is_arith)
-                if is_arith:
+                end = _scan_balanced_paren(text, index + 1)
+                if index + 2 < n and text[index + 2] == "(":
                     _note_arith_cmd_subs(text, index, end, cmd_subs)
                 elif cmd_subs is not None:
                     cmd_subs.append(text[index + 2 : end - 1])
@@ -2673,10 +2587,7 @@ def _parse_shell(command: str) -> list[tuple[str, object]]:
             continue
         if ch == "(":
             if text.startswith("((", pos):
-                end = _scan_balanced_paren(text, pos)
-                if end - 2 > pos + 2:
-                    current.cmd_subs.extend(_scan_heredoc_cmd_subs(text[pos + 2 : end - 2]))
-                pos = end
+                pos = _scan_balanced_paren(text, pos)
                 at_command_start = False
                 continue
             if not at_command_start and text.startswith("()", pos):
@@ -2931,7 +2842,12 @@ def _command_targets(
     try:
         events = _parse_shell(command)
     except ValueError as error:
-        if _has_delete_hint(command):
+        if (
+            DELETE_WORD.search(command)
+            or RMTREE.search(command)
+            or PATHLIB_DELETE.search(command)
+            or PY_DELETE_HINT.search(command)
+        ):
             raise Unsure(f"unparsable delete: {error}") from error
         return found, cwd
 
@@ -4926,7 +4842,9 @@ def _delete_check_cli_args(command: str) -> list[str] | None:
     return None
 
 
-_GH_BODY_CMD = re.compile(r"(?:^|[^\w.-])gh\s+(?:issue|pr)\s+(?:create|comment|edit)\b")
+_GH_BODY_CMD = re.compile(
+    r"(?:^|[^\w.-])gh(?:[ \t]+-[A-Za-z0-9-]+(?:=\S+|[ \t]+[^-\s;&|][^\s;&|]*)?)*[ \t]+(?:issue|pr)[ \t]+(?:create|comment|edit)\b"
+)
 
 
 def check(

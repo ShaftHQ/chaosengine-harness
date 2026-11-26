@@ -1,4 +1,4 @@
-"""#240: delete guard gh heredoc / --body-file UX and delegation canary/stall/xdist docs."""
+"""#240: delete guard gh --body-file hint UX and delegation canary/stall/xdist docs."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess  # nosec B404 - fixed git argv in temp fixtures.
 import tempfile
+import time
 import unittest
 import unittest.mock
 from pathlib import Path
@@ -45,6 +46,7 @@ def _git(cwd: Path, *argv: str) -> None:
     )
 
 
+# assertion-justified: Issue #240 FR-3/SC-2 step-back removes heredoc-in-paren parser tests in favor of fail-closed --body-file hint tests.
 class DeleteGuardGhHeredoc240Test(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
@@ -77,71 +79,115 @@ class DeleteGuardGhHeredoc240Test(unittest.TestCase):
     def reason(self, command: str) -> str:
         return GUARD.block_reason(command, self.repo, self.repo)
 
-    # --- Positive cases: benign single-quoted heredoc prose in gh commands ---
+    # --- Positive cases: --body-file allowed; benign arithmetic shift allowed ---
 
-    def test_benign_gh_issue_create_single_quoted_heredoc_with_quotes_and_rm_prose(self) -> None:
-        cmd = (
-            'gh issue create --repo o/r --title "t" --body "$(cat <<\'EOF\'\n'
-            "Use `rm -rf` carefully; don't break\n"
-            'Also mentions "unclosed double quote and (parentheses)\n'
-            "EOF\n"
-            ')"'
-        )
-        self.assertEqual("", self.reason(cmd))
-
-    def test_benign_gh_pr_create_and_issue_comment_single_quoted_heredocs(self) -> None:
+    def test_gh_body_file_commands_are_allowed(self) -> None:
         cases = (
-            (
-                'gh pr create --title "PR" --body "$(cat <<\'EOF\'\n'
-                "Fixes `rm -rf /tmp/foo` prose; don't panic\n"
-                "EOF\n"
-                ')"'
-            ),
-            (
-                'gh issue comment 240 --body "$(cat <<\'EOF\'\n'
-                "Verified `unlink` and \"unmatched quote; won't regress\n"
-                "EOF\n"
-                ')"'
-            ),
-            (
-                'gh pr edit 240 -b "$(cat <<-\'EOF\'\n'
-                "\tTab-stripped prose mentioning rm -rf and don't\n"
-                "\tEOF\n"
-                ')"'
-            ),
+            'gh issue create --repo o/r --title "t" --body-file /tmp/body.md',
+            'gh pr create --title "t" --body-file /tmp/pr-body.md',
+            "gh issue comment 240 --body-file /tmp/comment.md",
+            'gh -R o/r pr edit 240 --body-file /tmp/edit.md',
         )
         for cmd in cases:
             with self.subTest(cmd=cmd):
                 self.assertEqual("", self.reason(cmd))
 
-    def test_arithmetic_left_shift_and_herestring_inside_cmd_sub(self) -> None:
-        self.assertEqual("", self.reason('echo "$(echo $(( 1 << 2 )))"'))
-        self.assertEqual("", self.reason('echo "$(echo $(( 1<(2 << 3) )))"'))
-        self.assertEqual("", self.reason('echo "$(cat <<< \'rm -rf precious.txt\')"'))
-        refused = self.reason(f'echo "$(sh <<< \'rm -rf {self.precious}\')"')
-        self.assertIn("untracked", refused)
-        self.assertIn("precious.txt", refused)
+    def test_benign_array_bitshift_in_cmd_sub_is_allowed(self) -> None:
+        cases = (
+            'echo "$(a[1<<2]=5; echo "rm -rf")"',
+            "echo \"$(a[1<<2]=5; echo 'rm -rf')\"",
+        )
+        for cmd in cases:
+            with self.subTest(cmd=cmd):
+                self.assertEqual("", self.reason(cmd))
 
     # --- Unparsable gh commands: fail closed WITH explicit --body-file hint ---
 
-    def test_unparsable_gh_commands_refuse_with_body_file_hint(self) -> None:
+    def test_unparsable_gh_heredoc_and_quote_commands_refuse_with_body_file_hint(self) -> None:
         cases = (
-            # Genuinely unclosed double quote mentioning rm
+            (
+                'gh issue create --repo o/r --title "t" --body "$(cat <<\'EOF\'\n'
+                "Use `rm -rf` carefully; don't break\n"
+                "EOF\n"
+                ')"'
+            ),
+            (
+                'gh pr create --title "t" --body "$(cat <<\'EOF\'\n'
+                "don't run rm -rf /\n"
+                "EOF\n"
+                ')"'
+            ),
+            (
+                'gh issue comment 240 --body "$(cat <<\'EOF\'\n'
+                "don't run rm -rf /\n"
+                "EOF\n"
+                ')"'
+            ),
+            (
+                'gh pr comment 240 --body "$(cat <<\'EOF\'\n'
+                "don't run rm -rf /\n"
+                "EOF\n"
+                ')"'
+            ),
+            (
+                'gh issue edit 240 --body "$(cat <<\'EOF\'\n'
+                "don't run rm -rf /\n"
+                "EOF\n"
+                ')"'
+            ),
+            (
+                'gh pr edit 240 --body "$(cat <<\'EOF\'\n'
+                "don't run rm -rf /\n"
+                "EOF\n"
+                ')"'
+            ),
+            (
+                'gh -R owner/repo issue create --title "t" --body "$(cat <<\'EOF\'\n'
+                "don't run rm -rf /\n"
+                "EOF\n"
+                ')"'
+            ),
+            (
+                'GH_HOST=github.com gh --repo o/r pr create --title "t" --body "$(cat <<\'EOF\'\n'
+                "don't run rm -rf /\n"
+                "EOF\n"
+                ')"'
+            ),
+            (
+                'gh --repo=o/r issue comment 240 --body "$(cat <<\'EOF\'\n'
+                "don't run rm -rf /\n"
+                "EOF\n"
+                ')"'
+            ),
             'gh issue create --title "t" --body "don\'t run rm -rf precious.txt',
-            # Unclosed heredoc inside $(...)
-            'gh pr create --title "t" --body "$(cat <<\'EOF\'\ndon\'t rm -rf precious.txt\n)"',
-            # Bash EOF) early-close quirk sharing line with ')'
-            'gh issue comment 240 --body "$(cat <<\'EOF\'\nrm -rf precious.txt\nEOF)"',
-            # gh pr edit unclosed quote
-            'gh pr edit 240 --body "mentions rm -rf precious.txt',
         )
         for cmd in cases:
             with self.subTest(cmd=cmd):
                 reason = self.reason(cmd)
-                self.assertIn("unparsable delete", reason)
+                self.assertIn("unparsable delete:", reason)
                 self.assertIn("--body-file", reason)
 
-    # --- Adversarial cases: ALL MUST BE REFUSED ---
+    def test_non_gh_unparsable_delete_refuses_without_body_file_hint(self) -> None:
+        cases = (
+            'rm -rf "$(unclosed',
+            'rm -rf "unterminated',
+            'echo "$(cat <<\'EOF\'\ndon\'t run rm -rf precious.txt\nEOF\n)"',
+        )
+        for cmd in cases:
+            with self.subTest(cmd=cmd):
+                reason = self.reason(cmd)
+                self.assertIn("unparsable delete:", reason)
+                self.assertNotIn("--body-file", reason)
+
+    def test_gh_body_cmd_regex_stays_linear_on_many_flags(self) -> None:
+        cmd = "gh " + " ".join(f"-f{i}" for i in range(60)) + " status"
+        started = time.monotonic()
+        matched = GUARD._GH_BODY_CMD.search(cmd)
+        elapsed = time.monotonic() - started
+        self.assertIsNone(matched)
+        self.assertLess(elapsed, 0.5)
+
+    # --- Adversarial security cases: ALL MUST BE REFUSED ---
 
     def test_adversarial_direct_command_substitution_delete_refused(self) -> None:
         cmd = f'gh issue create --title "t" --body "$(rm -rf {self.precious})"'
@@ -162,29 +208,11 @@ class DeleteGuardGhHeredoc240Test(unittest.TestCase):
                 self.assertIn("untracked", reason)
                 self.assertIn("precious.txt", reason)
 
-    def test_adversarial_trailing_delete_inside_cmd_sub_after_eof_refused(self) -> None:
-        cmd = (
-            'gh issue create --title "t" --body "$(cat <<\'EOF\'\n'
-            "hi\n"
-            "EOF\n"
-            f"rm -rf {self.precious}\n"
-            ')"'
-        )
-        reason = self.reason(cmd)
-        self.assertIn("untracked", reason)
-        self.assertIn("precious.txt", reason)
-
     def test_adversarial_unquoted_heredoc_command_substitution_delete_refused(self) -> None:
         cases = (
             (
                 'gh issue create --title "t" --body "$(cat <<EOF\n'
                 f"$(rm -rf {self.precious})\n"
-                "EOF\n"
-                ')"'
-            ),
-            (
-                'gh issue create --title "t" --body "$(cat <<EOF\n'
-                f"don't break $(rm -rf {self.precious})\n"
                 "EOF\n"
                 ')"'
             ),
@@ -201,30 +229,7 @@ class DeleteGuardGhHeredoc240Test(unittest.TestCase):
                 self.assertIn("untracked", reason)
                 self.assertIn("precious.txt", reason)
 
-    def test_adversarial_eof_same_line_paren_smuggling_refused(self) -> None:
-        cases = (
-            (
-                'gh issue create --title "t" --body "$(cat <<\'EOF\'\n'
-                "hi\n"
-                f'EOF)"; rm -rf {self.precious} #\n'
-                "EOF\n"
-                ')"'
-            ),
-            (
-                'gh issue create --title "t" --body "$(cat <<\'EOF\'\n'
-                "hi\n"
-                f"EOF$(rm -rf {self.precious})\n"
-                "EOF\n"
-                ')"'
-            ),
-        )
-        for cmd in cases:
-            with self.subTest(cmd=cmd):
-                reason = self.reason(cmd)
-                self.assertNotEqual("", reason)
-                self.assertIn("Delete guard", reason)
-
-    def test_adversarial_executing_heredoc_inside_cmd_sub_and_title_delete_refused(self) -> None:
+    def test_adversarial_executing_heredoc_and_title_delete_refused(self) -> None:
         cases = (
             (
                 'gh issue create --title "t" --body "$(bash <<\'EOF\'\n'
@@ -246,9 +251,9 @@ class DeleteGuardGhHeredoc240Test(unittest.TestCase):
                 self.assertIn("untracked", reason)
                 self.assertIn("precious.txt", reason)
 
-    def test_adversarial_nested_cmd_sub_heredoc_scoping_refused(self) -> None:
+    def test_adversarial_parser_desync_bypasses_all_refused(self) -> None:
         cases = (
-            # F1: nested $(...) with apostrophe inside INNER must not consume OUTER first
+            # Review 1 F1: nested $(...) heredoc scoping
             (
                 'gh issue create --title "t" --body "$(true <<\'OUTER\' $(cat <<\'INNER\'\n'
                 "don't\n"
@@ -260,10 +265,10 @@ class DeleteGuardGhHeredoc240Test(unittest.TestCase):
                 f"rm -rf {self.precious}\n"
                 ')"'
             ),
-            # F1: nested $(...) with unmatched double quote inside INNER
+            # Review 1 F1: nested <(...) and >(...) process substitution heredoc scoping
             (
-                'gh issue create --title "t" --body "$(true <<\'OUTER\' $(cat <<\'INNER\'\n'
-                '"\n'
+                'gh issue create --title "t" --body "$(true <<\'OUTER\' <(cat <<\'INNER\'\n'
+                "don't\n"
                 "OUTER\n"
                 "INNER\n"
                 ")\n"
@@ -272,120 +277,33 @@ class DeleteGuardGhHeredoc240Test(unittest.TestCase):
                 f"rm -rf {self.precious}\n"
                 ')"'
             ),
-            # Nested subshell shares FIFO heredoc queue with enclosing $(...) in Bash
             (
-                'gh issue create --title "t" --body "$(true <<\'OUTER\' && (cat <<\'INNER\'\n'
+                'gh issue create --title "t" --body "$(true <<\'OUTER\' >(cat <<\'INNER\'\n'
                 "don't\n"
                 "OUTER\n"
-                ")\n"
                 "INNER\n"
                 ")\n"
+                ")\n"
+                "OUTER\n"
                 f"rm -rf {self.precious}\n"
+                ')"'
+            ),
+            # Review 2 F1: non-comment #<<'EOF' after ')' inside $(...)
+            (
+                'gh issue create --title "t" --body "$( (true)#<<\'EOF\'\n'
+                f')"; rm -rf {self.precious}; exit 0 # "\n'
+                "EOF\n"
+                ')"'
+            ),
+            # Review 2 F2: arithmetic array subscript 1<<EOF bitshift vs heredoc desync
+            (
+                'gh issue create --title "t" --body "$(a[1<<EOF ]=0\n'
+                f')"; rm -rf {self.precious}; exit 0\n'
+                "EOF\n"
                 ')"'
             ),
         )
         for cmd in cases:
-            with self.subTest(cmd=cmd):
-                reason = self.reason(cmd)
-                self.assertIn("untracked", reason)
-                self.assertIn("precious.txt", reason)
-
-        # Nested $(...) where INNER delimiter shares line with ')' must fail closed
-        nested_same_line = (
-            'gh issue create --title "t" --body "$(true <<\'OUTER\' $(cat <<\'INNER\'\n'
-            "hi\n"
-            "INNER)\n"
-            "OUTER\n"
-            f"rm -rf {self.precious}\n"
-            ')"'
-        )
-        refused = self.reason(nested_same_line)
-        self.assertIn("Delete guard", refused)
-        self.assertIn("--body-file", refused)
-
-    def test_adversarial_nested_proc_sub_heredoc_scoping_refused(self) -> None:
-        for op in ("<", ">"):
-            for quote_line in ("don't", '"'):
-                cmd = (
-                    f'gh issue create --title "t" --body "$(true <<\'OUTER\' {op}(cat <<\'INNER\'\n'
-                    f"{quote_line}\n"
-                    "OUTER\n"
-                    "INNER\n"
-                    ")\n"
-                    ")\n"
-                    "OUTER\n"
-                    f"rm -rf {self.precious}\n"
-                    ')"'
-                )
-                with self.subTest(op=op, quote_line=quote_line):
-                    reason = self.reason(cmd)
-                    self.assertIn("untracked", reason)
-                    self.assertIn("precious.txt", reason)
-
-    def test_adversarial_arithmetic_wrapped_heredoc_and_unparsable_heredoc_cmd_sub_refused(self) -> None:
-        exact_cases = (
-            # F2: $(( $(cat <<'EOF' ...) )) inside $(...) followed by rm -rf
-            (
-                'gh issue create --title "t" --body "$( : $(( $(cat <<\'EOF\' >/dev/null\n'
-                ")))\n"
-                "EOF\n"
-                f'echo 0) + 1 )); rm -rf {self.precious} )"'
-            ),
-            # F2: rm -rf inside the $(...) nested within $(( ... ))
-            (
-                'gh issue create --title "t" --body "$(( $(cat <<\'EOF\' >/dev/null\n'
-                ")))\n"
-                "EOF\n"
-                f'rm -rf {self.precious}; echo 0) + 1 ))"'
-            ),
-            # F2: arithmetic command (( $(cat <<'EOF' ...) )) inside $(...) and top-level
-            (
-                'gh issue create --title "t" --body "$( (( $(cat <<\'EOF\' >/dev/null\n'
-                ")))\n"
-                "EOF\n"
-                f'echo 0) + 1 )); rm -rf {self.precious} )"'
-            ),
-            (
-                "(( $(cat <<'EOF' >/dev/null\n"
-                ")))\n"
-                "EOF\n"
-                f"rm -rf {self.precious}; echo 0) + 1 ))"
-            ),
-        )
-        for cmd in exact_cases:
-            with self.subTest(cmd=cmd):
-                reason = self.reason(cmd)
-                self.assertIn("untracked", reason)
-                self.assertIn("precious.txt", reason)
-
-        # F2b: unparsable $(...) or $((...)) inside an unquoted heredoc must fail closed
-        unparsable_cases = (
-            (
-                "cat <<EOF\n"
-                "$(cat <<'IN'\n"
-                "hi\n"
-                f"IN); rm -rf {self.precious}\n"
-                "EOF"
-            ),
-            (
-                "cat <<EOF\n"
-                f"$(echo \"unclosed; rm -rf {self.precious}\n"
-                "EOF"
-            ),
-            (
-                "cat <<EOF\n"
-                "$(cat <<'IN'\n"
-                "hi\n"
-                f"IN); r'm' -rf {self.precious}\n"
-                "EOF"
-            ),
-            (
-                "cat <<EOF\n"
-                f"$(( $(echo \"unclosed; rm -rf {self.precious}\n"
-                "EOF"
-            ),
-        )
-        for cmd in unparsable_cases:
             with self.subTest(cmd=cmd):
                 reason = self.reason(cmd)
                 self.assertNotEqual("", reason)
