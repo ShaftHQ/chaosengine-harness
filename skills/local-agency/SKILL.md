@@ -133,6 +133,10 @@ grounded feedback, and never let it finish unsupervised. Playbook:
 hardware probe stays there; local OpenCode / agency routing lives here. Prefer
 this skill when the adopter names OpenCode or “local agents”.
 
+## Free-first policy
+
+See [delegation](../../references/delegation.md): decompose into small file-disjoint items; smartest free/local model at highest reasoning effort first; hardware-aware recommendations with opt-in setup; paid newest-cheapest fallback only when no free/local option.
+
 ## Related
 
 - Guide: local-agency.md (repo-only `chaos-engine/guides/local-agency.md`)
