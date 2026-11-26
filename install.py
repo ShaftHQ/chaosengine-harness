@@ -351,27 +351,30 @@ def normalize_source_record(source: object) -> dict[str, str]:
         isinstance(key, str) and isinstance(value, str) for key, value in source.items()
     ):
         raise ValueError("ChaosEngine source record is invalid")
+    if "version" in source and not source["version"]:
+        raise ValueError("ChaosEngine source record version is invalid")
+    core = {key: value for key, value in source.items() if key != "version"}
     if (
-        set(source) == {"commit", "kind"}
-        and source.get("kind") == "local"
-        and COMMIT_PATTERN.fullmatch(source.get("commit", "")) is not None
+        set(core) == {"commit", "kind"}
+        and core.get("kind") == "local"
+        and COMMIT_PATTERN.fullmatch(core.get("commit", "")) is not None
     ):
         return dict(source)
     if (
-        set(source) == {"commit", "kind", "repositorySha256", "branchSha256"}
-        and source.get("kind") == "git-digest"
-        and COMMIT_PATTERN.fullmatch(source.get("commit", "")) is not None
-        and re.fullmatch(r"[0-9a-f]{64}", source.get("repositorySha256", "")) is not None
-        and re.fullmatch(r"[0-9a-f]{64}", source.get("branchSha256", "")) is not None
+        set(core) == {"commit", "kind", "repositorySha256", "branchSha256"}
+        and core.get("kind") == "git-digest"
+        and COMMIT_PATTERN.fullmatch(core.get("commit", "")) is not None
+        and re.fullmatch(r"[0-9a-f]{64}", core.get("repositorySha256", "")) is not None
+        and re.fullmatch(r"[0-9a-f]{64}", core.get("branchSha256", "")) is not None
     ):
         return dict(source)
-    repository = source.get("repository", "")
-    branch = source.get("branch", "")
+    repository = core.get("repository", "")
+    branch = core.get("branch", "")
     components = repository.split("/")
     if not (
-        set(source) == {"commit", "kind", "repository", "branch"}
-        and source.get("kind") == "git"
-        and COMMIT_PATTERN.fullmatch(source.get("commit", "")) is not None
+        set(core) == {"commit", "kind", "repository", "branch"}
+        and core.get("kind") == "git"
+        and COMMIT_PATTERN.fullmatch(core.get("commit", "")) is not None
         and REPOSITORY_PATTERN.fullmatch(repository) is not None
         and len(components) == 2
         and all(component not in {".", ".."} for component in components)
@@ -3590,7 +3593,10 @@ def install(  # noqa: MC0001 - publication and compensation form one transaction
     capabilities, capability_digest = load_capability_policy(source, distribution)
     files = source_files(source, distribution, tuple(addons))
     ownership, payload_files, receipt_files = payload_ownership(source, files)
-    version = derived_version_for_source(source)
+    resolved_version = resolved_source_version(source)
+    desired_source = dict(desired_source)
+    if resolved_version:
+        desired_source["version"] = resolved_version
     target = project / INSTALL_DIRECTORY
     backup = project / BACKUP_NAME
     displaced = project / NEXT_BACKUP_NAME
@@ -3634,10 +3640,6 @@ def install(  # noqa: MC0001 - publication and compensation form one transaction
         stage = Path(tempfile.mkdtemp(prefix=f"{INSTALL_DIRECTORY}-stage-", dir=project))
         try:
             copy_owned_payload(stage, source, payload_files, receipt_files, ownership)
-            if version is not None and "VERSION" in ownership:
-                stamped = stage / "VERSION"
-                stamped.write_text(version + "\n", encoding="utf-8")
-                ownership["VERSION"] = file_sha256(stamped)
             manifest = {
                 "schemaVersion": SCHEMA_VERSION,
                 "distribution": {"id": distribution, "policySha256": policy_digest},
@@ -9917,10 +9919,7 @@ def _core_commit_drift_detail(project: Path, overlay: Path) -> str:
         return ""
     if pinned == recorded:
         return ""
-    try:
-        installed = (overlay / "VERSION").read_text(encoding="utf-8").strip()
-    except OSError:
-        installed = ""
+    installed = _read_installed_version(overlay)
     pin = _source_pin_version(project)
     intended = source_intended_version(project) if pin is not None else ""
     if installed and intended and installed != intended:
@@ -10020,7 +10019,11 @@ def _stale_checkout_version_drift(
     except (OSError, subprocess.TimeoutExpired):
         return None
     if shown.returncode == 0:
-        if (shown.stdout or "").strip() != installed_version:
+        shown_text = (shown.stdout or "").strip()
+        if shown_text and not valid_commit_version(shown_text):
+            return None
+        expected = commit_version_or_none(resolved, ref=manifest_commit) or shown_text
+        if installed_version not in {shown_text, expected}:
             return None
     else:
         # Distinguish an unfetched remote commit (allowed) from a local commit
@@ -10062,22 +10065,22 @@ def _ce_version_after_upgrade_finding(
     rewrite it. A pack VERSION may differ when the core pin matches.
     """
     overlay = target if target.name == ".chaos-engine" else project / ".chaos-engine"
-    installed = overlay / "VERSION"
-    if not installed.is_file():
+    if not (overlay / "VERSION").is_file() and not (overlay / MANIFEST_NAME).is_file():
         overlay = project / ".chaos-engine"
-        installed = overlay / "VERSION"
+    installed = overlay / "VERSION"
     intended_pin = _source_pin_version(project)
-    if intended_pin is None or not installed.is_file():
+    if intended_pin is None:
         return None
     right = source_intended_version(project)
-    try:
-        left = installed.read_text(encoding="utf-8").strip()
-    except OSError:
-        return {
-            "status": "invalid",
-            "detail": "CE VERSION unreadable after upgrade (L92)",
-            "taskImpact": "required",
-        }
+    left = _read_installed_version(overlay)
+    if not left:
+        if installed.is_file():
+            return {
+                "status": "invalid",
+                "detail": "CE VERSION unreadable after upgrade (L92)",
+                "taskImpact": "required",
+            }
+        return None
     if left == right:
         detail = f"installed VERSION {left} matches source"
         pack = _pack_version_exception(project, left)
@@ -10718,6 +10721,26 @@ def source_version(source_root: Path | None = None) -> str:
         return ""
 
 
+def resolved_source_version(source: Path) -> str:
+    """Version recorded in ``manifest.source.version``; payload bytes stay untouched.
+
+    A non-empty legacy pin (``0.4.x``) is authoritative: a commit-date version
+    is never stamped over it. An explicit override or a non-shallow checkout's
+    first-parent derivation records that resolved version. An already
+    authoritative commit-date payload pin needs no extra record.
+    """
+    try:
+        static = (Path(source) / "VERSION").read_text(encoding="utf-8").strip()
+    except OSError:
+        static = ""
+    if static and not valid_commit_version(static):
+        return static
+    override = derived_version_override()
+    if override:
+        return override
+    return commit_version_or_none(Path(source)) or ""
+
+
 def derived_version_for_source(source: Path) -> str | None:
     """The version to stamp into a newly installed overlay, if it changed."""
     value = source_version(source)
@@ -10730,13 +10753,26 @@ def derived_version_for_source(source: Path) -> str | None:
     return value if value != static else None
 
 
-def overlay_release_version() -> str:
-    """Calver from the sibling VERSION file. Empty when that file cannot be read."""
-    path = Path(__file__).resolve().parent / "VERSION"
+def _read_installed_version(overlay: Path) -> str:
+    """Recorded installed version, preferring the manifest over the payload copy."""
     try:
-        return path.read_text(encoding="utf-8").strip()
+        manifest = json.loads((Path(overlay) / MANIFEST_NAME).read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError, TypeError):
+        manifest = None
+    source = manifest.get("source") if isinstance(manifest, dict) else None
+    version = source.get("version") if isinstance(source, dict) else None
+    if isinstance(version, str) and version.strip():
+        return version.strip()
+    try:
+        return (Path(overlay) / "VERSION").read_text(encoding="utf-8").strip()
     except OSError:
         return ""
+
+
+def overlay_release_version(overlay: Path | None = None) -> str:
+    """Installed release label. Empty when neither manifest nor VERSION is readable."""
+    root = Path(overlay) if overlay is not None else Path(__file__).resolve().parent
+    return _read_installed_version(root)
 
 
 def _hooks_instruction_advisory(document: dict[str, object]) -> str | None:

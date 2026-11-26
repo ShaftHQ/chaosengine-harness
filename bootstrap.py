@@ -1671,6 +1671,8 @@ _EMBEDDED_VERSION = "1.20261126.0"
 _MAJOR_VERSION = 1
 _DERIVED_VERSION_ENV = "CHAOS_ENGINE_DERIVED_VERSION"
 _COMMIT_VERSION_RE = re.compile(r"^[1-9]\d*\.\d{8}\.\d+$")
+_EXTERNAL_DERIVED_VERSION: str | None = None
+_DERIVED_VERSION_FROM_STARTUP = False
 
 
 def valid_commit_version(value: object) -> bool:
@@ -1753,9 +1755,12 @@ def commit_version_or_none(root: Path, ref: str = "HEAD") -> str | None:
 
 
 def startup_commit_version() -> str | None:
-    """Version of the checkout running bootstrap, before any network access."""
-    if os.environ.get("CHAOS_ENGINE_OFFLINE") == "1":
-        return None
+    """Version of the checkout running bootstrap, before any network access.
+
+    ``git show``/``git log`` are purely local, so offline installs launched
+    from a checkout still know their own version. ``CHAOS_ENGINE_OFFLINE``
+    only blocks the network derivation in ``derive_remote_commit_version``.
+    """
     return commit_version_or_none(Path(__file__).resolve().parent)
 
 
@@ -1803,7 +1808,11 @@ def _count_remote_same_day(listing: list[object], sha: str, day: str) -> int | N
         count = 0
         current = sha
         seen: set[str] = set()
-        while current and current not in seen and current in by_sha:
+        while current and current not in seen:
+            if current not in by_sha:
+                # A full API page means the walk can end before reaching the
+                # previous day. Counting only the page would under-index (#253).
+                return None if len(entries) >= 100 else count
             seen.add(current)
             item = by_sha[current]
             if _iso_day(_commit_stamp(item.get("commit"))) != day:
@@ -6421,6 +6430,43 @@ def _bootstrap_scope_mode(installer, install_args, project: Path, commit: str) -
     return None
 
 
+def _resolve_announced_version(repository: str, branch: str | None, opener, install_args) -> None:
+    """F6: a standalone one-liner announces the remote branch version.
+
+    A checkout knows its own version from local git, and an explicit override
+    wins everywhere. Only a lone ``bootstrap.py`` (no git, no override, online)
+    needs this bounded pre-header lookup; any failure falls back to the
+    embedded version.
+    """
+    if (
+        _EXTERNAL_DERIVED_VERSION is not None
+        or derived_version_override() is not None
+        or startup_commit_version() is not None
+        or os.environ.get("CHAOS_ENGINE_OFFLINE") == "1"
+        or opener is not urllib.request.urlopen
+        or getattr(install_args, "from_bundle", None) is not None
+    ):
+        return
+    version = derive_remote_commit_version(repository, branch or "main", fetcher=opener)
+    if version is not None:
+        os.environ[_DERIVED_VERSION_ENV] = version
+
+
+def _resolve_remote_install_version(repository: str, commit: str, opener) -> None:
+    """F5: the downloaded commit's version wins over a local startup version."""
+    if (
+        _EXTERNAL_DERIVED_VERSION is not None
+        or os.environ.get("CHAOS_ENGINE_OFFLINE") == "1"
+        or opener is not urllib.request.urlopen
+    ):
+        return
+    remote_version = derive_remote_commit_version(repository, commit, fetcher=opener)
+    if remote_version is not None:
+        os.environ[_DERIVED_VERSION_ENV] = remote_version
+    elif _DERIVED_VERSION_FROM_STARTUP:
+        os.environ.pop(_DERIVED_VERSION_ENV, None)
+
+
 def _run_core_install(
     project: Path,
     scratch: dict,
@@ -6445,14 +6491,7 @@ def _run_core_install(
     confirm("Resolve source")
     reporter.start("Resolve source", remaining=remaining("Resolve source"))
     commit, resolved_branch = resolve_latest(repository, branch, opener=opener)
-    if (
-        derived_version_override() is None
-        and os.environ.get("CHAOS_ENGINE_OFFLINE") != "1"
-        and opener is urllib.request.urlopen
-    ):
-        remote_version = derive_remote_commit_version(repository, commit, fetcher=opener)
-        if remote_version is not None:
-            os.environ[_DERIVED_VERSION_ENV] = remote_version
+    _resolve_remote_install_version(repository, commit, opener)
     note_commit = getattr(reporter, "note_commit", None)
     if callable(note_commit):
         note_commit(commit)
@@ -6861,6 +6900,7 @@ def install_latest(
         project, skip_tools=skip_tools, requested=with_maven_tools
     )
     reporter = reporter or InstallReporter()
+    _resolve_announced_version(repository, branch, opener, install_args)
     reporter.announce(project, repository, branch or "default")
     terminal_context, terminal_input = _open_install_terminal(interactive, terminal_factory)
     if terminal_input is not None:
@@ -7883,6 +7923,7 @@ def _run_bundled_install(args) -> int:
 
 def apply_install_flags(args) -> dict[str, str | None]:
     """Copy one-liner flags into the environment the download plan already reads."""
+    global _EXTERNAL_DERIVED_VERSION, _DERIVED_VERSION_FROM_STARTUP
     previous: dict[str, str | None] = {}
 
     def assign(key: str, value: str | None) -> None:
@@ -7926,7 +7967,12 @@ def apply_install_flags(args) -> dict[str, str | None]:
     skills = getattr(args, "shaft_skills_version", None)
     if isinstance(skills, str) and skills.strip():
         assign("CHAOS_ENGINE_SHAFT_SKILLS_VERSION", skills.strip())
-    assign(_DERIVED_VERSION_ENV, derived_version_override() or startup_commit_version())
+    external = derived_version_override()
+    if _EXTERNAL_DERIVED_VERSION is None:
+        _EXTERNAL_DERIVED_VERSION = external
+    startup = None if _EXTERNAL_DERIVED_VERSION else startup_commit_version()
+    assign(_DERIVED_VERSION_ENV, _EXTERNAL_DERIVED_VERSION or startup)
+    _DERIVED_VERSION_FROM_STARTUP = bool(startup) and not bool(_EXTERNAL_DERIVED_VERSION)
     return previous
 
 
@@ -7965,6 +8011,9 @@ def utf8_text_stream(stream) -> None:
 
 
 def main() -> int:
+    global _EXTERNAL_DERIVED_VERSION, _DERIVED_VERSION_FROM_STARTUP
+    _EXTERNAL_DERIVED_VERSION = derived_version_override()
+    _DERIVED_VERSION_FROM_STARTUP = False
     utf8_text_stream(sys.stdout)
     harden_stream_encoding(sys.stderr)
     if sys.version_info < MINIMUM_PYTHON:
