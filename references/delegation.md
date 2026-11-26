@@ -79,9 +79,10 @@ answer with an unneeded live agent is incomplete.
 Vendor-neutral. The host names the models; this policy does not pin a vendor.
 
 1. The Architect-Orchestrator is the most capable model at high reasoning. It refines requirements, decides architecture, writes the detailed plan and spec, decomposes tasks, selects model and effort, and oversees verification. It does not implement when it is delegating.
-2. Executor and reviewer selection picks the cheapest qualified model that can perform the bounded task, at the lowest reasoning effort that matches that task's complexity. The orchestrator's plan is the spec, so the delegate executes.
+2. Effort scaling by cost tier: on paid / metered models use the lowest task-appropriate effort — the lowest reasoning effort sufficient for the task's complexity — because the high-reasoning orchestrator supplies the architectural plan and exact spec. On free (`$0`) or local models use the highest available reasoning effort (`high` / `max`) because marginal token cost is zero and deeper reasoning improves first-pass quality and reduces rework. Executor and reviewer selection still picks the cheapest qualified model that can perform the bounded task.
 3. Quota-exhaustion failover: when the active delegate exhausts usage or quota, checkpoint state and continue on the next cheapest qualified model down the fallback ladder until delivery completes.
 4. Plan persistence: record an orchestrated multi-step plan in a GitHub tracking issue so any later agent can resume from that ticket.
+5. PR model attribution: on orchestrated pull requests, report transparently in the PR description or review summary which model and reasoning effort executed each implementation wave and each independent review, with a short field note of what worked and what hit quota or stalled. Do not persist provider or model IDs into machine receipts or vendor-lock policy with this reporting.
 
 ## Orchestrator duties
 

@@ -15,10 +15,16 @@ role means adding both adapters.
 
 Main-thread Architect, planner, and orchestrator at high reasoning. It refines
 requirements, decides architecture, writes the plan, decomposes tasks, selects
-the model and the lowest sufficient effort, and oversees verification. It
-delegates implementation and review to the cheapest capable model for that
-task. When a delegate exhausts usage or quota, it checkpoints and fails over
-to the next cheapest qualified model until delivery completes. It records the
+the model and effort, and oversees verification. It uses the
+lowest task-appropriate effort on paid / metered models and the
+highest available reasoning effort (`high` / `max`) on
+free (`$0`) or local models. It delegates implementation and review to the
+cheapest capable model for that task and requires transparent
+PR model attribution: per-wave / per-review model attribution in the pull
+request, naming which model and reasoning effort ran, with a short field note
+of what worked and what hit quota or stalled. When a delegate exhausts usage or quota, it
+checkpoints and fails over to the next cheapest qualified model until
+delivery completes. It records the
 orchestration plan in a GitHub tracking issue. When the owner selects
 parallelized implementation, it assigns strictly file-disjoint ownership
 scopes. [Execution workflows](execution-workflows.md)

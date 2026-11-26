@@ -34,6 +34,32 @@ class Wave2DelegationIntakeTest(unittest.TestCase):
         self.assertIn("rephrase as a domain expert", lifecycle)
         self.assertIn("spec first", lifecycle)
 
+    def test_effort_scaling_and_pr_model_attribution_are_documented(self) -> None:
+        delegation = (ROOT / "references" / "delegation.md").read_text(encoding="utf-8")
+        roles = (ROOT / "references" / "roles.md").read_text(encoding="utf-8")
+        for text in (delegation, roles):
+            self.assertIn("paid / metered models", text)
+            self.assertIn("lowest task-appropriate effort", text)
+            self.assertIn("free (`$0`) or local models", text)
+            self.assertIn("highest available reasoning effort", text)
+            self.assertIn("PR model attribution", text)
+        self.assertIn("lowest reasoning effort sufficient", delegation)
+        self.assertIn("each implementation wave and each independent review", delegation)
+        self.assertIn("per-wave / per-review", roles)
+
+    def test_medium_hardware_advisory_models_are_documented(self) -> None:
+        guide = (ROOT / "guides" / "local-openai-compat.md").read_text(encoding="utf-8")
+        self.assertIn("### Advisory hardware profile (non-normative)", guide)
+        self.assertIn('`probe_hardware.py` -> `"medium"`', guide)
+        self.assertIn("22-24 GiB system RAM", guide)
+        self.assertIn("6 GiB GPU VRAM", guide)
+        self.assertIn("qwen3-coder-30b", guide)
+        self.assertIn("gpt-oss-20b", guide)
+        self.assertIn("advisory examples", guide)
+        self.assertIn("normative policy pins or receipt entries", guide)
+        self.assertIn("zero\nmarginal token cost", guide)
+        self.assertIn("**highest reasoning effort**", guide)
+
 
 if __name__ == "__main__":
     unittest.main()
