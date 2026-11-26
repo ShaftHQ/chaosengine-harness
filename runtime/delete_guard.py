@@ -558,7 +558,7 @@ def _pure_command_sub_body(word: str) -> str | None:
     """Inner script when ``word`` is exactly one ``$(...)`` or backtick command."""
     if word.startswith("$(") and not word.startswith("$(("):
         try:
-            end = _scan_balanced_paren(word, 1)
+            end = _scan_balanced_paren(word, 1, allow_heredocs=True)
         except ValueError:
             return None
         if end != len(word):
@@ -2116,11 +2116,44 @@ def _scan_backtick(text: str, pos: int, *, in_dquote: bool) -> tuple[str, int]:
     raise ValueError("No closing quotation")
 
 
-def _scan_balanced_paren(text: str, pos: int) -> int:
+def _consume_heredoc_bodies_in_paren(text: str, pos: int, pending: list[_Heredoc]) -> int:
+    """Consume queued heredoc bodies inside ``$(...)``, failing closed on ambiguity."""
+    n = len(text)
+    for hd in pending:
+        lines: list[str] = []
+        while pos < n:
+            nl = text.find("\n", pos)
+            if nl == -1:
+                line = text[pos:]
+                pos = n
+                has_nl = False
+            else:
+                line = text[pos:nl]
+                pos = nl + 1
+                has_nl = True
+            stripped = line.lstrip("\t") if hd.strip_tabs else line
+            if stripped == hd.delimiter:
+                hd.closed = True
+                break
+            # Bash may terminate a heredoc inside $(...) early when a line starts
+            # with the delimiter and contains ')'. Fail closed so trailing commands
+            # can never be smuggled past the heredoc body.
+            if stripped.startswith(hd.delimiter) and ")" in stripped[len(hd.delimiter) :]:
+                raise ValueError("heredoc delimiter shares line with ')'")
+            lines.append((stripped if hd.strip_tabs else line) + ("\n" if has_nl else ""))
+        hd.body = "".join(lines)
+        if not hd.closed:
+            raise ValueError("unclosed heredoc")
+    pending.clear()
+    return pos
+
+
+def _scan_balanced_paren(text: str, pos: int, *, allow_heredocs: bool = False) -> int:
     """Given text[pos] == '(', return index right after matching ')'. Raises ValueError if unclosed."""
     depth = 0
     index = pos
     n = len(text)
+    pending_heredocs: list[_Heredoc] = []
     while index < n:
         ch = text[index]
         if ch == "\\":
@@ -2132,6 +2165,9 @@ def _scan_balanced_paren(text: str, pos: int) -> int:
         if ch == "$" and index + 1 < n and text[index + 1] == "'":
             _, index = _scan_ansi_c_quote(text, index)
             continue
+        if ch == "$" and index + 1 < n and text[index + 1] == "{":
+            index = _scan_balanced_brace(text, index, None)
+            continue
         if ch == '"':
             _, index = _scan_double_quote(text, index, None)
             continue
@@ -2140,15 +2176,34 @@ def _scan_balanced_paren(text: str, pos: int) -> int:
             continue
         if ch == "#" and (index == pos or text[index - 1] in " \t\n;&|("):
             nl = text.find("\n", index)
-            index = n if nl == -1 else nl + 1
+            index = n if nl == -1 else nl
             continue
+        if ch == "\n":
+            index += 1
+            if pending_heredocs:
+                index = _consume_heredoc_bodies_in_paren(text, index, pending_heredocs)
+            continue
+        if allow_heredocs and ch == "<":
+            if text.startswith("<<<", index):
+                index += 3
+                continue
+            if text.startswith("<<-", index) or text.startswith("<<", index):
+                strip_tabs = text.startswith("<<-", index)
+                delim, quoted, index = _read_heredoc_delimiter(text, index + (3 if strip_tabs else 2))
+                pending_heredocs.append(_Heredoc(delimiter=delim, strip_tabs=strip_tabs, quoted=quoted))
+                continue
         if ch == "(":
+            if allow_heredocs and index > pos and text.startswith("((", index):
+                index = _scan_balanced_paren(text, index, allow_heredocs=False)
+                continue
             depth += 1
             index += 1
         elif ch == ")":
             depth -= 1
             index += 1
             if depth == 0:
+                if pending_heredocs:
+                    raise ValueError("unclosed heredoc")
                 return index
         else:
             index += 1
@@ -2180,8 +2235,9 @@ def _scan_balanced_brace(text: str, pos: int, cmd_subs: list[str] | None) -> int
                 cmd_subs.append(inner)
             continue
         if ch == "$" and index + 1 < n and text[index + 1] == "(":
-            end = _scan_balanced_paren(text, index + 1)
-            if index + 2 < n and text[index + 2] == "(":
+            is_arith = index + 2 < n and text[index + 2] == "("
+            end = _scan_balanced_paren(text, index + 1, allow_heredocs=not is_arith)
+            if is_arith:
                 _note_arith_cmd_subs(text, index, end, cmd_subs)
             elif cmd_subs is not None:
                 cmd_subs.append(text[index + 2 : end - 1])
@@ -2232,8 +2288,9 @@ def _scan_double_quote(text: str, pos: int, cmd_subs: list[str] | None) -> tuple
         if ch == "$" and index + 1 < n:
             nxt = text[index + 1]
             if nxt == "(":
-                end = _scan_balanced_paren(text, index + 1)
-                if index + 2 < n and text[index + 2] == "(":
+                is_arith = index + 2 < n and text[index + 2] == "("
+                end = _scan_balanced_paren(text, index + 1, allow_heredocs=not is_arith)
+                if is_arith:
                     _note_arith_cmd_subs(text, index, end, cmd_subs)
                 elif cmd_subs is not None:
                     cmd_subs.append(text[index + 2 : end - 1])
@@ -2289,7 +2346,7 @@ def _scan_heredoc_cmd_subs(body: str) -> list[str]:
                 index = end
                 continue
             try:
-                end = _scan_balanced_paren(body, index + 1)
+                end = _scan_balanced_paren(body, index + 1, allow_heredocs=True)
                 subs.append(body[index + 2 : end - 1])
                 index = end
             except ValueError:
@@ -2324,7 +2381,7 @@ def _read_shell_word(
         if ch in " \t\n;&|()<>":
             # Process substitution <(...) or >(...) is part of a word.
             if ch in "<>" and index + 1 < n and text[index + 1] == "(":
-                end = _scan_balanced_paren(text, index + 1)
+                end = _scan_balanced_paren(text, index + 1, allow_heredocs=True)
                 if cmd_subs is not None:
                     cmd_subs.append(text[index + 2 : end - 1])
                 push(text[index:end], False)
@@ -2378,8 +2435,9 @@ def _read_shell_word(
                 push(val, True)
                 continue
             if nxt == "(":
-                end = _scan_balanced_paren(text, index + 1)
-                if index + 2 < n and text[index + 2] == "(":
+                is_arith = index + 2 < n and text[index + 2] == "("
+                end = _scan_balanced_paren(text, index + 1, allow_heredocs=not is_arith)
+                if is_arith:
                     _note_arith_cmd_subs(text, index, end, cmd_subs)
                 elif cmd_subs is not None:
                     cmd_subs.append(text[index + 2 : end - 1])
@@ -4842,6 +4900,9 @@ def _delete_check_cli_args(command: str) -> list[str] | None:
     return None
 
 
+_GH_BODY_CMD = re.compile(r"(?:^|[^\w.-])gh\s+(?:issue|pr)\s+(?:create|comment|edit)\b")
+
+
 def check(
     command: str | list[Path],
     cwd: Path | None = None,
@@ -4864,10 +4925,16 @@ def check(
         try:
             targets = command_targets(command, cwd)
         except Unsure as error:
+            gh_hint = ""
+            if str(error).startswith("unparsable delete:") and _GH_BODY_CMD.search(command):
+                gh_hint = (
+                    " For GitHub issue/PR bodies containing quotes or code snippets, "
+                    "write the Markdown to a file and pass `--body-file <path>` instead of inline `--body`."
+                )
             return (
                 f"Delete guard (#7251): refused, cannot tell what this deletes ({error}). "
                 f"{_matched_clause(command)} "
-                "Name literal paths and run `tool.py delete-check <paths>`."
+                f"Name literal paths and run `tool.py delete-check <paths>`.{gh_hint}"
             ), []
         if code is not None and not targets:
             return "Delete guard (#7251): refused: no delete targets.", []
