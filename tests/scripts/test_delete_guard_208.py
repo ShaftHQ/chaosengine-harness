@@ -376,6 +376,23 @@ class DeleteGuardIssue208Test(unittest.TestCase):
                 self.assertNotIn(".  matched `", reason)
         self.assertEqual("", self.reason('"$MVN_BIN" test'))
 
+    def test_split_assignment_computed_heads_are_refused(self) -> None:
+        """A command head assembled through shell state is never a safe exemption."""
+        for command in (
+            "X=r; X+=m; CMD=$X; $CMD untracked-file",
+            "X=r; X+=m; $X untracked-file",
+            'A=r; B=m; CMD="$A$B"; $CMD untracked-file',
+            "A=r; B=m; $A$B untracked-file",
+            "printf -v CMD '%s%s' r m; $CMD untracked-file",
+            "CMD=$(printf '%s%s' r m); $CMD untracked-file",
+        ):
+            with self.subTest(command=command):
+                reason = self.reason(command)
+                self.assertIn("computed command head", reason)
+                self.assertIn("matched `", reason)
+        self.assertEqual("", self.reason('"$MVN_BIN" test'))
+        self.assertEqual("", self.reason('MVN=/usr/bin/mvn; "$MVN" test'))
+
     def test_review2_shell_process_substitution_is_refused(self) -> None:
         for shell in ("sh", "bash", "zsh", "dash"):
             cmd = f"{shell} <(printf 'rm -f only.txt\\n')"

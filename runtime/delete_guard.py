@@ -384,10 +384,12 @@ def _computed_command_head(head: str) -> bool:
     return "$" in head or "`" in head
 
 
-_SIMPLE_VAR_HEAD = re.compile(r"^\$\{?[A-Za-z_][A-Za-z0-9_]*\}?$")
+_SIMPLE_VAR_HEAD = re.compile(r"^\$(?:[A-Za-z_][A-Za-z0-9_]*|\{[A-Za-z_][A-Za-z0-9_]*\})$")
+_ASSIGNMENT_WORD = re.compile(r"^(?P<name>[A-Za-z_][A-Za-z0-9_]*)(?P<append>\+?=)(?P<value>.*)$")
 _EVAL_WORD = re.compile(r"(?:^|[^\w.-])eval\b")
 _DELETE_STEM = re.compile(r"rm|del|unlink|shred|clean|wipe|purge|erase|remove", re.IGNORECASE)
 _DELETE_STYLE_FLAG = re.compile(r"^-(?:[A-Za-z]*[rR]|[A-Za-z]*f[A-Za-z]*)$|^--(?:recursive|force)$|^-delete$")
+_INDIRECT_LAUNCHERS = frozenset({"sh", "bash", "zsh", "dash", "ash", "ksh", "mksh", "python", "python3", "perl", "ruby", "node", "eval"})
 _SPAN: contextvars.ContextVar[str] = contextvars.ContextVar("ce_delete_span", default="")
 _COMMAND: contextvars.ContextVar[str] = contextvars.ContextVar("ce_delete_command", default="")
 
@@ -413,6 +415,61 @@ def _command_has_delete_hint(command: str) -> bool:
     )
 
 
+def _simple_head_name(head: str) -> str | None:
+    """Name expanded by a single plain ``$VAR`` / ``${VAR}`` command head."""
+    if not _SIMPLE_VAR_HEAD.fullmatch(head):
+        return None
+    return head[2:-1] if head.startswith("${") else head[1:]
+
+
+def _literal_executable(value: str, mask: str) -> bool:
+    """Whether an assignment value is a proven literal executable path."""
+    if not value or "$" in value or "`" in value or "1" in mask:
+        return False
+    if DELETE_WORD.search(value) or _DELETE_STEM.search(Path(value).name):
+        return False
+    return Path(value).name not in _INDIRECT_LAUNCHERS
+
+
+def _computed_head_assignment_safe(command: str, name: str) -> bool:
+    """Only permit literal assignments to a computed command-head variable.
+
+    The shell parser deliberately does not evaluate variables.  A local value is
+    therefore safe only when every way it can populate ``name`` is a literal
+    executable word; all builders and appends fail closed.
+    """
+    if re.search(r"\$\{![^}]+\}", command):
+        return False
+    try:
+        events = _parse_shell(command)
+    except ValueError:
+        return False
+    for kind, payload in events:
+        if kind != "cmd" or not isinstance(payload, _SimpleCommand):
+            continue
+        cmd = payload
+        for word in cmd.words:
+            match = _ASSIGNMENT_WORD.fullmatch(word)
+            if match and match.group("append") == "+=":
+                return False
+        head, _rest = _head(cmd.words)
+        if head in {"eval", "declare", "typeset"}:
+            return False
+        if head == "printf" and "-v" in cmd.words[1:]:
+            return False
+        if head == "read" and name in cmd.words[1:]:
+            return False
+        for index, word in enumerate(cmd.words):
+            match = _ASSIGNMENT_WORD.fullmatch(word)
+            if not match or match.group("name") != name:
+                continue
+            value_start = match.start("value")
+            value_mask = cmd.word_masks[index][value_start:]
+            if not _literal_executable(match.group("value"), value_mask):
+                return False
+    return True
+
+
 def _refuse_computed_head(head: str, words: list[str]) -> None:
     """Refuse a head this parser cannot see, except a plain ``$VAR`` with no delete hint.
 
@@ -422,13 +479,14 @@ def _refuse_computed_head(head: str, words: list[str]) -> None:
     if not _computed_command_head(head):
         return
     command = _COMMAND.get()
-    identifier = head.strip("${}")
+    identifier = _simple_head_name(head)
     has_delete_flag = any(_DELETE_STYLE_FLAG.fullmatch(word) for word in words[1:])
     if (
-        _SIMPLE_VAR_HEAD.fullmatch(head)
+        identifier is not None
         and not _command_has_delete_hint(command)
         and not _DELETE_STEM.search(identifier)
         and not has_delete_flag
+        and _computed_head_assignment_safe(command, identifier)
     ):
         return
     _note_span(words)
