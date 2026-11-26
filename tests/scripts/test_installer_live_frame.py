@@ -212,17 +212,13 @@ def test_live_frame_screen_after_each_transition(width: int) -> None:
     stack = UI.BRAND_MARK_STACK[0][0].rstrip()
     final = shots[-1][1]
     blob = _blob(shots)
-    label = "CHAOS ENGINE"
     scans = [glyphs.rstrip() for glyphs, _mask in UI.BRAND_WORDMARK_WIDE]
     assert scans and all(scans)
+    assert "CHAOS ENGINE" not in blob
     if width >= 84:
         assert any(line.startswith(wide) for line in final.splitlines())
         assert not any(line == stack for line in final.splitlines())
-        assert label in final
-        for line in final.splitlines():
-            if label in line:
-                assert "…" not in line[line.index(label):]
-                assert "..." not in line[line.index(label):]
+        assert "ChaosEngine " in final
         for token in scans:
             assert token not in blob
         for glyphs, _mask in UI.BRAND_MARK_WIDE:
@@ -231,7 +227,6 @@ def test_live_frame_screen_after_each_transition(width: int) -> None:
     else:
         assert any(line == stack or line.startswith(stack) for line in final.splitlines())
         assert not any(line.startswith(wide) for line in final.splitlines())
-        assert any(line.strip() == label for line in final.splitlines())
         assert any(line.strip().startswith("ChaosEngine ") for line in final.splitlines())
     path = GOLDEN / f"frame-w{width}.txt"
     if os.environ.get("UPDATE_FRAME_GOLDEN") == "1":
@@ -241,15 +236,16 @@ def test_live_frame_screen_after_each_transition(width: int) -> None:
     assert path.is_file(), f"missing {path.name}"
     expected = path.read_text(encoding="utf-8")
     assert expected == blob
+    assert "CHAOS ENGINE" not in expected
     if width >= 84:
-        assert label in expected
+        assert "ChaosEngine " in expected
         for token in scans:
             assert token not in expected
         for glyphs, _mask in UI.BRAND_MARK_WIDE:
             token = glyphs.rstrip()
             assert token and any(line.startswith(token) for line in expected.splitlines())
     else:
-        assert any(line.strip() == label for line in expected.splitlines())
+        assert any(line.strip().startswith("ChaosEngine ") for line in expected.splitlines())
 
 
 def test_narrow_lang_c_and_ascii_use_one_line_identity() -> None:

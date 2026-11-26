@@ -42,6 +42,26 @@ bundle. Do not start their servers from ChaosEngine.
 
 ## Size-class soak (probe_hardware.py)
 
+### Advisory hardware profile (non-normative)
+
+`probe_hardware.py` -> `"medium"` describes a laptop/workstation tier with
+about 22-24 GiB system RAM and 6 GiB GPU VRAM (for example, an RTX 3060 Laptop
+6 GiB GPU and a 16-thread CPU). Operators on a similar tier can serve
+quantized local coding models through LM Studio, Ollama, or llama.cpp:
+
+- `qwen/qwen3-coder-30b` — MoE with about 3B active parameters; a strong
+  coding speed/quality tradeoff on 6 GiB VRAM with 22 GiB RAM offload.
+- `qwen/qwen3-30b-a3b-2507` — general MoE with about 3B active parameters;
+  good for specs, docs, and reviews.
+- `openai/gpt-oss-20b` — dense/compact 20B class that fits quantized across
+  VRAM and RAM.
+- `prism-ml/bonsai-27b` — quantized 27B class for deeper local synthesis.
+
+These are **advisory examples** for operators on similar hardware, **never**
+normative policy pins or receipt entries. Because local models have zero
+marginal token cost, run them at the **highest reasoning effort** the runtime
+supports (`high` / `max` where available).
+
 Use [`probe_hardware.py`](../skills/local-coding-delegate/scripts/probe_hardware.py)
 (`small` / `medium` / `large` / `refuse`). Start with a small/medium coding
 model. Prove the READY checkpoint with mechanical dispatch knobs before

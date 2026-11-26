@@ -13,9 +13,14 @@ delegation, transports, and host adapters link here rather than redefining it.
 
 Select from work shape and qualified capacity, never from a provider, model, or
 marketing label. `ORCHESTRATOR + SINGLE IMPLEMENTER` stays valid when there is only one unit.
-It is not the default when several file-disjoint streams fit the resource check.
-Select `ORCHESTRATOR + PARALLEL IMPLEMENTERS` for independent
-file scopes and cap writers at four. When the owner says to work as orchestrator
+Sequential orchestrated mode (`ORCHESTRATOR + SINGLE IMPLEMENTER`) is the default
+unless the owner selects parallelized implementation
+(`ORCHESTRATOR + PARALLEL IMPLEMENTERS`).
+Select `ORCHESTRATOR + PARALLEL IMPLEMENTERS` only for that owner choice, on independent
+file scopes, and cap writers at four. Parallel writers use strictly file-disjoint
+ownership: isolated worktrees or branches and zero overlapping writable paths,
+so they do not override, conflict, duplicate, or waste each other's work.
+When the owner says to work as orchestrator
 and parallelize, select that workflow for file-disjoint streams and do not
 implement every stream on the main thread. This is an explicit cap of four parallel
 agents, not a transport-specific default. Use
@@ -24,7 +29,7 @@ stream. Finish or hand over owned implementation before switching workflows.
 Every orchestrated workflow loads and enforces
 [process-owner / Scrum-master](process-owner-scrum-master.md).
 
-Overlapping edits of one file use a single implementer and still delegate adversarial reviewers and consultants when needed. File-disjoint work prefers parallel implementers, capped by the resource check. A resource monitor runs while parallel work is in flight and is shut down when the session ends.
+Overlapping edits of one file use a single implementer and still delegate adversarial reviewers and consultants when needed. When the owner selects parallelized implementation, file-disjoint work uses parallel implementers, capped by the resource check. A resource monitor runs while parallel work is in flight and is shut down when the session ends.
 
 ## Transport is orthogonal
 

@@ -9422,8 +9422,7 @@ def resolve_git_common_dir(project: Path) -> Path | None:
         for line in raw.splitlines():
             if line.startswith("gitdir:"):
                 target = Path(line.split(":", 1)[1].strip())
-                if not target.is_absolute():
-                    target = (marker.parent / target).resolve()
+                target = (marker.parent / target).resolve() if not target.is_absolute() else target.resolve()
                 # Only …/worktrees/<name> climbs; a modules/ gitdir stays on its own gitdir.
                 if target.parent.name == "worktrees" and (target.parent.parent / "objects").is_dir():
                     return target.parent.parent

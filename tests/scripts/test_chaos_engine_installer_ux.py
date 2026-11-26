@@ -132,7 +132,7 @@ class InstallerUxTests(unittest.TestCase):
             reporter = BOOTSTRAP.InstallReporter(stream=dumb, clock=lambda: 1.0, environ=dumb_env)
             reporter.announce(Path("/project"), "ShaftHQ/SHAFT_ENGINE", "main")
         self.assertEqual(
-            "[ChaosEngine 0.4.20261115.5] ShaftHQ/SHAFT_ENGINE@main\n",
+            "[ChaosEngine 1.20261126.0] ShaftHQ/SHAFT_ENGINE@main\n",
             dumb.getvalue(),
         )
 
@@ -249,9 +249,12 @@ class InstallerUxTests(unittest.TestCase):
         self.assertTrue(lines[0].startswith("[ChaosEngine"))
         self.assertLessEqual(len(lines[0]), 27)
         self.assertNotIn("C|*|E", lines[0])
+        full = "[ChaosEngine 1.20261126.0]"
+        self.assertEqual(full, lines[0])
+        self.assertEqual(len(full), 26)
         self.assertNotEqual(
-            BOOTSTRAP.brand_lines(width=27, color=False, unicode=False),
-            BOOTSTRAP.brand_lines(width=28, color=False, unicode=False),
+            BOOTSTRAP.brand_lines(width=25, color=False, unicode=False),
+            BOOTSTRAP.brand_lines(width=26, color=False, unicode=False),
         )
 
         class NarrowTty(io.StringIO):
@@ -332,45 +335,41 @@ class InstallerUxTests(unittest.TestCase):
         self.assertIn(gap + "Project demo", beside[1])
         self.assertEqual(BOOTSTRAP.mark_clear_space(BOOTSTRAP.BRAND_MARK_WIDE), gap.count(" "))
 
-    def test_wide_header_shows_literal_chaos_engine(self):
-        """The live wordmark slot is the words, not the 2-row block scan."""
-        label = "CHAOS ENGINE"
+    def test_wide_header_omits_chaos_engine_wordmark(self):
+        """The version sits on row 0. The frame does not print CHAOS ENGINE."""
         version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
         scans = [glyphs.rstrip() for glyphs, _mask in BOOTSTRAP.BRAND_WORDMARK_WIDE]
         self.assertTrue(scans and all(scans))
         self.assertTrue(BOOTSTRAP.BRAND_WORDMARK_WIDE[0][0].startswith("▛"))
-        for width in (84, 120):
+        for width in (60, 80, 84, 120, 200):
             lines = BOOTSTRAP.brand_lines(width=width, color=False, unicode=True)
-            slot = lines[BOOTSTRAP.BRAND_WORDMARK_ROW]
-            mark = BOOTSTRAP.BRAND_MARK_WIDE[BOOTSTRAP.BRAND_WORDMARK_ROW][0]
-            self.assertTrue(slot.startswith(mark), slot)
-            self.assertIn(label, slot)
-            self.assertNotIn("…", slot)
-            self.assertNotIn("...", slot)
-            self.assertLessEqual(len(slot), width)
-            self.assertIn(version, "\n".join(lines))
-            for glyphs in scans:
-                self.assertNotIn(glyphs, "\n".join(lines))
-        colored = BOOTSTRAP.brand_lines(width=120, color=True, unicode=True, truecolor=True)
-        painted = next(line for line in colored if label in line)
-        self.assertNotIn(BOOTSTRAP.CYBERNETIC_RED, painted[painted.index(label):])
-        ansi = BOOTSTRAP.brand_lines(width=120, color=True, unicode=True)
-        painted16 = next(line for line in ansi if label in line)
-        self.assertNotIn(BOOTSTRAP.ANSI_RED, painted16[painted16.index(label):])
+            blob = "\n".join(lines)
+            self.assertNotIn("CHAOS ENGINE", blob)
+            self.assertIn(version, blob)
+        wide = BOOTSTRAP.brand_lines(
+            width=120,
+            color=False,
+            unicode=True,
+            header=["Project demo", "Source origin"],
+        )
+        self.assertIn("ChaosEngine " + version, wide[0])
+        self.assertIn("Project demo", wide[1])
+        self.assertNotEqual("", wide[0].strip())
+        self.assertNotEqual("", wide[1].strip())
         for width in (60, 83):
             stacked = BOOTSTRAP.brand_lines(width=width, color=False, unicode=True)
-            self.assertTrue(any(line == label for line in stacked), stacked)
-            self.assertTrue(any(version in line and line != label for line in stacked), stacked)
+            self.assertNotIn("CHAOS ENGINE", "\n".join(stacked))
+            self.assertTrue(any(version in line for line in stacked), stacked)
             for glyphs, _mask in BOOTSTRAP.BRAND_MARK_STACK:
                 self.assertIn(glyphs, stacked)
         narrow = BOOTSTRAP.brand_lines(width=59, color=False, unicode=True)
         self.assertEqual(1, len(narrow))
         self.assertIn("[ChaosEngine", narrow[0])
-        self.assertNotIn(label, narrow[0])
+        self.assertNotIn("CHAOS ENGINE", narrow[0])
         ascii_wide = BOOTSTRAP.brand_lines(width=120, color=False, unicode=False)
         self.assertEqual(1, len(ascii_wide))
         self.assertIn("[ChaosEngine", ascii_wide[0])
-        self.assertNotIn(label, ascii_wide[0])
+        self.assertNotIn("CHAOS ENGINE", ascii_wide[0])
 
     def test_lone_bootstrap_copy_keeps_the_embedded_version(self):
         version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()

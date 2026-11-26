@@ -3716,7 +3716,9 @@ def _quality_reason(report: dict) -> str:
     return (
         "Test quality gate blocked this edit "
         f"({target}): {detail}. "
-        "Fix the test or add the matching inline allow token."
+        "Fix the test or add the matching inline allow token "
+        "`assert-justified: <reason>` above the test or annotation, or inside the test body "
+        "(`// assert-justified: <reason>` for Java/Kotlin, `# assert-justified: <reason>` for Python)."
     )
 
 
@@ -4155,15 +4157,61 @@ def _owner_gate_ends_open_pr(event: dict, session_id: str) -> bool:
     return bool(decision.get("end_goal"))
 
 
+def _jobs_module():
+    path = _overlay_module("jobs.py")
+    if not path.is_file():
+        return None
+    spec = importlib.util.spec_from_file_location("chaos_engine_jobs", path)
+    if spec is None or spec.loader is None:
+        return None
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+    except Exception:
+        return None
+    return module
+
+
+def _live_job_note(event: dict, event_name: str) -> str:
+    """One block listing durable jobs that are still live when the session stops."""
+    if event_name != "Stop":
+        return ""
+    module = _jobs_module()
+    if module is None or not hasattr(module, "list_live_jobs"):
+        return ""
+    try:
+        jobs = module.list_live_jobs(Path(str(event.get("cwd") or Path.cwd())))
+    except (OSError, ValueError):
+        return ""
+    if not jobs:
+        return ""
+    lines = ["Background tasks still running:"]
+    for job in jobs:
+        if not isinstance(job, dict):
+            continue
+        name = str(job.get("name") or "job")
+        pid = job.get("pid")
+        lines.append(f"- {name} pid={pid} (`tool.py job stop {name}`)")
+    if len(lines) == 1:
+        return ""
+    return "\n".join(lines)
+
+
 def _stop_block(event: dict, event_name: str, tool_name: str, session_id: str) -> int | None:
     if event_name not in {"Stop", "SubagentStop"}:
         return None
     reason = _stop_block_reason(event, session_id)
     if _owner_gate_ends_open_pr(event, session_id):
         if reason and not reason.startswith("Delivery is not complete while the pull request is open."):
+            note = _live_job_note(event, event_name)
+            if note:
+                reason = f"{reason}\n{note}"
             return _deny(event, event_name, tool_name, reason)
         return None
     if reason:
+        note = _live_job_note(event, event_name)
+        if note:
+            reason = f"{reason}\n{note}"
         return _deny(event, event_name, tool_name, reason)
     return None
 
@@ -4349,7 +4397,8 @@ def _emit_notes(
                     kind="repetition",
                     text=advice,
                 )
-    notes = [item for item in (retrieve_note, complexity_hint, advice, open_pr_note) if item]
+    job_note = _live_job_note(event, event_name)
+    notes = [item for item in (retrieve_note, complexity_hint, advice, open_pr_note, job_note) if item]
     if notes:
         print(json.dumps({"additionalContext": "\n".join(notes)}))
 

@@ -1,7 +1,7 @@
-   ▗▄▄▄▄▟      ChaosEngine 0.4.20261115.5
+   ▗▄▄▄▄▟      ChaosEngine 1.20261126.0
  ▗▟██████▐█▙▖    Project    <project>
 ▟██▀    █▞▀▀▀    Source     ShaftHQ/chaosengine-harness@main
-██▌   ▟▙ ██▌   CHAOS ENGINE
+██▌   ▟▙ ██▌ 
 ██▌   ▝▀ █▄▄ 
 ▜██▄    █  ▄▄
  ▝▜██████▐██▀

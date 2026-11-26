@@ -1145,7 +1145,7 @@ class OrchestratorModeContractTest(unittest.TestCase):
             workflows,
         )
         self.assertIn(
-            "not the default when several file-disjoint streams fit the resource check",
+            "Sequential orchestrated mode (`ORCHESTRATOR + SINGLE IMPLEMENTER`) is the default",
             workflows,
         )
         self.assertNotIn("Default to `ORCHESTRATOR + SINGLE IMPLEMENTER`", workflows)
@@ -1155,7 +1155,7 @@ class OrchestratorModeContractTest(unittest.TestCase):
             workflows,
         )
         self.assertIn(
-            "File-disjoint work prefers parallel implementers, capped by the resource check.",
+            "When the owner selects parallelized implementation, file-disjoint work uses parallel implementers, capped by the resource check.",
             workflows,
         )
         self.assertIn(

@@ -25,6 +25,11 @@ session or watchdog reads the lease instead of guessing.
 - Before any resume, run `tool.py job status <name>`. `live` means leave it
   alone. A doc's mtime or `pgrep` is never a liveness signal: a live worker can
   go quiet for half an hour.
+- Every background wait or poll loop carries a bounded timeout. Never write
+  an unbounded `until <check>; do sleep 5; done`. Use
+  `tool.py job wait <name> --timeout <S>` or a bounded iteration and deadline
+  counter. Windows emulator and Appium sessions use
+  [windows-mobile-start.md](windows-mobile-start.md).
 
 - Agent work itself (not a command) checkpoints to the task ledger
   ([`task_ledger.py`](../runtime/task_ledger.py)) and stops at 35 minutes:

@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 1.20261126.0 - 2026-11-26
+
+- Version stamps use `<major>.<YYYYMMDD>.<index>` from the UTC commit date. The index is the 0-based first-parent count that day. No GitHub Release is cut per commit.
+- The installer header no longer prints a `CHAOS ENGINE` wordmark or a blank band around it.
+
 ### Removed
 
 - Removed the deja transcript store ([#64](https://github.com/ShaftHQ/chaosengine-harness/issues/64)). Token cost alone is enough. Upgrade strips an MCP entry a previous install wrote, then the strip list drops that store. `--with-deja` is not a flag.

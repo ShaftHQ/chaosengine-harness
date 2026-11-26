@@ -33,6 +33,7 @@ worktree only (never deleted, never other worktrees). Never-touch stays locked.
 from __future__ import annotations
 
 import ast
+import contextvars
 import glob
 import hashlib
 import hmac
@@ -381,6 +382,122 @@ def _computed_command_head(head: str) -> bool:
     A proven literal such as `$(echo ls)` is rewritten to `ls` before this check.
     """
     return "$" in head or "`" in head
+
+
+_SIMPLE_VAR_HEAD = re.compile(r"^\$(?:[A-Za-z_][A-Za-z0-9_]*|\{[A-Za-z_][A-Za-z0-9_]*\})$")
+_ASSIGNMENT_WORD = re.compile(r"^(?P<name>[A-Za-z_][A-Za-z0-9_]*)(?P<append>\+?=)(?P<value>.*)$")
+_EVAL_WORD = re.compile(r"(?:^|[^\w.-])eval\b")
+_DELETE_STEM = re.compile(r"rm|del|unlink|shred|clean|wipe|purge|erase|remove", re.IGNORECASE)
+_DELETE_STYLE_FLAG = re.compile(r"^-(?:[A-Za-z]*[rR]|[A-Za-z]*f[A-Za-z]*)$|^--(?:recursive|force)$|^-delete$")
+_INDIRECT_LAUNCHERS = frozenset({"sh", "bash", "zsh", "dash", "ash", "ksh", "mksh", "python", "python3", "perl", "ruby", "node", "eval"})
+_SPAN: contextvars.ContextVar[str] = contextvars.ContextVar("ce_delete_span", default="")
+_COMMAND: contextvars.ContextVar[str] = contextvars.ContextVar("ce_delete_command", default="")
+
+
+def _note_span(words: list[str]) -> None:
+    text = " ".join(words).strip()
+    if len(text) > 160:
+        text = text[:157] + "..."
+    if text:
+        _SPAN.set(text)
+
+
+def _command_has_delete_hint(command: str) -> bool:
+    """True when the full command text builds or names a delete."""
+    if not command:
+        return True
+    return bool(
+        DELETE_WORD.search(command)
+        or RMTREE.search(command)
+        or PATHLIB_DELETE.search(command)
+        or PY_DELETE_HINT.search(command)
+        or _EVAL_WORD.search(command)
+    )
+
+
+def _simple_head_name(head: str) -> str | None:
+    """Name expanded by a single plain ``$VAR`` / ``${VAR}`` command head."""
+    if not _SIMPLE_VAR_HEAD.fullmatch(head):
+        return None
+    return head[2:-1] if head.startswith("${") else head[1:]
+
+
+def _literal_executable(value: str, mask: str) -> bool:
+    """Whether an assignment value is a proven literal executable path."""
+    if not value or "$" in value or "`" in value or "1" in mask:
+        return False
+    if DELETE_WORD.search(value) or _DELETE_STEM.search(Path(value).name):
+        return False
+    return Path(value).name not in _INDIRECT_LAUNCHERS
+
+
+def _computed_head_assignment_safe(command: str, name: str) -> bool:
+    """Only permit literal assignments to a computed command-head variable.
+
+    The shell parser deliberately does not evaluate variables.  A local value is
+    therefore safe only when every way it can populate ``name`` is a literal
+    executable word; all builders and appends fail closed.
+    """
+    if re.search(r"\$\{![^}]+\}", command):
+        return False
+    try:
+        events = _parse_shell(command)
+    except ValueError:
+        return False
+    for kind, payload in events:
+        if kind != "cmd" or not isinstance(payload, _SimpleCommand):
+            continue
+        cmd = payload
+        for word in cmd.words:
+            match = _ASSIGNMENT_WORD.fullmatch(word)
+            if match and match.group("append") == "+=":
+                return False
+        head, _rest = _head(cmd.words)
+        if head in {"eval", "declare", "typeset"}:
+            return False
+        if head == "printf" and "-v" in cmd.words[1:]:
+            return False
+        if head == "read" and name in cmd.words[1:]:
+            return False
+        for index, word in enumerate(cmd.words):
+            match = _ASSIGNMENT_WORD.fullmatch(word)
+            if not match or match.group("name") != name:
+                continue
+            value_start = match.start("value")
+            value_mask = cmd.word_masks[index][value_start:]
+            if not _literal_executable(match.group("value"), value_mask):
+                return False
+    return True
+
+
+def _refuse_computed_head(head: str, words: list[str]) -> None:
+    """Refuse a head this parser cannot see, except a plain ``$VAR`` with no delete hint.
+
+    ``$(echo rm)``, ``$a$b``, and ``CMD=rm; $CMD file`` stay refused.
+    ``"$MVN_BIN" test`` in a command that never names a delete verb does not.
+    """
+    if not _computed_command_head(head):
+        return
+    command = _COMMAND.get()
+    identifier = _simple_head_name(head)
+    has_delete_flag = any(_DELETE_STYLE_FLAG.fullmatch(word) for word in words[1:])
+    if (
+        identifier is not None
+        and not _command_has_delete_hint(command)
+        and not _DELETE_STEM.search(identifier)
+        and not has_delete_flag
+        and _computed_head_assignment_safe(command, identifier)
+    ):
+        return
+    _note_span(words)
+    raise Unsure("computed command head")
+
+
+def _matched_clause(command: str) -> str:
+    span = _SPAN.get() or " ".join(command.split())
+    if len(span) > 180:
+        span = span[:177] + "..."
+    return f"matched `{span}`."
 
 
 def _collapse_leading_slashes(path: str) -> str:
@@ -1068,10 +1185,30 @@ def _is_getattr_call(func: ast.AST, getattr_names: set[str], builtin_mods: set[s
     return _is_getattr_value(func, getattr_names, builtin_mods)
 
 
+def _is_object_getattribute(node: ast.AST, builtin_mods: set[str]) -> bool:
+    """``object.__getattribute__`` or ``builtins.object.__getattribute__``.
+
+    The call is two arguments, the same shape as ``getattr(obj, name)``.
+    """
+    if not isinstance(node, ast.Attribute) or node.attr != "__getattribute__":
+        return False
+    value = node.value
+    if isinstance(value, ast.Name) and value.id == "object":
+        return True
+    return (
+        isinstance(value, ast.Attribute)
+        and value.attr == "object"
+        and isinstance(value.value, ast.Name)
+        and value.value.id in builtin_mods
+    )
+
+
 def _is_getattr_value(node: ast.AST, getattr_names: set[str], builtin_mods: set[str]) -> bool:
     """True when ``node`` is ``getattr`` or a simple alias such as ``g = getattr``."""
     if isinstance(node, ast.Name):
         return node.id in getattr_names
+    if _is_object_getattribute(node, builtin_mods):
+        return True
     return (
         isinstance(node, ast.Attribute)
         and node.attr == "getattr"
@@ -1545,55 +1682,73 @@ def _python_entries(segment: str) -> list[tuple[str, bool]]:
             )
 
     entries: list[tuple[str, bool]] = []
-    for node in ast.walk(tree):
+
+    def _inspect(node: ast.AST, bound_vars: set[str]) -> None:
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Lambda):
+            local = set(bound_vars)
+            params = [arg.arg for arg in node.func.args.args]
+            for index, arg in enumerate(node.args):
+                if index < len(params) and _is_vars_value(arg, bound_vars, builtin_mods, getattr_names):
+                    local.add(params[index])
+                _inspect(arg, bound_vars)
+            for keyword in node.keywords:
+                if (
+                    keyword.arg
+                    and keyword.arg in params
+                    and _is_vars_value(keyword.value, bound_vars, builtin_mods, getattr_names)
+                ):
+                    local.add(keyword.arg)
+                _inspect(keyword.value, bound_vars)
+            _inspect(node.func.body, local)
+            return
         if _ambiguous_vars_lookup(
-            node, os_mods, shutil_mods, getattr_names, builtin_mods, vars_names
+            node, os_mods, shutil_mods, getattr_names, builtin_mods, bound_vars
         ):
             raise Unsure("indirect Python delete")
-        if not isinstance(node, ast.Call):
-            continue
-        if _is_indirect_getattr_delete(
-            node, os_mods, shutil_mods, pathlib_mods, path_ctors, getattr_names, builtin_mods
-        ):
-            raise Unsure("indirect Python delete via getattr")
-        dict_label = _module_dict_delete_label(
-            node, os_mods, shutil_mods, dict_aliases, getattr_names, builtin_mods, vars_names
-        )
-        if dict_label is not None:
-            raise Unsure(f"indirect Python delete via {dict_label}.__dict__")
-        if isinstance(node.func, ast.Name) and node.func.id in func_aliases:
-            alias_kind, alias_class = func_aliases[node.func.id]
-            if alias_class != "safe":
-                raise Unsure(f"indirect Python delete via {alias_kind}.__dict__")
-        func = node.func
-        if isinstance(func, ast.Name) and func.id in direct_funcs:
-            arg = _call_path_arg(node)
-            literal = _ast_literal_path(arg, path_ctors, pathlib_mods) if arg is not None else None
-            if literal is None:
-                raise Unsure("non-literal path in a Python delete call")
-            entries.append((literal, direct_funcs[func.id]))
-            continue
-        if isinstance(func, ast.Attribute):
-            val, attr = func.value, func.attr
-            if isinstance(val, ast.Name) and val.id in shutil_mods and attr == "rmtree":
+        if isinstance(node, ast.Call):
+            if _is_indirect_getattr_delete(
+                node, os_mods, shutil_mods, pathlib_mods, path_ctors, getattr_names, builtin_mods
+            ):
+                raise Unsure("indirect Python delete via getattr")
+            dict_label = _module_dict_delete_label(
+                node, os_mods, shutil_mods, dict_aliases, getattr_names, builtin_mods, bound_vars
+            )
+            if dict_label is not None:
+                raise Unsure(f"indirect Python delete via {dict_label}.__dict__")
+            if isinstance(node.func, ast.Name) and node.func.id in func_aliases:
+                alias_kind, alias_class = func_aliases[node.func.id]
+                if alias_class != "safe":
+                    raise Unsure(f"indirect Python delete via {alias_kind}.__dict__")
+            func = node.func
+            if isinstance(func, ast.Name) and func.id in direct_funcs:
                 arg = _call_path_arg(node)
                 literal = _ast_literal_path(arg, path_ctors, pathlib_mods) if arg is not None else None
                 if literal is None:
                     raise Unsure("non-literal path in a Python delete call")
-                entries.append((literal, True))
-                continue
-            if isinstance(val, ast.Name) and val.id in os_mods and attr in _OS_DELETE_FUNCS:
-                arg = _call_path_arg(node)
-                literal = _ast_literal_path(arg, path_ctors, pathlib_mods) if arg is not None else None
-                if literal is None:
-                    raise Unsure("non-literal path in a Python delete call")
-                entries.append((literal, False))
-                continue
-            if attr in _PATH_DELETE_METHODS:
-                literal = _ast_literal_path(val, path_ctors, pathlib_mods)
-                if literal is None:
-                    raise Unsure("non-literal path in a Python delete call")
-                entries.append((literal, attr == "rmtree"))
+                entries.append((literal, direct_funcs[func.id]))
+            elif isinstance(func, ast.Attribute):
+                val, attr = func.value, func.attr
+                if isinstance(val, ast.Name) and val.id in shutil_mods and attr == "rmtree":
+                    arg = _call_path_arg(node)
+                    literal = _ast_literal_path(arg, path_ctors, pathlib_mods) if arg is not None else None
+                    if literal is None:
+                        raise Unsure("non-literal path in a Python delete call")
+                    entries.append((literal, True))
+                elif isinstance(val, ast.Name) and val.id in os_mods and attr in _OS_DELETE_FUNCS:
+                    arg = _call_path_arg(node)
+                    literal = _ast_literal_path(arg, path_ctors, pathlib_mods) if arg is not None else None
+                    if literal is None:
+                        raise Unsure("non-literal path in a Python delete call")
+                    entries.append((literal, False))
+                elif attr in _PATH_DELETE_METHODS:
+                    literal = _ast_literal_path(val, path_ctors, pathlib_mods)
+                    if literal is None:
+                        raise Unsure("non-literal path in a Python delete call")
+                    entries.append((literal, attr == "rmtree"))
+        for child in ast.iter_child_nodes(node):
+            _inspect(child, bound_vars)
+
+    _inspect(tree, vars_names)
     return entries
 
 
@@ -1620,14 +1775,49 @@ def _rm_recursive(arguments: list[str]) -> bool:
     return False
 
 
+def _mv_operands(
+    arguments: list[str], masks: list[str] | None = None
+) -> tuple[list[tuple[str, str | None]], tuple[str, str | None]]:
+    """Return ``mv`` sources and destination, including GNU target-directory mode."""
+    pairs = _zip_masks(arguments, masks)
+    target: tuple[str, str | None] | None = None
+    operands: list[tuple[str, str | None]] = []
+    options = True
+    index = 0
+    while index < len(pairs):
+        item, mask = pairs[index]
+        if options and item == "--":
+            options = False
+        elif options and item in {"-t", "--target-directory"}:
+            index += 1
+            if index >= len(pairs):
+                raise Unsure("mv target-directory without destination")
+            target = pairs[index]
+        elif options and item.startswith("-t") and item != "-t":
+            target = (item[2:], mask[2:] if mask else None)
+        elif options and item.startswith("--target-directory="):
+            value = item.split("=", 1)[1]
+            target = (value, mask[len(item) - len(value):] if mask else None)
+        elif options and item.startswith("-") and item != "-":
+            pass
+        else:
+            operands.append((item, mask))
+        index += 1
+    if target is not None:
+        if not operands:
+            raise Unsure("mv target-directory without source")
+        return operands, target
+    if len(operands) < 2:
+        raise Unsure("mv without source and destination")
+    return operands[:-1], operands[-1]
+
+
 def _mv_entries(
     arguments: list[str], masks: list[str] | None = None
 ) -> list[tuple[str, bool, str | None]]:
     """``mv`` sources; trailing slash means move-through-contents (follow)."""
-    operands = _operands(arguments, masks)
-    if len(operands) < 2:
-        raise Unsure("mv without source and destination")
-    return [(item, item.endswith(("/", os.sep)), mask) for item, mask in operands[:-1]]
+    sources, _dest = _mv_operands(arguments, masks)
+    return [(item, item.endswith(("/", os.sep)), mask) for item, mask in sources]
 
 
 def _rsync_entries(
@@ -1670,6 +1860,61 @@ def _expand_entries(raw: list[tuple], cwd: Path) -> list[tuple[Path, bool]]:
     return found
 
 
+def _literal_mv_dest(raw: str, mask: str | None, cwd: Path) -> Path | None:
+    """A non-computed, non-glob destination path, or None when it is not literal."""
+    if not raw or UNSURE.search(raw) or _brace_expansion_is_active(raw, mask):
+        return None
+    expanded = os.path.expanduser(raw)
+    base = expanded if os.path.isabs(expanded) else os.path.join(os.fspath(cwd), expanded)
+    if glob.has_magic(base):
+        return None
+    return Path(os.path.normpath(base))
+
+
+def _mv_preserves_in_repo(
+    sources: list[tuple[str, str | None]], dest_operand: tuple[str, str | None], cwd: Path
+) -> bool:
+    """True when ``mv`` only renames inside this repo and overwrites nothing.
+
+    A computed or glob destination is refused. A destination outside the repo,
+    ``/dev/null``, or an existing file (or an existing ``dst/src.name``) is not
+    benign: the caller keeps the source-as-delete rule.
+    """
+    if not sources:
+        return False
+    dest_raw, dest_mask = dest_operand
+    if _literal_mv_dest(dest_raw, dest_mask, cwd) is None:
+        _note_span(["mv", *[item for item, _mask in sources], dest_raw])
+        raise Unsure(f"computed mv destination: {dest_raw}")
+    dest = _literal_mv_dest(dest_raw, dest_mask, cwd)
+    if dest is None:
+        return False
+    if dest.as_posix() == "/dev/null":
+        return False
+    top = _git(cwd, "rev-parse", "--show-toplevel")
+    if top.returncode != 0 or not top.stdout.strip():
+        return False
+    repo = Path(top.stdout.strip()).resolve()
+    try:
+        dest_real = dest.resolve()
+    except OSError:
+        return False
+    if dest_real != repo and repo not in dest_real.parents:
+        return False
+    if not dest.exists() and not dest.is_symlink():
+        return True
+    if dest.is_dir() and not dest.is_symlink():
+        for src, _mask in sources:
+            name = Path(src).name
+            if not name or name in {".", ".."}:
+                return False
+            landing = dest / name
+            if landing.exists() or landing.is_symlink():
+                return False
+        return True
+    return False
+
+
 def _segment_targets(
     arguments: list[str],
     cwd: Path,
@@ -1679,8 +1924,7 @@ def _segment_targets(
 ) -> list[tuple[Path, bool]]:
     head, rest = _head(arguments)
     rest_masks = _suffix_masks(arguments, rest, quote_masks)
-    if _computed_command_head(head):
-        raise Unsure("computed command head")
+    _refuse_computed_head(head, arguments)
     if head in {"rm", "unlink", "shred"}:
         targets = _rm_targets(rest, rest_masks)
         if cwd_computed and _needs_computed_cwd([item for item, _mask in targets]):
@@ -1698,6 +1942,11 @@ def _segment_targets(
         entries = _mv_entries(rest, rest_masks)
         if cwd_computed and _needs_computed_cwd([item for item, _follow, _mask in entries]):
             raise Unsure("cd to a computed path before a delete")
+        sources, dest = _mv_operands(rest, rest_masks)
+        if not cwd_computed and _mv_preserves_in_repo(sources, dest, cwd):
+            return []
+        if entries:
+            _note_span(arguments)
         return _expand_entries(entries, cwd)
     if head == "rsync":
         entries = _rsync_entries(rest, rest_masks)
@@ -2657,8 +2906,7 @@ def _command_targets(
 
         head, rest = _head(cmd.words)
         rest_masks = _suffix_masks(cmd.words, rest, cmd.word_masks)
-        if _computed_command_head(head):
-            raise Unsure("computed command head")
+        _refuse_computed_head(head, cmd.words)
         if head == "eval":
             scripts: list[str] = []
             script = " ".join(rest)
@@ -4610,40 +4858,55 @@ def check(
     # Parse before the visible-delete regex. Quote-split and ANSI-C command
     # names (r'm', $'r\x6d') never contain the raw word. The regex still fails
     # closed inside command_targets when an unparsable command shows a delete word.
+    command_token = _COMMAND.set(command)
+    span_token = _SPAN.set("")
     try:
-        targets = command_targets(command, cwd)
-    except Unsure as error:
-        return f"Delete guard (#7251): refused, cannot tell what this deletes ({error}). Name literal paths and run `tool.py delete-check <paths>`.", []
-    if code is not None and not targets:
-        return "Delete guard (#7251): refused: no delete targets.", []
-    for target in targets:
-        hit = never_touch(target)
-        if hit:
-            return f"Delete guard (#7343): refused `{target}`: {hit}. No code unlocks it.", []
-    rev = _checkout_rev(command)
-    reasons = [(target, reason) for target in targets for reason in [path_reason(target, project, rev)] if reason]
-    if not reasons:
-        if code is None:
-            return "", []
-        rejected = verify_code(code, targets, consume=consume)
+        try:
+            targets = command_targets(command, cwd)
+        except Unsure as error:
+            return (
+                f"Delete guard (#7251): refused, cannot tell what this deletes ({error}). "
+                f"{_matched_clause(command)} "
+                "Name literal paths and run `tool.py delete-check <paths>`."
+            ), []
+        if code is not None and not targets:
+            return "Delete guard (#7251): refused: no delete targets.", []
+        for target in targets:
+            hit = never_touch(target)
+            if hit:
+                return (
+                    f"Delete guard (#7343): refused `{target}`: {hit}. "
+                    f"{_matched_clause(command)} No code unlocks it."
+                ), []
+        rev = _checkout_rev(command)
+        reasons = [(target, reason) for target in targets for reason in [path_reason(target, project, rev)] if reason]
+        if not reasons:
+            if code is None:
+                return "", []
+            rejected = verify_code(code, targets, consume=consume)
+            if not rejected:
+                return "", [f"`{target}`: (owner code accepted)" for target in targets]
+            target = targets[0]
+            return (
+                f"Delete guard (#7251): refused `{target}`: owner code rejected: {rejected}. "
+                f"{_matched_clause(command)} "
+                f"Run `tool.py delete-check --request-code <same paths>` and ask the owner to paste the code back in chat."
+            ), []
+        effective_code = code if code is not None else os.environ.get(ACK_ENV, "")
+        rejected = verify_code(effective_code, targets, consume=consume) if effective_code else "no code"
         if not rejected:
-            return "", [f"`{target}`: (owner code accepted)" for target in targets]
-        target = targets[0]
+            return "", [f"`{target}`: {reason} (owner code accepted)" for target, reason in reasons]
+        target, reason = reasons[0]
+        hint = f"owner code rejected: {rejected}. " if effective_code else ""
         return (
-            f"Delete guard (#7251): refused `{target}`: owner code rejected: {rejected}. "
-            f"Run `tool.py delete-check --request-code <same paths>` and ask the owner to paste the code back in chat."
+            f"Delete guard (#7251): refused `{target}`: {reason}. {hint}{_matched_clause(command)} "
+            f"Commit and push it, back it up, "
+            f"add a scratch pattern to {STATE_DIR}/{ALLOW_FILE}, or run `tool.py delete-check --request-code <same paths>` "
+            f"and ask the owner to paste the code back in chat."
         ), []
-    effective_code = code if code is not None else os.environ.get(ACK_ENV, "")
-    rejected = verify_code(effective_code, targets, consume=consume) if effective_code else "no code"
-    if not rejected:
-        return "", [f"`{target}`: {reason} (owner code accepted)" for target, reason in reasons]
-    target, reason = reasons[0]
-    hint = f"owner code rejected: {rejected}. " if effective_code else ""
-    return (
-        f"Delete guard (#7251): refused `{target}`: {reason}. {hint}Commit and push it, back it up, "
-        f"add a scratch pattern to {STATE_DIR}/{ALLOW_FILE}, or run `tool.py delete-check --request-code <same paths>` "
-        f"and ask the owner to paste the code back in chat."
-    ), []
+    finally:
+        _COMMAND.reset(command_token)
+        _SPAN.reset(span_token)
 
 
 TOOL_REPAIR_COMMAND = "python3 .chaos-engine/install.py repair --project ."

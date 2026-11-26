@@ -82,6 +82,7 @@ sorted. Each row is a name, ≤2-line Use-when, and a path — no workflow dumps
 | Token budget modes | Choose or override ultra-lean / balanced / deep context spend | [`token-budget-modes.md`](token-budget-modes.md) |
 | UI delivery | User-visible UI change: red-then-green e2e, measured geometry, viewport x theme matrix, CI coverage gap | [`ui-delivery.md`](ui-delivery.md) |
 | Web E2E automation | Web end-to-end tests: locators, network faults, Playwright, and Selenium BiDi | [`../skills/web-e2e-automation/SKILL.md`](../skills/web-e2e-automation/SKILL.md) |
+| Windows mobile start | Windows emulator and Appium start: bounded checks, fail-loud Linux tools, per-command MSYS2 path conversion | [`windows-mobile-start.md`](windows-mobile-start.md) |
 | Workflow induction | Repeated successful step windows; skill publish behind the eval suite | [`workflow-induction.md`](workflow-induction.md) |
 | Zero-LLM catalog | Prefer doctor/repair/script paths before opening chat discovery | [`zero-llm-catalog.md`](zero-llm-catalog.md) |
 

@@ -453,6 +453,39 @@ class GitHuskTests(unittest.TestCase):
             self.assertEqual("git-husk", result["blockedBy"])
             self.assertIn("references/box-durability.md", str(result["fixNext"]))
 
+    def test_absolute_gitdir_resolves_worktree_and_symlinked_module_husk(self):
+        """Absolute ``gitdir:`` paths resolve before the worktrees/modules check.
+
+        A real worktree gitdir stays healthy. An absolute ``gitdir:`` that
+        points at ``worktrees/<name>`` and is a symlink to ``modules/<name>``
+        resolves to the module and is a husk.
+        """
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            parent = root / "parent"
+            parent.mkdir()
+            self._commit_repo(parent)
+            linked = root / "linked"
+            _git(parent, "worktree", "add", "-q", "-b", "linked", str(linked))
+            gitfile = linked / ".git"
+            relative = gitfile.read_text(encoding="utf-8").split(":", 1)[1].strip()
+            absolute = (linked / relative).resolve()
+            gitfile.write_text(f"gitdir: {absolute}\n", encoding="utf-8")
+            self.assertFalse(self.install.is_husk_git(linked))
+
+            module = parent / ".git" / "modules" / "ghost"
+            module.mkdir(parents=True)
+            (module / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+            link = parent / ".git" / "worktrees" / "ghost"
+            link.symlink_to(module, target_is_directory=True)
+            child = root / "ghost-child"
+            child.mkdir()
+            (child / ".git").write_text(f"gitdir: {link}\n", encoding="utf-8")
+            resolved = self.install.resolve_git_common_dir(child)
+            self.assertIsNotNone(resolved)
+            self.assertEqual(module.resolve(), Path(resolved).resolve())
+            self.assertTrue(self.install.is_husk_git(child))
+
 
 class CompletionHookTests(unittest.TestCase):
     @classmethod

@@ -1396,7 +1396,6 @@ INSTALLER_ISSUE_AUTHORITY = (
 )
 
 _DEFAULT_ISSUE_REPOSITORY = "ShaftHQ/chaosengine-harness"
-_LIVE_WORDMARK = "CHAOS ENGINE"
 
 
 def _failure_repository(issue_url: str) -> str:
@@ -1666,7 +1665,7 @@ def source_tree_url(repository: str, commit: str, *, root_layout: bool) -> str:
 
 # install.sh copies this file alone and draws the header before the repository
 # download, so the sibling VERSION file is not there yet. Keep this equal to VERSION.
-_EMBEDDED_VERSION = "0.4.20261115.5"
+_EMBEDDED_VERSION = "1.20261126.0"
 
 
 def product_version() -> str:
@@ -1725,13 +1724,13 @@ def brand_lines(
     header: list[str] | None = None,
     show_mark: bool = True,
 ) -> list[str]:
-    """Symbol from the generated scan. The live wordmark is ``CHAOS ENGINE``.
+    """Symbol from the generated scan beside the version and header.
 
     ``BRAND_WORDMARK_WIDE`` stays the generated scan for parity checks. The
-    frame does not paint that scan and does not colour the words with the core
-    red. At 84 columns or more the 8-row mark sits beside the header, and the
-    words sit in the wordmark slot. From 60 to 83 the 5-row mark is stacked
-    above a ``CHAOS ENGINE`` line and the version line. The gap is the core
+    frame does not paint that scan and does not print a ``CHAOS ENGINE``
+    wordmark or a blank slot above or below it. At 84 columns or more the
+    8-row mark sits beside the version and header from row 0. From 60 to 83
+    the 5-row mark is stacked above the version line. The gap is the core
     width. ``lockup`` is accepted and unused.
     """
     del lockup
@@ -1756,40 +1755,16 @@ def brand_lines(
     if width >= 84 and mark_width + clear < width:
         gap = " " * clear
         budget = width - mark_width - clear
-        occupied = range(BRAND_WORDMARK_ROW, BRAND_WORDMARK_ROW + len(BRAND_WORDMARK_WIDE))
-        free = [index for index in range(len(mark)) if index not in occupied]
-        placed: dict[int, str] = {}
-        text_index = 0
-        for index in free:
-            if text_index >= len(rights):
-                break
-            placed[index] = rights[text_index]
-            text_index += 1
         lines = []
         for index, left in enumerate(mark):
-            slot = index - BRAND_WORDMARK_ROW
-            in_slot = 0 <= slot < len(BRAND_WORDMARK_WIDE)
-            shown = placed.get(index, "")
-            if in_slot and slot == 0:
-                piece = (
-                    _LIVE_WORDMARK
-                    if len(_LIVE_WORDMARK) <= budget
-                    else _fit_visible(_LIVE_WORDMARK, budget, unicode=True)
-                )
-                lines.append(left + gap + piece)
-                continue
-            if in_slot:
+            if index < len(rights):
+                lines.append(left + gap + _fit_visible(rights[index], budget, unicode=True))
+            else:
                 lines.append(left)
-                continue
-            if shown:
-                lines.append(left + gap + _fit_visible(shown, budget, unicode=True))
-                continue
-            lines.append(left)
-        while text_index < len(rights):
-            lines.append(" " * mark_width + gap + _fit_visible(rights[text_index], budget, unicode=True))
-            text_index += 1
+        for extra in rights[len(mark):]:
+            lines.append(" " * mark_width + gap + _fit_visible(extra, budget, unicode=True))
         return lines
-    lines = [*mark, _LIVE_WORDMARK, word, *(header or [])]
+    lines = [*mark, word, *(header or [])]
     return [_fit_visible(line, width, unicode=True) for line in lines]
 
 
@@ -4483,7 +4458,7 @@ ORIGIN_ONLY_ROOT_FILES = frozenset(
 
 
 REMOTE_MANIFEST_NAME = "chaosengine-manifest.json"
-RELEASE_VERSION = re.compile(r"^v?\d+\.\d+\.\d{8}(?:\.\d+)?$")
+RELEASE_VERSION = re.compile(r"^v?\d+(?:\.\d+)?\.\d{8}(?:\.\d+)?$")
 _SYNC_ACTIONS = frozenset({"unchanged", "update", "add", "restore", "edited", "stray", "remove"})
 
 
@@ -7744,7 +7719,7 @@ def resolve_version_pin(repository: str, pin: str | None, opener) -> str | None:
         if COMMIT.fullmatch(commit) is None:
             raise ValueError("CE-INSTALL-FAILED: release manifest commit is invalid")
         return commit
-    raise ValueError("version must be 0.4.YYYYMMDD.N or a 40-hex commit")
+    raise ValueError("version must be 1.YYYYMMDD.N (or 0.4.YYYYMMDD.N) or a 40-hex commit")
 
 
 def utf8_text_stream(stream) -> None:
