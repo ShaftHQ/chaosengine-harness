@@ -116,6 +116,7 @@ class DeleteGuardGhHeredoc240Test(unittest.TestCase):
 
     def test_arithmetic_left_shift_and_herestring_inside_cmd_sub(self) -> None:
         self.assertEqual("", self.reason('echo "$(echo $(( 1 << 2 )))"'))
+        self.assertEqual("", self.reason('echo "$(echo $(( 1<(2 << 3) )))"'))
         self.assertEqual("", self.reason('echo "$(cat <<< \'rm -rf precious.txt\')"'))
         refused = self.reason(f'echo "$(sh <<< \'rm -rf {self.precious}\')"')
         self.assertIn("untracked", refused)
@@ -244,6 +245,151 @@ class DeleteGuardGhHeredoc240Test(unittest.TestCase):
                 reason = self.reason(cmd)
                 self.assertIn("untracked", reason)
                 self.assertIn("precious.txt", reason)
+
+    def test_adversarial_nested_cmd_sub_heredoc_scoping_refused(self) -> None:
+        cases = (
+            # F1: nested $(...) with apostrophe inside INNER must not consume OUTER first
+            (
+                'gh issue create --title "t" --body "$(true <<\'OUTER\' $(cat <<\'INNER\'\n'
+                "don't\n"
+                "OUTER\n"
+                "INNER\n"
+                ")\n"
+                ")\n"
+                "OUTER\n"
+                f"rm -rf {self.precious}\n"
+                ')"'
+            ),
+            # F1: nested $(...) with unmatched double quote inside INNER
+            (
+                'gh issue create --title "t" --body "$(true <<\'OUTER\' $(cat <<\'INNER\'\n'
+                '"\n'
+                "OUTER\n"
+                "INNER\n"
+                ")\n"
+                ")\n"
+                "OUTER\n"
+                f"rm -rf {self.precious}\n"
+                ')"'
+            ),
+            # Nested subshell shares FIFO heredoc queue with enclosing $(...) in Bash
+            (
+                'gh issue create --title "t" --body "$(true <<\'OUTER\' && (cat <<\'INNER\'\n'
+                "don't\n"
+                "OUTER\n"
+                ")\n"
+                "INNER\n"
+                ")\n"
+                f"rm -rf {self.precious}\n"
+                ')"'
+            ),
+        )
+        for cmd in cases:
+            with self.subTest(cmd=cmd):
+                reason = self.reason(cmd)
+                self.assertIn("untracked", reason)
+                self.assertIn("precious.txt", reason)
+
+        # Nested $(...) where INNER delimiter shares line with ')' must fail closed
+        nested_same_line = (
+            'gh issue create --title "t" --body "$(true <<\'OUTER\' $(cat <<\'INNER\'\n'
+            "hi\n"
+            "INNER)\n"
+            "OUTER\n"
+            f"rm -rf {self.precious}\n"
+            ')"'
+        )
+        refused = self.reason(nested_same_line)
+        self.assertIn("Delete guard", refused)
+        self.assertIn("--body-file", refused)
+
+    def test_adversarial_nested_proc_sub_heredoc_scoping_refused(self) -> None:
+        for op in ("<", ">"):
+            for quote_line in ("don't", '"'):
+                cmd = (
+                    f'gh issue create --title "t" --body "$(true <<\'OUTER\' {op}(cat <<\'INNER\'\n'
+                    f"{quote_line}\n"
+                    "OUTER\n"
+                    "INNER\n"
+                    ")\n"
+                    ")\n"
+                    "OUTER\n"
+                    f"rm -rf {self.precious}\n"
+                    ')"'
+                )
+                with self.subTest(op=op, quote_line=quote_line):
+                    reason = self.reason(cmd)
+                    self.assertIn("untracked", reason)
+                    self.assertIn("precious.txt", reason)
+
+    def test_adversarial_arithmetic_wrapped_heredoc_and_unparsable_heredoc_cmd_sub_refused(self) -> None:
+        exact_cases = (
+            # F2: $(( $(cat <<'EOF' ...) )) inside $(...) followed by rm -rf
+            (
+                'gh issue create --title "t" --body "$( : $(( $(cat <<\'EOF\' >/dev/null\n'
+                ")))\n"
+                "EOF\n"
+                f'echo 0) + 1 )); rm -rf {self.precious} )"'
+            ),
+            # F2: rm -rf inside the $(...) nested within $(( ... ))
+            (
+                'gh issue create --title "t" --body "$(( $(cat <<\'EOF\' >/dev/null\n'
+                ")))\n"
+                "EOF\n"
+                f'rm -rf {self.precious}; echo 0) + 1 ))"'
+            ),
+            # F2: arithmetic command (( $(cat <<'EOF' ...) )) inside $(...) and top-level
+            (
+                'gh issue create --title "t" --body "$( (( $(cat <<\'EOF\' >/dev/null\n'
+                ")))\n"
+                "EOF\n"
+                f'echo 0) + 1 )); rm -rf {self.precious} )"'
+            ),
+            (
+                "(( $(cat <<'EOF' >/dev/null\n"
+                ")))\n"
+                "EOF\n"
+                f"rm -rf {self.precious}; echo 0) + 1 ))"
+            ),
+        )
+        for cmd in exact_cases:
+            with self.subTest(cmd=cmd):
+                reason = self.reason(cmd)
+                self.assertIn("untracked", reason)
+                self.assertIn("precious.txt", reason)
+
+        # F2b: unparsable $(...) or $((...)) inside an unquoted heredoc must fail closed
+        unparsable_cases = (
+            (
+                "cat <<EOF\n"
+                "$(cat <<'IN'\n"
+                "hi\n"
+                f"IN); rm -rf {self.precious}\n"
+                "EOF"
+            ),
+            (
+                "cat <<EOF\n"
+                f"$(echo \"unclosed; rm -rf {self.precious}\n"
+                "EOF"
+            ),
+            (
+                "cat <<EOF\n"
+                "$(cat <<'IN'\n"
+                "hi\n"
+                f"IN); r'm' -rf {self.precious}\n"
+                "EOF"
+            ),
+            (
+                "cat <<EOF\n"
+                f"$(( $(echo \"unclosed; rm -rf {self.precious}\n"
+                "EOF"
+            ),
+        )
+        for cmd in unparsable_cases:
+            with self.subTest(cmd=cmd):
+                reason = self.reason(cmd)
+                self.assertNotEqual("", reason)
+                self.assertIn("Delete guard", reason)
 
 
 class DelegationCanaryStallXdistDoc240Test(unittest.TestCase):

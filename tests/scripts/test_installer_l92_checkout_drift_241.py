@@ -217,6 +217,20 @@ class InstallerL92CheckoutDrift241Test(unittest.TestCase):
         self.assertEqual("invalid", finding["status"])
         self.assertIn("(L92)", str(finding["detail"]))
 
+    def test_unicode_superscript_version_fails_closed_l92(self):
+        self.assertIsNone(INSTALL._parse_numeric_version_tuple("1.\u00b2.0"))
+        self.assertIsNone(INSTALL._parse_numeric_version_tuple("1.\u0662.0"))
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary) / "harness"
+            _init_harness_repo(project, "0.4.20261115.5")
+            overlay = _write_overlay(project, "1.\u00b2.0", "b" * 40)
+
+            finding = INSTALL._ce_version_after_upgrade_finding(project, overlay)
+
+        self.assertIsNotNone(finding)
+        self.assertEqual("invalid", finding["status"])
+        self.assertIn("(L92)", str(finding["detail"]))
+
 
 class RollbackPluginReconciliation241Test(unittest.TestCase):
     def _setup_upgraded_account_project(self, project: Path) -> bytes:

@@ -9914,7 +9914,7 @@ def _core_commit_drift_detail(project: Path, overlay: Path) -> str:
 def _parse_numeric_version_tuple(version: str) -> tuple[int, ...] | None:
     """Parse dot-separated non-negative integer versions like 1.20261126.0."""
     parts = version.strip().split(".")
-    if not parts or any(not part.isdigit() for part in parts):
+    if not parts or any(not (part.isascii() and part.isdigit()) for part in parts):
         return None
     return tuple(int(part) for part in parts)
 

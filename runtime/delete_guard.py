@@ -2168,6 +2168,10 @@ def _scan_balanced_paren(text: str, pos: int, *, allow_heredocs: bool = False) -
         if ch == "$" and index + 1 < n and text[index + 1] == "{":
             index = _scan_balanced_brace(text, index, None)
             continue
+        if ch == "$" and index + 1 < n and text[index + 1] == "(":
+            is_arith = index + 2 < n and text[index + 2] == "("
+            index = _scan_balanced_paren(text, index + 1, allow_heredocs=not is_arith)
+            continue
         if ch == '"':
             _, index = _scan_double_quote(text, index, None)
             continue
@@ -2182,6 +2186,9 @@ def _scan_balanced_paren(text: str, pos: int, *, allow_heredocs: bool = False) -
             index += 1
             if pending_heredocs:
                 index = _consume_heredoc_bodies_in_paren(text, index, pending_heredocs)
+            continue
+        if allow_heredocs and ch in "<>" and index + 1 < n and text[index + 1] == "(":
+            index = _scan_balanced_paren(text, index + 1, allow_heredocs=True)
             continue
         if allow_heredocs and ch == "<":
             if text.startswith("<<<", index):
@@ -2318,6 +2325,16 @@ def _note_arith_cmd_subs(text: str, dollar_at: int, end: int, cmd_subs: list[str
     cmd_subs.extend(_scan_heredoc_cmd_subs(text[body_start:body_end]))
 
 
+def _has_delete_hint(text: str) -> bool:
+    """True when ``text`` contains a visible shell or Python delete marker."""
+    return bool(
+        DELETE_WORD.search(text)
+        or RMTREE.search(text)
+        or PATHLIB_DELETE.search(text)
+        or PY_DELETE_HINT.search(text)
+    )
+
+
 def _scan_heredoc_cmd_subs(body: str) -> list[str]:
     """Extract unescaped $(...) and `...` substitutions from an unquoted heredoc body."""
     subs: list[str] = []
@@ -2332,16 +2349,22 @@ def _scan_heredoc_cmd_subs(body: str) -> list[str]:
             try:
                 inner, index = _scan_backtick(body, index, in_dquote=False)
                 subs.append(inner)
-            except ValueError:
+            except ValueError as error:
+                if _has_delete_hint(body[index:]):
+                    raise Unsure(f"unparsable delete: {error}") from error
                 index += 1
             continue
         if ch == "$" and index + 1 < n and body[index + 1] == "(":
             if index + 2 < n and body[index + 2] == "(":
                 try:
                     end = _scan_balanced_paren(body, index + 1)
-                except ValueError:
-                    index += 3
-                    continue
+                except ValueError as error:
+                    prefix = (
+                        "unparsable delete"
+                        if _has_delete_hint(body[index:])
+                        else "unparsable command substitution"
+                    )
+                    raise Unsure(f"{prefix}: {error}") from error
                 _note_arith_cmd_subs(body, index, end, subs)
                 index = end
                 continue
@@ -2349,8 +2372,13 @@ def _scan_heredoc_cmd_subs(body: str) -> list[str]:
                 end = _scan_balanced_paren(body, index + 1, allow_heredocs=True)
                 subs.append(body[index + 2 : end - 1])
                 index = end
-            except ValueError:
-                index += 2
+            except ValueError as error:
+                prefix = (
+                    "unparsable delete"
+                    if _has_delete_hint(body[index:])
+                    else "unparsable command substitution"
+                )
+                raise Unsure(f"{prefix}: {error}") from error
             continue
         index += 1
     return subs
@@ -2645,7 +2673,10 @@ def _parse_shell(command: str) -> list[tuple[str, object]]:
             continue
         if ch == "(":
             if text.startswith("((", pos):
-                pos = _scan_balanced_paren(text, pos)
+                end = _scan_balanced_paren(text, pos)
+                if end - 2 > pos + 2:
+                    current.cmd_subs.extend(_scan_heredoc_cmd_subs(text[pos + 2 : end - 2]))
+                pos = end
                 at_command_start = False
                 continue
             if not at_command_start and text.startswith("()", pos):
@@ -2900,12 +2931,7 @@ def _command_targets(
     try:
         events = _parse_shell(command)
     except ValueError as error:
-        if (
-            DELETE_WORD.search(command)
-            or RMTREE.search(command)
-            or PATHLIB_DELETE.search(command)
-            or PY_DELETE_HINT.search(command)
-        ):
+        if _has_delete_hint(command):
             raise Unsure(f"unparsable delete: {error}") from error
         return found, cwd
 
