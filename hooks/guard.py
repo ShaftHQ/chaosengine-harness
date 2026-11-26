@@ -21,6 +21,7 @@ import subprocess  # nosec B404 - fixed git argv for toplevel.
 import shlex
 import sys
 import tempfile
+import urllib.parse
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -1007,6 +1008,41 @@ def pull_request_merge_target(command: str) -> str | object | None:
     return ""
 
 
+_MERGE_STRATEGY_FLAGS = frozenset({"--squash", "--merge", "--rebase", "-s", "-m", "-r"})
+
+
+def _merge_repo_and_strategy(arguments: list[str]) -> tuple[str | None, bool]:
+    """Read ``-R``/``--repo`` and merge-strategy flags from ``gh pr merge`` arguments."""
+    repo: str | None = None
+    has_strategy = False
+    index = 0
+    while index < len(arguments):
+        arg = arguments[index]
+        if arg in _MERGE_STRATEGY_FLAGS:
+            has_strategy = True
+            index += 1
+            continue
+        if arg in {"--repo", "-R"}:
+            if index + 1 < len(arguments) and not arguments[index + 1].startswith("-"):
+                repo = arguments[index + 1]
+                index += 2
+            else:
+                index += 1
+            continue
+        if arg.startswith("--repo="):
+            value = arg.split("=", 1)[1]
+            if value:
+                repo = value
+            index += 1
+            continue
+        if arg.startswith("-R") and len(arg) > 2 and not arg.startswith("--"):
+            repo = arg[2:]
+            index += 1
+            continue
+        index += 1
+    return repo, has_strategy
+
+
 def _check_block_reason(check: object) -> str:
     """Empty when the check finished successfully. A short reason otherwise."""
     if not isinstance(check, Mapping):
@@ -1108,7 +1144,14 @@ def merge_readiness_reason(snapshot: Mapping) -> str:
     if error:
         return "ChaosEngine refused gh pr merge: " + error
     state = str(snapshot.get("mergeStateStatus") or "").strip().upper()
-    if state in {"DRAFT", "DIRTY", "BLOCKED"}:
+    merge_queue_enqueue = (
+        state == "BLOCKED"
+        and snapshot.get("baseHasMergeQueue") is True
+        and snapshot.get("hasStrategyFlag") is not True
+        and str(snapshot.get("reviewDecision") or "").strip().upper()
+        not in {"CHANGES_REQUESTED", "REVIEW_REQUIRED"}
+    )
+    if state in {"DRAFT", "DIRTY"} or (state == "BLOCKED" and not merge_queue_enqueue):
         return "ChaosEngine refused gh pr merge: merge state is " + state + "."
     if snapshot.get("hasNextPage") is True:
         return "ChaosEngine refused gh pr merge: review threads did not fit in one page."
@@ -1304,9 +1347,16 @@ def _paginate_pr_files(
     return collected, False
 
 
-def live_merge_probe(target: str) -> dict:
+def live_merge_probe(
+    target: str, *, repo: str | None = None, has_strategy_flag: bool | None = None
+) -> dict:
     """Read check rollup, complete PR files, and unresolved review threads. Fail closed on any gap."""
-    view = ["pr", "view", "--json", "id,statusCheckRollup,url,mergeStateStatus,files"]
+    view = [
+        "pr", "view", "--json",
+        "id,statusCheckRollup,url,mergeStateStatus,baseRefName,reviewDecision,files",
+    ]
+    if repo:
+        view.extend(["--repo", repo])
     if target:
         view.insert(2, target)
     payload, error = _gh_json(view)
@@ -1320,6 +1370,19 @@ def live_merge_probe(target: str) -> dict:
     owner, name, number = match.group(1), match.group(2), match.group(3)
     if _GITHUB_NAME.fullmatch(owner) is None or _GITHUB_NAME.fullmatch(name) is None:
         return {"error": "the pull request URL could not be read."}
+    merge_state = str(payload.get("mergeStateStatus") or "").strip().upper()
+    base_ref = str(payload.get("baseRefName") or "").strip()
+    review_decision = str(payload.get("reviewDecision") or "").strip()
+    base_has_merge_queue = False
+    if merge_state == "BLOCKED" and has_strategy_flag is not True and base_ref:
+        encoded_base = urllib.parse.quote(base_ref, safe="")
+        rules_path = "repos/%s/%s/rules/branches/%s" % (owner, name, encoded_base)
+        rules, rules_error = _gh_json(["api", rules_path])
+        if not rules_error and isinstance(rules, list):
+            base_has_merge_queue = any(
+                isinstance(rule, Mapping) and rule.get("type") == "merge_queue"
+                for rule in rules
+            )
     query = (
         "query { repository(owner: \"%s\", name: \"%s\") { pullRequest(number: %d) "
         "{ files(first: 100) { pageInfo { hasNextPage endCursor } nodes { path } } "
@@ -1379,6 +1442,9 @@ def live_merge_probe(target: str) -> dict:
         "unresolved": unresolved,
         "hasNextPage": page.get("hasNextPage") is True,
         "mergeStateStatus": str(payload.get("mergeStateStatus") or ""),
+        "baseHasMergeQueue": base_has_merge_queue,
+        "reviewDecision": review_decision,
+        "hasStrategyFlag": has_strategy_flag is True,
         "files": combined_files,
         "filesComplete": files_complete,
     }
@@ -1459,13 +1525,22 @@ def merge_before_ready_reason(command: str, probe=None) -> str:
         saw = True
         if target is _UNREADABLE_MERGE:
             return "ChaosEngine refused gh pr merge: the command could not be read."
+        parsed = shell_tokens(part)
+        _head, arguments = command_head(parsed) if parsed else ("", [])
+        repo, has_strategy = _merge_repo_and_strategy(arguments)
         try:
-            snapshot = reader(target)
+            try:
+                snapshot = reader(target, repo=repo, has_strategy_flag=has_strategy)
+            except TypeError:
+                snapshot = reader(target)
         except Exception:
             # Any probe failure denies the merge. Allowing it would merge on unread checks.
             return "ChaosEngine refused gh pr merge: the pull request checks could not be read."
         if not isinstance(snapshot, Mapping):
             return "ChaosEngine refused gh pr merge: the pull request checks could not be read."
+        if isinstance(snapshot, dict):
+            snapshot = dict(snapshot)
+            snapshot.setdefault("hasStrategyFlag", has_strategy)
         reason = merge_readiness_reason(snapshot)
         if reason:
             return reason
