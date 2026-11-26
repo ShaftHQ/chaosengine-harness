@@ -38,3 +38,5 @@ Rules:
   ([process owner](../../references/process-owner-scrum-master.md)).
 - Descriptions, paths and host exposure live in the
   [catalog](../../references/catalog.md).
+
+Free-first policy: see [delegation](../../references/delegation.md) (free/local first at highest reasoning effort; paid newest-cheapest fallback; hardware-aware, opt-in setup).
