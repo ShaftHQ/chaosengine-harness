@@ -4842,6 +4842,173 @@ def _delete_check_cli_args(command: str) -> list[str] | None:
     return None
 
 
+def _is_gh_body_command(command: str) -> bool:
+    """Linear-time check: is there an unquoted gh issue/pr create|comment|edit command?"""
+
+    def _basename(token: str) -> str:
+        name = token.split("/")[-1].split("\\")[-1]
+        lower = name.lower()
+        if lower.endswith(".exe"):
+            lower = lower[:-4]
+        return lower
+
+    def _is_env_assignment(token: str) -> bool:
+        if "=" not in token:
+            return False
+        name, _ = token.split("=", 1)
+        if not name or not (name[0].isalpha() or name[0] == "_"):
+            return False
+        return all(c.isalnum() or c == "_" for c in name[1:])
+
+    def _segments(text: str):
+        out = []
+        cur = []
+        i = 0
+        n = len(text)
+        quote = None  # None, "'", '"'
+        while i < n:
+            c = text[i]
+            if quote is None:
+                if c == "\\" and i + 1 < n:
+                    cur.append(c)
+                    cur.append(text[i + 1])
+                    i += 2
+                    continue
+                if c in ("'", '"'):
+                    quote = c
+                    cur.append(c)
+                    i += 1
+                    continue
+                if c == "#" and (not cur or cur[-1] in " \t\r\f\v"):
+                    # skip shell comment to newline
+                    while i < n and text[i] != "\n":
+                        i += 1
+                    continue
+                if c in (";", "&", "|", "\n", "(", ")"):
+                    out.append("".join(cur))
+                    cur = []
+                    i += 1
+                    continue
+                cur.append(c)
+                i += 1
+            else:
+                cur.append(c)
+                if c == "\\" and quote == '"' and i + 1 < n:
+                    cur.append(text[i + 1])
+                    i += 2
+                    continue
+                if c == quote:
+                    quote = None
+                i += 1
+        out.append("".join(cur))
+        return out
+
+    def _tokenize(seg: str):
+        tokens = []
+        i = 0
+        n = len(seg)
+        while i < n:
+            # skip whitespace
+            while i < n and seg[i] in " \t\r\f\v":
+                i += 1
+            if i >= n:
+                break
+            buf = []
+            quote = None
+            while i < n and not (quote is None and seg[i] in " \t\r\f\v"):
+                c = seg[i]
+                if quote is None:
+                    if c == "\\" and i + 1 < n:
+                        buf.append(c)
+                        buf.append(seg[i + 1])
+                        i += 2
+                        continue
+                    if c in ("'", '"'):
+                        quote = c
+                        buf.append(c)
+                        i += 1
+                        continue
+                    buf.append(c)
+                    i += 1
+                else:
+                    buf.append(c)
+                    if c == "\\" and quote == '"' and i + 1 < n:
+                        buf.append(seg[i + 1])
+                        i += 2
+                        continue
+                    if c == quote:
+                        quote = None
+                    i += 1
+            # if unclosed quote, finalize token and stop scanning this segment
+            if quote is not None:
+                tokens.append("".join(buf))
+                break
+            tokens.append("".join(buf))
+        return tokens
+
+    for seg in _segments(command):
+        tokens = _tokenize(seg)
+        idx = 0
+        while idx < len(tokens) and _is_env_assignment(tokens[idx]):
+            idx += 1
+        if idx >= len(tokens):
+            continue
+        if _basename(tokens[idx]) != "gh":
+            continue
+        idx += 1
+        # skip flags until first positional
+        first_pos = None
+        end_flags = False
+        while idx < len(tokens):
+            tok = tokens[idx]
+            if end_flags:
+                first_pos = (idx, tok)
+                break
+            if tok == "--":
+                end_flags = True
+                idx += 1
+                continue
+            if tok.startswith("--"):
+                if "=" in tok:
+                    idx += 1
+                    continue
+                if tok in ("--repo", "--hostname"):
+                    if idx + 1 < len(tokens) and tokens[idx + 1] not in ("issue", "pr"):
+                        idx += 2
+                    else:
+                        idx += 1
+                    continue
+                idx += 1
+                continue
+            if tok.startswith("-") and len(tok) > 1:
+                if tok.startswith("-R") and len(tok) > 2:
+                    idx += 1
+                    continue
+                if tok.startswith("-H") and len(tok) > 2:
+                    idx += 1
+                    continue
+                if tok in ("-R", "-H"):
+                    if idx + 1 < len(tokens) and tokens[idx + 1] not in ("issue", "pr"):
+                        idx += 2
+                    else:
+                        idx += 1
+                    continue
+                idx += 1
+                continue
+            first_pos = (idx, tok)
+            break
+        if first_pos is None:
+            continue
+        fp_idx, fp_tok = first_pos
+        if fp_tok not in ("issue", "pr"):
+            continue
+        if fp_idx + 1 >= len(tokens):
+            continue
+        if tokens[fp_idx + 1] in ("create", "comment", "edit"):
+            return True
+    return False
+
+
 def check(
     command: str | list[Path],
     cwd: Path | None = None,
@@ -4864,10 +5031,16 @@ def check(
         try:
             targets = command_targets(command, cwd)
         except Unsure as error:
+            gh_hint = ""
+            if str(error).startswith("unparsable delete:") and _is_gh_body_command(command):
+                gh_hint = (
+                    " For GitHub issue/PR bodies containing quotes or code snippets, "
+                    "write the Markdown to a file and pass `--body-file <path>` instead of inline `--body`."
+                )
             return (
                 f"Delete guard (#7251): refused, cannot tell what this deletes ({error}). "
                 f"{_matched_clause(command)} "
-                "Name literal paths and run `tool.py delete-check <paths>`."
+                f"Name literal paths and run `tool.py delete-check <paths>`.{gh_hint}"
             ), []
         if code is not None and not targets:
             return "Delete guard (#7251): refused: no delete targets.", []

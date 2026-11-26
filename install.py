@@ -3828,6 +3828,51 @@ def note_inexact_rollback_compensation(
     errors.append(cleanup_error)
 
 
+def _reconcile_rollback_client_plugins(
+    project: Path, host_controller: object
+) -> bool:
+    """Best-effort reconcile detected client plugins after core rollback (#241).
+
+    Activates only when a detected client reports stale or drifted plugin state
+    against the restored core so absent/already-synced clients leave prior host
+    receipts byte-identical. Never raises so rollback stays fail-safe.
+    """
+    detect = getattr(host_controller, "detected_plugin_status", None)
+    activate = getattr(host_controller, "activate_detected_plugins", None)
+    if not callable(detect) or not callable(activate):
+        return False
+    try:
+        client_plugins = detect(project)
+    except Exception:  # nosec B110 - best-effort rollback plugin reconciliation
+        return False
+    if not isinstance(client_plugins, dict) or not client_plugins:
+        return False
+    needs_sync = False
+    for item in client_plugins.values():
+        if not isinstance(item, dict):
+            continue
+        plugin_state = item.get("plugin")
+        plugins_map = item.get("plugins")
+        if plugin_state == "stale":
+            needs_sync = True
+            break
+        if isinstance(plugins_map, dict) and any(
+            state == "stale" for state in plugins_map.values()
+        ):
+            needs_sync = True
+            break
+        if plugin_state == "healthy" and item.get("status") not in (None, "healthy"):
+            needs_sync = True
+            break
+    if not needs_sync:
+        return False
+    try:
+        activate(project)
+    except Exception:  # nosec B110 - best-effort rollback plugin reconciliation
+        return False
+    return True
+
+
 def rollback(  # noqa: MC0001 - cross-resource rollback is one journaled state machine.
     project: Path, _locked: bool = False, provisioner=None
 ) -> Path:
@@ -4147,6 +4192,7 @@ def rollback(  # noqa: MC0001 - cross-resource rollback is one journaled state m
                     )
             else:
                 previous_hosts.clear_rollback_intent(project, desired_commit, prior_commit)
+            _reconcile_rollback_client_plugins(project, previous_hosts)
             return target
     with (nullcontext() if _locked else project_lock(project)):
         _recover_transaction(project)
@@ -9744,6 +9790,19 @@ def _attach_l84_l92_doctor_findings(
                 "installedVersion": version_row.get("installedVersion"),
                 "intendedVersion": version_row.get("intendedVersion"),
             }
+    elif version_row is not None and version_row.get("checkoutDrift"):
+        core = components.get("core")
+        if (
+            isinstance(core, dict)
+            and str(core.get("status") or "") == "healthy"
+            and not core.get("detail")
+        ):
+            components["core"] = {
+                **core,
+                "detail": version_row["detail"],
+                "installedVersion": version_row.get("installedVersion"),
+                "intendedVersion": version_row.get("intendedVersion"),
+            }
 
 
 def _mempalace_sqlite_missing_finding(project: Path) -> dict[str, object] | None:
@@ -9852,6 +9911,125 @@ def _core_commit_drift_detail(project: Path, overlay: Path) -> str:
     )
 
 
+def _parse_numeric_version_tuple(version: str) -> tuple[int, ...] | None:
+    """Parse dot-separated non-negative integer versions like 1.20261126.0."""
+    parts = version.strip().split(".")
+    if not parts or any(not (part.isascii() and part.isdigit()) for part in parts):
+        return None
+    return tuple(int(part) for part in parts)
+
+
+def _version_is_strictly_newer(installed: str, checkout: str) -> bool:
+    """True when ``installed`` is strictly greater than ``checkout`` as numeric tuples."""
+    left = _parse_numeric_version_tuple(installed)
+    right = _parse_numeric_version_tuple(checkout)
+    if left is None or right is None:
+        return False
+    width = max(len(left), len(right))
+    return (left + (0,) * (width - len(left))) > (right + (0,) * (width - len(right)))
+
+
+def _git_checkout_head_if_root(repo: Path) -> str | None:
+    """Return 40-hex HEAD sha iff ``repo`` is itself the top-level git work tree."""
+    git = shutil.which("git")
+    if not git:
+        return None
+    resolved = repo.resolve()
+    try:
+        completed = subprocess.run(  # nosec B603
+            [git, "-C", str(resolved), "rev-parse", "--show-toplevel", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=15,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if completed.returncode != 0:
+        return None
+    lines = [line.strip() for line in (completed.stdout or "").splitlines() if line.strip()]
+    if len(lines) != 2:
+        return None
+    toplevel, head_sha = lines
+    try:
+        if Path(toplevel).resolve() != resolved:
+            return None
+    except OSError:
+        return None
+    return head_sha if COMMIT_PATTERN.fullmatch(head_sha) else None
+
+
+def _stale_checkout_version_drift(
+    overlay: Path, intended: Path, installed_version: str, checkout_version: str
+) -> dict[str, object] | None:
+    """Detect when a harness git checkout HEAD lags a newer installed overlay (#241).
+
+    Returns a healthy advisory finding only when:
+    - ``intended.parent`` is a git checkout root whose HEAD != manifest source.commit,
+    - ``installed_version`` is strictly newer than ``checkout_version``, and
+    - if ``manifest_commit`` exists in local git objects, ``git show <commit>:VERSION``
+      equals ``installed_version``.
+    Otherwise returns None so L92 fails closed.
+    """
+    try:
+        manifest = json.loads((overlay / MANIFEST_NAME).read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError, TypeError):
+        return None
+    source = manifest.get("source") if isinstance(manifest, dict) else None
+    manifest_commit = source.get("commit") if isinstance(source, dict) else None
+    if not isinstance(manifest_commit, str) or not COMMIT_PATTERN.fullmatch(manifest_commit):
+        return None
+    repo = intended.parent
+    head_sha = _git_checkout_head_if_root(repo)
+    if head_sha is None or manifest_commit == head_sha:
+        return None
+    if not _version_is_strictly_newer(installed_version, checkout_version):
+        return None
+    git = shutil.which("git")
+    if not git:
+        return None
+    resolved = repo.resolve()
+    try:
+        shown = subprocess.run(  # nosec B603
+            [git, "-C", str(resolved), "show", f"{manifest_commit}:VERSION"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=15,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if shown.returncode == 0:
+        if (shown.stdout or "").strip() != installed_version:
+            return None
+    else:
+        # Distinguish an unfetched remote commit (allowed) from a local commit
+        # whose VERSION file is missing or unreadable (fail closed).
+        try:
+            exists = subprocess.run(  # nosec B603
+                [git, "-C", str(resolved), "cat-file", "-e", f"{manifest_commit}^{{commit}}"],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=15,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        if exists.returncode == 0:
+            return None
+    return {
+        "status": "healthy",
+        "detail": (
+            f"installed VERSION {installed_version} matches manifest commit {manifest_commit[:12]} "
+            f"while local checkout HEAD {head_sha[:12]} has VERSION {checkout_version}; "
+            "fast-forward checkout with `git checkout main && git pull --ff-only`"
+        ),
+        "installedVersion": installed_version,
+        "intendedVersion": checkout_version,
+        "checkoutDrift": True,
+    }
+
+
 def _ce_version_after_upgrade_finding(
     project: Path, target: Path
 ) -> dict[str, object] | None:
@@ -9861,9 +10039,11 @@ def _ce_version_after_upgrade_finding(
     The manifest ``source.commit`` stays a 40-hex pin; this finding does not
     rewrite it. A pack VERSION may differ when the core pin matches.
     """
-    installed = (target if target.name == ".chaos-engine" else project / ".chaos-engine") / "VERSION"
+    overlay = target if target.name == ".chaos-engine" else project / ".chaos-engine"
+    installed = overlay / "VERSION"
     if not installed.is_file():
-        installed = project / ".chaos-engine" / "VERSION"
+        overlay = project / ".chaos-engine"
+        installed = overlay / "VERSION"
     intended = _source_pin_version(project)
     if intended is None or not installed.is_file():
         return None
@@ -9887,6 +10067,9 @@ def _ce_version_after_upgrade_finding(
             "installedVersion": left,
             "intendedVersion": right,
         }
+    checkout_drift = _stale_checkout_version_drift(overlay, intended, left, right)
+    if checkout_drift is not None:
+        return checkout_drift
     return {
         "status": "invalid",
         "detail": f"installed VERSION {left!r} != intended {right!r} (L92)",
