@@ -127,6 +127,15 @@ _ANY_ASSERT = re.compile(
     r"CountEqual|RaisesRegex|Raises|Warns|Logs)?\b"
     r"|\bexpect\s*\(|\braises\b|\bassertThat\b"
 )
+_PAGE_VERIFY = re.compile(r"\.\s*(?:verify|assert|check)[A-Z]\w*\s*\(")
+_JAVA_METHOD = re.compile(
+    r"^\s*(?:(?:public|protected|private|static|final|native|synchronized|abstract|default)\s+)*"
+    r"(?:void\s+test\w+|fun\s+test\w+)\s*\("
+)
+_ASSERT_JUSTIFIED_HINT = (
+    "add `assert-justified: <reason>` above the test or annotation, or inside the test body "
+    "(`// assert-justified: <reason>` for Java/Kotlin, `# assert-justified: <reason>` for Python)"
+)
 _HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
 _CODE_ORDER = {
     "sleep": 0,
@@ -676,9 +685,15 @@ def _assertion_hits(
         and not function_hits
         and not _ANY_ASSERT.search(_mask_counted_source(new_text))
         and "assert-justified:" not in new_text
+        and not (_java_like(path) and _PAGE_VERIFY.search(new_text))
     ):
         if new_text.strip():
-            hits.append(_hit("assertion-weakening", 1, "new test file lacks an assertion", path))
+            hits.append(_hit(
+                "assertion-weakening",
+                1,
+                f"new test file lacks an assertion. {_ASSERT_JUSTIFIED_HINT}",
+                path,
+            ))
     return hits
 
 
@@ -733,8 +748,64 @@ def _missing_python_tests(
             continue
         if node.lineno > 1 and "assert-justified:" in lines_by_no.get(node.lineno - 1, ""):
             continue
-        hits.append(_hit("assertion-weakening", int(node.lineno), f"new test lacks an assertion: {node.name}", path))
+        hits.append(_hit(
+            "assertion-weakening",
+            int(node.lineno),
+            f"new test lacks an assertion: {node.name}. {_ASSERT_JUSTIFIED_HINT}",
+            path,
+        ))
     return hits
+
+
+def _java_like(path: str) -> bool:
+    return path.endswith((".java", ".kt", ".kts"))
+
+
+def _annotation_start(lines_by_no: dict[int, str], number: int) -> int:
+    """First annotation in the run that ends at ``number``."""
+    start = number
+    while start > 1 and re.match(r"^\s*@", lines_by_no.get(start - 1, "")):
+        start -= 1
+    return start
+
+
+def _java_method_chunk(
+    lines_by_no: dict[int, str],
+    numbers: list[int],
+    index: int,
+) -> tuple[list[str], int | None]:
+    """Scan from an annotation or signature through the method body.
+
+    The following signature and annotations stay inside the chunk. Brace depth
+    closes the body. The signature line number is returned so ``@Test`` does
+    not report that line again.
+    """
+    chunk: list[str] = []
+    depth = 0
+    opened = False
+    signature: int | None = None
+    start = numbers[index]
+    for later in numbers[index:]:
+        later_line = lines_by_no[later]
+        if signature is None and _JAVA_METHOD.match(later_line):
+            signature = later
+        if (
+            opened
+            and later != start
+            and later_line.strip()
+            and (later_line.strip().startswith("@Test") or _JAVA_METHOD.match(later_line))
+            and depth <= 0
+        ):
+            break
+        chunk.append(later_line)
+        depth += later_line.count("{") - later_line.count("}")
+        if "{" in later_line:
+            opened = True
+        if opened and depth <= 0:
+            break
+        if later - start > 120:
+            break
+    return chunk, signature
 
 
 def _missing_regex_tests(
@@ -744,33 +815,53 @@ def _missing_regex_tests(
 ) -> list[dict]:
     hits: list[dict] = []
     numbers = sorted(lines_by_no)
+    consumed: set[int] = set()
+    java_like = _java_like(path)
     for index, number in enumerate(numbers):
+        if number in consumed:
+            continue
         line = lines_by_no[number]
         match = _TEST_DEF.match(line)
         if not match:
             continue
         if added_numbers is not None and number not in added_numbers:
             continue
-        indent = len(line) - len(line.lstrip(" "))
-        chunk = [line]
-        for later in numbers[index + 1 :]:
-            later_line = lines_by_no[later]
-            if later_line.strip() and (len(later_line) - len(later_line.lstrip(" "))) <= indent and _TEST_DEF.match(later_line):
-                break
-            if later_line.strip() and (len(later_line) - len(later_line.lstrip(" "))) <= indent and re.match(
-                r"\s*(?:def |class |function |describe\()", later_line
-            ):
-                break
-            chunk.append(later_line)
-            if later - number > 80:
-                break
+        signature: int | None = None
+        if java_like and (line.strip().startswith("@Test") or _JAVA_METHOD.match(line)):
+            chunk, signature = _java_method_chunk(lines_by_no, numbers, index)
+            if signature is not None and signature != number:
+                consumed.add(signature)
+        else:
+            indent = len(line) - len(line.lstrip(" "))
+            chunk = [line]
+            for later in numbers[index + 1 :]:
+                later_line = lines_by_no[later]
+                if later_line.strip() and (len(later_line) - len(later_line.lstrip(" "))) <= indent and _TEST_DEF.match(later_line):
+                    break
+                if later_line.strip() and (len(later_line) - len(later_line.lstrip(" "))) <= indent and re.match(
+                    r"\s*(?:def |class |function |describe\()", later_line
+                ):
+                    break
+                chunk.append(later_line)
+                if later - number > 80:
+                    break
         body = "\n".join(chunk)
-        if _ANY_ASSERT.search(_mask_counted_source(body)) or "assert-justified:" in body:
+        first_annotation = _annotation_start(lines_by_no, number) if java_like else number
+        above = lines_by_no.get(first_annotation - 1, "") if first_annotation > 1 else ""
+        searchable = above + "\n" + body
+        if _ANY_ASSERT.search(_mask_counted_source(body)) or "assert-justified:" in searchable:
+            continue
+        if java_like and _PAGE_VERIFY.search(body):
             continue
         if number > 1 and "assert-justified:" in lines_by_no.get(number - 1, ""):
             continue
         name = next((group for group in match.groups() if group), "test")
-        hits.append(_hit("assertion-weakening", number, f"new test lacks an assertion: {name}", path))
+        hits.append(_hit(
+            "assertion-weakening",
+            number,
+            f"new test lacks an assertion: {name}. {_ASSERT_JUSTIFIED_HINT}",
+            path,
+        ))
     return hits
 
 

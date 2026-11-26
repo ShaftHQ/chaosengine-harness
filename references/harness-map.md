@@ -172,6 +172,7 @@ By [harness_map.py](../runtime/harness_map.py).
 - `references/work-item-adapters.md`: Work-item adapters
 - `references/work-item.md`: Work-item contract
 - `references/work-ordering.md`: Work ordering (close open PRs first)
+- `references/windows-mobile-start.md`: Windows mobile and Appium start
 - `references/worker-keep-alive.md`: Worker keep-alive (KEEP-ALIVE)
 - `references/workflow-induction.md`: Workflow induction
 - `references/zero-llm-catalog.md`: Use when install, doctor, or repair can run as…

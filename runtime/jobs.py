@@ -316,6 +316,46 @@ def last_checkpoint(directory: Path) -> dict | None:
     return None
 
 
+def list_live_jobs(root: Path) -> list[dict]:
+    """Metadata for jobs whose lease is live under ``root`` or ``$CHAOS_ENGINE_JOBS_DIR``.
+
+    Each item has ``name``, ``pid``, and ``command``. ``done`` and ``stopped``
+    leases are omitted. A missing jobs directory is an empty list.
+    """
+    bases: list[Path] = []
+    env_root = os.environ.get(ROOT_ENV, "").strip()
+    if env_root:
+        bases.append(Path(env_root))
+    bases.append(Path(root) / ".chaos-engine-state" / "jobs")
+    seen: set[str] = set()
+    found: list[dict] = []
+    for base in bases:
+        if not base.is_dir():
+            continue
+        for directory in sorted(base.iterdir()):
+            if not directory.is_dir():
+                continue
+            try:
+                key = str(directory.resolve())
+            except OSError:
+                key = str(directory)
+            if key in seen:
+                continue
+            seen.add(key)
+            lease = read_lease(directory)
+            if classify(lease) != "live":
+                continue
+            command = lease.get("command") if lease else ""
+            if isinstance(command, list):
+                command = " ".join(str(part) for part in command)
+            found.append({
+                "name": directory.name,
+                "pid": None if lease is None else lease.get("pid"),
+                "command": str(command or ""),
+            })
+    return found
+
+
 def describe(name: str, directory: Path, now: float | None = None) -> dict:
     lease = read_lease(directory)
     now = time.time() if now is None else now

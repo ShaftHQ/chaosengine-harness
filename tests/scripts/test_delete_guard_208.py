@@ -1486,6 +1486,29 @@ class DeleteGuardIssue208Test(unittest.TestCase):
             with self.subTest(source=source):
                 self.assertEqual("", self.reason(self._py(source)))
 
+    def test_issue_233_object_getattribute_and_lambda_vars(self) -> None:
+        """``object.__getattribute__`` and a lambda bound to ``vars`` are deletes.
+
+        ``getcwd`` through the same shapes stays allowed.
+        """
+        refused = (
+            "import os\nobject.__getattribute__(vars, '__call__')(os)['remove']('only.txt')",
+            "import os\nbuiltins.object.__getattribute__(vars, '__call__')(os)['remove']('only.txt')",
+            "import os\nobject.__getattribute__(builtins, 'vars')(os)['remove']('only.txt')",
+            "import os\n(lambda v: v(os)['remove']('only.txt'))(vars)",
+        )
+        for source in refused:
+            with self.subTest(source=source):
+                reason = self.reason(self._py(source))
+                self.assertIn("indirect Python delete", reason)
+        allowed = (
+            "import os\nobject.__getattribute__(vars, '__call__')(os)['getcwd']()",
+            "import os\n(lambda v: v(os)['getcwd']())(vars)",
+        )
+        for source in allowed:
+            with self.subTest(source=source):
+                self.assertEqual("", self.reason(self._py(source)))
+
 
 if __name__ == "__main__":
     unittest.main()

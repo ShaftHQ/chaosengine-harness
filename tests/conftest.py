@@ -12,6 +12,8 @@ import os
 import tempfile
 from pathlib import Path
 
+import pytest
+
 _STATE: dict[str, object] = {}
 
 
@@ -50,6 +52,39 @@ def grok_byte_problems(before: bytes | None, after: bytes | None, log: bytes) ->
     if before != after:
         problems.append("real Grok config.toml bytes changed during the run")
     return problems
+
+
+_HARNESS_ENV_EXACT = frozenset({
+    "CHAOS_ENGINE_SECRET_GUARD",
+    "CHAOS_ENGINE_TOKEN_BUDGET",
+    "CHAOS_ENGINE_APPLY_UPDATE",
+    "CHAOS_ENGINE_VERSION",
+    "CHAOS_ENGINE_COPY_PROMPT",
+    "NO_COLOR",
+    "CI",
+})
+
+
+def _harness_env_key(name: str) -> bool:
+    """Harness toggles a test may set. Never the Grok-home sandbox keys."""
+    if name == "GROK_HOME" or name.startswith("CHAOS_ENGINE_PROTECTED_GROK_HOME"):
+        return False
+    if name in _HARNESS_ENV_EXACT or name.startswith("CHAOS_ENGINE_TEST_"):
+        return True
+    return False
+
+
+@pytest.fixture(autouse=True)
+def _isolate_harness_env():
+    """Restore harness toggles after each test so one test cannot leak them."""
+    before = {key: os.environ[key] for key in os.environ if _harness_env_key(key)}
+    try:
+        yield
+    finally:
+        for key in [key for key in os.environ if _harness_env_key(key)]:
+            if key not in before:
+                os.environ.pop(key, None)
+        os.environ.update(before)
 
 
 def pytest_configure(config):
