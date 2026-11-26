@@ -122,14 +122,50 @@ class DeleteGuardParser251Test(unittest.TestCase):
     def test_benign_case_command_substitution_stays_allowed(self) -> None:
         self.assertEqual("", self.reason('echo "$(case x in x) echo hi;; esac)"'))
 
+    def test_esac_word_inside_echo_cannot_close_case_pattern(self) -> None:
+        self.assert_refuses('echo "$(case y in x) echo esac;; y) rm -rf precious.txt;; esac)"')
+
+    def test_bare_case_word_is_not_a_case_keyword(self) -> None:
+        self.assertEqual("", self.reason('echo "$(echo case)" && echo hi'))
+
+    def test_posix_optional_leading_paren_in_case_pattern_is_refused(self) -> None:
+        for command in (
+            'echo "$(case x in (a|b) rm -rf precious.txt;; esac)"',
+            'echo "$(case x in (a|b) echo esac;; y) rm -rf precious.txt;; esac)"',
+        ):
+            with self.subTest(command=command):
+                self.assert_refuses(command)
+
     def test_array_literal_substitutions_are_refused(self) -> None:
         for command in (
             "foo=( $(rm -rf precious.txt) )",
             "foo=( <(rm -rf precious.txt) )",
             "foo=( `rm -rf precious.txt` )",
+            'foo=( "$(rm -rf precious.txt)" )',
         ):
             with self.subTest(command=command):
                 self.assert_refuses(command)
+
+    def test_quoted_array_literal_substitutions_stay_allowed(self) -> None:
+        for command in (
+            "foo=( '$(rm -rf precious.txt)' )",
+            "foo=( '<(rm -rf precious.txt)' )",
+            "foo=( '`rm -rf precious.txt`' )",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual("", self.reason(command))
+
+    def test_unquoted_heredoc_process_substitution_is_data(self) -> None:
+        self.assertEqual("", self.reason("cat <<EOF\n<(rm -rf precious.txt)\nEOF\n"))
+
+    def test_array_cmd_subs_helper_skips_quotes_and_comments(self) -> None:
+        subs = GUARD._scan_array_cmd_subs(
+            "# $(rm -rf comment.txt)\n"
+            "'$(rm -rf single.txt)' '<(rm -rf single2.txt)' '`rm -rf single3.txt`' "
+            "$'$(rm -rf ansi.txt)' "
+            "<(rm -rf run.txt) $(rm -rf sub.txt)"
+        )
+        self.assertEqual(["rm -rf run.txt", "rm -rf sub.txt"], subs)
 
     def test_plain_array_literal_stays_allowed(self) -> None:
         self.assertEqual("", self.reason("foo=(a b c)"))
