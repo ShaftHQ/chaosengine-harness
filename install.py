@@ -11,6 +11,7 @@ import atexit
 import base64
 import contextlib
 from contextlib import contextmanager, nullcontext
+import datetime as dt
 import hashlib
 import json
 import os
@@ -3589,6 +3590,7 @@ def install(  # noqa: MC0001 - publication and compensation form one transaction
     capabilities, capability_digest = load_capability_policy(source, distribution)
     files = source_files(source, distribution, tuple(addons))
     ownership, payload_files, receipt_files = payload_ownership(source, files)
+    version = derived_version_for_source(source)
     target = project / INSTALL_DIRECTORY
     backup = project / BACKUP_NAME
     displaced = project / NEXT_BACKUP_NAME
@@ -3632,6 +3634,10 @@ def install(  # noqa: MC0001 - publication and compensation form one transaction
         stage = Path(tempfile.mkdtemp(prefix=f"{INSTALL_DIRECTORY}-stage-", dir=project))
         try:
             copy_owned_payload(stage, source, payload_files, receipt_files, ownership)
+            if version is not None and "VERSION" in ownership:
+                stamped = stage / "VERSION"
+                stamped.write_text(version + "\n", encoding="utf-8")
+                ownership["VERSION"] = file_sha256(stamped)
             manifest = {
                 "schemaVersion": SCHEMA_VERSION,
                 "distribution": {"id": distribution, "policySha256": policy_digest},
@@ -9856,6 +9862,25 @@ def _source_pin_version(project: Path) -> Path | None:
     return None
 
 
+def source_intended_version(project: Path) -> str:
+    """L92 intended version: an auto-derived commit version supersedes stale static VERSION.
+
+    Repositories still on the legacy quarter/calver scheme keep their static pin;
+    only the commit-date scheme opts into automatic derivation.
+    """
+    pin = _source_pin_version(project)
+    if pin is None:
+        return ""
+    try:
+        static = pin.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+    derived = source_version(pin.parent)
+    if valid_commit_version(static) and valid_commit_version(derived) and derived != static:
+        return derived
+    return static
+
+
 def _pack_version_exception(project: Path, core: str) -> str:
     diffs: list[str] = []
     for root in (project / "chaos-engine" / "packs", project / ".chaos-engine" / "packs"):
@@ -9897,12 +9922,7 @@ def _core_commit_drift_detail(project: Path, overlay: Path) -> str:
     except OSError:
         installed = ""
     pin = _source_pin_version(project)
-    intended = ""
-    if pin is not None:
-        try:
-            intended = pin.read_text(encoding="utf-8").strip()
-        except OSError:
-            intended = ""
+    intended = source_intended_version(project) if pin is not None else ""
     if installed and intended and installed != intended:
         return ""
     return (
@@ -10033,9 +10053,11 @@ def _stale_checkout_version_drift(
 def _ce_version_after_upgrade_finding(
     project: Path, target: Path
 ) -> dict[str, object] | None:
-    """L92: installed .chaos-engine/VERSION must match the source pin VERSION.
+    """L92: installed .chaos-engine/VERSION must match the intended source version.
 
-    ``target`` is the installed overlay. Comparing it to itself always matched.
+    A commit-date source pin is derived from git HEAD, so a stale static
+    ``VERSION`` is not treated as the intended version. ``target`` is the
+    installed overlay. Comparing it to itself always matched.
     The manifest ``source.commit`` stays a 40-hex pin; this finding does not
     rewrite it. A pack VERSION may differ when the core pin matches.
     """
@@ -10044,12 +10066,12 @@ def _ce_version_after_upgrade_finding(
     if not installed.is_file():
         overlay = project / ".chaos-engine"
         installed = overlay / "VERSION"
-    intended = _source_pin_version(project)
-    if intended is None or not installed.is_file():
+    intended_pin = _source_pin_version(project)
+    if intended_pin is None or not installed.is_file():
         return None
+    right = source_intended_version(project)
     try:
         left = installed.read_text(encoding="utf-8").strip()
-        right = intended.read_text(encoding="utf-8").strip()
     except OSError:
         return {
             "status": "invalid",
@@ -10067,7 +10089,7 @@ def _ce_version_after_upgrade_finding(
             "installedVersion": left,
             "intendedVersion": right,
         }
-    checkout_drift = _stale_checkout_version_drift(overlay, intended, left, right)
+    checkout_drift = _stale_checkout_version_drift(overlay, intended_pin, left, right)
     if checkout_drift is not None:
         return checkout_drift
     return {
@@ -10584,6 +10606,128 @@ def format_fix_next_only(document: dict[str, object]) -> str:
         if line.startswith("[warning] ")
     )
     return ("\n".join(lines) + "\n") if lines else ""
+
+
+_DERIVED_VERSION_ENV = "CHAOS_ENGINE_DERIVED_VERSION"
+_COMMIT_VERSION_RE = re.compile(r"^[1-9]\d*\.\d{8}\.\d+$")
+
+
+def valid_commit_version(value: object) -> bool:
+    """Fail-closed check for ``<major>.<YYYYMMDD>.<index>`` versions."""
+    if not isinstance(value, str):
+        return False
+    if _COMMIT_VERSION_RE.fullmatch(value.strip()) is None:
+        return False
+    text = value.strip().split(".")
+    try:
+        dt.date(int(text[1][:4]), int(text[1][4:6]), int(text[1][6:8]))
+    except ValueError:
+        return False
+    return True
+
+
+def derived_version_override() -> str | None:
+    """Bootstrap-propagated version, or None when absent/invalid."""
+    value = (os.environ.get(_DERIVED_VERSION_ENV) or "").strip()
+    return value if valid_commit_version(value) else None
+
+
+def is_shallow_repository(root: Path) -> bool:
+    """A shallow log cannot count first-parent commits on the HEAD day."""
+    git = shutil.which("git")
+    if git is None:
+        return False
+    try:
+        completed = subprocess.run(  # nosec B603 - fixed argv, no shell.
+            [git, "-C", str(root), "rev-parse", "--is-shallow-repository"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=15,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return completed.returncode == 0 and completed.stdout.strip() == "true"
+
+
+def derive_commit_version(root: Path, *, major: int = 1, ref: str = "HEAD") -> str:
+    """``<major>.<UTC YYYYMMDD>.<0-based first-parent index on that UTC day>``."""
+    if major < 1:
+        raise ValueError("major must be >= 1")
+    git = shutil.which("git")
+    if git is None:
+        raise ValueError("git is unavailable")
+    if is_shallow_repository(root):
+        raise ValueError("shallow checkout has no reliable first-parent history")
+    env = {**os.environ, "TZ": "UTC"}
+
+    def git_output(*arguments: str) -> tuple[int, str]:
+        completed = subprocess.run(  # nosec B603 - fixed argv, no shell.
+            [git, "-C", str(root), *arguments],
+            capture_output=True,
+            text=True,
+            check=False,
+            env=env,
+            timeout=15,
+        )
+        return completed.returncode, completed.stdout.strip()
+
+    status, shown = git_output("show", "-s", "--format=%ct", ref)
+    if status != 0 or not shown:
+        raise ValueError("git show failed for the requested ref")
+    target_day = f"{dt.datetime.fromtimestamp(int(shown), dt.timezone.utc):%Y%m%d}"
+    status, log = git_output("log", "--first-parent", "--format=%ct", ref)
+    if status != 0:
+        raise ValueError("git log failed for the requested ref")
+    same_day = 0
+    for line in log.splitlines():
+        if not line.strip():
+            continue
+        day = f"{dt.datetime.fromtimestamp(int(line.strip()), dt.timezone.utc):%Y%m%d}"
+        if day < target_day:
+            break
+        if day == target_day:
+            same_day += 1
+    index = same_day - 1
+    if index < 0:
+        raise ValueError(f"no commit on {target_day} for {ref}")
+    return f"{major}.{target_day}.{index}"
+
+
+def commit_version_or_none(root: Path, ref: str = "HEAD") -> str | None:
+    """Derived version, or None for shallow/non-git/unreadable history."""
+    try:
+        value = derive_commit_version(root, ref=ref)
+    except (ValueError, OSError, subprocess.TimeoutExpired):
+        return None
+    return value if valid_commit_version(value) else None
+
+
+def source_version(source_root: Path | None = None) -> str:
+    """Static VERSION unless a propagated or local commit-date version applies."""
+    override = derived_version_override()
+    if override:
+        return override
+    root = Path(source_root) if source_root is not None else Path(__file__).resolve().parent
+    derived = commit_version_or_none(root)
+    if derived:
+        return derived
+    try:
+        return (root / "VERSION").read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+def derived_version_for_source(source: Path) -> str | None:
+    """The version to stamp into a newly installed overlay, if it changed."""
+    value = source_version(source)
+    if not valid_commit_version(value):
+        return None
+    try:
+        static = (Path(source) / "VERSION").read_text(encoding="utf-8").strip()
+    except OSError:
+        static = ""
+    return value if value != static else None
 
 
 def overlay_release_version() -> str:

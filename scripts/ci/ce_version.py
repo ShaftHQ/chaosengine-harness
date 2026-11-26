@@ -138,10 +138,23 @@ def _utc_day(timestamp: int) -> str:
     return f"{moment:%Y%m%d}"
 
 
+def is_shallow_repository(root: Path = ROOT) -> bool:
+    """True for a shallow checkout, whose truncated log cannot index a day."""
+    completed = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "--is-shallow-repository"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return completed.returncode == 0 and completed.stdout.strip() == "true"
+
+
 def derive_commit_version(root: Path = ROOT, *, major: int = 1, ref: str = "HEAD") -> str:
     """``<major>.<UTC YYYYMMDD>.<0-based first-parent index on that day>``."""
     if major < 1:
         raise ValueError("major must be >= 1")
+    if is_shallow_repository(root):
+        raise ValueError("shallow checkout has no reliable first-parent history")
     env = {**os.environ, "TZ": "UTC"}
     show = subprocess.run(
         ["git", "-C", str(root), "show", "-s", "--format=%ct", ref],
