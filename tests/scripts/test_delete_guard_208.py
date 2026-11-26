@@ -352,6 +352,30 @@ class DeleteGuardIssue208Test(unittest.TestCase):
         self.assertIn("untracked", self.reason(caught))
         self.assertNotIn("computed command head", self.reason(caught))
 
+    def test_target_directory_mv_checks_every_source_and_in_repo_landing(self) -> None:
+        """``mv -t`` sources are protected even though its destination is an option."""
+        source = self.repo / "move-me"
+        source.mkdir()
+        (source / "only.txt").write_text("only copy", encoding="utf-8")
+        backup = self.repo / "target" / "backup"
+        backup.mkdir(parents=True)
+        self.assertIn("refused `/etc/hosts`", self.reason(f"mv -t /tmp /etc/hosts does-not-exist-237"))
+        self.assertIn("untracked", self.reason(f"mv --target-directory=/tmp {source} dummy"))
+        self.assertEqual("", self.reason(f"mv -t target/backup {source}"))
+
+    def test_computed_heads_with_delete_stems_or_flags_are_refused(self) -> None:
+        """Variable command heads cannot hide a delete-like executable or flags."""
+        for command in (
+            "$rm_bin -rf does-not-exist-237",
+            "$CMD -rf target",
+        ):
+            with self.subTest(command=command):
+                reason = self.reason(command)
+                self.assertIn("computed command head", reason)
+                self.assertIn("matched `", reason)
+                self.assertNotIn(".  matched `", reason)
+        self.assertEqual("", self.reason('"$MVN_BIN" test'))
+
     def test_review2_shell_process_substitution_is_refused(self) -> None:
         for shell in ("sh", "bash", "zsh", "dash"):
             cmd = f"{shell} <(printf 'rm -f only.txt\\n')"

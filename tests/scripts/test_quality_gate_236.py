@@ -47,6 +47,25 @@ class CartTest {
 }
 """
 
+KOTLIN_EXPRESSION_BODY_BLEED = """
+class CartTest {
+    @Test
+    fun testFirst() = openCart()
+
+    @Test
+    fun testSecond() {
+      assertTrue(true)
+    }
+}
+"""
+
+KOTLIN_EXPRESSION_BODY_ASSERTED = """
+class CartTest {
+    @Test
+    fun testFirst() = assertTrue(true)
+}
+"""
+
 JAVA_BARE = """
 class LoginTest {
     @Test
@@ -88,6 +107,15 @@ class JavaKotlinAssertionTests(unittest.TestCase):
         self.assertIn("assert-justified:", details)
         self.assertIn("inside the test body", details)
         self.assertEqual(1, sum(1 for hit in report["hits"] if hit["code"] == "assertion-weakening"))
+
+    def test_kotlin_expression_body_does_not_absorb_the_next_test(self):
+        report = self._report("tests/CartTest.kt", KOTLIN_EXPRESSION_BODY_BLEED)
+        self.assertFalse(report["ok"])
+        self.assertTrue(any(hit["line"] == 3 for hit in report["hits"]), report)
+
+    def test_kotlin_expression_body_assertion_passes(self):
+        report = self._report("tests/CartTest.kt", KOTLIN_EXPRESSION_BODY_ASSERTED)
+        self.assertTrue(report["ok"], report)
 
     def test_block_message_names_the_token_and_position(self):
         reason = self.guard._quality_reason({"path": "tests/LoginTest.java", "hits": []})

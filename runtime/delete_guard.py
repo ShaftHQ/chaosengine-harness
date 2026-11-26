@@ -386,6 +386,8 @@ def _computed_command_head(head: str) -> bool:
 
 _SIMPLE_VAR_HEAD = re.compile(r"^\$\{?[A-Za-z_][A-Za-z0-9_]*\}?$")
 _EVAL_WORD = re.compile(r"(?:^|[^\w.-])eval\b")
+_DELETE_STEM = re.compile(r"rm|del|unlink|shred|clean|wipe|purge|erase|remove", re.IGNORECASE)
+_DELETE_STYLE_FLAG = re.compile(r"^-(?:[A-Za-z]*[rR]|[A-Za-z]*f[A-Za-z]*)$|^--(?:recursive|force)$|^-delete$")
 _SPAN: contextvars.ContextVar[str] = contextvars.ContextVar("ce_delete_span", default="")
 _COMMAND: contextvars.ContextVar[str] = contextvars.ContextVar("ce_delete_command", default="")
 
@@ -420,7 +422,14 @@ def _refuse_computed_head(head: str, words: list[str]) -> None:
     if not _computed_command_head(head):
         return
     command = _COMMAND.get()
-    if _SIMPLE_VAR_HEAD.fullmatch(head) and not _command_has_delete_hint(command):
+    identifier = head.strip("${}")
+    has_delete_flag = any(_DELETE_STYLE_FLAG.fullmatch(word) for word in words[1:])
+    if (
+        _SIMPLE_VAR_HEAD.fullmatch(head)
+        and not _command_has_delete_hint(command)
+        and not _DELETE_STEM.search(identifier)
+        and not has_delete_flag
+    ):
         return
     _note_span(words)
     raise Unsure("computed command head")
@@ -430,7 +439,7 @@ def _matched_clause(command: str) -> str:
     span = _SPAN.get() or " ".join(command.split())
     if len(span) > 180:
         span = span[:177] + "..."
-    return f" matched `{span}`."
+    return f"matched `{span}`."
 
 
 def _collapse_leading_slashes(path: str) -> str:
@@ -1708,14 +1717,49 @@ def _rm_recursive(arguments: list[str]) -> bool:
     return False
 
 
+def _mv_operands(
+    arguments: list[str], masks: list[str] | None = None
+) -> tuple[list[tuple[str, str | None]], tuple[str, str | None]]:
+    """Return ``mv`` sources and destination, including GNU target-directory mode."""
+    pairs = _zip_masks(arguments, masks)
+    target: tuple[str, str | None] | None = None
+    operands: list[tuple[str, str | None]] = []
+    options = True
+    index = 0
+    while index < len(pairs):
+        item, mask = pairs[index]
+        if options and item == "--":
+            options = False
+        elif options and item in {"-t", "--target-directory"}:
+            index += 1
+            if index >= len(pairs):
+                raise Unsure("mv target-directory without destination")
+            target = pairs[index]
+        elif options and item.startswith("-t") and item != "-t":
+            target = (item[2:], mask[2:] if mask else None)
+        elif options and item.startswith("--target-directory="):
+            value = item.split("=", 1)[1]
+            target = (value, mask[len(item) - len(value):] if mask else None)
+        elif options and item.startswith("-") and item != "-":
+            pass
+        else:
+            operands.append((item, mask))
+        index += 1
+    if target is not None:
+        if not operands:
+            raise Unsure("mv target-directory without source")
+        return operands, target
+    if len(operands) < 2:
+        raise Unsure("mv without source and destination")
+    return operands[:-1], operands[-1]
+
+
 def _mv_entries(
     arguments: list[str], masks: list[str] | None = None
 ) -> list[tuple[str, bool, str | None]]:
     """``mv`` sources; trailing slash means move-through-contents (follow)."""
-    operands = _operands(arguments, masks)
-    if len(operands) < 2:
-        raise Unsure("mv without source and destination")
-    return [(item, item.endswith(("/", os.sep)), mask) for item, mask in operands[:-1]]
+    sources, _dest = _mv_operands(arguments, masks)
+    return [(item, item.endswith(("/", os.sep)), mask) for item, mask in sources]
 
 
 def _rsync_entries(
@@ -1769,18 +1813,20 @@ def _literal_mv_dest(raw: str, mask: str | None, cwd: Path) -> Path | None:
     return Path(os.path.normpath(base))
 
 
-def _mv_preserves_in_repo(operands: list[tuple[str, str | None]], cwd: Path) -> bool:
+def _mv_preserves_in_repo(
+    sources: list[tuple[str, str | None]], dest_operand: tuple[str, str | None], cwd: Path
+) -> bool:
     """True when ``mv`` only renames inside this repo and overwrites nothing.
 
     A computed or glob destination is refused. A destination outside the repo,
     ``/dev/null``, or an existing file (or an existing ``dst/src.name``) is not
     benign: the caller keeps the source-as-delete rule.
     """
-    if len(operands) < 2:
+    if not sources:
         return False
-    dest_raw, dest_mask = operands[-1]
+    dest_raw, dest_mask = dest_operand
     if _literal_mv_dest(dest_raw, dest_mask, cwd) is None:
-        _note_span(["mv", *[item for item, _mask in operands]])
+        _note_span(["mv", *[item for item, _mask in sources], dest_raw])
         raise Unsure(f"computed mv destination: {dest_raw}")
     dest = _literal_mv_dest(dest_raw, dest_mask, cwd)
     if dest is None:
@@ -1800,7 +1846,7 @@ def _mv_preserves_in_repo(operands: list[tuple[str, str | None]], cwd: Path) -> 
     if not dest.exists() and not dest.is_symlink():
         return True
     if dest.is_dir() and not dest.is_symlink():
-        for src, _mask in operands[:-1]:
+        for src, _mask in sources:
             name = Path(src).name
             if not name or name in {".", ".."}:
                 return False
@@ -1838,8 +1884,8 @@ def _segment_targets(
         entries = _mv_entries(rest, rest_masks)
         if cwd_computed and _needs_computed_cwd([item for item, _follow, _mask in entries]):
             raise Unsure("cd to a computed path before a delete")
-        operands = _operands(rest, rest_masks)
-        if not cwd_computed and _mv_preserves_in_repo(operands, cwd):
+        sources, dest = _mv_operands(rest, rest_masks)
+        if not cwd_computed and _mv_preserves_in_repo(sources, dest, cwd):
             return []
         if entries:
             _note_span(arguments)

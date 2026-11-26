@@ -784,11 +784,23 @@ def _java_method_chunk(
     depth = 0
     opened = False
     signature: int | None = None
+    signature_indent = 0
     start = numbers[index]
     for later in numbers[index:]:
         later_line = lines_by_no[later]
         if signature is None and _JAVA_METHOD.match(later_line):
             signature = later
+            signature_indent = len(later_line) - len(later_line.lstrip())
+        if (
+            signature is not None
+            and not opened
+            and later != signature
+            and later_line.strip()
+            and (later_line.strip().startswith("@Test") or _JAVA_METHOD.match(later_line)
+                 or re.match(r"\s*class\b", later_line))
+            and len(later_line) - len(later_line.lstrip()) <= signature_indent
+        ):
+            break
         if (
             opened
             and later != start
