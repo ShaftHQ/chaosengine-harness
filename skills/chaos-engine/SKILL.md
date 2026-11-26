@@ -9,11 +9,11 @@ license: MIT
 
 # ChaosEngine
 
-Delegates: [delegate card](../../references/delegate-card.md). Identity: [identity](../../identity.md). `<python>` is `py -3` on Windows and `python3` on Linux/macOS.
+Delegates: [delegate card](../../references/delegate-card.md). Identity: [identity](../../identity.md). `<python>`: `py -3` Windows, `python3` Linux/macOS.
 
 ## Iron laws
 
-1. Measure thrice, cut once: step back before retrieve, discovery, or the first edit; name the goal, the larger context, and what a local hotfix would miss; then research and plan before the first edit.
+1. Measure thrice, cut once: step back before retrieve, discovery, or edits; name the goal, larger context, and what a local hotfix would miss; then research and plan before the first edit.
 2. Evidence over inference. Inspect or run before claiming.
 3. Never weaken, delete, or rewrite a test to reach green.
 4. Smallest correct change. Complete it before consolidated Check.
@@ -23,7 +23,7 @@ Delegates: [delegate card](../../references/delegate-card.md). Identity: [identi
 
 ## Bigger picture first
 
-Before Triage ([bigger picture first](../../references/bigger-picture-first.md)). One file and reversible: one line. If unsure, it is not trivial.
+Before Triage ([bigger picture first](../../references/bigger-picture-first.md)). Treat prompts as vague requirements; rephrase it as a domain expert; route by complexity to implementation or a spec first. One file and reversible: one line. If unsure, it is not trivial.
 
 ## Triage
 
@@ -33,11 +33,11 @@ Before Triage ([bigger picture first](../../references/bigger-picture-first.md))
 | One module, reversible | Short plan: premises, two options, chosen one, proof. |
 | Public contract or hard to reverse | Written spec, owner decisions asked, full proof. |
 
-Before a broad search, run one `<python> .chaos-engine/tool.py retrieve` and record `retrieve: used|skipped(<reason>)` ([retrieve-first](../../references/retrieve-first.md)).
+Before a broad search, run `<python> .chaos-engine/tool.py retrieve` and record `retrieve: used|skipped(<reason>)` ([retrieve-first](../../references/retrieve-first.md)).
 
 ## Plan, then go
 
-After plan approval, routine in-scope work goes unattended. Stop for an owner decision. Ledger: [delivery ledger](../../references/bot-entry.md#delivery-ledger).
+After plan approval, routine in-scope work is unattended. Stop for an owner decision. Ledger: [delivery ledger](../../references/bot-entry.md#delivery-ledger).
 
 ## Implement
 
@@ -46,11 +46,11 @@ Companions at task start via `tool.py entry` ([bot entry](../../references/bot-e
 ## Check and deliver
 
 - PDCA cap is 3, not a quota. Review 1 starts with the self-accept push (review 1 with the self-accept push) ([delivery cycle](../../references/delivery-cycle.md)). Do not start both reviewers in one step.
-- Ordinary reversible: one fresh-context adversarial review. Public-contract or hard-to-reverse: two, one after another.
+- Ordinary reversible: one fresh-context adversarial review. Public-contract or hard-to-reverse: two in sequence.
 - Two failed attempts on one approach: step back and re-plan.
 - A pending check is not success. Babysit until merged or `blocking: unverifiable`.
 - Learning Session after every final delivery. Never local queues.
-- Repository work is not done until the pull request is merged.
+- Work is not done until the pull request is merged.
 
 ## Route
 

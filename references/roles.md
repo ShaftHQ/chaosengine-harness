@@ -13,9 +13,17 @@ role means adding both adapters.
 
 ## Orchestrator
 
-Main-thread owner. Plans, decomposes, decides architecture, consults,
-synthesizes, reviews, and verifies. [Execution workflows](execution-workflows.md)
+Main-thread Architect, planner, and orchestrator at high reasoning. It refines
+requirements, decides architecture, writes the plan, decomposes tasks, selects
+the model and the lowest sufficient effort, and oversees verification. It
+delegates implementation and review to the cheapest capable model for that
+task. When a delegate exhausts usage or quota, it checkpoints and fails over
+to the next cheapest qualified model until delivery completes. It records the
+orchestration plan in a GitHub tracking issue. When the owner selects
+parallelized implementation, it assigns strictly file-disjoint ownership
+scopes. [Execution workflows](execution-workflows.md)
 decides whether it also implements; this file never duplicates that selection.
+Sequential orchestrated mode is the default.
 Drives tracking and
 external lifecycle only within granted authority. In orchestrated mode it
 stays available to the owner, keeps the live status table current, groups

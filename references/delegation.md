@@ -74,6 +74,15 @@ reviewer instance.
 Preserve the closed relationship as history instead of deleting it. A final
 answer with an unneeded live agent is incomplete.
 
+## Cost-aware delegation & effort scaling
+
+Vendor-neutral. The host names the models; this policy does not pin a vendor.
+
+1. The Architect-Orchestrator is the most capable model at high reasoning. It refines requirements, decides architecture, writes the detailed plan and spec, decomposes tasks, selects model and effort, and oversees verification. It does not implement when it is delegating.
+2. Executor and reviewer selection picks the cheapest qualified model that can perform the bounded task, at the lowest reasoning effort that matches that task's complexity. The orchestrator's plan is the spec, so the delegate executes.
+3. Quota-exhaustion failover: when the active delegate exhausts usage or quota, checkpoint state and continue on the next cheapest qualified model down the fallback ladder until delivery completes.
+4. Plan persistence: record an orchestrated multi-step plan in a GitHub tracking issue so any later agent can resume from that ticket.
+
 ## Orchestrator duties
 
 Same class of standing duties: stay available, keep the live status table

@@ -167,12 +167,12 @@ By [harness_map.py](../runtime/harness_map.py).
 - `references/ui-delivery.md`: Use when a change touches user-visible UI, layo…
 - `references/untangle-lesson.md`: Use when a review needs hidden-link, needless-l…
 - `references/verification-gap-lens.md`: Verification-gap lens
+- `references/windows-mobile-start.md`: Use when a Windows host starts a mobile or Andr…
 - `references/work-github-planning.md`: Work GitHub — planning and tracking
 - `references/work-github-playbook.md`: Work GitHub — playbook
 - `references/work-item-adapters.md`: Work-item adapters
 - `references/work-item.md`: Work-item contract
 - `references/work-ordering.md`: Work ordering (close open PRs first)
-- `references/windows-mobile-start.md`: Windows mobile and Appium start
 - `references/worker-keep-alive.md`: Worker keep-alive (KEEP-ALIVE)
 - `references/workflow-induction.md`: Workflow induction
 - `references/zero-llm-catalog.md`: Use when install, doctor, or repair can run as…

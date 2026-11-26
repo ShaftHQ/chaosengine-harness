@@ -367,7 +367,7 @@ def _identity_over_hard(rendered: str) -> bool:
     return len(rendered.encode("utf-8")) > SESSION_START_MAX_BYTES
 
 
-def _identity_context_block(base: str, suffix: str = "") -> str:
+def _identity_context_block(base: str, suffix: str = "", *, prefer_compact: bool = False) -> str:
     """Identity body, or the path locator when the file is missing or too wide."""
     match = _identity_match()
     locator = match[0] if match else None
@@ -380,7 +380,8 @@ def _identity_context_block(base: str, suffix: str = "") -> str:
     header = f"Identity (`{locator}`):"
     full_body = _identity_principle_lines(text, compact=False)
     compact_body = _identity_principle_lines(text, compact=True)
-    for body in (full_body, compact_body):
+    bodies = (compact_body, full_body) if prefer_compact else (full_body, compact_body)
+    for body in bodies:
         if not body:
             continue
         block = f"{header}\n{body}"
@@ -516,13 +517,23 @@ def session_start_context(token: str | None, activation: str, session_id: str = 
         ".chaos-engine/references/token-budget-modes.md",
         "chaos-engine/references/token-budget-modes.md",
     )) or ".chaos-engine/references/token-budget-modes.md"
+    intake = (
+        "Intake: prompt vague; rephrase as a domain expert; "
+        "route by complexity (spec first if large)."
+    )
     tail = [
+        intake,
         f"Ethics: `{ethics}`",
         f"Token budget: {resolve_token_budget_mode()}",
         f"Details: `{budget_doc}`",
     ]
     base = "\n".join(parts)
-    parts.append(_identity_context_block(base, "\n".join(tail)))
+    hint_probe = _env_memory_hints(max_bytes=480)
+    parts.append(
+        _identity_context_block(
+            base, "\n".join(tail), prefer_compact=bool(hint_probe)
+        )
+    )
     parts.extend(tail)
     rendered = "\n".join(parts)
     locator = _tool_output_locator()

@@ -5,8 +5,7 @@
 █▌ ▝▀▐█▘
 ▜█▄  ▛█▙
  ▝▀▀▀▌▀
-CHAOS ENGINE
-ChaosEngine 0.4.20261115.5
+ChaosEngine 1.20261126.0
   Project    /tmp/ce-frame-project
   Source     ShaftHQ/chaosengine-harness@main
 
@@ -25,8 +24,7 @@ ChaosEngine 0.4.20261115.5
 █▌ ▝▀▐█▘
 ▜█▄  ▛█▙
  ▝▀▀▀▌▀
-CHAOS ENGINE
-ChaosEngine 0.4.20261115.5
+ChaosEngine 1.20261126.0
   Project    /tmp/ce-frame-project
   Source     ShaftHQ/chaosengine-harness@main
   Commit     abababababababababababababababababababab
@@ -46,8 +44,7 @@ ChaosEngine 0.4.20261115.5
 █▌ ▝▀▐█▘
 ▜█▄  ▛█▙
  ▝▀▀▀▌▀
-CHAOS ENGINE
-ChaosEngine 0.4.20261115.5
+ChaosEngine 1.20261126.0
   Project    /tmp/ce-frame-project
   Source     ShaftHQ/chaosengine-harness@main
   Commit     abababababababababababababababababababab
@@ -66,8 +63,7 @@ ChaosEngine 0.4.20261115.5
 █▌ ▝▀▐█▘
 ▜█▄  ▛█▙
  ▝▀▀▀▌▀
-CHAOS ENGINE
-ChaosEngine 0.4.20261115.5
+ChaosEngine 1.20261126.0
   Project    /tmp/ce-frame-project
   Source     ShaftHQ/chaosengine-harness@main
   Commit     abababababababababababababababababababab
@@ -88,8 +84,7 @@ ChaosEngine 0.4.20261115.5
 █▌ ▝▀▐█▘
 ▜█▄  ▛█▙
  ▝▀▀▀▌▀
-CHAOS ENGINE
-ChaosEngine 0.4.20261115.5
+ChaosEngine 1.20261126.0
   Project    /tmp/ce-frame-project
   Source     ShaftHQ/chaosengine-harness@main
   Commit     abababababababababababababababababababab
@@ -110,8 +105,7 @@ ChaosEngine 0.4.20261115.5
 █▌ ▝▀▐█▘
 ▜█▄  ▛█▙
  ▝▀▀▀▌▀
-CHAOS ENGINE
-ChaosEngine 0.4.20261115.5
+ChaosEngine 1.20261126.0
   Project    /tmp/ce-frame-project
   Source     ShaftHQ/chaosengine-harness@main
   Commit     abababababababababababababababababababab
@@ -130,8 +124,7 @@ ChaosEngine 0.4.20261115.5
 █▌ ▝▀▐█▘
 ▜█▄  ▛█▙
  ▝▀▀▀▌▀
-CHAOS ENGINE
-ChaosEngine 0.4.20261115.5
+ChaosEngine 1.20261126.0
   Project    /tmp/ce-frame-project
   Source     ShaftHQ/chaosengine-harness@main
   Commit     abababababababababababababababababababab
@@ -150,8 +143,7 @@ ChaosEngine 0.4.20261115.5
 █▌ ▝▀▐█▘
 ▜█▄  ▛█▙
  ▝▀▀▀▌▀
-CHAOS ENGINE
-ChaosEngine 0.4.20261115.5
+ChaosEngine 1.20261126.0
   Project    /tmp/ce-frame-project
   Source     ShaftHQ/chaosengine-harness@main
   Commit     abababababababababababababababababababab
@@ -173,8 +165,7 @@ injected-provision-note
 █▌ ▝▀▐█▘
 ▜█▄  ▛█▙
  ▝▀▀▀▌▀
-CHAOS ENGINE
-ChaosEngine 0.4.20261115.5
+ChaosEngine 1.20261126.0
   Project    /tmp/ce-frame-project
   Source     ShaftHQ/chaosengine-harness@main
   Commit     abababababababababababababababababababab
@@ -196,8 +187,7 @@ injected-provision-note
 █▌ ▝▀▐█▘
 ▜█▄  ▛█▙
  ▝▀▀▀▌▀
-CHAOS ENGINE
-ChaosEngine 0.4.20261115.5
+ChaosEngine 1.20261126.0
   Project    /tmp/ce-frame-project
   Source     ShaftHQ/chaosengine-harness@main
   Commit     abababababababababababababababababababab
@@ -217,8 +207,7 @@ injected-provision-note
 █▌ ▝▀▐█▘
 ▜█▄  ▛█▙
  ▝▀▀▀▌▀
-CHAOS ENGINE
-ChaosEngine 0.4.20261115.5
+ChaosEngine 1.20261126.0
   Project    /tmp/ce-frame-project
   Source     ShaftHQ/chaosengine-harness@main
   Commit     abababababababababababababababababababab
@@ -239,8 +228,7 @@ injected-provision-note
 █▌ ▝▀▐█▘
 ▜█▄  ▛█▙
  ▝▀▀▀▌▀
-CHAOS ENGINE
-ChaosEngine 0.4.20261115.5
+ChaosEngine 1.20261126.0
   Project    /tmp/ce-frame-project
   Source     ShaftHQ/chaosengine-harness@main
   Commit     abababababababababababababababababababab

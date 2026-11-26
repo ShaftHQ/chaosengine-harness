@@ -2,6 +2,12 @@
 
 First step of every new request. Do it before retrieve, discovery, implementation, or a patch.
 
+## Expert requirement refinement & complexity routing
+
+1. Treat every incoming user prompt as initially vague requirements.
+2. Rephrase the request as a domain expert in that area would: goal, boundaries, constraints, edge cases, and acceptance criteria.
+3. Route by task complexity ([complexity gate](complexity-gate.md) and the skill triage table). A small, bounded, reversible task goes straight to implementation and proof. A larger, multi-module, architectural, or public-contract task gets a detailed specification and plan before implementation.
+
 ## Name three things
 
 1. The goal.
