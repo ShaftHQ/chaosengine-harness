@@ -2121,6 +2121,7 @@ def _scan_balanced_paren(text: str, pos: int) -> int:
     depth = 0
     index = pos
     n = len(text)
+    case_stack: list[int] = []
     while index < n:
         ch = text[index]
         if ch == "\\":
@@ -2142,6 +2143,22 @@ def _scan_balanced_paren(text: str, pos: int) -> int:
             nl = text.find("\n", index)
             index = n if nl == -1 else nl + 1
             continue
+        if case_stack and ch == ")" and depth <= case_stack[-1]:
+            index += 1
+            continue
+        prev = text[index - 1] if index > pos else " "
+        if prev in " \t\n;&|(" and ch in "ce":
+            end = index + 4
+            boundary = end >= n or not (text[end].isalnum() or text[end] == "_")
+            if boundary and text.startswith("case", index):
+                case_stack.append(depth)
+                index = end
+                continue
+            if boundary and text.startswith("esac", index):
+                if case_stack:
+                    case_stack.pop()
+                index = end
+                continue
         if ch == "(":
             depth += 1
             index += 1
@@ -2149,6 +2166,8 @@ def _scan_balanced_paren(text: str, pos: int) -> int:
             depth -= 1
             index += 1
             if depth == 0:
+                if case_stack:
+                    raise ValueError("unparsable case inside command substitution")
                 return index
         else:
             index += 1
@@ -2181,7 +2200,7 @@ def _scan_balanced_brace(text: str, pos: int, cmd_subs: list[str] | None) -> int
             continue
         if ch == "$" and index + 1 < n and text[index + 1] == "(":
             end = _scan_balanced_paren(text, index + 1)
-            if index + 2 < n and text[index + 2] == "(":
+            if _is_arithmetic_expansion(text, index, end):
                 _note_arith_cmd_subs(text, index, end, cmd_subs)
             elif cmd_subs is not None:
                 cmd_subs.append(text[index + 2 : end - 1])
@@ -2233,7 +2252,7 @@ def _scan_double_quote(text: str, pos: int, cmd_subs: list[str] | None) -> tuple
             nxt = text[index + 1]
             if nxt == "(":
                 end = _scan_balanced_paren(text, index + 1)
-                if index + 2 < n and text[index + 2] == "(":
+                if _is_arithmetic_expansion(text, index, end):
                     _note_arith_cmd_subs(text, index, end, cmd_subs)
                 elif cmd_subs is not None:
                     cmd_subs.append(text[index + 2 : end - 1])
@@ -2248,6 +2267,21 @@ def _scan_double_quote(text: str, pos: int, cmd_subs: list[str] | None) -> tuple
         out.append(ch)
         index += 1
     raise ValueError("No closing quotation")
+
+
+def _is_arithmetic_expansion(text: str, dollar_at: int, end: int) -> bool:
+    """True only for a genuine ``$(( ... ))`` arithmetic expansion.
+
+    The inner ``(`` at ``dollar_at + 2`` must close at the second-to-last
+    ``)``. If it closes earlier, the construct is ``$( (cmd); more )`` -- a
+    command substitution holding a subshell -- and its whole body is a command.
+    """
+    if dollar_at + 2 >= len(text) or text[dollar_at + 2] != "(":
+        return False
+    try:
+        return _scan_balanced_paren(text, dollar_at + 2) == end - 1
+    except ValueError:
+        return False
 
 
 def _note_arith_cmd_subs(text: str, dollar_at: int, end: int, cmd_subs: list[str] | None) -> None:
@@ -2279,21 +2313,25 @@ def _scan_heredoc_cmd_subs(body: str) -> list[str]:
                 index += 1
             continue
         if ch == "$" and index + 1 < n and body[index + 1] == "(":
-            if index + 2 < n and body[index + 2] == "(":
-                try:
-                    end = _scan_balanced_paren(body, index + 1)
-                except ValueError:
-                    index += 3
-                    continue
-                _note_arith_cmd_subs(body, index, end, subs)
-                index = end
-                continue
             try:
                 end = _scan_balanced_paren(body, index + 1)
-                subs.append(body[index + 2 : end - 1])
-                index = end
             except ValueError:
                 index += 2
+                continue
+            if _is_arithmetic_expansion(body, index, end):
+                _note_arith_cmd_subs(body, index, end, subs)
+            else:
+                subs.append(body[index + 2 : end - 1])
+            index = end
+            continue
+        if ch in "<>" and index + 1 < n and body[index + 1] == "(":
+            try:
+                end = _scan_balanced_paren(body, index + 1)
+            except ValueError:
+                index += 2
+                continue
+            subs.append(body[index + 2 : end - 1])
+            index = end
             continue
         index += 1
     return subs
@@ -2333,6 +2371,8 @@ def _read_shell_word(
             # Array assignment foo=(...) stays attached to the assignment word.
             if ch == "(" and out and "".join(out).endswith("="):
                 end = _scan_balanced_paren(text, index)
+                if cmd_subs is not None:
+                    cmd_subs.extend(_scan_heredoc_cmd_subs(text[index + 1 : end - 1]))
                 push(text[index:end], False)
                 index = end
                 continue
@@ -2379,7 +2419,7 @@ def _read_shell_word(
                 continue
             if nxt == "(":
                 end = _scan_balanced_paren(text, index + 1)
-                if index + 2 < n and text[index + 2] == "(":
+                if _is_arithmetic_expansion(text, index, end):
                     _note_arith_cmd_subs(text, index, end, cmd_subs)
                 elif cmd_subs is not None:
                     cmd_subs.append(text[index + 2 : end - 1])
@@ -2438,8 +2478,14 @@ def _read_heredoc_delimiter(text: str, pos: int) -> tuple[str, bool, int]:
             val, pos = _scan_double_quote(text, pos + 1, None)
             out.append(val)
         elif ch == "\\":
+            if pos + 2 < n and text[pos + 1] == "\r" and text[pos + 2] == "\n":
+                pos += 3
+                continue
+            if pos + 1 < n and text[pos + 1] == "\n":
+                pos += 2
+                continue
             quoted = True
-            if pos + 1 < n and text[pos + 1] != "\n":
+            if pos + 1 < n:
                 out.append(text[pos + 1])
                 pos += 2
             else:
