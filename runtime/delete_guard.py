@@ -2847,7 +2847,6 @@ def _command_targets(
             or RMTREE.search(command)
             or PATHLIB_DELETE.search(command)
             or PY_DELETE_HINT.search(command)
-            or _is_gh_body_command(command)
         ):
             raise Unsure(f"unparsable delete: {error}") from error
         return found, cwd
@@ -4879,6 +4878,11 @@ def _is_gh_body_command(command: str) -> bool:
                     quote = c
                     cur.append(c)
                     i += 1
+                    continue
+                if c == "#" and (not cur or cur[-1] in " \t\r\f\v"):
+                    # skip shell comment to newline
+                    while i < n and text[i] != "\n":
+                        i += 1
                     continue
                 if c in (";", "&", "|", "\n", "(", ")"):
                     out.append("".join(cur))

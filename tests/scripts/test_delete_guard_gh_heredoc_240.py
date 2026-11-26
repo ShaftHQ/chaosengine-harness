@@ -202,15 +202,25 @@ class DeleteGuardGhHeredoc240Test(unittest.TestCase):
     def test_review3_positive_gh_body_commands_emit_body_file_hint(self) -> None:
         cases = (
             'gh issue create --title "t" --body "don\'t run rm -rf precious.txt',
-            'FOO=1 gh -R owner/repo pr comment 12 --body "$(unclosed',
-            'cd /tmp && /usr/bin/gh issue edit 5 --body "$(unclosed',
-            'gh --repo=owner/repo pr create --body "$(unclosed',
+            'FOO=1 gh -R owner/repo pr comment 12 --body "$(unclosed rm -rf precious.txt',
+            'cd /tmp && /usr/bin/gh issue edit 5 --body "$(unclosed rm -rf precious.txt',
+            'gh --repo=owner/repo pr create --body "$(unclosed rm -rf precious.txt',
         )
         for cmd in cases:
             with self.subTest(cmd=cmd):
                 reason = self.reason(cmd)
                 self.assertIn("unparsable delete:", reason)
                 self.assertIn("--body-file", reason)
+
+    def test_unparsable_gh_body_no_delete_word_is_allowed(self) -> None:
+        cmd = 'gh issue create --title "t" --body "don\'t worry'
+        self.assertEqual("", self.reason(cmd))
+
+    def test_shell_commented_gh_stays_refused_without_body_file_hint(self) -> None:
+        cmd = 'echo hi # ; gh issue create\nrm -rf "$(unclosed'
+        reason = self.reason(cmd)
+        self.assertIn("unparsable delete:", reason)
+        self.assertNotIn("--body-file", reason)
 
     def test_gh_body_cmd_regex_stays_linear_on_many_flags(self) -> None:
         cmd = "gh " + " ".join(f"-f{i}" for i in range(60)) + " status"
