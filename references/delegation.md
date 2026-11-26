@@ -1,6 +1,6 @@
 # Delegation
 
-Cloud implementers write code directly; local runtimes are optional for narrow mechanical or offline jobs, and a local runtime never reviews its own diff.
+Cloud implementers write code directly; local runtimes are optional for narrow mechanical or offline jobs, and a local runtime never reviews its own diff. Direct single-thread edits stay on the host when small and tightly coupled, while orchestrated multi-item work proactively decomposes into small bounded work items for free/local models at the highest reasoning effort; smaller local models remain reserved for genuinely simple mechanical tasks.
 
 Default is single-thread: the main agent does the work itself. Delegate only
 when the owner enables delegation for the session or project.

@@ -13,9 +13,7 @@ permissions:
 
 # Local runtimes
 
-Cloud implementers write code directly. A local runtime is optional
-and only pays for narrow mechanical or offline jobs; never let it review its
-own diff. Pick one row, then open only that route.
+Cloud implementers write code directly. A local runtime is optional and pays for small bounded work items at highest reasoning effort; smaller local models remain reserved for genuinely simple mechanical or offline jobs; never let it review its own diff. Direct single-thread edits stay on the host when small and tightly coupled, while orchestrated multi-item work proactively decomposes into small bounded work items for free/local models at the highest reasoning effort. Pick one row, then open only that route.
 
 | Need | Route | Open |
 | --- | --- | --- |

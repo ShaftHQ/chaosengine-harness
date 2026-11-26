@@ -14,7 +14,28 @@ class FreeFirstDelegation252Test(unittest.TestCase):
         self.delegation = (ROOT / "references" / "delegation.md").read_text(encoding="utf-8")
         self.lowered = self.delegation.casefold()
         self.local_agency = (ROOT / "skills" / "local-agency" / "SKILL.md").read_text(encoding="utf-8")
+        self.local_agency_lowered = self.local_agency.casefold()
         self.local_runtimes = (ROOT / "skills" / "local-runtimes" / "SKILL.md").read_text(encoding="utf-8")
+        self.local_runtimes_lowered = self.local_runtimes.casefold()
+
+        # Hardware inspection is documented in both skills.
+        self.assertIn("hardware", self.local_agency_lowered)
+        self.assertIn("hardware", self.local_runtimes_lowered)
+
+        # Opt-in, owner-approved setup: no silent/unprompted installs.
+        self.assertRegex(self.local_agency_lowered, r"opt-in|owner-approved|explicitly agrees|explicitly agree|approval|explicit owner approval")
+        self.assertRegex(self.local_agency_lowered, r"silent|unprompted")
+
+        # Smartest free/local model at highest reasoning effort.
+        self.assertRegex(self.local_agency_lowered, r"smartest free|smartest .* free")
+        self.assertIn("highest", self.local_agency_lowered)
+        self.assertRegex(self.local_runtimes_lowered, r"highest reasoning effort|highest effort|smartest free")
+
+        # No contradicting "never install" / "only narrow mechanical" wording.
+        self.assertNotIn("never install", self.local_agency_lowered)
+        self.assertNotIn("never install", self.local_runtimes_lowered)
+        self.assertNotIn("only narrow mechanical", self.local_agency_lowered)
+        self.assertNotIn("only narrow mechanical", self.local_runtimes_lowered)
 
     def test_proactive_small_work_item_decomposition_for_free_models(self) -> None:
         text = self.lowered
