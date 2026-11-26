@@ -179,12 +179,45 @@ class DeleteGuardGhHeredoc240Test(unittest.TestCase):
                 self.assertIn("unparsable delete:", reason)
                 self.assertNotIn("--body-file", reason)
 
+    def test_review3_quoted_gh_on_non_gh_command_no_body_file_hint(self) -> None:
+        cases = (
+            'echo "gh issue create"; rm -rf "$(unclosed',
+            "echo 'gh pr edit 1'; rm -rf \"$(unclosed",
+        )
+        for cmd in cases:
+            with self.subTest(cmd=cmd):
+                reason = self.reason(cmd)
+                self.assertIn("unparsable delete:", reason)
+                self.assertNotIn("--body-file", reason)
+
+    def test_review3_many_gh_flags_linear_no_body_file_hint(self) -> None:
+        cmd = "gh -a " * 8000 + 'rm -rf "$(unclosed'
+        started = time.monotonic()
+        reason = self.reason(cmd)
+        elapsed = time.monotonic() - started
+        self.assertIn("unparsable delete:", reason)
+        self.assertNotIn("--body-file", reason)
+        self.assertLess(elapsed, 0.5)
+
+    def test_review3_positive_gh_body_commands_emit_body_file_hint(self) -> None:
+        cases = (
+            'gh issue create --title "t" --body "don\'t run rm -rf precious.txt',
+            'FOO=1 gh -R owner/repo pr comment 12 --body "$(unclosed',
+            'cd /tmp && /usr/bin/gh issue edit 5 --body "$(unclosed',
+            'gh --repo=owner/repo pr create --body "$(unclosed',
+        )
+        for cmd in cases:
+            with self.subTest(cmd=cmd):
+                reason = self.reason(cmd)
+                self.assertIn("unparsable delete:", reason)
+                self.assertIn("--body-file", reason)
+
     def test_gh_body_cmd_regex_stays_linear_on_many_flags(self) -> None:
         cmd = "gh " + " ".join(f"-f{i}" for i in range(60)) + " status"
         started = time.monotonic()
-        matched = GUARD._GH_BODY_CMD.search(cmd)
+        matched = GUARD._is_gh_body_command(cmd)
         elapsed = time.monotonic() - started
-        self.assertIsNone(matched)
+        self.assertFalse(matched)
         self.assertLess(elapsed, 0.5)
 
     # --- Adversarial security cases: ALL MUST BE REFUSED ---
