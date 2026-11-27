@@ -201,6 +201,64 @@ class RequiredCheckGateTests(unittest.TestCase):
         self.assertEqual("", self.guard.merge_readiness_reason(snapshot))
         self.assertEqual(False, snapshot["checks"][1]["isRequired"])
 
+    def test_probe_accepts_a_hyphenated_pull_request_id(self):
+        def fake(args):
+            if args[:2] == ["pr", "view"]:
+                return {
+                    "id": "PR_kwDO-abc",
+                    "url": "https://github.com/acme/widgets/pull/9",
+                    "mergeStateStatus": "CLEAN",
+                    "statusCheckRollup": [
+                        {"name": "installer", "status": "COMPLETED", "conclusion": "SKIPPED"},
+                    ],
+                }, ""
+            query = args[-1]
+            if "reviewThreads" in query:
+                return {
+                    "data": {
+                        "repository": {
+                            "pullRequest": {
+                                "reviewThreads": {
+                                    "pageInfo": {"hasNextPage": False},
+                                    "nodes": [],
+                                }
+                            }
+                        }
+                    }
+                }, ""
+            self.assertIn("PR_kwDO-abc", query)
+            return {
+                "data": {
+                    "repository": {
+                        "pullRequest": {
+                            "commits": {
+                                "nodes": [{
+                                    "commit": {
+                                        "statusCheckRollup": {
+                                            "contexts": {
+                                                "pageInfo": {"hasNextPage": False},
+                                                "nodes": [{
+                                                    "__typename": "CheckRun",
+                                                    "name": "installer",
+                                                    "status": "COMPLETED",
+                                                    "conclusion": "SKIPPED",
+                                                    "isRequired": False,
+                                                }],
+                                            }
+                                        }
+                                    }
+                                }]
+                            }
+                        }
+                    }
+                }
+            }, ""
+
+        self.guard._gh_json = fake
+        snapshot = self.guard.live_merge_probe("9")
+        self.assertEqual("", self.guard.merge_readiness_reason(snapshot))
+        self.assertFalse(snapshot["checks"][0]["isRequired"])
+
     def test_probe_keeps_an_unmarked_skip_when_graphql_fails(self):
         def fake(args):
             if args[:2] == ["pr", "view"]:
