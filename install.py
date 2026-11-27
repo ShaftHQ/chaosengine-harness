@@ -10021,10 +10021,12 @@ def _stale_checkout_version_drift(
     if shown.returncode == 0:
         shown_text = (shown.stdout or "").strip()
         if shown_text and not valid_commit_version(shown_text):
-            return None
-        expected = commit_version_or_none(resolved, ref=manifest_commit) or shown_text
-        if installed_version not in {shown_text, expected}:
-            return None
+            if installed_version != shown_text:
+                return None
+        else:
+            expected = commit_version_or_none(resolved, ref=manifest_commit) or shown_text
+            if installed_version not in {shown_text, expected}:
+                return None
     else:
         # Distinguish an unfetched remote commit (allowed) from a local commit
         # whose VERSION file is missing or unreadable (fail closed).
@@ -10739,18 +10741,6 @@ def resolved_source_version(source: Path) -> str:
     if override:
         return override
     return commit_version_or_none(Path(source)) or ""
-
-
-def derived_version_for_source(source: Path) -> str | None:
-    """The version to stamp into a newly installed overlay, if it changed."""
-    value = source_version(source)
-    if not valid_commit_version(value):
-        return None
-    try:
-        static = (Path(source) / "VERSION").read_text(encoding="utf-8").strip()
-    except OSError:
-        static = ""
-    return value if value != static else None
 
 
 def _read_installed_version(overlay: Path) -> str:

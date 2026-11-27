@@ -1673,6 +1673,7 @@ _DERIVED_VERSION_ENV = "CHAOS_ENGINE_DERIVED_VERSION"
 _COMMIT_VERSION_RE = re.compile(r"^[1-9]\d*\.\d{8}\.\d+$")
 _EXTERNAL_DERIVED_VERSION: str | None = None
 _DERIVED_VERSION_FROM_STARTUP = False
+_DERIVED_VERSION_STATE_STACK: list[tuple[str | None, bool]] = []
 
 
 def valid_commit_version(value: object) -> bool:
@@ -7923,8 +7924,11 @@ def _run_bundled_install(args) -> int:
 
 def apply_install_flags(args) -> dict[str, str | None]:
     """Copy one-liner flags into the environment the download plan already reads."""
-    global _EXTERNAL_DERIVED_VERSION, _DERIVED_VERSION_FROM_STARTUP
+    global _EXTERNAL_DERIVED_VERSION, _DERIVED_VERSION_FROM_STARTUP, _DERIVED_VERSION_STATE_STACK
     previous: dict[str, str | None] = {}
+    _DERIVED_VERSION_STATE_STACK.append(
+        (_EXTERNAL_DERIVED_VERSION, _DERIVED_VERSION_FROM_STARTUP)
+    )
 
     def assign(key: str, value: str | None) -> None:
         if key not in previous:
@@ -7977,11 +7981,16 @@ def apply_install_flags(args) -> dict[str, str | None]:
 
 
 def restore_install_flags(previous: dict[str, str | None]) -> None:
+    global _EXTERNAL_DERIVED_VERSION, _DERIVED_VERSION_FROM_STARTUP, _DERIVED_VERSION_STATE_STACK
     for key, value in previous.items():
         if value is None:
             os.environ.pop(key, None)
         else:
             os.environ[key] = value
+    if _DERIVED_VERSION_STATE_STACK:
+        _EXTERNAL_DERIVED_VERSION, _DERIVED_VERSION_FROM_STARTUP = _DERIVED_VERSION_STATE_STACK.pop()
+    else:
+        _EXTERNAL_DERIVED_VERSION, _DERIVED_VERSION_FROM_STARTUP = None, False
 
 
 def resolve_version_pin(repository: str, pin: str | None, opener) -> str | None:
