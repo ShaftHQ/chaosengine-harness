@@ -616,7 +616,10 @@ def _one_hook_pin(pin: dict, fetch: Fetch) -> dict:
             "detail": f"excerpt absent for {host}; not adopted",
             "adopted": False,
         }
-    missing = [event for event in native if event not in text]
+    # Headings are the current page. A native name that is not a heading
+    # may stay in the registry after the page drops it.
+    page_names = [str(event) for event in (pin.get("headings") or native)]
+    missing = [event for event in page_names if event not in text]
     if missing:
         return {
             "pin": label,
