@@ -269,5 +269,95 @@ class MergeQueueReadiness254Test(unittest.TestCase):
         self.assertFalse(any("rules/branches" in item for call in calls for item in call))
 
 
+class UnifiedMergeFlagParser254Test(unittest.TestCase):
+    def test_value_flags_never_expose_smuggled_flags(self) -> None:
+        cases = (
+            ("gh pr merge 77 --body '-Rattacker/clean-repo' --merge", None, True),
+            ("gh pr merge 77 --body '--squash'", None, False),
+            ("gh pr merge 77 -b -s", None, False),
+            ("gh pr merge 77 --subject '--repo=attacker/clean-repo'", None, False),
+            ("gh pr merge 77 -b--squash --merge", None, True),
+        )
+        for command, expected_repo, expected_strategy in cases:
+            with self.subTest(command=command):
+                seen = []
+
+                def probe(target, *, repo=None, has_strategy_flag=None, seen=seen):
+                    seen.append((target, repo, has_strategy_flag))
+                    return ready()
+
+                self.assertEqual("", GUARD.merge_before_ready_reason(command, probe=probe))
+                self.assertEqual([("77", expected_repo, expected_strategy)], seen)
+
+    def test_repo_values_fail_closed(self) -> None:
+        for command in (
+            "gh pr merge 77 --repo",
+            "gh pr merge 77 -R",
+            "gh pr merge 77 --repo=",
+            "gh pr merge 77 --repo=-owner/repo",
+            "gh pr merge 77 -R -owner/repo",
+        ):
+            with self.subTest(command=command):
+                reason = GUARD.merge_before_ready_reason(command, probe=lambda _target: ready())
+                self.assertIn("could not be read", reason)
+
+    def test_admin_and_strategy_forms_disqualify_merge_queue_enqueue(self) -> None:
+        commands = (
+            "gh pr merge 77 --admin",
+            "gh pr merge 77 --admin=true",
+            "gh pr merge 77 --squash=true",
+            "gh pr merge 77 --merge=1",
+            "gh pr merge 77 -ds",
+            "gh pr merge 77 -dm",
+            "gh pr merge 77 -dr",
+            "gh pr merge 77 -sd",
+        )
+        for command in commands:
+            with self.subTest(command=command):
+                seen = []
+
+                def probe(target, *, repo=None, has_strategy_flag=None, seen=seen):
+                    seen.append(has_strategy_flag)
+                    return blocked()
+
+                reason = GUARD.merge_before_ready_reason(command, probe=probe)
+                self.assertIn("BLOCKED", reason)
+                self.assertEqual([True], seen)
+
+    def test_false_strategy_and_admin_values_keep_merge_queue_enqueue(self) -> None:
+        for command in ("gh pr merge 77 --squash=false", "gh pr merge 77 --admin=false"):
+            with self.subTest(command=command):
+                seen = []
+
+                def probe(target, *, repo=None, has_strategy_flag=None, seen=seen):
+                    seen.append(has_strategy_flag)
+                    return blocked()
+
+                self.assertEqual("", GUARD.merge_before_ready_reason(command, probe=probe))
+                self.assertEqual([False], seen)
+
+    def test_double_dash_makes_repo_lookalike_a_positional_target(self) -> None:
+        seen = []
+
+        def probe(target, *, repo=None, has_strategy_flag=None, seen=seen):
+            seen.append((target, repo, has_strategy_flag))
+            return ready()
+
+        command = "gh pr merge -- -Rattacker/clean-repo --merge"
+        self.assertEqual("", GUARD.merge_before_ready_reason(command, probe=probe))
+        self.assertEqual([("-Rattacker/clean-repo", None, False)], seen)
+
+    def test_repo_inside_bundled_short_flags_is_forwarded(self) -> None:
+        seen = []
+
+        def probe(target, *, repo=None, has_strategy_flag=None, seen=seen):
+            seen.append((target, repo, has_strategy_flag))
+            return ready()
+
+        command = "gh pr merge 77 -dRShaftHQ/clean --merge"
+        self.assertEqual("", GUARD.merge_before_ready_reason(command, probe=probe))
+        self.assertEqual([("77", "ShaftHQ/clean", True)], seen)
+
+
 if __name__ == "__main__":
     unittest.main()
