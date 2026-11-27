@@ -16,6 +16,7 @@ import os
 import platform
 import re
 import secrets
+import shlex
 import shutil
 import sqlite3
 import stat
@@ -5649,12 +5650,30 @@ def _antigravity_fail_json(event: str | None, reason: str) -> str:
     return json.dumps(payload, separators=(",", ":"))
 
 
+_UNIX_HOOK_ARG = re.compile(r"[A-Za-z0-9_-]+")
+
+
+def _unix_hook_arg_words(args: str) -> str:
+    """Validate host/event tokens and render each as a literal shell word.
+
+    Word splitting on an unquoted variable is a bash/sh extension: zsh keeps
+    ``$a`` as one argument, so ``codex Stop`` reached ``launch.py`` as a single
+    invalid host name (#256). Literal validated words behave the same everywhere.
+    """
+    words = args.split()
+    if any(_UNIX_HOOK_ARG.fullmatch(word) is None for word in words):
+        raise ValueError(f"unsafe hook launch arguments: {args!r}")
+    return " ".join(shlex.quote(word) for word in words)
+
+
 def _unix_antigravity_command(args: str, event: str | None) -> str:
     """POSIX sh (`sh -c`) launcher for Antigravity. Fail-closed JSON on exit 0."""
     missing_json = _antigravity_fail_json(event, f"missing {HOOK_LAUNCH_PY}")
     no_python_json = _antigravity_fail_json(event, HOOK_LAUNCH_PYTHON_BLOCK)
     if "'" in missing_json or "'" in no_python_json:
         raise ValueError("antigravity hook JSON must stay single-quote safe")
+    words = _unix_hook_arg_words(args)
+    suffix = f" {words}" if words else ""
     if event is not None and event.casefold() == "stop":
         miss = (
             '[ -n "$d" ]&&[ -f "$d/$h" ]||{ [ -d "$d/.chaos-engine" ]||'
@@ -5670,9 +5689,8 @@ def _unix_antigravity_command(args: str, event: str | None) -> str:
         '[ -f "$p/$n/$r$o" ]&&python3 "$p/$n/$r$o" adopt&&break 2;done;done;'
         'd=$(git rev-parse --show-toplevel 2>&1);};'
         + miss
-        + f';f="$d/$h";a="{args}";'
-        'p=$(command -v python3)&&exec "$p" "$f" $a;'
-        'p=$(command -v py)&&exec "$p" -3 "$f" $a;'
+        + f';f="$d/$h";p=$(command -v python3)&&exec "$p" "$f"{suffix};'
+        f'p=$(command -v py)&&exec "$p" -3 "$f"{suffix};'
         f"echo '{no_python_json}';exit 0"
     )
 
@@ -5885,6 +5903,11 @@ def _unix_powershell_polyglot(target: str, block: str, probe: str, *, consumer_s
     heredoc opener is inside the ``<#`` comment, and ``#>`` closes it.
     ``LASTEXITCODE=``, ``n=``, and ``r=`` satisfy Grok's ``$NAME`` scanner for the probe.
     """
+    launcher, _, args = target.partition(" ")
+    if not launcher or any(character in launcher for character in "\"'\\`$\n"):
+        raise ValueError(f"unsafe hook launch path: {launcher!r}")
+    words = _unix_hook_arg_words(args)
+    suffix = f" {words}" if words else ""
     opener = "echo `# <#`>/dev/null\n" if consumer_stop else "echo `# <#` >&2\n"
     if consumer_stop:
         # stderr is the receipt. A new file would mutate a consumer checkout.
@@ -5906,10 +5929,8 @@ def _unix_powershell_polyglot(target: str, block: str, probe: str, *, consumer_s
         'd=$(git rev-parse --show-toplevel); };'
         + miss
         + '[ -n "${BASH_VERSION-}" ]&&shopt -s execfail\n'
-        'f="$d/$h";a="'
-        f"{target.partition(' ')[2]}"
-        '";exec python3 "$f" $a||exec py -3 "$f" $a'
-        f"||{{ echo '{block}'; exit 2; }}\n"
+        + f'f="$d/$h";exec python3 "$f"{suffix}||exec py -3 "$f"{suffix}'
+        + f"||{{ echo '{block}'; exit 2; }}\n"
         ": <<'#'\n"
         "#> > $null\n"
         f"{probe}\n"
