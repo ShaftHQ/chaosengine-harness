@@ -599,8 +599,8 @@ def is_git_work_tree(cwd: Path) -> bool:
 
 
 _FINGERPRINT_SKIP = frozenset({
-    ".git", ".chaos-engine-runtime", "graphify-out", ".memory", "target",
-    "node_modules", "__pycache__", ".chaos-engine-state",
+    ".git", ".chaos-engine-runtime", "graphify-out", "graphify-out.replacing",
+    ".memory", "target", "node_modules", "__pycache__", ".chaos-engine-state",
 })
 
 
@@ -1661,7 +1661,7 @@ def _refresh_graphify(
             raise RuntimeError("graphify extract did not write graph.json and manifest.json")
         _apply_documentation_index(snapshot, produced / "graph.json", produced)
         target.parent.mkdir(parents=True, exist_ok=True)
-        backup = target.with_name(target.name + ".replacing")
+        backup = target.with_name("." + target.name + ".replacing")
         if backup.exists():
             shutil.rmtree(backup)
         if target.exists():

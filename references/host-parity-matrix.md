@@ -4,14 +4,14 @@ description: Use when Grok, Copilot, Cursor, or OpenCode may not honor an exit-2
 
 # Host Parity Matrix v0
 
-Living adapter-outcome matrix for ChaosEngine across Claude Code, Codex, Grok, Gemini, GitHub Copilot, OpenCode, Cursor, Antigravity, and Grok Bot; independent bots (GPTs and others) follow the Grok Bot column via the bot entry.
+Living adapter-outcome matrix for ChaosEngine across Claude Code, Codex, Grok, Gemini, GitHub Copilot, OpenCode, Cursor, Antigravity, Grok Bot, and OpenBot; independent bots (GPTs and others) follow the Grok Bot column via the bot entry.
 
-Parity means the same workflow *outcomes* on all nine hosts (not UI chrome parity).
+Parity means the same workflow *outcomes* across supported hosts (not UI chrome parity).
 Machine-checkable capability pins also live in `scripts/ci/agent_harness_parity.json`.
 
 ## Harness parity (permanent)
 
-Any lasting behavior or policy — including the trigger-based Learning Session, the ban on traffic proxies ([no-proxy](no-proxy.md)), and token optimization as Kanban eliminate-waste ([eliminate-waste](eliminate-waste.md)) — MUST live in the portable ChaosEngine overlay: hooks, skills,
+Any lasting behavior or policy — including the Learning Session after every confirmed final delivery (with or without a failure, surprise, or owner ask), the ban on traffic proxies ([no-proxy](no-proxy.md)), and token optimization as Kanban eliminate-waste ([eliminate-waste](eliminate-waste.md)) — MUST live in the portable ChaosEngine overlay: hooks, skills,
 installer/doctor, and host guidance adapters (`AGENTS.md` / `CLAUDE.md` /
 `GEMINI.md` equivalents). Never leave lasting harness rules only in one
 agent's memory or routines. Unchanged `chaos-engine/` sources are not a
@@ -20,7 +20,7 @@ valid Learning Session skip on any host.
 ## One implementation for every host
 
 Claude, Codex (the GPT host), Copilot, Gemini, Grok, OpenCode, Cursor,
-Antigravity, and Grok Bot run one portable implementation. Do not add a separate GPT adapter, and do not copy a rule
+Antigravity, Grok Bot, and OpenBot run one portable implementation. Do not add a separate GPT adapter, and do not copy a rule
 into a host skill, a host guard, or a second policy file. A new harness
 rule is one shared row in `scripts/ci/agent_harness_parity.json`: every
 host column names the same evidence path, and one test runs that decision
@@ -44,20 +44,20 @@ Legend: P = parity (outcome available), A = adapter-shaped equivalent, G = gap (
 
 ## Matrix
 
-| Surface | Claude Code | Codex | Grok | Gemini | Copilot | OpenCode | Cursor | Antigravity | Grok Bot |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Install / doctor human UX | P | P | P | P | P | P | P | P | P |
-| Host onboarding / activation path | A marketplace/plugin | A marketplace/plugin | A file/hook | A file/hook | A file/hook | A AGENTS.md | A AGENTS.md | A file/hook | A bot entry |
-| Router skill (`chaos-engine`) | P | P | P | P | P | P | P | P | P |
-| Lifecycle hooks | A | A | A | A | A | A | A | A | G |
-| Exit-2 / blocking denial fidelity | A | A | G | A | G | G | G | G | G |
-| SessionStart identity and locators / progressive disclosure | A | A | A | A | A | G | A | A | G |
-| Skills discovery | A | A | A | A | A | A | A | A | A |
-| Companions (Caveman + Ponytail) | P | P | P | P | P | P | P | P | P |
-| Self-improve skill (Learning Session) | P | P | P | P | P | P | P | P | P |
-| Retrieval soft-degrade (Memory/MemPalace/Graphify) | P | P | P | P | P | P | P | P | P |
-| Work-item to merge playbook | P | P | P | P | P | P | P | P | P |
-| Learning Session | P | P | P | P | P | P | P | P | P |
+| Surface | Claude Code | Codex | Grok | Gemini | Copilot | OpenCode | Cursor | Antigravity | Grok Bot | OpenBot |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Install / doctor human UX | P | P | P | P | P | P | P | P | P | P |
+| Host onboarding / activation path | A marketplace/plugin | A marketplace/plugin | A file/hook | A file/hook | A file/hook | A AGENTS.md | A AGENTS.md | A file/hook | A bot entry | A AGENTS.md |
+| Router skill (`chaos-engine`) | P | P | P | P | P | P | P | P | P | P |
+| Lifecycle hooks | A | A | A | A | A | A | A | A | G | G |
+| Exit-2 / blocking denial fidelity | A | A | G | A | G | G | G | G | G | G |
+| SessionStart identity and locators / progressive disclosure | A | A | A | A | A | G | A | A | G | G |
+| Skills discovery | A | A | A | A | A | A | A | A | A | A |
+| Companions (Caveman + Ponytail) | P | P | P | P | P | P | P | P | P | P |
+| Self-improve skill (Learning Session) | P | P | P | P | P | P | P | P | P | P |
+| Retrieval soft-degrade (Memory/MemPalace/Graphify) | P | P | P | P | P | P | P | P | P | P |
+| Work-item to merge playbook | P | P | P | P | P | P | P | P | P | P |
+| Learning Session | P | P | P | P | P | P | P | P | P | P |
 
 ## Universal / Any AI Client
 
@@ -90,6 +90,7 @@ The nine named hosts are not the whole set. Any other AI client uses the same ou
 | GAP-CURSOR-HOOKS | Cursor | info | `.cursor/hooks.json` version 1 calls `hooks/launch.py` for the ten agent events. Deny renders `permission`, `additional_context`, and `followup_message`. `failClosed` is set only on `preToolUse`. Exit 2 stays G until a live probe. One guard run per event stays unclaimed until a posted trace count. Cursor PostToolUse deny is fail-open: the adapter drops `decision` and `reason`; only PreToolUse `permission` denies. | `runtime/hook_surfaces.py`; `tests/scripts/test_hook_parity.py`. |
 | GAP-ANTIGRAVITY-HOOKS | Antigravity (`agy`) | info | `.agents/hooks.json` registers a named `"chaos-engine"` hook calling `hooks/launch.py`. PreToolUse and PostToolUse use the scoped `hooks/matchers.json` groups (including `run_command`, `run_workflow`, and `swarm`), not `.*`. Flat arrays are `SessionStart`, `PreInvocation`, and `Stop`. `PostInvocation` stays a kernel alias and is not a per-turn spawn. Antigravity treats non-zero hook exits as fail-open, so denies emit exit-0 JSON (`decision: "deny"`, `decision: "continue"` + `reason`, or `errorMessage` + `terminationBehavior: "terminate"`). A Stop with `fullyIdle: false` or terminal `terminationReason` does not emit `decision: "continue"`. SessionStart/PreInvocation inject context via `injectSteps`. MCP stays CLI-first: Antigravity reads `~/.gemini/config/mcp_config.json` or `plugins/<name>/mcp_config.json`, not `.mcp.json`, and a plugin bundle is `plugins/<name>/plugin.json`. | `runtime/hook_surfaces.py`; `tests/scripts/test_antigravity_support.py`. |
 | GAP-GROKBOT-HOOKS | Grok Bot | medium | Instruction-only agent: auto-loads nothing from the checkout and has no hook runtime. At task start it reads the core card and both companion cards itself, then runs one retrieve. Same receipt substitution; `worktree_overlay.py verify` reports it as instruction-only. | `hosts.INSTRUCTION_ONLY_HOSTS`; research receipt;. |
+| GAP-OPENBOT-HOOKS | OpenBot | medium | Instruction-only host: reads `AGENTS.md` and loads `.chaos-engine/skills/chaos-engine/SKILL.md` directly with no hook runtime and no hook enforcement claim. An explicit `tool.py retrieve` receipt substitutes for the read gate; self-enforce `tool.py` mechanical gates. | `hosts.INSTRUCTION_ONLY_HOSTS`; explicit retrieve receipt. |
 | GAP-BOT-ENTRY | Independent bots (GPTs, Claude Projects, others) | medium | No checkout auto-load and no hooks: start from [bot entry](bot-entry.md) (`tool.py entry`, or an exported entry file for bots without repository access). Residual risk: a hookless bot can still submit a person-only assessment if it skips `tool.py ethics-check`. | `hosts.INSTRUCTION_ONLY_HOSTS`; research receipt;. |
 | GAP-GROK-BUNDLED | Grok | info | Grok product bundled skills (pdf/pptx/imagine/game-*) and session GitHub MCP cannot be deleted from the install tree. CE does not vendor them; doctor strips user GitHub MCP when gh is healthy and documents this limit. | prefer-cli-over-mcp. |
 | GAP-GROK-CAVEMAN | — (cleared) | info | Always-on CE card (`caveman=ultra` in `hooks/lifecycle.py`) is the Grok communication constitution. Do not copy Caveman skill bodies into `AGENTS.md`. | Closed: locator-only host guidance plus lifecycle ultra selector. No proxy. |
@@ -161,7 +162,9 @@ It does not claim the original bytes left the model window.
 | Copilot | not proven |
 | OpenCode | not proven |
 | Cursor | not proven |
+| Antigravity | not proven |
 | Grok Bot | not proven |
+| OpenBot | not proven |
 
 ## GAP-EXIT2 compensating UX checklist (Grok / Copilot)
 

@@ -179,8 +179,10 @@ class ChaosEngineHostsTest(unittest.TestCase):
             failed = module.grok_runtime_status(
                 project, executable="grok", runner=lambda *_a, **_k: result({}, 1)
             )
-            self.assertEqual("sync-advisory", failed["status"])
-            self.assertIn("/hooks-trust", failed["detail"])
+            self.assertEqual("failed", failed["status"])
+            self.assertEqual("CE_GROK_INSPECT_FAILED", failed["code"])
+            self.assertIs(False, failed["hooksLoaded"])
+            self.assertNotIn("/hooks-trust", failed["detail"])
 
     def test_grok_runtime_treats_launch_py_hooks_as_loaded_when_trusted(self):
         """#8102: current hook commands call launch.py, not guard.py."""
@@ -5590,7 +5592,10 @@ class TokenEconomyWave2HostsParityTest(unittest.TestCase):
 
     def test_ce_pointer_loads_once_on_every_host(self):
         self.assertEqual(b"@AGENTS.md\n", self.hosts.claude_pointer_bytes())
-        self.assertEqual({"grok-bot", "independent-bot"}, set(self.hosts.INSTRUCTION_ONLY_HOSTS))
+        self.assertEqual(
+            {"grok-bot", "independent-bot", "openbot"},
+            set(self.hosts.INSTRUCTION_ONLY_HOSTS),
+        )
         agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
         self.assertEqual(1, agents.count("skills/chaos-engine/SKILL.md"))
 

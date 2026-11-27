@@ -61,7 +61,7 @@ HOOK_HOSTS = (
     "cursor",
     "antigravity",
 )
-INSTRUCTION_ONLY_HOSTS = ("grok-bot",)
+INSTRUCTION_ONLY_HOSTS = ("grok-bot", "openbot")
 # Bots that auto-load nothing start from the bot entry; independent bots use the grok-bot path.
 BOT_ENTRY = "chaos-engine/references/bot-entry.md"
 BOT_HOSTS = ("grok-bot",)
@@ -75,6 +75,7 @@ HOST_FILES = {
     "opencode": ("AGENTS.md", ".opencode/plugins/chaos-engine-receipt.js"),
     "cursor": ("AGENTS.md", ".cursor/hooks.json"),
     "grok-bot": (BOT_ENTRY,),
+    "openbot": ("AGENTS.md", ROUTER),
     "antigravity": ("AGENTS.md", ".agents/hooks.json"),
 }
 SHARED_FILES = ("AGENTS.md", ".mcp.json", ".claude/agents", ".codex/agents")

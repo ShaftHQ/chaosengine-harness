@@ -13,7 +13,7 @@ class HostParityMatrixTests(unittest.TestCase):
     def test_matrix_covers_five_hosts_and_lists_gaps(self):
         text = MATRIX.read_text(encoding="utf-8")
         self.assertTrue(MATRIX.is_file())
-        for host in ("Claude Code", "Codex", "Grok", "Gemini", "Copilot"):
+        for host in ("Claude Code", "Codex", "Grok", "Gemini", "Copilot", "OpenBot"):
             self.assertIn(host, text)
         for surface in (
             "Install / doctor human UX",
@@ -29,6 +29,13 @@ class HostParityMatrixTests(unittest.TestCase):
             self.assertIn(surface, text)
         self.assertIn("Measured gaps", text)
         self.assertIn("GAP-EXIT2", text)
+        self.assertIn("GAP-OPENBOT-HOOKS", text)
+        self.assertIn(
+            "the Learning Session after every confirmed final delivery (with or without a failure, surprise, or owner ask)",
+            text,
+        )
+        self.assertIn("| Antigravity | not proven |", text)
+        self.assertIn("| OpenBot | not proven |", text)
         self.assertIn("severity", text.casefold())
 
 

@@ -28,6 +28,7 @@ HOST_CONTEXTS = {
     "copilot": ["guides/tools/copilot.md"],
     "opencode": ["guides/tools/opencode.md"],
     "grok-bot": ["guides/tools/grok-bot.md", "references/bot-entry.md"],
+    "openbot": ["guides/tools/openbot.md"],
     "antigravity": ["guides/overview.md"],
 }
 

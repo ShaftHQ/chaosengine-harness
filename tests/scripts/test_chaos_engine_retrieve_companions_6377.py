@@ -280,7 +280,7 @@ class EmptyPalaceTest(unittest.TestCase):
 
 
 class DoctorEmptyPalaceTest(unittest.TestCase):
-    """Doctor degrades an empty palace only after a recorded mine stops (#6377)."""
+    """#260: an existing 0-drawer project palace reports status='empty', never healthy."""
 
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
@@ -288,18 +288,21 @@ class DoctorEmptyPalaceTest(unittest.TestCase):
         self.install = _load("install")
         self.empty = _palace(self.tmp, 0)
 
-    def _finding(self, index):
-        stores = {"palace_drawer_count": lambda _p: 0, "resolve_palace": lambda _p: self.empty}
+    def _finding(self, index, *, drawer_count=0):
+        stores = {"palace_drawer_count": lambda _p: drawer_count, "resolve_palace": lambda _p: self.empty}
         with unittest.mock.patch.object(self.install, "_load_stores_module", return_value=stores):
             return self.install._mempalace_empty_finding(self.tmp, index)
 
-    def test_no_mine_record_or_running_mine_is_not_degraded(self):
-        self.assertIsNone(self._finding(None))
+    def test_running_mine_or_absent_palace_is_not_empty(self):
         self.assertIsNone(self._finding({"status": "running"}))
+        self.assertIsNone(self._finding(None, drawer_count=None))
 
-    def test_stopped_mine_with_zero_drawers_is_degraded(self):
-        for state in ("complete", "failed", "interrupted"):
-            self.assertEqual("degraded", self._finding({"status": state})["status"])
+    def test_zero_drawers_with_or_without_mine_record_is_empty(self):
+        for state in (None, {"status": "complete"}, {"status": "failed"}, {"status": "interrupted"}):
+            finding = self._finding(state)
+            self.assertIsNotNone(finding)
+            self.assertEqual("empty", finding["status"])
+            self.assertIn("0 drawers", finding["detail"])
 
 
 class SynchronousMineTest(unittest.TestCase):
