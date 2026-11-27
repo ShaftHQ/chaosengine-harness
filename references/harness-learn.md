@@ -30,6 +30,10 @@ repeated instructions into git-tracked policy.
   place. Propose a portable overlay change instead.
 - Consent is per group. Unpicked options are deferred, not rejected.
 - Secrets stay out of reports: names and paths only.
+- The launching session waits until `report.md` and `actions.json` exist. A stop before those files leaves nothing to apply and nothing to file.
+- After the report, file every kept gap on the git host, one issue per actionable problem, and land the full run record at `references/details/ce-lessons-<date>/learn-retrospective.md` in one lessons pull request. The host report and the chat summary are not the record.
+- A window the report marks too narrow (fewer than 20 kept sessions, under 7 days, or a single working directory) retires nothing. Zero proposed actions is a valid report.
+- Do not recreate a host skill that a previous run already retired. A slash injection that names host-only tools stays on that host.
 
 Curation still uses [self-improve](../skills/self-improve/SKILL.md) after
 delivery. Trace collection and map-reduce live in
