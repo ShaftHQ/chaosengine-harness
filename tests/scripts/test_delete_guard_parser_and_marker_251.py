@@ -195,6 +195,20 @@ class DeleteGuardParser251Test(unittest.TestCase):
             with self.subTest(command=command):
                 self.assert_refuses(command)
 
+    def test_time_and_coproc_continuations_before_case_are_refused(self) -> None:
+        for command in (
+            'echo "$(coproc ca\\\nse x in x) rm -rf precious.txt;; esac; wait)"',
+            'echo "$(coproc my\\\ncp case x in x) rm -rf precious.txt;; esac; wait)"',
+            'echo "$(time -\\\np case x in x) rm -rf precious.txt;; esac)"',
+            'echo "$(time -\\\n- case x in x) rm -rf precious.txt;; esac)"',
+            'echo "$(time -p\\\n case x in x) rm -rf precious.txt;; esac)"',
+            'echo "$(time -\\\np ! case x in x) rm -rf precious.txt;; esac)"',
+            'echo "$(coproc ca\\\r\nse x in x) rm -rf precious.txt;; esac; wait)"',
+            'echo "$(time -\\\r\np case x in x) rm -rf precious.txt;; esac)"',
+        ):
+            with self.subTest(command=command):
+                self.assert_refuses(command)
+
     def test_array_literal_substitutions_are_refused(self) -> None:
         for command in (
             "foo=( $(rm -rf precious.txt) )",

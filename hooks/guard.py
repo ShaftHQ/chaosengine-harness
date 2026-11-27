@@ -964,13 +964,16 @@ _GITHUB_NAME = re.compile(r"^[A-Za-z0-9_.-]+\Z")
 def _gh_repo_value(token: str, following: str | None) -> tuple[str | object, int]:
     """Parse a ``-R``/``--repo`` flag before ``merge``.
 
-    Returns (repo, consumed) where consumed is 1 or 2 tokens,
-    ``(_UNREADABLE_MERGE, 0)`` for a malformed value, and ``(None, 0)`` when the
-    token is not a repository flag.
+    Returns (repo, consumed) where consumed is 0, 1, or 2 tokens,
+    ``(_UNREADABLE_MERGE, 0)`` for a missing or flag-like value,
+    ``(_UNREADABLE_MERGE, 2)`` for an explicitly empty value, and ``(None, 0)``
+    when the token is not a repository flag.
     """
     if token in {"-R", "--repo"}:
-        if not following or following.startswith("-"):
+        if following is None or following.startswith("-"):
             return _UNREADABLE_MERGE, 0
+        if following == "":
+            return _UNREADABLE_MERGE, 2
         return following, 2
     if token.startswith("--repo="):
         value = token[len("--repo=") :]
@@ -1006,7 +1009,7 @@ def _gh_pr_merge_tail(
         repo, consumed = _gh_repo_value(token, following)
         if repo is _UNREADABLE_MERGE:
             pre_repo = _UNREADABLE_MERGE
-            index += 1
+            index += consumed or 1
             continue
         if consumed:
             if pre_repo is not _UNREADABLE_MERGE:

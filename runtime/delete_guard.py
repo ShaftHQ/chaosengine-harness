@@ -2143,27 +2143,47 @@ def _scan_balanced_paren(text: str, pos: int) -> int:
         ch = text[index]
         boundary = " \t\r\n;&|()<>#"
         if after_time and cmd_start and ch == "-":
-            if text.startswith("-p", index) and (
-                index + 2 >= n or text[index + 2] in boundary
-            ):
-                index += 2
+            opt_chars: list[str] = []
+            scan = index
+            while scan < n:
+                if text[scan] in boundary:
+                    break
+                stepped = skip_continuation(scan)
+                if stepped != scan:
+                    scan = stepped
+                    continue
+                opt_chars.append(text[scan])
+                scan += 1
+            opt = "".join(opt_chars)
+            if opt == "-p":
+                index = scan
                 continue
-            if text.startswith("--", index) and (
-                index + 2 >= n or text[index + 2] in boundary
-            ):
+            if opt == "--":
                 after_time = False
-                index += 2
+                index = scan
                 continue
         if after_coproc and cmd_start and (ch.isalpha() or ch == "_"):
-            end = index + 1
-            while end < n and (text[end].isalnum() or text[end] == "_"):
-                end += 1
-            if text[index:end] not in {
+            name_chars: list[str] = []
+            scan = index
+            while scan < n:
+                if text[scan].isalnum() or text[scan] == "_":
+                    name_chars.append(text[scan])
+                    scan += 1
+                    continue
+                stepped = skip_continuation(scan)
+                if stepped != scan:
+                    scan = stepped
+                    continue
+                break
+            name = "".join(name_chars)
+            after_end = skip_continuation(scan) if scan < n else scan
+            following = text[after_end] if after_end < n else " "
+            if following in boundary and name not in {
                 "case", "if", "while", "until", "for", "select",
             }:
                 after_coproc = False
                 cmd_start = True
-                index = end
+                index = scan
                 continue
         if ch == "\\":
             if index + 2 < n and text[index + 1] == "\r" and text[index + 2] == "\n":
