@@ -456,5 +456,38 @@ class MalformedPreMergeRepo254Test(unittest.TestCase):
         self.assertIs(GUARD._UNREADABLE_MERGE, tail[1])
 
 
+class EmptyRepoValue254Test(unittest.TestCase):
+    PRE_MERGE_REPROS = (
+        'gh pr -R "" merge 10',
+        'gh pr --repo "" merge 10',
+        'gh -R "" pr merge 10',
+        'gh --repo "" pr merge 10',
+    )
+
+    def test_tail_keeps_pr_merge_when_pre_merge_repo_value_is_empty(self) -> None:
+        for command in self.PRE_MERGE_REPROS:
+            with self.subTest(command=command):
+                _head, arguments = GUARD.command_head(GUARD.shell_tokens(command))
+                tail = GUARD._gh_pr_merge_tail(arguments)
+                self.assertIsNotNone(tail)
+                normalized, pre_repo = tail
+                self.assertEqual(["pr", "merge", "10"], normalized)
+                self.assertIs(GUARD._UNREADABLE_MERGE, pre_repo)
+
+    def test_gate_fails_closed_for_empty_pre_merge_repo_value(self) -> None:
+        for command in self.PRE_MERGE_REPROS:
+            with self.subTest(command=command):
+                reason = GUARD.merge_before_ready_reason(command, probe=lambda _target: ready())
+                self.assertNotEqual("", reason, command)
+                self.assertIn("could not be read", reason)
+
+    def test_gate_fails_closed_for_empty_post_merge_repo_value(self) -> None:
+        for command in ('gh pr merge -R "" 10', 'gh pr merge --repo "" 10'):
+            with self.subTest(command=command):
+                reason = GUARD.merge_before_ready_reason(command, probe=lambda _target: ready())
+                self.assertNotEqual("", reason, command)
+                self.assertIn("could not be read", reason)
+
+
 if __name__ == "__main__":
     unittest.main()
