@@ -2,7 +2,7 @@
 
 Source: host learn run `20261127-190351`, 28 kept sessions since the completed run on 2026-11-21 (`20261121-121105`). Seen 1703. Dropped: older_than_window 443, subagent 1025, headless 187, excluded_cwd 11, no_human_turns 9. Human turns read: 44. Mappers read 28 of 28. Map notes lost: 0. Reduce notes lost: 0. Verifier sections that failed: none. `actions.json` was an empty list. `disuse_evidence.sufficient` was false because the sessions span 6.2 days.
 
-Tracked by https://github.com/ShaftHQ/chaosengine-harness/issues/284. The 2026-11-21 record remains https://github.com/ShaftHQ/chaosengine-harness/issues/146.
+Tracked by https://github.com/ShaftHQ/chaosengine-harness/issues/284 and https://github.com/ShaftHQ/chaosengine-harness/pull/285. The 2026-11-21 record remains https://github.com/ShaftHQ/chaosengine-harness/issues/146.
 
 ## What happened
 
@@ -68,11 +68,11 @@ A later session that finishes a learn run and would have stopped at the host rep
 
 ## Next action
 
-Land this file with the contract and INSTALL.md edits. https://github.com/ShaftHQ/chaosengine-harness/issues/284
+Merge https://github.com/ShaftHQ/chaosengine-harness/pull/285 after the required check is green and the two reviews have passed.
 
 ## Enhancements
 
-- tracked: the wait-then-file rule, the clean-installation definition, and this retrospective, https://github.com/ShaftHQ/chaosengine-harness/issues/284
+- tracked: the wait-then-file rule, the clean-installation definition, and this retrospective, https://github.com/ShaftHQ/chaosengine-harness/issues/284 and https://github.com/ShaftHQ/chaosengine-harness/pull/285
 - tracked: https://github.com/ShaftHQ/chaosengine-harness/pull/271 already delivered the named Antigravity conversations
 - rejected: a new skill for the host plain-words block, because it names host-only tools and the 2026-11-21 record already refused the port
 - rejected: recreating `issue-orchestrator`, because execution-workflows already owns parallel delegation
