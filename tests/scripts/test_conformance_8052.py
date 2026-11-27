@@ -309,11 +309,26 @@ class ConformanceTests(unittest.TestCase):
         fixture = self.conformance.load_fixture()
         pins = fixture["hook_events"]
         url = next(pin["url"] for pin in pins if pin["host"] == "cursor")
-        unknown = self.conformance.check_hook_event_registry({"cursor": {"workspaceOpen"}}, pins)
-        self.assertTrue(any("cursor" in item and "workspaceOpen" in item and url in item for item in unknown))
+        unknown = self.conformance.check_hook_event_registry({"cursor": {"notARealCursorEvent"}}, pins)
+        self.assertTrue(any("cursor" in item and "notARealCursorEvent" in item and url in item for item in unknown))
         alias = self.conformance.check_hook_event_registry({"codex": {"PostToolUseFailure"}}, pins)
         codex_url = next(pin["url"] for pin in pins if pin["host"] == "codex")
         self.assertTrue(any("codex" in item and "PostToolUseFailure" in item and codex_url in item for item in alias))
+
+    def test_saved_headings_are_registered_or_an_exception(self):
+        fixture = self.conformance.load_fixture()
+        pins = fixture["hook_events"]
+        self.assertEqual([], self.conformance.check_saved_headings(pins))
+        copied = json.loads(json.dumps(pins[0]))
+        copied["headings"] = list(copied["headings"]) + ["NotARealHeading"]
+        errors = self.conformance.check_saved_headings([copied])
+        self.assertTrue(any(copied["host"] in item and "NotARealHeading" in item for item in errors), errors)
+        bad = json.loads(json.dumps(pins[0]))
+        event = bad["headings"][0]
+        bad["registered"] = [name for name in bad["registered"] if name != event]
+        bad["exception"] = [{"event": event, "reason": "not implemented yet"}]
+        failed = self.conformance.check_saved_headings([bad])
+        self.assertTrue(any("not implemented" in item for item in failed), failed)
 
     def test_hook_drift_review_does_not_adopt_and_a_failed_fetch_is_not_a_pass(self):
         fixture = self.conformance.load_fixture()
