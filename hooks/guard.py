@@ -1004,8 +1004,13 @@ def _gh_pr_merge_tail(
         token = tokens[index]
         following = tokens[index + 1] if index + 1 < len(tokens) else None
         repo, consumed = _gh_repo_value(token, following)
+        if repo is _UNREADABLE_MERGE:
+            pre_repo = _UNREADABLE_MERGE
+            index += 1
+            continue
         if consumed:
-            pre_repo = repo
+            if pre_repo is not _UNREADABLE_MERGE:
+                pre_repo = repo
             index += consumed
             continue
         if token in _GH_VALUE_FLAGS and "=" not in token:

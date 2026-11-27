@@ -159,6 +159,42 @@ class DeleteGuardParser251Test(unittest.TestCase):
             with self.subTest(command=command):
                 self.assert_refuses(command)
 
+    def test_time_and_coproc_prefixes_before_case_are_refused(self) -> None:
+        for command in (
+            'echo "$(time -p case x in x) rm -rf precious.txt;; esac)"',
+            'echo "$(time -- case x in x) rm -rf precious.txt;; esac)"',
+            'echo "$(! time -p case x in x) rm -rf precious.txt;; esac)"',
+            'echo "$(coproc case x in x) rm -rf precious.txt;; esac; wait)"',
+            'echo "$(coproc mycp case x in x) rm -rf precious.txt;; esac; wait)"',
+        ):
+            with self.subTest(command=command):
+                self.assert_refuses(command)
+
+    def test_optional_leading_paren_before_esac_pattern_is_refused(self) -> None:
+        for command in (
+            'echo "$(case esac in a) true;; (esac) rm -rf precious.txt;; esac)"',
+            'echo "$(case esac in\n(esac) rm -rf precious.txt;; esac)"',
+        ):
+            with self.subTest(command=command):
+                self.assert_refuses(command)
+
+    def test_closing_command_substitution_does_not_start_a_command(self) -> None:
+        for command in (
+            'echo "$(case y in x) echo $(:) esac;; y) rm -rf precious.txt;; esac)"',
+            'echo "$(case y in x) echo $((0)) esac;; y) rm -rf precious.txt;; esac)"',
+            'echo "$(case y in x) (:) && echo $(true) esac;; y) rm -rf precious.txt;; esac)"',
+        ):
+            with self.subTest(command=command):
+                self.assert_refuses(command)
+
+    def test_line_continuation_inside_reserved_words_is_refused(self) -> None:
+        for command in (
+            'echo "$(ca\\\nse x in x) rm -rf precious.txt;; esac)"',
+            'echo "$(ca\\\nse x in x) rm -rf precious.txt;; es\\\nac)"',
+        ):
+            with self.subTest(command=command):
+                self.assert_refuses(command)
+
     def test_array_literal_substitutions_are_refused(self) -> None:
         for command in (
             "foo=( $(rm -rf precious.txt) )",
