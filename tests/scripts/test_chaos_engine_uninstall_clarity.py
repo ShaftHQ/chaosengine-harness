@@ -29,6 +29,7 @@ class UninstallClarityTests(unittest.TestCase):
         self.assertIn("Clean reinstall after a bad first run", text)
         self.assertIn("### Clean installation", text)
         self.assertIn("The words **clean installation** mean uninstall, then the install one-liner", text)
+        self.assertIn("only when the bytes on disk still match the previous receipt", text)
         self.assertIn("remove_retired_receipt_files", text)
         self.assertIn("user-account packages", text)
         self.assertIn("project knowledge data", text)

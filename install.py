@@ -1121,6 +1121,7 @@ _ORIGIN_ONLY_CI = frozenset({
 _ORIGIN_ONLY_DETAIL_DIRS = frozenset({
     "ce-lessons-2026-11-06",
     "ce-lessons-2026-11-21",
+    "ce-lessons-2026-11-27",
     "ce-repeat-failure-pdca",
     "ce-study-2026-11-09",
     "token-opt-retro-2026-11-06",

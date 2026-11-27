@@ -37,7 +37,7 @@ The portable command remains `python3 .chaos-engine/runtime/learn_traces.py lear
 
 - Do not treat a host learn report, or the chat summary of it, as the ChaosEngine record.
 - Do not recreate `openbot-developer-instructions` or `issue-orchestrator`. The 2026-11-21 run retired those home copies. The slash injection is still a host injection.
-- Do not delete an edited receipt file, a directory, a live memory file, or a knowledge store in the name of a clean installation.
+- Do not use a clean installation to drop an edited owned file, a directory, a live memory file, or a knowledge store. Uninstall copies edited owned files to `.chaos-engine-state/kept-edits/` and then removes the receipt-owned overlay. Byte-match unlink of a retired receipt path is the upgrade path, not uninstall.
 
 ## Start
 
