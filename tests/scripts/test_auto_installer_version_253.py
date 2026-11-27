@@ -446,6 +446,35 @@ class StaleCheckoutDerivedVersion253Test(unittest.TestCase):
         self.assertEqual("healthy", finding["status"])
         self.assertTrue(finding["checkoutDrift"])
 
+    def test_legacy_pin_stale_checkout_is_healthy_drift(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            project, first, second = self._checkout(
+                Path(temporary), "0.4.20261115.1", "0.4.20261116.1"
+            )
+            with mock.patch.dict(
+                os.environ, {"CHAOS_ENGINE_DERIVED_VERSION": ""}, clear=False
+            ):
+                finding = self._finding(project, second, "0.4.20261116.1")
+        self.assertEqual("healthy", finding["status"])
+        self.assertTrue(finding["checkoutDrift"])
+        self.assertEqual("0.4.20261116.1", finding["installedVersion"])
+        self.assertEqual("0.4.20261115.1", finding["intendedVersion"])
+        self.assertIn(second[:12], str(finding["detail"]))
+        self.assertIn(first[:12], str(finding["detail"]))
+
+    def test_legacy_pin_mismatched_overlay_version_still_fails_closed(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            project, _first, second = self._checkout(
+                Path(temporary), "0.4.20261115.1", "0.4.20261116.1"
+            )
+            with mock.patch.dict(
+                os.environ, {"CHAOS_ENGINE_DERIVED_VERSION": ""}, clear=False
+            ):
+                finding = self._finding(project, second, "0.4.20261117.1")
+        self.assertEqual("invalid", finding["status"])
+        self.assertIn("(L92)", str(finding["detail"]))
+        self.assertNotIn("checkoutDrift", finding)
+
 
 class BootstrapVersionFlags253Test(unittest.TestCase):
     def test_external_override_is_not_replaced_by_startup_or_remote(self):
@@ -511,6 +540,42 @@ class BootstrapVersionFlags253Test(unittest.TestCase):
                     self.assertNotIn("CHAOS_ENGINE_DERIVED_VERSION", os.environ)
                 finally:
                     BOOTSTRAP.restore_install_flags(previous)
+
+    def test_apply_and_restore_flags_restores_derived_version_globals(self):
+        with mock.patch.object(
+            BOOTSTRAP, "_EXTERNAL_DERIVED_VERSION", None
+        ), mock.patch.object(
+            BOOTSTRAP, "_DERIVED_VERSION_FROM_STARTUP", False
+        ), mock.patch.object(
+            BOOTSTRAP, "startup_commit_version", return_value="1.20261126.0"
+        ), mock.patch.dict(
+            os.environ,
+            {"CHAOS_ENGINE_DERIVED_VERSION": "", "CHAOS_ENGINE_OFFLINE": ""},
+        ):
+            previous = BOOTSTRAP.apply_install_flags(argparse.Namespace())
+            self.assertIsNone(BOOTSTRAP._EXTERNAL_DERIVED_VERSION)
+            self.assertEqual("1.20261126.0", os.environ["CHAOS_ENGINE_DERIVED_VERSION"])
+            self.assertTrue(BOOTSTRAP._DERIVED_VERSION_FROM_STARTUP)
+            BOOTSTRAP.restore_install_flags(previous)
+            self.assertIsNone(BOOTSTRAP._EXTERNAL_DERIVED_VERSION)
+            self.assertFalse(BOOTSTRAP._DERIVED_VERSION_FROM_STARTUP)
+            self.assertEqual([], BOOTSTRAP._DERIVED_VERSION_STATE_STACK)
+
+            BOOTSTRAP._EXTERNAL_DERIVED_VERSION = "1.20261123.4"
+            BOOTSTRAP._DERIVED_VERSION_FROM_STARTUP = True
+            previous = BOOTSTRAP.apply_install_flags(argparse.Namespace())
+            self.assertEqual("1.20261123.4", BOOTSTRAP._EXTERNAL_DERIVED_VERSION)
+            self.assertFalse(BOOTSTRAP._DERIVED_VERSION_FROM_STARTUP)
+            BOOTSTRAP.restore_install_flags(previous)
+            self.assertEqual("1.20261123.4", BOOTSTRAP._EXTERNAL_DERIVED_VERSION)
+            self.assertTrue(BOOTSTRAP._DERIVED_VERSION_FROM_STARTUP)
+            self.assertEqual([], BOOTSTRAP._DERIVED_VERSION_STATE_STACK)
+
+            BOOTSTRAP._EXTERNAL_DERIVED_VERSION = "1.20261123.4"
+            BOOTSTRAP._DERIVED_VERSION_FROM_STARTUP = True
+            BOOTSTRAP.restore_install_flags({})
+            self.assertIsNone(BOOTSTRAP._EXTERNAL_DERIVED_VERSION)
+            self.assertFalse(BOOTSTRAP._DERIVED_VERSION_FROM_STARTUP)
 
     def test_standalone_announce_uses_remote_version_before_the_header(self):
         with mock.patch.object(BOOTSTRAP, "_EXTERNAL_DERIVED_VERSION", None), mock.patch.object(
