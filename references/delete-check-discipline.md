@@ -23,8 +23,7 @@ data out of a workspace:
    `--code` on argv, and spend the code on the same invocation as
    `--command 'rm …'` because the code is one-use.
 
-Hookless bots load this via [bot entry](bot-entry.md) and the
-`chaosengine-bot-entry` skill. Implementation detail:
+Hookless bots load this via [bot entry](bot-entry.md) (`references/bot-entry.md`). Implementation detail:
 [delete guard](delete-guard.md).
 
 ## Why

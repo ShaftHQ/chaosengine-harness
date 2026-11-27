@@ -50,7 +50,7 @@ events and point them at the installed ChaosEngine guard:
 | Event | Must run |
 | --- | --- |
 | `SessionStart` | Inject entrypoint path, reflection token, companion intensity, compact Caveman/Ponytail file locators, and the identity Truth and Principles bullets (a path locator only when `identity.md` is missing, unreadable, or the body would exceed the byte budget). Record session for reflection. Create the session scratch folder once and point `.grok/rules/session-scratch.md` at it so this session and its subagents append thinking, repetitions, issues, enhancements, and highlights there. Once per session_id, fetch the configured upstream, reset the primary default branch to that tip when it is already on the default (discarding uncommitted files there), halt without discarding when a leftover task branch is dirty, then create or reuse one sibling detached session worktree. `session_start_update_check` runs for that session start, reports up-to-date without changing the installed version when no newer release exists, and does not apply an update without an explicit confirmation flag. |
-| `SubagentStart` | Claude, Codex, and Grok only. A subagent does not receive SessionStart. Normalize the native event to the SessionStart injection (locators plus the identity body). Claude and Codex keep `hookEventName` as `SubagentStart`. On Grok, copy the context to `systemMessage`, and keep that copy inside `SESSION_START_MAX_BYTES` by falling back to the identity path line before dropping tail lines. A current Grok spawn does not emit SubagentStart, and Grok keeps SessionStart `systemMessage` as a hook annotation outside the model prompt, so [`grok_model_load.py`](../runtime/grok_model_load.py) writes `.grok/rules/entrypoint.md`, `.grok/rules/identity.md`, and `.grok/rules/companions.md`, which Grok's model and its subagents actually read. Skill bodies stay one source at `.chaos-engine/skills/<name>/SKILL.md` and are read when the entrypoint routes them. `AGENTS.md` stays free of that intensity. Gemini and Copilot have no such event; their first agent prompt injects the same context once for that agent scope. |
+| `SubagentStart` | Claude, Codex, and Grok only (plus Cursor `subagentStart` -> `SessionStart` alias). A subagent does not receive SessionStart. Normalize the native event to the SessionStart injection (locators plus the identity body). Claude and Codex keep `hookEventName` as `SubagentStart`. Cursor registers `subagentStart` and maps it to `SessionStart`. On Grok, copy the context to `systemMessage`, and keep that copy inside `SESSION_START_MAX_BYTES` by falling back to the identity path line before dropping tail lines. A current Grok spawn does not emit SubagentStart, and Grok keeps SessionStart `systemMessage` as a hook annotation outside the model prompt, so [`grok_model_load.py`](../runtime/grok_model_load.py) writes `.grok/rules/entrypoint.md`, `.grok/rules/identity.md`, and `.grok/rules/companions.md`, which Grok's model and its subagents actually read. Skill bodies stay one source at `.chaos-engine/skills/<name>/SKILL.md` and are read when the entrypoint routes them. `AGENTS.md` stays free of that intensity. Gemini and Copilot have no such event; their first agent prompt injects the same context once for that agent scope. |
 | `UserPromptSubmit` | Keep companion mode tracking if host supports it. |
 | `PreToolUse` | Deny catastrophic or out-of-contract tool use. Hold work that owes a reflection receipt. When a session worktree manifest exists, deny mutations of the primary checkout. |
 | `PostToolUse` | Record mutation, delivery, and outcome for reflection. Soft significance marks on fail only (no Observer). |
@@ -93,18 +93,25 @@ exit code `2` with a host-adapted deny payload from `hooks/guard.py` via
 | Claude | `decision=block` on stderr when exit is 2 | yes |
 | Codex | `permissionDecision=deny` in hookSpecificOutput | yes |
 | Gemini | `decision=block` (+ `launch.js` exit 2) | yes |
-| Grok | `decision=block` | **no** — GAP-EXIT2; doctor warns |
-| Copilot | `permissionDecision=deny` | **no** — GAP-EXIT2 (cloud/ide); doctor warns |
+| Grok | `decision=block` | **no** — GAP-EXIT2 (`process_exit2_honored=False`); doctor warns |
+| Copilot | `permissionDecision=deny` | **no** — GAP-EXIT2 (`process_exit2_honored=False`, cloud/ide); doctor warns |
+| Cursor | `permissionDecision=deny` (`failClosed` on PreToolUse) | **no** — GAP-EXIT2 (`process_exit2_honored=False`) |
+| OpenCode | plugin `throw` on `tool.execute.before` | **no** — GAP-EXIT2 (`process_exit2_honored=False`) |
+| Antigravity | `decision=deny` JSON (`deny_exit_code=0`) | **no** — GAP-EXIT2 (`process_exit2_honored=False`) |
 
 See [Host Parity Matrix](host-parity-matrix.md) and `HostCapability` in
 `hooks/kernel.py`. Do not treat a README sentence as a substitute for a deny.
 
 ## Registration
 
-`hosts.py` writes the same command groups into the source-controlled,
-project-local hook document for each host with a hook primitive: Codex
-`hooks.json`, Claude settings, Gemini settings, Grok project hooks, and GitHub
-Copilot generated hooks. Those direct provider documents are lifecycle owners.
+`hosts.py` (and `runtime/hook_surfaces.py`) write the same command groups into
+the source-controlled, project-local hook document for each host with a hook
+primitive: Codex `hooks.json`, Claude settings, Gemini settings, Grok project
+hooks, GitHub Copilot generated hooks, Cursor `.cursor/hooks.json`, OpenCode
+`.opencode/plugins/chaos-engine-receipt.js`, and Antigravity
+`.agents/hooks.json` (`process_exit2_honored=False` for Grok, Copilot, Cursor,
+OpenCode, and Antigravity; Antigravity `deny_exit_code=0`). Those direct
+provider documents are lifecycle owners.
 ChaosEngine plugin carries
 skills and portable hook code but does not register a second hook pack. Its
 legacy hook document is overwritten with an empty `hooks` mapping during
@@ -122,7 +129,7 @@ as a path relative to the settings file, and resolve `hooks/guard.py` from the
 installed tree (`.chaos-engine/hooks/guard.py` or
 `plugins/chaos-engine/hooks/guard.py`).
 
-Short host commands point at [`hooks/launch.py`](../hooks/launch.py) (Codex/Claude/Grok/Copilot) or `hooks/launch.js` (Gemini). Both preflight the repository working directory before starting
+Short host commands point at [`hooks/launch.py`](../hooks/launch.py) (Codex/Claude/Grok/Copilot/Cursor/Antigravity, plus the OpenCode plugin bridge) or `hooks/launch.js` (Gemini). Both preflight the repository working directory before starting
 guard code. Missing, stale, or disconnected cwd errors map to a path-free
 denial that names `repository working directory unavailable` and tells the
 operator to restore the original mount or checkout. A missing or unreadable
@@ -144,8 +151,7 @@ decision or durable lifecycle state. Research-first remains one compact
 SessionStart instruction; it is not reconstructed from host-specific tool
 observations or enforced on every mutation. A future rule for a read-only
 surface must restore only the lifecycle events it needs with a contract test.
-Gemini, Claude, Codex, and Grok use native matcher fields. Copilot's workspace
-hook format has no matcher field, so `hooks/launch.py` / `hooks/launch.js` apply the same policy
+Gemini, Claude, Codex, Grok, and Antigravity (`PreToolUse`/`PostToolUse`) use native matcher fields. Copilot and Cursor have no native matcher field (and OpenCode filters in its plugin bridge), so `hooks/launch.py` / `hooks/launch.js` apply the same policy
 before starting the guard.
 
 The repository guard preserves one normalized literal invocation record for
@@ -205,7 +211,7 @@ Harness lessons, findings, and potential enhancements are GitHub issues only
 and are not written to a local queue or into chat. Delegates
 never own this terminal phase. Hooks own enforcement so every host shares the
 same outcome (harness parity); do not rely on agent-local routines.
-`scripts/agents/guard.py` calls this same portable reason before it yields
+`hooks/guard.py` calls this same portable reason before it yields
 to `stop_hook_active`.
 
 ## Checks

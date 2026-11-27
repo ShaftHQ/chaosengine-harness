@@ -37,9 +37,9 @@ Activate the full protocol:
    that lesson into chat.
 4. A product lesson may use `python3 .chaos-engine/runtime/learning.py queue --track product`.
    Submit confirmed product candidates with `learning.py submit`.
-5. Persist durable Memory knowledge with `memory save --stdin` only — never
+5. Persist durable Memory knowledge with `<python> .chaos-engine/tool.py memory save --stdin` (portable wrapper for `memory`) only — never
    hand-edit `.memory/**` sidecars. If a body changed outside
-   `memory save`, run `python3 .chaos-engine/skills/local-agency/scripts/tip_preflight.py --rehash <sidecar>`
+   `tool.py memory save`, run `python3 .chaos-engine/skills/local-agency/scripts/tip_preflight.py --rehash <sidecar>`
    before push ([tip-churn preflight](../../../references/tip-churn-preflight.md)).
 6. Do **not** automatically change skill or hook files. Propose a harness change as a GitHub issue.
 7. Do not report harness lesson text. Product counts may be `product queued N`

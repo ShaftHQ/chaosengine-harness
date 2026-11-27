@@ -1,6 +1,6 @@
 # When to use a local writer
 
-Writer selection is the [delegation ladder](../../../skills/chaos-engine/SKILL.md#delegation-ladder). A direct host edit is not a writer dispatch. Use it only when the handoff cost is not well below generation cost, for one tightly coupled change. The same rule applies on Codex, Claude, Grok CLI, Gemini, Copilot, and Grok Bot (no host-only memory exception).
+Writer selection is the [delegation ladder](../../../skills/chaos-engine/SKILL.md#delegation-ladder). A direct host edit is not a writer dispatch. Use it only when the handoff cost is not well below generation cost, for one tightly coupled change. The same rule applies on every supported host (no host-only memory exception).
 
 ## Decision rule
 

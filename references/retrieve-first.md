@@ -39,8 +39,8 @@ A missing overlay is not one of those skips. `retrieve: skipped(no .chaos-engine
 Hook hosts enforce this through the portable guard: running a script is not
 reading it, harness paths are exempt, the project root is walked up from the
 event `cwd`, and a graph with no project nodes fails open as
-`skipped(no-project-index)`. Instruction-only hosts (OpenCode, Cursor, Grok
-Bot, Copilot cloud) record `retrieve: used|skipped(<reason>)|exempt(harness)`
+`skipped(no-project-index)`. Instruction-only hosts (Grok Bot, OpenBot, Copilot
+cloud, independent bots) record `retrieve: used|skipped(<reason>)|exempt(harness)`
 in the [research receipt](research-receipt.md). The session ledger
 lives in one [citation ledger](../hooks/retrieve_justification.py) for every
 host; `skipped` and `degraded` count as that session's retrieve and do not
@@ -58,7 +58,7 @@ range. Do not turn the path into an absolute path or read the whole file.
 
 | Question you actually have | Store |
 | --- | --- |
-| Has this constraint or gotcha already bitten us? | native Memory — `memory query`, then `memory inspect <id>` |
+| Has this constraint or gotcha already bitten us? | native Memory — `<python> .chaos-engine/tool.py memory query`, then `<python> .chaos-engine/tool.py memory inspect <id>` |
 | What happened around this before, and what does it touch? | MemPalace |
 | What calls or depends on this? | [Graphify](graphify.md) — unclassified extract skips are coverage, not a failed install |
 | What does the code do right now? | targeted `rg` and exact reads; a cheap read does not wait for a store |
@@ -77,7 +77,7 @@ only after a live authoritative source confirms it. SessionStart deliberately
 injects no Memory or MemPalace prose, because untargeted recall has neither the
 task scope nor the evidence needed to earn authority.
 
-Use a bounded `memory query`, then inspect only the selected records. Never
+Use a bounded `<python> .chaos-engine/tool.py memory query` (portable wrapper for `memory`), then inspect only the selected records. Never
 compile or inject a whole-store context pack.
 
 ## Retrieve orchestrator
@@ -114,9 +114,11 @@ Never re-inject full heuristic prose on every Pre/PostToolUse. Keep
 
 ## Bounded retrieval
 
-After a plan is approved, the MemPalace attempt in the research receipt is
-mandatory before the first implementation mutation. Record `used`, `skipped`
-with a concrete irrelevance reason, or `degraded`. Do not skip the attempt.
+For module or public-contract work with a plan and research receipt,
+after a plan is approved, the MemPalace attempt in the research receipt is
+mandatory before the first implementation mutation (cheap-read and one-file
+exemptions still apply). Record `used`, `skipped` with a concrete irrelevance
+reason, or `degraded`. Do not skip the attempt.
 
 When a store can answer a concrete question, query it before broad discovery.
 Allow one attempt through the existing host timeout, with no retries, repair,
@@ -136,7 +138,7 @@ The [learning session](work-github-playbook.md#learned-lessons-workflow) routes
 each learning to its home. That is where a *fact* goes. It does not make the
 task responsible for keeping derived stores usable:
 
-- `memory save --stdin` for a durable fact, decision, or gotcha, with the
+- `<python> .chaos-engine/tool.py memory save --stdin` (portable wrapper for `memory`) for a durable fact, decision, or gotcha, with the
   evidence (intent-first JSON: `{task, nodes, stale, supersede, delete}`).
   Do **not** hand-edit `.memory/**` JSON or markdown sidecars; if save rejects,
   report the reason and fix the input.

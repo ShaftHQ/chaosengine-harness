@@ -7,8 +7,8 @@ selected. The goal is to make a running local OmniRoute easy to use, not to
 fence operators behind restricted keys or attestation hashes.
 
 OmniRoute probes only `http://127.0.0.1:20128/` **on the machine where
-`omniroute serve` is bound**. Missing OmniRoute is normal and leaves native
-delegation and `SOLO` valid when OmniRoute was not required. Missing
+`omniroute serve` is bound**. Missing OmniRoute is normal; follow the
+[delegation ladder](../skills/chaos-engine/SKILL.md#delegation-ladder) when OmniRoute was not required. Missing
 `~/.config/chaos-engine/omniroute.json` is also normal: the runner uses
 `chaosengine-omniroute` or `omniroute` from PATH.
 
@@ -156,7 +156,7 @@ build/version. OmniRoute never reads, passes, prints, or stores endpoint keys or
 CLI token material; the verified CLI resolves its own local machine-token proof.
 It never records routes or provider data. If local CLI build evidence is
 unavailable, qualification stays `UNHEALTHY`; repair the local installation or
-use native fallback.
+follow the delegation ladder.
 
 Create an OmniRoute endpoint key using **Dashboard → API Keys**. A full-access
 key is fine. Copy it once into a secret manager, then export it only to
@@ -459,13 +459,13 @@ the canonical ChaosEngine skill, and the role named in its task instructions.
 Keep its scope read-only and non-sensitive.
 
 For bounded automatic delegation, canonical orchestration must probe the fixed
-loopback endpoint before native fallback, with no endpoint prompt. Missing
+loopback endpoint, and on miss follow the delegation ladder, with no endpoint prompt. Missing
 operator config is normal. When that probe is `READY`, OmniRoute dispatches
 through `chaosengine-omniroute` or `omniroute run`. Rank live catalog
 free/remaining-first, then any other model the local endpoint can call.
 OmniRoute never reads, writes, or persists route, model, or provider IDs. When
 no callable model remains, the launcher may exit `78`; OmniRoute records
-`RUNTIME_EXHAUSTED`, then the canonical workflow may use a native implementer.
+`RUNTIME_EXHAUSTED`, then follow the delegation ladder.
 
 ### Current subagent limitation
 
@@ -533,7 +533,7 @@ only when probe is not `READY`.
 | `ABSENT` / `UNHEALTHY` | Start loopback: `OMNIROUTE_SERVER_HOST=127.0.0.1 omniroute serve --port 20128 --no-open`. |
 | `UNAUTHENTICATED` / `ENDPOINT_CREDENTIAL_MISSING` | Export `OMNIROUTE_API_KEY` or use the launcher env file. Full access is fine. |
 | `LAUNCHER_UNQUALIFIED` | Put `chaosengine-omniroute` or `omniroute` on PATH as an owner-owned executable. |
-| `RUNTIME_EXHAUSTED` | Wait for quota, or use another model the key can call. Native host models only if OmniRoute cannot run. |
+| `RUNTIME_EXHAUSTED` | Wait for quota, or use another model the key can call; otherwise follow the delegation ladder. |
 
 - **`doctor` reports an unsupported Node runtime:** select a supported Node
   release, reinstall the same reviewed OmniRoute version, and rerun all checks.

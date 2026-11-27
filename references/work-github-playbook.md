@@ -95,7 +95,7 @@ Learning Session after every final delivery (approval, publish, final merge), un
 4. Link the receipt ID and incident evidence in the issue, then bind that issue's
    canonical URL during `assess`. A receipt, Memory entry, Graphify flag, or old
    issue comment is evidence only and never replaces the action ticket.
-5. Write the knowledge result via `memory save --stdin` (default write path
+5. Write the knowledge result via `<python> .chaos-engine/tool.py memory save --stdin` (portable wrapper for `memory`, default write path
    after Memory migrate), or explicitly record that nothing durable or
    actionable surfaced. Do not manufacture an issue for a genuinely no-action
    result. Do **not** hand-author `.memory/**` sidecars; never bypass a rejected

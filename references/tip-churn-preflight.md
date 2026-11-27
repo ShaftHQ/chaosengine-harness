@@ -33,7 +33,7 @@ PRs run the fresh installer on ubuntu and Windows only. Add `ci:installer-macos`
 
 ## Memory content_hash
 
-- Default write path: `memory save --stdin`.
+- Default write path: `<python> .chaos-engine/tool.py memory save --stdin` (portable `tool.py memory` wrapper).
 - When a `.memory/**` body or sidecar changed outside `memory save`, recompute before push: `python3 .chaos-engine/skills/local-agency/scripts/tip_preflight.py --rehash .memory/memory/<type>/<slug>.json`.
 - Recipe (mirrors `scripts/ci/validate_agent_setup.py` `memory_content_hash`): sha256 over the sidecar as sorted compact JSON without `content_hash`, a newline, then the LF-normalized body; stored as `sha256:<hex>`.
 - The Agent Guidance Gate runs `validate_agent_setup`; a stale hash there is the `memory-content-hash` fingerprint.

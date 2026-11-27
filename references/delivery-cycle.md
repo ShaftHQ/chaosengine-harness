@@ -33,7 +33,9 @@ Merge:
 - An empty check list is not success.
 - When the only remaining gate is an owner-only artifact this session cannot create, record `blocking: unverifiable` once and end the goal (`runtime/owner_gate.py`).
 
-A commit that acts on review N is the input to review N+1. It does not restart finished reviews in parallel. Do not review an unchanged head a third time.
+A commit that acts on review N is the input to review N+1 only while that subject has a review left. It does not restart finished reviews in parallel. The second review is the last. Do not review an unchanged head a third time, and do not open a third review to hunt the next example of a class the edit should already close.
+
+Two adversarial reviews are the chain for one subject. The gate refuses a third. Name that subject in the review prompt as `review-subject: <branch>`, or name the worktree path. A second failed review ends the chain: the next edit closes that class and the named test proves the class. A further example of that class is a follow-up. It does not start a reviewer.
 
 Each reviewer gets a diff-scoped packet (artifact, SHA, acceptance, proof, checklist). A packet that contains a `## Plan` heading or author reasoning fails the packet lint. LGTM alone is not a pass. A timeout counts as the round already used and falls back to self-review with no retry.
 
@@ -48,9 +50,9 @@ On the fourth iteration the orchestrator stops and reports. Reviewers run the br
 Set the budget before the first review.
 
 - **MIN.** At least 1. There is no zero-review path. Two reviewers for a public contract, irreversible work, or an outbound action (ShaftHQ/SHAFT_ENGINE#8048 R2, ShaftHQ/SHAFT_ENGINE#8055). This budget does not lower that floor.
-- **MAX.** Small reversible work (docs only, or one file): MAX = MIN. Medium: MIN + 1. Large, cross-cutting, or high blast radius: MIN + 2. MAX never exceeds the PDCA cap.
+- **MAX.** Small reversible work (docs only, or one file): MAX = MIN. A larger change is 2. MAX never exceeds two adversarial reviews. The PDCA cap of 3 counts the class-close edit. It does not add a third reviewer.
 - **At MAX.** A finding blocks only if it is wrong, unsafe, or untruthful. Log every other finding as a follow-up. It does not start another round.
-- **Next review.** A blocker fix is a new head and the next sequential review, which counts as a round. A timeout counts as the round already used and falls back to self-review with no retry. If no round is left within MAX, stop and report.
+- **Next review.** A blocker fix on review 1 is a new head and the second sequential review, which counts as a round. A second failed review ends the chain: close that class in the edit and prove it with the named test; no third reviewer runs unless lifted by explicit owner instruction. A timeout counts as the round already used and falls back to self-review with no retry. If no round is left within MAX, stop and report.
 - **Handoff.** Record `review_budget` (min, max, inputs), `review_rounds_used`, and the logged follow-ups (ShaftHQ/SHAFT_ENGINE#8054).
 - **Owner override.** An explicit owner instruction may set the budget, but never below MIN. When it also says to fix blockers and then merge without another round, that lifts the new-commit sentence for that item only.
 

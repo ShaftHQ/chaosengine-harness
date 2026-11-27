@@ -51,10 +51,11 @@ see [design-loop](design-loop.md).
 
 ## Implementer
 
-Implements one bounded spec using TDD and Ponytail. Runs at the default
-capability level unless the assignment states otherwise. Returns architectural
-ambiguity undecided. May assign only mechanical, spec-exact, or bulk work
-downward, then verifies its output.
+Implements one bounded spec using TDD and Ponytail. Runs at the capability
+level selected by the [delegation ladder](../skills/chaos-engine/SKILL.md#delegation-ladder)
+(Free, Paid, or Mechanical when marked) unless the assignment states otherwise.
+Returns architectural ambiguity undecided. May assign only mechanical,
+spec-exact, or bulk work downward, then verifies its output.
 
 When the brief already contains the exact edit, apply that edit before any
 other read. When the brief names the files, the functions, and the assertion

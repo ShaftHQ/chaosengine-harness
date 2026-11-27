@@ -30,7 +30,7 @@ work. Five stages, in order; one CPU-heavy job at a time.
   never inside one long agent turn and never as a bare background command:
   `python3 .chaos-engine/tool.py job start build --part-dir cache --part-dir out -- nice -n 19 python build.py --only master`.
   A second worker is refused while the lease is live. Stop the session at
-  35 minutes ([session cap](../../../../references/bot-entry.md#session-cap-grok-bot-default));
+  35 minutes ([session cap](../../../../references/bot-entry.md#caps));
   the job keeps running.
 - The build records each finished step with
   `python3 .chaos-engine/tool.py job checkpoint build <step>` and skips a step

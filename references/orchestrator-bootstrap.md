@@ -4,7 +4,9 @@ Use once the entrypoint's solo-or-orchestrate rule selects the orchestrated
 mode. Counting the owner's unrelated asks in flight is enough to decide that,
 and needs nothing from this file; step 2 then gathers the rest. This phase
 gathers evidence and dispatches, and main thread does no task work while it
-does. A single stream skips this file and is worked solo, in sequence.
+does. A single stream still allows orchestrated single-implementer mode
+(`ORCHESTRATOR + SINGLE IMPLEMENTER` per [execution workflows](execution-workflows.md));
+skip this file only for the `SOLO` one-change exception.
 
 1. Establish repositories in scope. Default current repo; add companion docs
    only when behavior requires it.
@@ -22,8 +24,8 @@ does. A single stream skips this file and is worked solo, in sequence.
    delivered or explicitly out of scope. Do not stop after a plan, a status
    table, or one PR.
 7. Dispatch bounded specs: exact behavior, files, precedent, exclusions, and
-   deferred consolidated proof command. Select the most intelligent, default, or
-   mechanical capability using [delegation](delegation.md), never provider
+   deferred consolidated proof command. Select the Most intelligent, Free, Paid,
+   or Mechanical capability level using [delegation](delegation.md), never provider
    identity. After every dispatch, update the live status table using the
    [process-owner status report format](process-owner-scrum-master.md#status-report-format)
    (columns Task ID | Ticket(s) | PR | Scope | Status | Elapsed | ETA).

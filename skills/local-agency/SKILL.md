@@ -72,6 +72,8 @@ yourself with that env; do not persist the config into the durable user file.
 `--no-pure` exists for callers that already isolate
 plugins. `--pure` still only disables plugins.
 
+For Rung 1 OpenCode free-model fan-out (operational detail in [delegation](../../references/delegation.md) and `guides/local-agency.md`): probe reachable `$0` models with `opencode models`, stage each worker brief inside its isolated git worktree (e.g., untracked `.ce-brief.md`) so OpenCode's `external_directory` guard allows reading it, record `delegation_gate.py record --rung free --free selected --effort high --brief <brief-path>` before `opencode run --model <free-model> --variant high`, and spread parallel writers across distinct free models (1–2 concurrent per endpoint) to avoid shared rate limits. On a stall (>2–3 min silent, 0 edits) or multi-file acceptance failure, cancel and switch free models or escalate to Rung 4 (`--rung paid --free too-complex --effort low --tier cheapest`) with cheapest-paid host subagents; record `rung=direct` after spawn if a shared-workspace subagent's edit hook requires it.
+
 ## Design-turn brief and OpenCode preflight
 
 On demand: [brief and preflight](references/brief-and-preflight.md).
