@@ -2,12 +2,7 @@
 
 ## When this applies
 
-Only deliveries where the implementer **chose** a READY local OpenAI-compat /
-llamacpp / FreeToken coder through [local-agency](../SKILL.md) `dispatch.py`.
-Choosing local is optional. Use it only when the
-handoff cost is well below generation cost
-([when-to-use-local.md](when-to-use-local.md)). Otherwise
-the implementer writes the code directly.
+Only deliveries where the [delegation ladder](../../../skills/chaos-engine/SKILL.md#delegation-ladder) selected a READY local OpenAI-compat / llamacpp / FreeToken coder through [local-agency](../SKILL.md) `dispatch.py`. The handoff cost is well below generation cost for those items ([when-to-use-local.md](when-to-use-local.md)).
 
 The **host process-owner** is teacher / mentor / coach / consultant. The local
 model is a **mechanical runner** (and, with a locator-only CE brief, a bounded

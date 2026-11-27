@@ -43,7 +43,21 @@ After plan approval, routine in-scope work is unattended. Stop for an owner deci
 
 Companions at task start via `tool.py entry` ([bot entry](../../references/bot-entry.md)): [Caveman](../../companions/caveman-ultra.md), [Ponytail](../../companions/ponytail-ultra.md). Off only: `stop caveman`, `stop ponytail`, `normal mode`.
 
-Before spawning a writer, follow [free-first delegation](../../references/delegation.md#free-first-delegation--hardware-aware-local-model-policy). Pick the smartest free or local model at its highest reasoning effort. A host session subagent is the paid fallback, and only after no free or local model can do that item. Every writer brief names the goal, the file scope, the acceptance checks, the test command, and the stop conditions. Adversarial review stays on a fresh host reviewer, never the writer.
+### Delegation ladder
+
+One writer-selection rule. Stop at the first rung that applies. Record a receipt before the tool call (`python3 .chaos-engine/hooks/delegation_gate.py record`). Do not restate this ladder elsewhere. Hook hosts (Claude, Codex, Gemini, Grok, Copilot, Cursor, OpenCode, Antigravity) run this gate from `hooks/guard.py` on PreToolUse and refuse a writer with no matching receipt. Hookless clients (Grok Bot, OpenBot, custom GPTs) receive this section from `tool.py entry`. `dispatch.py argv` and `dispatch.py chat` refuse a free writer with no receipt.
+
+1. Free writer. Proactively decompose the work into small file-disjoint items. If a free model is reachable (a hardware-fit local runtime or a free (`$0`) or local model on a gateway), send the item to the smartest one at its highest available reasoning effort (`high` / `max`). A smaller local model is only for an item the brief marks mechanical. Do not lower effort to save tokens.
+2. Brief. The orchestrator writes it. Name the goal, the file scope, the behavior to preserve, the acceptance checks, the test command, and the stop conditions. The writer does not choose scope, model, or effort. A brief that only names an issue is not a dispatch. A host session subagent is not the default writer.
+3. Nothing free is reachable. Ask the owner in that turn for explicit approval to install OpenCode and/or llama, plus the free models OpenCode provides and the free local models that fit this machine (RAM, GPU VRAM, CPU, disk). Do not install, download, or open a paid writer in that turn. Owner yes: install only what was approved, then return to rung 1. Owner no: go to rung 4 and record `free=unreachable-declined`. No answer: do not dispatch.
+4. Free models are reachable and cannot do the item. The orchestrator judges it too complex for them, or a free writer already failed the acceptance checks. Record `free=too-complex`. Send the item to the cheapest of the paid / metered models that can do it, at the lowest task-appropriate effort (the lowest reasoning effort sufficient). When two models cost the same, pick the newer generation, never an older generation in that price tier.
+5. Paid escalation. Stay on rung 4 until that choice fails the acceptance checks or the blast radius makes low effort insufficient. Raise effort up to high before raising the model tier. Raise toward a premium model only after the cheaper tier cannot do the item. When a lower effort is sufficient, keep it.
+
+Review is not a writer rung. Independent adversarial review stays on a fresh-context host reviewer at the most intelligent setting. The writer never reviews its own diff.
+
+A direct host edit is not a writer dispatch. Use it only for one tightly coupled change whose brief would cost more than the edit. Record `rung=direct`.
+
+Receipt fields: `rung` (`free`, `ask`, `paid`, `direct`), `effort`, `why`, and a brief that passes rung 2. `paid` also requires `free` of `unreachable-declined` or `too-complex`. `free` requires effort `high` or `max` unless the item is mechanical.
 
 ## Check and deliver
 

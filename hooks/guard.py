@@ -3835,6 +3835,29 @@ def _repeat_advice(event_name: str, session_id: str, tool_name: str, tool_input:
         return None
 
 
+def _delegation_block(
+    event: dict,
+    event_name: str,
+    tool_name: str,
+    tool_input: object,
+    commands: tuple,
+) -> str:
+    """PreToolUse writer gate. One module, every hook host. Missing file fails open."""
+    if event_name != "PreToolUse":
+        return ""
+    module = getattr(_delegation_block, "module", None)
+    if module is None and not getattr(_delegation_block, "missing", False):
+        module = _load_sibling("delegation_gate")
+        if module is None:
+            _delegation_block.missing = True
+        else:
+            _delegation_block.module = module
+    if module is None:
+        return ""
+    cwd = Path(str(event.get("cwd") or Path.cwd()))
+    return module.writer_block(tool_name, tool_input, commands, cwd) or ""
+
+
 def _deny(event: dict, event_name: str, tool_name: str, reason: str) -> int:
     if event_name == "PreToolUse" and justification is not None:
         with contextlib.suppress(Exception):
@@ -4617,6 +4640,9 @@ def _run_event(event: dict, _host: str) -> int:
     ethics_reason = _ethics_pretool_reason(event, commands, tool_input)
     if ethics_reason:
         return _deny(event, event_name, tool_name, ethics_reason)
+    delegation_reason = _delegation_block(event, event_name, tool_name, tool_input, commands)
+    if delegation_reason:
+        return _deny(event, event_name, tool_name, delegation_reason)
     blocked = _stash_block(event, event_name, tool_name, commands)
     if blocked is not None:
         return blocked

@@ -115,8 +115,7 @@ When `dispatch.py chat` returns OpenAI-compat `usage` and `--session-id` is set,
 
 ## When to use local
 
-Orchestrated implementation uses a free or local writer first. Decompose the work into small file-disjoint items and send each one at the highest reasoning effort. A host session writer is the paid fallback after no free or local model can do that item. Keep a direct host edit only when splitting the item would cost more than the edit. See
-[when-to-use-local.md](references/when-to-use-local.md).
+Follow the [delegation ladder](../../skills/chaos-engine/SKILL.md#delegation-ladder). The direct-edit exception is [when-to-use-local.md](references/when-to-use-local.md).
 
 ## Coach loop (when local is chosen)
 
@@ -132,7 +131,7 @@ this skill when the adopter names OpenCode or “local agents”.
 
 ## Free-first policy
 
-See [delegation](../../references/delegation.md): decompose into small file-disjoint items; smartest free/local model at highest reasoning effort first; hardware-aware recommendations with opt-in setup; paid newest-cheapest fallback only when no free/local option.
+Writer selection: the [delegation ladder](../../skills/chaos-engine/SKILL.md#delegation-ladder).
 
 ## Related
 

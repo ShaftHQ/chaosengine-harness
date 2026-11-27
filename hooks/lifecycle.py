@@ -564,6 +564,16 @@ def session_start_context(token: str | None, activation: str, session_id: str = 
         candidate = f"{rendered}\n{drift_line}"
         if len(candidate.encode("utf-8")) <= SESSION_START_MAX_BYTES:
             rendered = candidate
+    ladder_line = (
+        "Delegation ladder: skills/chaos-engine/SKILL.md. "
+        "Free writer at highest effort, then ask, then cheapest paid at low effort. "
+        "PreToolUse refuses a writer with no receipt."
+    )
+    candidate = f"{rendered}\n{ladder_line}"
+    within_hard = len(candidate.encode("utf-8")) <= SESSION_START_MAX_BYTES
+    within_soft = len(candidate.encode("utf-8")) // 4 <= _SESSION_START_SOFT_TOKENS
+    if within_hard and within_soft:
+        rendered = candidate
     with contextlib.suppress(Exception):
         counters_path = _overlay_module("learning_counters.py")
         if counters_path.is_file():

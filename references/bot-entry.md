@@ -1,6 +1,6 @@
 # Bot entry
 
-Any AI client without native auto-load (chat bots, CLIs, agents, IDEs), including a Grok Bot or custom GPT. `AGENTS.md` is not read for you. `<python>`: `py -3` Windows, `python3` Linux/macOS. Hooks/tests: Python 3.11+. Installer pin: 3.14.0.
+Any AI client without native auto-load (chat bots, CLIs, agents, IDEs), including Grok Bot, OpenBot, and a custom GPT. `AGENTS.md` is not read for you. `<python>`: `py -3` Windows, `python3` Linux/macOS. Hooks/tests: Python 3.11+. Installer pin: 3.14.0. The delegation ladder inside the entry bundle is mandatory on these clients too.
 
 ## Every task, before discovery
 

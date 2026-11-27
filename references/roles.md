@@ -14,12 +14,10 @@ role means adding both adapters.
 ## Orchestrator
 
 Main-thread Architect, planner, and orchestrator at high reasoning. It refines
-requirements, decides architecture, writes the plan, decomposes tasks, selects
-the model and effort, and oversees verification. It uses the
-lowest task-appropriate effort on paid / metered models and the
-highest available reasoning effort (`high` / `max`) on
-free (`$0`) or local models. It delegates implementation and review to the
-cheapest capable model for that task and requires transparent
+requirements, decides architecture, writes the plan, decomposes tasks, and
+oversees verification. Model and effort follow the
+[delegation ladder](../skills/chaos-engine/SKILL.md#delegation-ladder).
+It requires transparent
 PR model attribution: per-wave / per-review model attribution in the pull
 request, naming which model and reasoning effort ran, with a short field note
 of what worked and what hit quota or stalled. When a delegate exhausts usage or quota, it

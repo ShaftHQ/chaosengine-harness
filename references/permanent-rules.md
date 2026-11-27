@@ -29,13 +29,13 @@ Assistant memory keeps only this pointer: "Follow the ChaosEngine core card
 | Agent runs emit OpenTelemetry GenAI invoke_agent and execute_tool spans behind the eval suite | [genai spans](genai-spans.md) |
 | Delta-only status; full report only on a RAG change or owner request | [process owner](process-owner-scrum-master.md) |
 | Cost and avoided-spend lines only when a local channel was actually used | [process owner](process-owner-scrum-master.md) |
-| Cloud implementers write code; local runtimes optional for narrow jobs | [identity](../identity.md), [local-runtimes](../skills/local-runtimes/SKILL.md) |
+| Writer selection is the delegation ladder in the router | [router](../skills/chaos-engine/SKILL.md#delegation-ladder) |
 | Work-machine writes are parent-run one-shot jobs | [parent shell](../skills/local-agency/references/parent-rog-shell.md) |
 | Task isolation, fresh primary, cleanup scopes | [task isolation](task-isolation.md), [cleanup scopes](cleanup-scopes.md) |
 | Delegates load the delegate card, not the router | [delegate card](delegate-card.md) |
 | Repository changes are not done until pushed, a pull request is open, and that pull request is merged to the default branch | [delivery phase gates](delivery-phase-gates.md) |
 | Owner autonomy: routine in-scope work proceeds after plan approval; irreversible, destructive, paid-campaign, or externally visible actions still need explicit owner approval | [kanban](../skills/kanban/SKILL.md) |
-| Single thread by default; delegate when the owner enables delegation, or when a bounded read-only firewall/consultant is authorized ([consult-first](consult-first.md), [context firewall](context-firewall.md)) | [delegation](delegation.md) |
+| Writer dispatch follows the delegation ladder. A direct edit is only that ladder's one-change exception. A bounded read-only firewall stays [consult-first](consult-first.md) and [context firewall](context-firewall.md) | [delegation ladder](../skills/chaos-engine/SKILL.md#delegation-ladder) |
 | Default delivery is a small vertical slice (~90 changed lines or a named size_waiver). One grouped pull request is allowed when an epic or batch waiver names it | [kanban](../skills/kanban/SKILL.md) |
 | After each delivery run `tool.py maintain` (fast-forward keeping edits, reinstall, doctor, refresh, reload) | [kanban](../skills/kanban/SKILL.md) |
 | Status reports are tables | [kanban](../skills/kanban/SKILL.md) |

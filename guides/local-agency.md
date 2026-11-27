@@ -63,7 +63,7 @@ For `--mode design` / CE-brief chat, require the writer closing line
 
 ## Coach loop
 
-Local writers are optional; implementers write code directly unless [when-to-use-local.md](../skills/local-agency/references/when-to-use-local.md) (#6171) favors local. When a READY openai-compat writer is chosen, follow [coach-loop.md](../skills/local-agency/references/coach-loop.md): verify every artifact, grounded feedback with runtime evidence, RED-first then worked-example reproduce after free-form fails, never leave the local model unsupervised (#6075).
+Follow the [delegation ladder](../skills/chaos-engine/SKILL.md#delegation-ladder). When a local writer runs, follow [coach-loop.md](../skills/local-agency/references/coach-loop.md) and [when-to-use-local.md](../skills/local-agency/references/when-to-use-local.md): verify every artifact, grounded feedback with runtime evidence, RED-first then worked-example reproduce after free-form fails, never leave the local model unsupervised (#6075).
 
 ## Mechanical dispatch
 
@@ -172,10 +172,7 @@ writer on hosts that locked OpenAI-compat.
 
 ## Session agents vs local agency
 
-Default orchestrator labor stays on host session subagents / Task. Use this
-guide only when the adopter asked for OpenCode (or peer) against local
-runtimes. If no local runtime is READY, say so; do not auto-route to OmniRoute
-unless asked.
+Follow the [delegation ladder](../skills/chaos-engine/SKILL.md#delegation-ladder). If no free model and no READY local runtime can do the item, ask before any install. Do not auto-route to OmniRoute unless asked.
 
 
 ## Colibri

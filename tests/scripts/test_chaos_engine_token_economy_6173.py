@@ -315,8 +315,8 @@ class OverlayCleanupTest(unittest.TestCase):
 
     def test_identity_line_matches_6171(self):
         identity = (SOURCE / "references/delegation.md").read_text(encoding="utf-8")
-        self.assertIn("Cloud implementers write code directly", identity)
-        self.assertIn("local runtimes are optional for narrow mechanical or offline jobs", identity)
+        self.assertIn("delegation ladder", identity)
+        self.assertNotIn("local runtimes are optional for narrow mechanical or offline jobs", identity)
 
     def test_no_always_loaded_file_mandates_local_writers(self):
         for relative in self.ALWAYS_LOADED:
