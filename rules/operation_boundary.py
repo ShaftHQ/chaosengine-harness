@@ -189,11 +189,56 @@ _GIT_VALUE_FLAGS = frozenset(
     }
 )
 _WRAPPER_COMMANDS = frozenset(
-    {"env", "command", "builtin", "exec", "nohup", "sudo", "time"}
+    {
+        "env",
+        "command",
+        "builtin",
+        "exec",
+        "nohup",
+        "sudo",
+        "time",
+        "nice",
+        "setsid",
+        "stdbuf",
+        "ionice",
+        "doas",
+        "flock",
+        "xargs",
+    }
 )
 _SHELL_COMMANDS = frozenset({"bash", "sh", "dash", "ksh", "zsh"})
+# ``-i`` and ``-S`` take no following word (``env -i``, ``sudo -i``, ``sudo -S``).
+# ``-g`` and ``--group`` do. Attached values (``-oL``, ``-c2``, ``--user=name``)
+# are not members, so they do not consume the command.
 _WRAPPER_VALUE_FLAGS = frozenset(
-    {"-u", "--user", "-i", "--shell", "-C", "-c", "-S", "--chdir"}
+    {"-u", "--user", "-g", "--group", "-C", "--chdir", "--shell", "-c"}
+)
+# Flags whose next word is the value, only for that wrapper. A form with the
+# value attached (``-oL``, ``-c2``, ``-n5``) is not a member, so it does not
+# consume ``git``.
+_EXTRA_VALUE_FLAGS = {
+    "stdbuf": frozenset({"-o", "-e", "-i", "--output", "--error", "--input"}),
+    "nice": frozenset({"-n", "--adjustment"}),
+    "ionice": frozenset({"-n", "-p"}),
+    "xargs": frozenset({"-I", "-a", "-n", "-P", "-d", "-E", "-L", "-s"}),
+    "flock": frozenset({"-w", "--timeout"}),
+}
+_SHELL_SYNTAX = frozenset(
+    {
+        "{",
+        "}",
+        "!",
+        "if",
+        "then",
+        "fi",
+        "else",
+        "elif",
+        "do",
+        "done",
+        "while",
+        "until",
+        "for",
+    }
 )
 _SIMPLE_ASSIGN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*\+?=")
 
@@ -202,8 +247,51 @@ def _command_basename(word: str) -> str:
     return word.rsplit("/", 1)[-1]
 
 
-def _command_words(text: str) -> list[str]:
-    """Dequoted words of one statement; a here-document body is not a word."""
+def _shell_c_flag(word: str) -> bool:
+    """True when a short option cluster carries ``c``, the script flag."""
+    return (
+        len(word) > 1
+        and word.startswith("-")
+        and not word.startswith("--")
+        and "c" in word[1:]
+    )
+
+
+def _strip_heredoc_closer(body: str, delim: str) -> str:
+    for ending in ("\r\n", "\n", "\r"):
+        tail = delim + ending
+        if body.endswith(tail):
+            return body[: -len(tail)]
+    if body.endswith(delim):
+        return body[: -len(delim)]
+    return body
+
+
+def _skip_redirection(text: str, index: int) -> int:
+    """Index after an unquoted redirection. ``<(`` and ``>(`` stay for the caller."""
+    while index < len(text) and text[index] in "<>":
+        index += 1
+    if index < len(text) and text[index] in "&|":
+        index += 1
+    if index < len(text) and text[index] == "(":
+        return index
+    while index < len(text) and text[index] in " \t":
+        index += 1
+    while index < len(text) and text[index] not in " \t\n\r;&|()<>":
+        if text[index] == "\\" and index + 1 < len(text):
+            index += 2
+            continue
+        index += 1
+    return index
+
+
+def _command_words(text: str, heredocs: list[str] | None = None) -> list[str]:
+    """Dequoted words of one statement.
+
+    A here-document body is not a word. When ``heredocs`` is given, each body
+    is appended without its closing delimiter. Redirections are not words.
+    ``$'...'`` and ``$"..."`` contribute their quoted text.
+    """
     words: list[str] = []
     buf: list[str] = []
     started = False
@@ -227,6 +315,11 @@ def _command_words(text: str) -> list[str]:
                 buf.append(char)
             index += 1
             continue
+        if text.startswith("$'", index) or text.startswith('$"', index):
+            quote = text[index + 1]
+            started = True
+            index += 2
+            continue
         if char in {"'", '"'}:
             quote = char
             started = True
@@ -245,7 +338,10 @@ def _command_words(text: str) -> list[str]:
                 newline = text.find("\n", index)
                 if newline < 0:
                     break
-                index = _consume_heredoc(text, newline + 1, delim, [])
+                body: list[str] = []
+                index = _consume_heredoc(text, newline + 1, delim, body)
+                if heredocs is not None:
+                    heredocs.append(_strip_heredoc_closer("".join(body), delim))
                 continue
         if char == "\\" and index + 1 < len(text):
             if text[index + 1] in "\n\r":
@@ -254,6 +350,18 @@ def _command_words(text: str) -> list[str]:
             buf.append(text[index + 1])
             started = True
             index += 2
+            continue
+        if char in "<>":
+            if started:
+                token = "".join(buf)
+                if token.isdigit() or token == "&":
+                    buf = []
+                    started = False
+                else:
+                    words.append(token)
+                    buf = []
+                    started = False
+            index = _skip_redirection(text, index)
             continue
         if char.isspace() or char in ";&|()<>":
             if started:
@@ -319,31 +427,49 @@ def _embedded_code(text: str) -> list[str]:
     return code
 
 
-def _head_is_git_push(words: list[str], depth: int) -> bool:
+def _head_is_git_push(
+    words: list[str], depth: int, heredocs: list[str] | None = None
+) -> bool:
     index = 0
-    wrapper_prefix = False
+    wrapper = ""
     while index < len(words):
         word = words[index]
         if _SIMPLE_ASSIGN.match(word):
             index += 1
             continue
+        if word in _SHELL_SYNTAX:
+            index += 1
+            continue
         if word == "eval":
-            payload = " ".join(words[index + 1 :])
+            rest = words[index + 1 :]
+            if rest[:1] == ["--"]:
+                rest = rest[1:]
+            payload = " ".join(rest)
             return bool(payload) and _has_git_push(payload, depth + 1)
         name = _command_basename(word)
         if name in _SHELL_COMMANDS:
             for cursor in range(index + 1, len(words)):
-                if words[cursor] in {"-c", "-lc", "-ec", "-ic"}:
+                if _shell_c_flag(words[cursor]):
                     return cursor + 1 < len(words) and _has_git_push(
                         words[cursor + 1], depth + 1
                     )
-            return False
+            return any(_has_git_push(body, depth + 1) for body in (heredocs or ()))
         if name in _WRAPPER_COMMANDS:
-            wrapper_prefix = True
+            wrapper = name
             index += 1
             continue
-        if wrapper_prefix and word.startswith("-"):
-            index += 2 if word in _WRAPPER_VALUE_FLAGS else 1
+        if wrapper and word.startswith("-"):
+            extra = _EXTRA_VALUE_FLAGS.get(wrapper, frozenset())
+            index += 2 if word in _WRAPPER_VALUE_FLAGS or word in extra else 1
+            continue
+        if (
+            wrapper == "flock"
+            and not word.startswith("-")
+            and name != "git"
+            and index + 1 < len(words)
+        ):
+            index += 1
+            wrapper = ""
             continue
         if name == "git":
             cursor = index + 1
@@ -368,7 +494,8 @@ def _has_git_push(text: str, depth: int = 0) -> bool:
     if depth > 4:
         return False
     for statement in _shell_statements(text or ""):
-        if _head_is_git_push(_command_words(statement), depth):
+        bodies: list[str] = []
+        if _head_is_git_push(_command_words(statement, bodies), depth, bodies):
             return True
         for code in _embedded_code(statement):
             if _has_git_push(code, depth + 1):

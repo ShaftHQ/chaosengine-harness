@@ -342,6 +342,48 @@ class OperationBoundary262Test(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertEqual("force-push-without-approval", self.block(command))
 
+    def test_review_force_push_bypasses_are_refused(self) -> None:
+        for command in (
+            ">/dev/null git push -f origin main",
+            "2>/dev/null git push -f origin main",
+            "if true; then git push -f origin main; fi",
+            "{ git push -f origin main; }",
+            "env -i git push -f origin main",
+            "sudo -S git push -f origin main",
+            "sudo -i git push -f origin main",
+            "sudo -g wheel git push -f origin main",
+            "bash -cl 'git push -f origin main'",
+            "bash -c $'git push -f origin main'",
+            'bash -c $"git push -f origin main"',
+            "eval -- git push -f origin main",
+            "bash <<EOF\ngit push -f origin main\nEOF\n",
+            "sh <<EOF\ngit push -f origin main\nEOF\n",
+            "dash <<'EOF'\ngit push -f origin main\nEOF\n",
+            "ksh <<EOF\ngit push -f origin main\nEOF\n",
+            "zsh <<EOF\ngit push -f origin main\nEOF\n",
+            "nice git push -f origin main",
+            "setsid git push -f origin main",
+            "stdbuf -oL git push -f origin main",
+            "ionice -c2 git push -f origin main",
+            "doas git push -f origin main",
+            "flock git push -f origin main",
+            "flock /tmp/lock git push -f origin main",
+            "xargs git push -f origin main",
+            "xargs -I {} git push -f origin main",
+            "stdbuf -o L git push -f origin main",
+            "nice -n 5 git push -f origin main",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual("force-push-without-approval", self.block(command))
+
+    def test_heredoc_data_is_not_a_force_push(self) -> None:
+        for command in (
+            "cat <<EOF\ngit push -f origin main\nEOF\n",
+            "bash -c 'echo ok' <<EOF\ngit push -f origin main\nEOF\n",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNone(self.block(command))
+
 
 class MarkerAlignment251Test(unittest.TestCase):
     def test_guard_hint_unblocks_quality_gate_both_markers(self) -> None:
