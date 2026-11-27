@@ -180,9 +180,15 @@ class AlwaysLoadedTest(unittest.TestCase):
 
     def test_instruction_only_hosts_are_registered(self):
         hosts = load_module("ce_e_hosts_rows", SOURCE / "runtime" / "hosts.py")
-        self.assertEqual({"grok-bot", "independent-bot"}, set(hosts.INSTRUCTION_ONLY_HOSTS))
+        self.assertEqual(
+            {"grok-bot", "independent-bot", "openbot"},
+            set(hosts.INSTRUCTION_ONLY_HOSTS),
+        )
         matrix = (SOURCE / "references/host-parity-matrix.md").read_text(encoding="utf-8")
-        for token in ("OpenCode", "Cursor", "Grok Bot", "GAP-OPENCODE-HOOKS", "GAP-CURSOR-HOOKS", "GAP-GROKBOT-HOOKS"):
+        for token in (
+            "OpenCode", "Cursor", "Grok Bot", "OpenBot",
+            "GAP-OPENCODE-HOOKS", "GAP-CURSOR-HOOKS", "GAP-GROKBOT-HOOKS", "GAP-OPENBOT-HOOKS",
+        ):
             self.assertIn(token, matrix)
 
     def test_ce_loads_from_subdirectory_session_worktree_and_fresh_clone(self):

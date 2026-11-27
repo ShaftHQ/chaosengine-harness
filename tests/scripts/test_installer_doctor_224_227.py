@@ -577,6 +577,8 @@ class CompletionHookTests(unittest.TestCase):
             result = self._doctor(project, target)
         hooks = result["components"]["hooks"]
         self.assertEqual("degraded", hooks["status"])
+        self.assertEqual("advisory", hooks["taskImpact"])
+        self.assertEqual("healthy", result["status"])
         self.assertEqual(
             [SURFACE_PATHS[host] for host in HOOK_HOSTS],
             list(hooks["hookHostsMissing"]),
@@ -600,10 +602,13 @@ class CompletionHookTests(unittest.TestCase):
             present = self._doctor(project, target)
         degraded = missing["components"]["hooks"]
         self.assertEqual("degraded", degraded["status"])
+        self.assertEqual("required", degraded["taskImpact"])
+        self.assertEqual("recovery-required", missing["status"])
         self.assertEqual([SURFACE_PATHS["cursor"]], list(degraded["hookHostsMissing"]))
         self.assertNotIn(SURFACE_PATHS["codex"], list(degraded["hookHostsMissing"]))
         healthy = present["components"]["hooks"]
         self.assertEqual("healthy", healthy["status"])
+        self.assertEqual("healthy", present["status"])
         self.assertNotIn("hookHostsMissing", healthy)
 
     def test_grok_bot_only_is_an_instruction_only_advisory(self):

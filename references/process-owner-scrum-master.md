@@ -143,7 +143,7 @@ Notify only on **material** change (download done, serve READY, CI flip,
 actionable blocker). Stay quiet when unchanged. Never heartbeat. Never echo
 secrets. Retune x after every cycle from the latest evidence, not from a fixed
 timer chosen at dispatch. While a live watch lease exists, that watch is the
-follow-up; see [one status channel](#one-status-channel-6163).
+follow-up; see [one status channel](#one-status-channel).
 
 
 ### Unattended default
@@ -183,7 +183,7 @@ authoritative research to improve the process itself.
   verify, doctor, or E2E receipts). Narrative green is not Done.
 - Host WiFi and unrelated lab network recovery are out of scope for ChaosEngine
   delivery and Learning Sessions; escalate outside CE and keep harness work moving.
-- Learning Session Memory writes use `memory save --stdin` as the default path
+- Learning Session Memory writes use `<python> .chaos-engine/tool.py memory save --stdin` (portable wrapper for `memory`) as the default path
  . Drop manual `.memory/**` sidecar authoring; report save failures
   instead of hand-editing runtime-shaped JSON/markdown. If a body changed
   anyway, `tip_preflight.py --rehash` recomputes `content_hash` in the same
@@ -208,6 +208,6 @@ See also [identity push-back](identity-push-back.md) (fact-grounded opinion / pu
 | Premature close: Done without verify receipts | Re-open; require CI, silent verify, doctor, or E2E evidence before Done |
 | WiFi / host-network rabbit hole inside CE delivery | Declare out of scope; escalate outside CE; resume harness or product work |
 | Skip dual-checkout reinstall after a CE harness merge | Reinstall official CE on desktop and agent checkouts; doctor; then continue |
-| Manual `.memory/**` sidecar authoring in Learning Session | Use `memory save --stdin`; never hand-edit JSON/markdown sidecars |
+| Manual `.memory/**` sidecar authoring in Learning Session | Use `<python> .chaos-engine/tool.py memory save --stdin`; never hand-edit JSON/markdown sidecars |
 | Overlapping status channels: status routine + babysit poll + parent narration on one PR | Keep exactly one status channel (the live watch lease); routines run `status_lease.py routine` |
 | Static-analysis `ACTION_REQUIRED` reported as "pending checks" | RAG `red`, row `Blocked`, pattern id named ([gate](static-analysis-gate.md)) |

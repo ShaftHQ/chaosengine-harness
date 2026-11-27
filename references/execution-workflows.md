@@ -7,7 +7,7 @@ delegation, transports, and host adapters link here rather than redefining it.
 
 | Workflow | Select when | Main orchestrator duties |
 | --- | --- | --- |
-| `SOLO` | Delegation is unsuitable, unavailable, or would cost more than the bounded work. | Plan, implement, verify, review, and complete the Learning Session. |
+| `SOLO` | One tightly coupled change whose brief would cost more than the edit (record `rung=direct`). | Plan, implement, verify, review, and complete the Learning Session. |
 | `ORCHESTRATOR + SINGLE IMPLEMENTER` | One bounded implementation unit, or dependent units that must remain serial, has a qualified implementer. | Plan, specify, inspect, unblock, verify, integrate, review, and complete the Learning Session; do not implement. |
 | `ORCHESTRATOR + PARALLEL IMPLEMENTERS` | Two to four independent, file-disjoint implementation units have qualified implementers. | Retain the single-implementer duties; assign isolated worktrees and integrate only after independent verification. |
 
@@ -17,14 +17,14 @@ Sequential orchestrated mode (`ORCHESTRATOR + SINGLE IMPLEMENTER`) is the defaul
 unless the owner selects parallelized implementation
 (`ORCHESTRATOR + PARALLEL IMPLEMENTERS`).
 Select `ORCHESTRATOR + PARALLEL IMPLEMENTERS` only for that owner choice, on independent
-file scopes, and cap writers at four. Parallel writers use strictly file-disjoint
+file scopes, and cap writers at four (or three when constrained by box RAM/disk). Parallel writers use strictly file-disjoint
 ownership: isolated worktrees or branches and zero overlapping writable paths,
 so they do not override, conflict, duplicate, or waste each other's work.
 When the owner says to work as orchestrator
 and parallelize, select that workflow for file-disjoint streams and do not
 implement every stream on the main thread. This is an explicit cap of four parallel
-agents, not a transport-specific default. Use
-`SOLO` when no qualified implementer remains. Review is not an implementation
+agents (or three when constrained by box RAM/disk), not a transport-specific default. Use
+`SOLO` only for one tightly coupled change whose brief would cost more than the edit (record `rung=direct`). Review is not an implementation
 stream. Finish or hand over owned implementation before switching workflows.
 Every orchestrated workflow loads and enforces
 [process-owner / Scrum-master](process-owner-scrum-master.md).
@@ -40,11 +40,13 @@ for these peers. Skills link here. A missing peer does not weaken the workflow.
 | Order | Transport | Loopback port | Skill |
 | --- | --- | --- | --- |
 | 1 | FreeToken | 1919 | [FreeToken](../skills/local-runtimes/references/freetoken.md) |
-| 2 | Colibri | 8000 | [Colibri](../skills/local-runtimes/references/colibri.md) |
-| 3 | OmniRoute | 20128 | [OmniRoute](../skills/local-runtimes/references/omniroute.md) |
-| 4 | local OpenAI-compat | 11434, 1234, 8080 | [local OpenAI-compat](../skills/local-runtimes/references/local-openai-compat.md) |
+| 2 | `ollama` (local OpenAI-compat) | 11434 | [local OpenAI-compat](../skills/local-runtimes/references/local-openai-compat.md) |
+| 3 | `lmstudio` (local OpenAI-compat) | 1234 | [local OpenAI-compat](../skills/local-runtimes/references/local-openai-compat.md) |
+| 4 | `llamacpp` (local OpenAI-compat) | 8080 | [local OpenAI-compat](../skills/local-runtimes/references/local-openai-compat.md) |
+| 5 | Colibri | 8000 | [Colibri](../skills/local-runtimes/references/colibri.md) |
+| Optional cloud | OmniRoute (only with `--allow-cloud` / explicit cloud permission) | 20128 | [OmniRoute](../skills/local-runtimes/references/omniroute.md) |
 
-Prefer FreeToken for coding agency; Colibri when the operator hosts frontier MoE.
+Prefer FreeToken for coding agency; Colibri when the operator hosts frontier MoE; OmniRoute only when `--allow-cloud` / explicit cloud permission is granted.
 Colibri does not replace FreeToken or OmniRoute and is not a workflow owner.
 FreeToken does not replace OmniRoute, does not require OmniRoute, and is not a workflow owner.
 
@@ -52,7 +54,7 @@ FreeToken does not replace OmniRoute, does not require OmniRoute, and is not a w
 
 The transport does not change the selected workflow, role boundaries, tests,
 review, learning, or completion duties. Canonical orchestration must probe the
-fixed loopback endpoint before native fallback, with no endpoint prompt. If
+fixed loopback endpoint following the delegation ladder, with no endpoint prompt. If
 `omniroute` is installed and `http://127.0.0.1:20128/api/health` fails, start
 loopback only with `OMNIROUTE_SERVER_HOST=127.0.0.1 omniroute serve --port 20128 --no-open`.
 Never install OmniRoute. Missing operator config is normal: use the PATH

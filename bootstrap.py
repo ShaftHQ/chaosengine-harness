@@ -3727,6 +3727,8 @@ def format_host_onboarding_cards(
             lines.append(f"      hook: {probe['detail']}")
     if targets and "grok-bot" in targets:
         lines.extend(_grok_bot_onboarding_lines())
+    if targets and "openbot" in targets:
+        lines.extend(_openbot_onboarding_lines())
     return "\n".join(lines) + "\n"
 
 
@@ -3755,6 +3757,32 @@ def _grok_bot_onboarding_lines() -> list[str]:
     ]
 
 
+def _openbot_onboarding_lines() -> list[str]:
+    """Point the OpenBot card at hosts.INSTRUCTION_ONLY_HOSTS['openbot'] (canonical router)."""
+    import importlib.util
+
+    path = runtime_module(Path(__file__).resolve().parent, "hosts.py")
+    spec = importlib.util.spec_from_file_location("ce_bootstrap_openbot_card", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("hosts.py is required for the OpenBot card")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    entry = module.INSTRUCTION_ONLY_HOSTS["openbot"]
+    instructions = str(entry["instructions"])
+    skill = str(entry.get("skill") or ".chaos-engine/skills/chaos-engine/SKILL.md")
+    gap = str(entry["gap"])
+    commands = (
+        "entry --full, retrieve, delete-check, ethics-check, "
+        "pre-done, dod, checkpoint, resume, maintain"
+    )
+    return [
+        f"    {'OpenBot':<16} {'instruction-only':<14} {instructions}",
+        f"      how: Read {instructions} and load {skill} directly. No hook runtime is installed.",
+        f"      gap: {gap} (explicit retrieve receipt substitutes for read gate)",
+        f"      self: tool.py {commands}.",
+    ]
+
+
 
 # Install-time client ids. Instruction-only ids stay out of HOST_CAPABILITIES.
 INSTALL_HOST_IDS = (
@@ -3767,6 +3795,7 @@ INSTALL_HOST_IDS = (
     "cursor",
     "antigravity",
     "grok-bot",
+    "openbot",
 )
 _INSTALL_HOST_ALIASES = {
     "agy": "antigravity",

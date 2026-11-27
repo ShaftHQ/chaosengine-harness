@@ -31,7 +31,9 @@ DEFAULT_UNIT_TESTS = (
     "tests.scripts.test_chaos_engine_s2_self_improve",
     "tests.scripts.test_chaos_engine_s4_self_improve",
 )
-EVAL_SCRIPT = Path("scripts/ci/chaos_engine_eval_parity.py")
+EVAL_SCRIPT = Path("scripts/ci/validate_skills.py")
+EVAL_SCRIPT_ARGS = ("--check",)
+LEGACY_EVAL_SCRIPT = Path("scripts/ci/chaos_engine_eval_parity.py")
 
 
 def project_root(start: Path | None = None) -> Path:
@@ -111,10 +113,16 @@ def gate_status(*, flag: bool = False, environ: dict[str, str] | None = None) ->
 
 def run_eval_parity(root: Path, *, python: str | None = None) -> dict[str, Any]:
     script = root / EVAL_SCRIPT
+    args = list(EVAL_SCRIPT_ARGS) if EVAL_SCRIPT == Path("scripts/ci/validate_skills.py") else []
     if not script.is_file():
-        return {"ok": False, "reason": f"missing {EVAL_SCRIPT.as_posix()}", "exitCode": 127}
+        legacy = root / LEGACY_EVAL_SCRIPT
+        if legacy.is_file():
+            script = legacy
+            args = []
+        else:
+            return {"ok": False, "reason": f"missing {EVAL_SCRIPT.as_posix()}", "exitCode": 127}
     completed = subprocess.run(  # nosec B603
-        [python or sys.executable, str(script)],
+        [python or sys.executable, str(script), *args],
         cwd=root,
         capture_output=True,
         text=True,

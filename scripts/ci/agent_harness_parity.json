@@ -9,6 +9,7 @@
     "opencode",
     "cursor",
     "grok-bot",
+    "openbot",
     "antigravity"
   ],
   "capabilities": [
@@ -36,6 +37,9 @@
         "skills/architect/SKILL.md"
       ],
       "grok-bot": [
+        "skills/architect/SKILL.md"
+      ],
+      "openbot": [
         "skills/architect/SKILL.md"
       ],
       "antigravity": [
@@ -66,6 +70,9 @@
         "skills/technical-presentations/SKILL.md"
       ],
       "grok-bot": [
+        "skills/technical-presentations/SKILL.md"
+      ],
+      "openbot": [
         "skills/technical-presentations/SKILL.md"
       ],
       "antigravity": [

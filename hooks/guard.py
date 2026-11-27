@@ -468,8 +468,31 @@ def _read_body_file(value: str) -> str | None:
         return None
 
 
+def _operation_boundary_module():
+    cached = getattr(_operation_boundary_module, "module", None)
+    if cached is not None:
+        return cached
+    if getattr(_operation_boundary_module, "missing", False):
+        return None
+    script = Path(__file__).resolve().parents[1] / "rules" / "operation_boundary.py"
+    if not script.is_file():
+        _operation_boundary_module.missing = True
+        return None
+    spec = importlib.util.spec_from_file_location("chaos_engine_guard_boundary", script)
+    if spec is None or spec.loader is None:
+        _operation_boundary_module.missing = True
+        return None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    _operation_boundary_module.module = module
+    return module
+
+
 def _shell_statements(command: str) -> list[str]:
-    """Split on ``&&``, ``||``, and ``;`` outside quotes."""
+    """Split on unquoted ``&&``, ``||``, ``;``, ``|``, ``&``, and newlines."""
+    boundary = _operation_boundary_module()
+    if boundary is not None and hasattr(boundary, "_shell_statements"):
+        return boundary._shell_statements(command)
     parts: list[str] = []
     buf: list[str] = []
     quote = ""
@@ -492,7 +515,7 @@ def _shell_statements(command: str) -> list[str]:
             buf = []
             index += 2
             continue
-        if char == ";":
+        if char in {";", "|", "&", "\n", "\r"}:
             parts.append("".join(buf))
             buf = []
             index += 1
@@ -2723,10 +2746,26 @@ def _command_is_destructive(command: str) -> bool:
 
 STASH_READ_ONLY = frozenset({"list", "show"})
 GIT_OPTIONS_WITH_VALUE = frozenset({"-c", "-C", "--git-dir", "--work-tree", "--namespace"})
+
+
+def _git_path_is_absolute(path: str) -> bool:
+    if path.startswith("/") or path.startswith("\\"):
+        return True
+    return len(path) >= 3 and path[0].isalpha() and path[1] == ":" and path[2] in "/\\"
+
+
+def _stack_git_directory(current: str, nxt: str) -> str:
+    """Join git -C paths. An absolute path replaces the stack; empty leaves it."""
+    if nxt == "":
+        return current
+    if _git_path_is_absolute(nxt) or not current:
+        return nxt
+    sep = "\\" if "\\" in current and "/" not in current else "/"
+    return current.rstrip("/\\") + sep + nxt
 STASH_R8_REASON = (
     "R8 (#6223): `git stash{sub}` mutates the stash list in the shared .git, which this "
     "checkout shares with its linked worktrees, so another session can pop or drop it. "
-    "Commit to your own branch instead (`git add -A && git commit -m wip`, amend or reset "
+    "Commit to your own branch instead (`git add <paths> && git commit -m wip`, amend or reset "
     "later), and take baselines from a separate `git worktree add --detach <dir> <base-ref>`. "
     "Read-only `git stash list` / `git stash show` stay allowed."
 )
@@ -2796,13 +2835,197 @@ def delete_guard_reason(commands: tuple[str, ...], cwd: Path) -> str:
 
 def linked_worktree_stash_reason(commands: tuple[str, ...], cwd: Path) -> str:
     for command in commands:
-        for segment in re.split(r"&&|\|\||;|\||\r?\n", command):
+        for segment in _shell_statements(command):
             mutating, subcommand, directory = _stash_invocation(segment)
             if not mutating:
                 continue
             target = (cwd / directory) if directory else cwd
             if shares_git_directory(target.resolve()):
                 return STASH_R8_REASON.format(sub=f" {subcommand}" if subcommand else "")
+    return ""
+
+
+def _secret_guard():
+    """Load runtime/secret_guard.py (or flat secret_guard.py) for pre-rebase checks (#266)."""
+    path = _overlay_module("secret_guard.py")
+    if not path.is_file():
+        return None
+    specification = importlib.util.spec_from_file_location("chaos_engine_secret_guard", path)
+    if specification is None or specification.loader is None:
+        return None
+    module = importlib.util.module_from_spec(specification)
+    specification.loader.exec_module(module)
+    return module
+
+
+def _git_env_for_repo(repo_dir: Path) -> dict[str, str]:
+    env = os.environ.copy()
+    if (repo_dir / ".git").exists():
+        env.pop("GIT_DIR", None)
+        env.pop("GIT_WORK_TREE", None)
+    return env
+
+
+def _git_resolves_tree(repo_dir: Path, ref: str) -> bool:
+    git_bin = shutil.which("git")
+    if not git_bin or not ref:
+        return False
+    try:
+        completed = subprocess.run(  # nosec B603 - absolute git from which, fixed argv.
+            [git_bin, "-C", str(repo_dir), "rev-parse", "--verify", "--quiet", f"{ref}^{{tree}}"],
+            capture_output=True,
+            text=True,
+            check=False,
+            env=_git_env_for_repo(repo_dir),
+        )
+    except OSError:
+        return False
+    return completed.returncode == 0
+
+
+def _consume_git_subcommand(arguments: list[str]) -> tuple[str, str, list[str]]:
+    directory = ""
+    index = 0
+    while index < len(arguments):
+        option = arguments[index]
+        if option == "--":
+            index += 1
+            break
+        if option.startswith("-"):
+            if option in GIT_OPTIONS_WITH_VALUE and index + 1 < len(arguments):
+                if option == "-C":
+                    directory = _stack_git_directory(directory, arguments[index + 1])
+                index += 2
+                continue
+            if option.startswith("-C") and len(option) > 2:
+                directory = _stack_git_directory(directory, option[2:])
+            index += 1
+            continue
+        return directory, option.casefold(), arguments[index + 1 :]
+    return directory, "", []
+
+
+def _pre_rebase_targets(statement: str) -> tuple[str, list[tuple[str, str]]]:
+    head, arguments = command_head(tokens(statement))
+    if head not in {"git", "git.exe"}:
+        return "", []
+    directory, subcommand, rest = _consume_git_subcommand(arguments)
+    if subcommand == "rebase":
+        skip_flags = {"--abort", "--continue", "--skip", "--quit", "--edit-todo", "--show-current-patch"}
+        if any(item in skip_flags for item in rest):
+            return directory, []
+        value_flags = {
+            "--onto", "-s", "--strategy", "-X", "--strategy-option",
+            "-x", "--exec", "--empty", "-C",
+        }
+        onto = ""
+        positionals: list[str] = []
+        idx = 0
+        while idx < len(rest):
+            tok = rest[idx]
+            if tok == "--":
+                positionals.extend(rest[idx + 1 :])
+                break
+            if tok.startswith("--onto="):
+                onto = tok.split("=", 1)[1]
+                idx += 1
+                continue
+            if tok in value_flags and idx + 1 < len(rest):
+                if tok == "--onto":
+                    onto = rest[idx + 1]
+                idx += 2
+                continue
+            if tok.startswith("-"):
+                idx += 1
+                continue
+            positionals.append(tok)
+            idx += 1
+        if onto:
+            base = positionals[1] if len(positionals) >= 2 else "HEAD"
+            return directory, [(base, onto)]
+        if positionals:
+            base = positionals[1] if len(positionals) >= 2 else "HEAD"
+            return directory, [(base, positionals[0])]
+        return directory, [("HEAD", "@{upstream}")]
+    if subcommand == "merge":
+        if any(item in {"--abort", "--continue", "--quit"} for item in rest):
+            return directory, []
+        value_flags = {
+            "-s", "--strategy", "-X", "--strategy-option", "-m", "-F", "--file",
+            "--into-name", "--cleanup",
+        }
+        positionals = []
+        idx = 0
+        while idx < len(rest):
+            tok = rest[idx]
+            if tok == "--":
+                positionals.extend(rest[idx + 1 :])
+                break
+            if tok in value_flags and idx + 1 < len(rest):
+                idx += 2
+                continue
+            if tok.startswith("-"):
+                idx += 1
+                continue
+            positionals.append(tok)
+            idx += 1
+        return directory, [("HEAD", target) for target in positionals]
+    if subcommand == "pull":
+        rebase_on = any(
+            tok == "-r" or tok == "--rebase" or (tok.startswith("--rebase=") and tok != "--rebase=false")
+            for tok in rest
+        )
+        if not rebase_on or "--no-rebase" in rest:
+            return directory, []
+        value_flags = {
+            "-s", "--strategy", "-X", "--strategy-option", "-o", "--upload-pack",
+            "--depth", "-j", "--jobs",
+        }
+        positionals = []
+        idx = 0
+        while idx < len(rest):
+            tok = rest[idx]
+            if tok == "--":
+                positionals.extend(rest[idx + 1 :])
+                break
+            if tok in value_flags and idx + 1 < len(rest):
+                idx += 2
+                continue
+            if tok.startswith("-"):
+                idx += 1
+                continue
+            positionals.append(tok)
+            idx += 1
+        if len(positionals) >= 2:
+            remote, branch = positionals[0], positionals[1]
+            return directory, [("HEAD", f"{remote}/{branch}"), ("HEAD", f"refs/remotes/{remote}/{branch}")]
+        return directory, [("HEAD", "@{upstream}")]
+    return directory, []
+
+
+def pre_rebase_guard_reason(commands: tuple[str, ...], cwd: Path) -> str:
+    """Refuse git rebase/merge/pull --rebase onto a target that deletes .gitignore or adds secrets/binaries (#266)."""
+    guard = _secret_guard()
+    if guard is None or not hasattr(guard, "pre_rebase_findings"):
+        return ""
+    for command in commands:
+        for statement in _shell_statements(command):
+            directory, targets = _pre_rebase_targets(statement)
+            if not targets:
+                continue
+            repo_dir = ((cwd / directory) if directory else cwd).resolve()
+            for base_ref, target_ref in targets:
+                if not (_git_resolves_tree(repo_dir, base_ref) and _git_resolves_tree(repo_dir, target_ref)):
+                    continue
+                try:
+                    found = guard.pre_rebase_findings(base_ref, target_ref, cwd=repo_dir)
+                except (RuntimeError, OSError):
+                    continue
+                if found:
+                    return (
+                        f"secret_guard BLOCKED pre-rebase onto {target_ref} (contents not shown): "
+                        + ", ".join(found)
+                    )
     return ""
 
 
@@ -3835,6 +4058,17 @@ def _repeat_advice(event_name: str, session_id: str, tool_name: str, tool_input:
         return None
 
 
+def _delegation_module():
+    module = getattr(_delegation_block, "module", None)
+    if module is None and not getattr(_delegation_block, "missing", False):
+        module = _load_sibling("delegation_gate")
+        if module is None:
+            _delegation_block.missing = True
+        else:
+            _delegation_block.module = module
+    return module
+
+
 def _delegation_block(
     event: dict,
     event_name: str,
@@ -3845,17 +4079,37 @@ def _delegation_block(
     """PreToolUse writer gate. One module, every hook host. Missing file fails open."""
     if event_name != "PreToolUse":
         return ""
-    module = getattr(_delegation_block, "module", None)
-    if module is None and not getattr(_delegation_block, "missing", False):
-        module = _load_sibling("delegation_gate")
-        if module is None:
-            _delegation_block.missing = True
-        else:
-            _delegation_block.module = module
+    module = _delegation_module()
     if module is None:
         return ""
     cwd = Path(str(event.get("cwd") or Path.cwd()))
-    return module.writer_block(tool_name, tool_input, commands, cwd) or ""
+    return module.writer_block(
+        tool_name,
+        tool_input,
+        commands,
+        cwd,
+        commit_review=False,
+        is_subagent=bool(event.get("agent_id") or event.get("agentId")),
+    ) or ""
+
+
+def _delegation_commit_review(
+    event: dict,
+    event_name: str,
+    tool_name: str,
+    tool_input: object,
+    commands: tuple,
+) -> str:
+    """Record a review round only after all downstream PreToolUse checks pass."""
+    if event_name != "PreToolUse":
+        return ""
+    module = _delegation_module()
+    if module is None or not hasattr(module, "record_review_round"):
+        return ""
+    if module.classify(tool_name, tool_input, commands) != "review":
+        return ""
+    cwd = Path(str(event.get("cwd") or Path.cwd()))
+    return module.record_review_round(tool_input, cwd) or ""
 
 
 def _deny(event: dict, event_name: str, tool_name: str, reason: str) -> int:
@@ -4119,6 +4373,15 @@ def _stash_block(event: dict, event_name: str, tool_name: str, commands: tuple) 
         return None
     # R8 is session-independent: enforce it before identity or ledger checks.
     reason = linked_worktree_stash_reason(commands, Path(str(event.get("cwd") or Path.cwd())))
+    if reason:
+        return _deny(event, event_name, tool_name, reason)
+    return None
+
+
+def _pre_rebase_block(event: dict, event_name: str, tool_name: str, commands: tuple) -> int | None:
+    if event_name != "PreToolUse":
+        return None
+    reason = pre_rebase_guard_reason(commands, Path(str(event.get("cwd") or Path.cwd())))
     if reason:
         return _deny(event, event_name, tool_name, reason)
     return None
@@ -4643,6 +4906,9 @@ def _run_event(event: dict, _host: str) -> int:
     blocked = _stash_block(event, event_name, tool_name, commands)
     if blocked is not None:
         return blocked
+    pre_rebase = _pre_rebase_block(event, event_name, tool_name, commands)
+    if pre_rebase is not None:
+        return pre_rebase
     # #219: preventive test-quality deny. Runs before the delegation receipt and
     # the lifecycle kernel so a bad test edit is the reason the host sees.
     # Non-test paths and a missing rules/test_quality_gate.py fall through.
@@ -4679,6 +4945,9 @@ def _run_event(event: dict, _host: str) -> int:
             print(open_pr_block, file=sys.stderr)
             return 2
         return _deny(event, event_name, tool_name, open_pr_block)
+    review_commit_error = _delegation_commit_review(event, event_name, tool_name, tool_input, commands)
+    if review_commit_error:
+        return _deny(event, event_name, tool_name, review_commit_error)
     _post_tool_activity(event, event_name, commands, session_id, receipt_command, mutation)
     _capture_scratch(event, event_name)
     stopped = _stop_block(event, event_name, tool_name, session_id)

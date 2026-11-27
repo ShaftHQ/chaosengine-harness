@@ -654,6 +654,56 @@ def _write_python3_shim(directory: Path, target: Path) -> Path:
     return shim
 
 
+def _write_memory_shim(
+    directory: Path, target: Path, *, node: Path | None = None
+) -> Path:
+    """Publish a user-facing ``memory`` shim in ``directory`` for clean-PATH shells."""
+    directory.mkdir(parents=True, exist_ok=True)
+    try:
+        resolved = target.resolve()
+    except (OSError, RuntimeError):
+        resolved = Path(target)
+    cmd = directory / "memory.cmd"
+    javascript = resolved.suffix.lower() == ".js" and node is not None
+    try:
+        cmd_is_target = (cmd.exists() or cmd.is_symlink()) and cmd.resolve() == resolved
+    except (OSError, RuntimeError):
+        cmd_is_target = False
+    if not cmd_is_target:
+        if javascript:
+            cmd.write_text(f'@echo off\r\n"{node}" "{resolved}" %*\r\n', encoding="utf-8")
+        else:
+            cmd.write_text(f'@echo off\r\n"{resolved}" %*\r\n', encoding="utf-8")
+    if os.name == "nt":
+        return cmd
+    shim = directory / "memory"
+    if javascript:
+        script = f'#!/bin/sh\nexec "{node}" "{resolved}" "$@"\n'
+        try:
+            current = (
+                shim.read_text(encoding="utf-8")
+                if shim.is_file() and not shim.is_symlink()
+                else None
+            )
+        except OSError:
+            current = None
+        if current != script:
+            if shim.exists() or shim.is_symlink():
+                shim.unlink()
+            shim.write_text(script, encoding="utf-8")
+            shim.chmod(0o755)
+        return shim
+    try:
+        if (shim.exists() or shim.is_symlink()) and shim.resolve() == resolved:
+            return shim
+    except (OSError, RuntimeError):
+        pass
+    if shim.exists() or shim.is_symlink():
+        shim.unlink()
+    shim.symlink_to(resolved)
+    return shim
+
+
 def _prepend_process_path(directories: list[str]) -> None:
     current = os.environ.get("PATH", "")
     parts = [part for part in current.split(os.pathsep) if part]
@@ -720,6 +770,11 @@ def publish_user_tool_paths(
         shim = _write_python3_shim(bindir, Path(python_path))
         recorded["python3"] = str(shim)
         recorded.setdefault("python", python_path)
+    memory_path = recorded.get("memory")
+    if memory_path:
+        node_value = recorded.get("node") or shutil.which("node")
+        node_path = Path(node_value) if node_value else None
+        _write_memory_shim(bindir, Path(memory_path), node=node_path)
     recorded = dict(sorted(recorded.items()))
     destination = root / "user.properties"
     lines: list[str] = []

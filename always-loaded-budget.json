@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "note": "Always-loaded bytes on a bot host: tool.py entry --full + references/bot-entry.md + AGENTS.md. Binding limit: trim waste and keep every decision. bytes is the measured size, not a target. Lower bytes when the bundle shrinks. Prior measured baseline 26635.",
-  "bytes": 19005,
+  "bytes": 18892,
   "tolerance_pct": 5,
   "shrink_ratchet_pct": 10
 }

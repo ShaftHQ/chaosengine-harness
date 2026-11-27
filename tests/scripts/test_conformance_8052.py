@@ -369,9 +369,10 @@ class ConformanceTests(unittest.TestCase):
             self.assertTrue(any("antigravity" in item and removed in item for item in errors), errors)
 
     def test_nine_host_parity_score_keeps_grok_bot_out_of_hook_pins(self):
-        self.assertEqual((9, 9), self.conformance.host_parity_score())
+        self.assertEqual((10, 10), self.conformance.host_parity_score())
         registry = self.conformance.production_hook_registry()
         self.assertNotIn("grok-bot", registry)
+        self.assertNotIn("openbot", registry)
         self.assertEqual(8, len(registry))
 
 

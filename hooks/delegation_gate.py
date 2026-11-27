@@ -11,6 +11,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -19,6 +20,7 @@ from pathlib import Path
 RECEIPT_NAME = ".chaos-engine-state/delegation-receipt.json"
 REVIEW_ROUNDS_NAME = ".chaos-engine-state/review-rounds.json"
 REVIEW_CHAIN_CAP = 2
+REVIEW_CAP_LIFT_ENV = "CHAOS_ENGINE_REVIEW_CAP_LIFT"
 TTL_SECONDS = 2 * 60 * 60
 BRIEF_MARKERS = ("goal", "file scope", "preserve", "acceptance", "test command", "stop")
 RUNGS = ("free", "ask", "paid", "direct")
@@ -60,8 +62,15 @@ _DIRECT_TOOL = re.compile(
 )
 _VARIANT = re.compile(r"--variant(?:=|\s+)(low|medium|high|max)\b", re.IGNORECASE)
 _VARIANT_RANK = {"low": 0, "medium": 1, "high": 2, "max": 3}
-_REVIEW_SUBJECT = re.compile(r"review-subject:\s*([^\s\"']+)", re.IGNORECASE)
-_ABS_PATH = re.compile(r"(?<![A-Za-z0-9])(/(?:[\w.+@=-]+/)+[\w.+@=-]+)")
+_REVIEW_SUBJECT = re.compile(r"review-subject:\s*([A-Za-z0-9._/@-]+)", re.IGNORECASE)
+_WIN_DRIVE = re.compile(r"^[A-Za-z]:[\\/]")
+_ABS_PATH = re.compile(
+    r"(?<![A-Za-z0-9])("
+    r"/(?:[\w.+@=-]+/)+[\w.+@=-]+"
+    r"|[A-Za-z]:(?:\\\\|\\|/)+(?:[\w.+@=-]+(?:\\\\|\\|/))+[\w.+@=-]+"
+    r")"
+)
+_ENV_ASSIGN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 
 
 def project_root(start: Path) -> Path:
@@ -117,8 +126,8 @@ def validate(payload: dict) -> str | None:
         if free != "selected":
             return "a free writer records free=selected"
         if payload.get("mechanical"):
-            if effort not in {"medium", "high", "max"}:
-                return "a mechanical free writer uses medium, high, or max"
+            if effort not in EFFORTS:
+                return "a mechanical free writer uses low, medium, high, or max"
         elif effort not in {"high", "max"}:
             return "a free writer uses high or max"
         if not payload.get("brief_ok"):
@@ -141,6 +150,10 @@ def validate(payload: dict) -> str | None:
             return "the brief is missing goal, file scope, preserve, acceptance, test command, or stop"
     if rung in {"ask", "direct"} and free != "not-applicable":
         return "ask and direct record free=not-applicable"
+    review_cap = payload.get("review_cap")
+    if review_cap is not None:
+        if isinstance(review_cap, bool) or not isinstance(review_cap, int) or review_cap < REVIEW_CHAIN_CAP:
+            return f"review_cap must be an integer >= {REVIEW_CHAIN_CAP}"
     return None
 
 
@@ -181,12 +194,110 @@ def _editing(text: str) -> bool:
     return _EDIT_VERB.search(_NEGATED_EDIT.sub(" ", text)) is not None
 
 
+def _split_statements(text: str) -> list[str]:
+    """Split shell command text on unquoted ``&&``, ``||``, ``;``, ``|``, and newlines."""
+    parts: list[str] = []
+    buf: list[str] = []
+    quote = ""
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if quote:
+            buf.append(char)
+            if char == quote and text[index - 1] != "\\":
+                quote = ""
+            index += 1
+            continue
+        if char in {"'", '"'}:
+            quote = char
+            buf.append(char)
+            index += 1
+            continue
+        if text.startswith("&&", index) or text.startswith("||", index):
+            parts.append("".join(buf))
+            buf = []
+            index += 2
+            continue
+        if char in {";", "|", "\n", "\r"}:
+            parts.append("".join(buf))
+            buf = []
+            index += 1
+            continue
+        buf.append(char)
+        index += 1
+    parts.append("".join(buf))
+    return [part.strip() for part in parts if part.strip()]
+
+
+def _is_opencode_help(statement: str) -> bool:
+    """True only when the command head is ``opencode`` and that run is help."""
+    if "$(" in statement or "`" in statement:
+        return False
+    if any(mark in statement for mark in (";", "&&", "||")):
+        return False
+    try:
+        parts = shlex.split(statement, posix=True)
+    except ValueError:
+        parts = statement.split()
+    cleaned: list[str] = []
+    skip_next = False
+    for token in parts:
+        if skip_next:
+            skip_next = False
+            continue
+        if token in {">", ">>", "<", "2>", "&>", "1>", "2>>"}:
+            skip_next = True
+            continue
+        if re.match(r"^(?:\d*>&\d+|\d*>>?\S+|<\S+)$", token):
+            continue
+        cleaned.append(token)
+    index = 0
+    while index < len(cleaned) and _ENV_ASSIGN.match(cleaned[index]):
+        index += 1
+    if index >= len(cleaned):
+        return False
+    head = cleaned[index].rsplit("/", 1)[-1].casefold()
+    if head != "opencode":
+        return False
+    rest = cleaned[index + 1 :]
+    for run_idx, tok in enumerate(rest):
+        if not tok.startswith("-") and tok.casefold() != "run":
+            return False
+        if tok.casefold() != "run":
+            continue
+        tail = rest[run_idx + 1 :]
+        return bool(tail) and tail[0] in {"--help", "-h"} and all(
+            item in {"--help", "-h"} for item in tail
+        )
+    return False
+
+
+def _has_real_free_command(raw_text: str) -> bool:
+    """True when at least one unquoted statement is a non-help free-writer dispatch."""
+    matched = False
+    for statement in _split_statements(raw_text):
+        if not _FREE_COMMAND.search(_unquoted(statement)):
+            continue
+        if _is_opencode_help(statement):
+            continue
+        matched = True
+        break
+    return matched
+
+
 def classify(tool_name: str, tool_input: object, commands: tuple[str, ...]) -> str | None:
-    command_text = _unquoted("\n".join(commands))
-    if _FREE_COMMAND.search(command_text) or (
-        _SHELL_TOOL.search(tool_name or "") and _FREE_COMMAND.search(_unquoted(_blob(tool_input)))
-    ):
+    raw_commands = "\n".join(commands)
+    command_text = _unquoted(raw_commands)
+    if _FREE_COMMAND.search(command_text) and _has_real_free_command(raw_commands):
         return "free-writer"
+    if _SHELL_TOOL.search(tool_name or "") and _FREE_COMMAND.search(_unquoted(_blob(tool_input))):
+        raw_input = (
+            str(tool_input.get("command") or "")
+            if isinstance(tool_input, dict) and isinstance(tool_input.get("command"), str)
+            else _blob(tool_input)
+        )
+        if _has_real_free_command(raw_input):
+            return "free-writer"
     if _WRITER_TOOL.match(tool_name or ""):
         kind = _subagent_type(tool_input)
         text = _blob(tool_input)
@@ -228,7 +339,8 @@ def _free_problem(receipt: dict, command_text: str) -> str | None:
         return "delegation ladder: free opencode dispatch must pass --variant high or max."
     if variant is None:
         variant = "high"
-    floor = "medium" if mechanical and receipt.get("effort") == "medium" else "high"
+    effort = str(receipt.get("effort") or "high")
+    floor = effort if (mechanical and effort in {"low", "medium"}) else "high"
     if _VARIANT_RANK[variant] < _VARIANT_RANK[floor]:
         return "delegation ladder: free opencode dispatch must pass --variant high or max."
     return None
@@ -239,7 +351,7 @@ def _git_branch(path: Path) -> str:
     env.pop("GIT_DIR", None)
     env.pop("GIT_WORK_TREE", None)
     try:
-        completed = subprocess.run(
+        completed = subprocess.run(  # nosec B603 B607
             ["git", "-C", os.fspath(path), "symbolic-ref", "--short", "HEAD"],
             check=False,
             capture_output=True,
@@ -259,7 +371,7 @@ def _explicit_cwd(tool_input: object) -> Path | None:
         return None
     for key in ("cwd", "directory", "dir", "workdir"):
         value = tool_input.get(key)
-        if isinstance(value, str) and value.startswith("/"):
+        if isinstance(value, str) and (value.startswith("/") or _WIN_DRIVE.match(value)):
             path = Path(value)
             if path.is_dir():
                 return path
@@ -271,7 +383,10 @@ def review_subject(tool_input: object, cwd: Path) -> str:
     blob = _blob(tool_input)
     marker = _REVIEW_SUBJECT.search(blob)
     if marker:
-        return marker.group(1)
+        # `.` is a legal subject character; a trailing sentence period is not the key.
+        subject = marker.group(1).rstrip(".")
+        if subject:
+            return subject
     explicit = _explicit_cwd(tool_input)
     if explicit is not None:
         branch = _git_branch(explicit)
@@ -290,30 +405,63 @@ def review_subject(tool_input: object, cwd: Path) -> str:
     return "unscoped"
 
 
-def _review_chain_block(tool_input: object, cwd: Path) -> str | None:
-    """Refuse a third adversarial review of one subject. Count only an allowed spawn."""
-    root = project_root(cwd)
-    subject = review_subject(tool_input, cwd)
-    path = root / REVIEW_ROUNDS_NAME
+def _review_cap(root: Path, now: float | None = None) -> int:
+    """Default 2; explicit owner lift via receipt ``review_cap`` or ``CHAOS_ENGINE_REVIEW_CAP_LIFT``."""
+    cap = REVIEW_CHAIN_CAP
+    receipt = load_receipt(root, now)
+    if receipt is not None:
+        lifted = receipt.get("review_cap")
+        if isinstance(lifted, int) and not isinstance(lifted, bool) and lifted > cap:
+            cap = lifted
+    raw_env = os.environ.get(REVIEW_CAP_LIFT_ENV, "").strip()
+    if raw_env.isdigit():
+        env_cap = int(raw_env)
+        if env_cap > cap:
+            cap = env_cap
+    return cap
+
+
+def _load_review_subjects(path: Path) -> dict[str, int]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         payload = {}
     subjects = payload.get("subjects") if isinstance(payload, dict) else None
     if not isinstance(subjects, dict):
-        subjects = {}
+        return {}
+    return {
+        str(k): v
+        for k, v in subjects.items()
+        if isinstance(v, int) and not isinstance(v, bool)
+    }
+
+
+def check_review_chain(tool_input: object, cwd: Path, now: float | None = None) -> str | None:
+    """Check the review chain cap without incrementing ``review-rounds.json``."""
+    root = project_root(cwd)
+    subject = review_subject(tool_input, cwd)
+    cap = _review_cap(root, now)
+    subjects = _load_review_subjects(root / REVIEW_ROUNDS_NAME)
     used = subjects.get(subject, 0)
-    if not isinstance(used, int) or isinstance(used, bool):
-        used = 0
-    if used >= REVIEW_CHAIN_CAP:
+    if used >= cap:
+        count_label = "two" if cap == 2 else str(cap)
         return (
             "delegation ladder: subject "
-            f"{subject} used its two adversarial reviews. "
+            f"{subject} used its {count_label} adversarial reviews. "
             "Name review-subject for a different change. "
             "Close the class in the edit and prove that class with the test. "
             "Do not open another reviewer for a further example."
         )
-    subjects[subject] = used + 1
+    return None
+
+
+def record_review_round(tool_input: object, cwd: Path) -> str | None:
+    """Increment ``review-rounds.json`` for the review subject after all PreToolUse gates pass."""
+    root = project_root(cwd)
+    subject = review_subject(tool_input, cwd)
+    path = root / REVIEW_ROUNDS_NAME
+    subjects = _load_review_subjects(path)
+    subjects[subject] = subjects.get(subject, 0) + 1
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps({"subjects": subjects}, indent=2) + "\n", encoding="utf-8")
@@ -322,18 +470,37 @@ def _review_chain_block(tool_input: object, cwd: Path) -> str | None:
     return None
 
 
+def _review_chain_block(
+    tool_input: object,
+    cwd: Path,
+    *,
+    commit: bool = True,
+    now: float | None = None,
+) -> str | None:
+    """Refuse a review past the cap. Count only when ``commit`` is true."""
+    denied = check_review_chain(tool_input, cwd, now=now)
+    if denied is not None:
+        return denied
+    if not commit:
+        return None
+    return record_review_round(tool_input, cwd)
+
+
 def writer_block(
     tool_name: str,
     tool_input: object,
     commands: tuple[str, ...],
     cwd: Path,
     now: float | None = None,
+    *,
+    commit_review: bool = True,
+    is_subagent: bool = False,
 ) -> str | None:
     kind = classify(tool_name, tool_input, commands)
     if kind is None:
         return None
     if kind == "review":
-        return _review_chain_block(tool_input, cwd)
+        return _review_chain_block(tool_input, cwd, commit=commit_review, now=now)
     root = project_root(cwd)
     receipt = load_receipt(root, now)
     if receipt is None:
@@ -346,7 +513,12 @@ def writer_block(
     problem = validate(receipt)
     if problem:
         return f"delegation ladder: receipt is not valid ({problem})."
-    if kind == "direct-edit" and receipt.get("rung") != "direct":
+    paid_subagent_edit = (
+        is_subagent
+        and receipt.get("rung") == "paid"
+        and bool(receipt.get("brief_ok"))
+    )
+    if kind == "direct-edit" and receipt.get("rung") != "direct" and not paid_subagent_edit:
         return "delegation ladder: a direct host edit needs rung=direct."
     if kind == "host-writer" and receipt.get("rung") != "paid":
         return "delegation ladder: a host writer is the paid fallback. The receipt rung is not paid."
@@ -370,7 +542,7 @@ def _payload_from_args(args: argparse.Namespace, root: Path) -> dict:
         brief = brief_path.resolve().as_posix()
     if args.rung in {"free", "paid"} and not args.brief:
         raise SystemExit("delegation ladder: --brief is required for free and paid")
-    return {
+    payload: dict[str, object] = {
         "rung": args.rung,
         "effort": args.effort,
         "free": args.free,
@@ -384,6 +556,9 @@ def _payload_from_args(args: argparse.Namespace, root: Path) -> dict:
         "root": root.resolve().as_posix(),
         "recorded_at": time.time(),
     }
+    if args.review_cap is not None:
+        payload["review_cap"] = args.review_cap
+    return payload
 
 
 def record(args: argparse.Namespace) -> int:
@@ -416,6 +591,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--tier", default="cheapest", choices=TIERS)
     parser.add_argument("--mechanical", action="store_true")
     parser.add_argument("--escalated", action="store_true")
+    parser.add_argument("--review-cap", type=int, default=None)
     parser.add_argument("--root", default=".")
     return parser
 

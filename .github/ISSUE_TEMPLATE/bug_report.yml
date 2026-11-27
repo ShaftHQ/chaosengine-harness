@@ -44,6 +44,7 @@ body:
         - OpenCode
         - Cursor
         - Grok Bot
+        - OpenBot
         - Antigravity
         - Independent bot
         - Other
@@ -69,7 +70,7 @@ body:
     attributes:
       label: VERSION
       description: Contents of the VERSION file, or the version doctor printed.
-      placeholder: "0.4.20261114.5"
+      placeholder: "1.20261126.0"
     validations:
       required: true
   - type: textarea

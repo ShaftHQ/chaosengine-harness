@@ -403,14 +403,15 @@ NINE_HOST_LABELS = (
     ("cursor", "Cursor"),
     ("antigravity", "Antigravity"),
     ("grok-bot", "Grok Bot"),
+    ("openbot", "OpenBot"),
 )
 
 
 def host_parity_score(tree: Path | None = None) -> tuple[int, int]:
-    """(ready, 9). Each host needs a guide and a matrix label.
+    """(ready, 10). Each host needs a guide and a matrix label.
 
-    grok-bot stays out of production_hook_registry. CLAUDE.md and GEMINI.md,
-    when present, must stay a single @AGENTS.md pointer.
+    grok-bot and openbot stay out of production_hook_registry. CLAUDE.md and
+    GEMINI.md, when present, must stay a single @AGENTS.md pointer.
     """
     root = Path(tree) if tree is not None else Path(__file__).resolve().parents[1]
     guides = root / "guides" / "tools"

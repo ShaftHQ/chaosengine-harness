@@ -2,7 +2,7 @@
 
 Operator-facing companion for [local-agency](../skills/local-agency/SKILL.md).
 
-ChaosEngine does **not** install OpenCode. When you want OpenCode against
+ChaosEngine never installs OpenCode without explicit owner approval (delegation ladder rung 3). When you want OpenCode against
 already-running local weights, CE routes to a READY loopback runtime and emits
 ephemeral OpenCode config with `enabled_providers` limited to that runtime —
 never `ft launch`, never a silent OmniRoute hop. OpenCode merges global config;
@@ -27,7 +27,7 @@ python3 skills/local-agency/scripts/dispatch.py argv --prompt 'smoke' --workdir 
 `config` prints JSON with `env.OPENCODE_CONFIG` pointing at a temp
 `opencode.json`. Export that for one process only. Do not merge it into
 `~/.config/opencode/opencode.json`. `argv` includes `--pure` and `--variant`
-(default `medium`).
+(default `high`; `medium` or lower only with `--mechanical`).
 
 
 
@@ -96,6 +96,17 @@ With a READY local runtime on loopback:
 2. `OPENCODE_CONFIG=<ephemeral>` `opencode run --pure --variant high …` (further effort follows the delegation ladder)
 3. Durable `~/.config/opencode/opencode.json` hash unchanged
 
+## OpenCode free-model dispatch workflow (Rung 1)
+
+See [delegation](../references/delegation.md) and [local-agency SKILL.md](../skills/local-agency/SKILL.md) for the canonical workflow; never restate the [delegation ladder](../skills/chaos-engine/SKILL.md#delegation-ladder):
+
+1. **Probe free models:** run `opencode models` to list reachable `$0` endpoints (for example `opencode/deepseek-v4.1-flash-free`, `opencode/big-pickle`, `opencode/mimo-v2.6-flash-free`, `opencode/nemotron-3.5-super-vl-free`) or resolve local Ollama via `dispatch.py resolve`.
+2. **Stage the brief inside the worktree:** write each worker's brief inside its isolated git worktree (e.g., `.ce-brief.md`, untracked and never staged/committed) so OpenCode's `external_directory` permission guard does not auto-reject reading it.
+3. **Record the Rung 1 receipt:** run `python3 .chaos-engine/hooks/delegation_gate.py record --rung free --free selected --effort high --brief <brief-path> --why "..."` before `opencode run --model <free-model> --variant high "..."` (for parallel fan-out across N isolated worktrees, record a master brief referenced in each command or record sequentially per stream).
+4. **Parallel rate-limit hygiene:** spread parallel free writers across distinct free models (or cap to 1–2 concurrent workers per free endpoint) so concurrent `--variant high` sessions do not hit a shared free-tier rate limit.
+5. **Stall / complexity escalation (Rung 4):** if a free writer stalls (no product-file change and no delegate-log progress for 3–5 minutes; tool calls and tokens in the delegate log are progress) or fails acceptance checks on large/multi-file modules, cancel it, try another free model if available or record Rung 4 (`--rung paid --free too-complex --effort low --tier cheapest --brief <brief-path> --why "<evidence>"`), and dispatch parallel cheapest-paid host subagents (e.g., `flash` / lowest sufficient tier) across the same file-disjoint worktrees.
+6. **Subagent edit receipt note:** a spawned subagent with a valid paid receipt may edit. The main session still records `rung=direct` for its own direct edit.
+
 
 ## ROG FreeToken bind (#6021 / #6051)
 
@@ -158,7 +169,7 @@ Local channel actual cost is $0 unless a paid local host was used.
 
 When the work machine has a proven OpenAI-compat loopback coding runtime:
 
-1. Prefer `dispatch.py --prefer llamacpp` (or `ollama` / `lmstudio`; not FreeToken) for local writers.
+1. Operator-specific override: `dispatch.py --prefer llamacpp` (or `ollama` / `lmstudio`; not FreeToken) for local writers.
 2. Parent Shell with `machineId` on the work machine — Task children have no
    `machineId` (#6051).
 3. Keep a single user systemd unit for the loopback server so it returns after
@@ -167,7 +178,7 @@ When the work machine has a proven OpenAI-compat loopback coding runtime:
 4. Record local token usage and report avoided cloud spend on delivery close
    (see Cost and savings reporting above).
 
-FreeToken remains an optional companion skill in-tree; it is not the default
+FreeToken remains an optional companion skill in-tree; `--prefer llamacpp` is an operator-specific override and FreeToken is not the default
 writer on hosts that locked OpenAI-compat.
 
 ## Session agents vs local agency

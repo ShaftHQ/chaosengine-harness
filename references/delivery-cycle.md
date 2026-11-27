@@ -52,7 +52,7 @@ Set the budget before the first review.
 - **MIN.** At least 1. There is no zero-review path. Two reviewers for a public contract, irreversible work, or an outbound action (ShaftHQ/SHAFT_ENGINE#8048 R2, ShaftHQ/SHAFT_ENGINE#8055). This budget does not lower that floor.
 - **MAX.** Small reversible work (docs only, or one file): MAX = MIN. A larger change is 2. MAX never exceeds two adversarial reviews. The PDCA cap of 3 counts the class-close edit. It does not add a third reviewer.
 - **At MAX.** A finding blocks only if it is wrong, unsafe, or untruthful. Log every other finding as a follow-up. It does not start another round.
-- **Next review.** A blocker fix is a new head and the next sequential review, which counts as a round. A timeout counts as the round already used and falls back to self-review with no retry. If no round is left within MAX, stop and report.
+- **Next review.** A blocker fix on review 1 is a new head and the second sequential review, which counts as a round. A second failed review ends the chain: close that class in the edit and prove it with the named test; no third reviewer runs unless lifted by explicit owner instruction. A timeout counts as the round already used and falls back to self-review with no retry. If no round is left within MAX, stop and report.
 - **Handoff.** Record `review_budget` (min, max, inputs), `review_rounds_used`, and the logged follow-ups (ShaftHQ/SHAFT_ENGINE#8054).
 - **Owner override.** An explicit owner instruction may set the budget, but never below MIN. When it also says to fix blockers and then merge without another round, that lifts the new-commit sentence for that item only.
 

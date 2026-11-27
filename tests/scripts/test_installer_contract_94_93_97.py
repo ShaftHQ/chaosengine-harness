@@ -299,6 +299,10 @@ class EscalatingDoctorContractTest(unittest.TestCase):
     def test_degraded_mempalace_stays_installed(self):
         installer = _installer()
         document = self._document(installer, "degraded")
+        # Real MemPalace impact is advisory. Required degraded is test_d4.
+        document["components"]["mempalace"]["taskImpact"] = "advisory"
+        document["status"] = "healthy"
+        installer.reconcile_doctor_overall_status(document)
         self.assertEqual("healthy", document["status"])
         with tempfile.TemporaryDirectory() as temporary:
             project = Path(temporary)

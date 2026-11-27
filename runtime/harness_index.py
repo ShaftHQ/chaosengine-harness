@@ -20,7 +20,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parents[1]
 INDEX_NAME = "harness-index.json"
 CATALOG = "references/catalog.md"
-HOSTS = ("claude", "codex", "copilot", "gemini", "grok", "opencode", "cursor", "grok-bot", "antigravity")
+HOSTS = ("claude", "codex", "copilot", "gemini", "grok", "opencode", "cursor", "grok-bot", "openbot", "antigravity")
 HOOK_HOSTS = ("claude", "codex", "copilot", "gemini", "grok", "opencode", "cursor", "antigravity")
 HARNESS_ROOTS = (
     ".chaos-engine/",
@@ -133,7 +133,7 @@ SKILLS = (
      "Use when local-runtimes selected the OmniRoute process for bounded work: runner, delegate "
      "continuity, capability enforcement and proof of dispatch.", "local-runtime"),
     ("freetoken", "route", "skills/freetoken/SKILL.md",
-     "Standalone FreeToken process: install, READY probe and bounded dispatch. Use when the "
+     "Standalone FreeToken process: READY probe and bounded dispatch. Use when the "
      "local-runtimes table points a job at FreeToken rather than a loopback server.", "local-runtime"),
     ("colibri", "route", "skills/colibri/SKILL.md",
      "Frontier MoE through a disk/RAM/VRAM hierarchy via the optional Colibri process. Use when a "

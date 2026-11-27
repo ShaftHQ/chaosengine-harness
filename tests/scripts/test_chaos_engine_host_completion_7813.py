@@ -29,6 +29,7 @@ HOST_IDS = (
     "antigravity",
     "grok-bot",
 )
+INSTALL_HOST_IDS = (*HOST_IDS, "openbot")
 IMPLICIT_ENV = (
     "CHAOS_ENGINE_HOST",
     "CLAUDE_CODE_ENTRYPOINT",
@@ -83,6 +84,7 @@ class MatrixContractTests(unittest.TestCase):
             {
                 "grok-bot": "GAP-GROKBOT-HOOKS",
                 "independent-bot": "GAP-BOT-ENTRY",
+                "openbot": "GAP-OPENBOT-HOOKS",
             },
             {host: row["gap"] for host, row in hosts.INSTRUCTION_ONLY_HOSTS.items()},
         )
@@ -124,7 +126,7 @@ class ResolverTests(unittest.TestCase):
     def test_two_clients_and_unknown_ids_fail_closed(self):
         with self.assertRaisesRegex(self.bootstrap.InstallHostError, "claude and codex"):
             self.resolve(CLAUDE_PLUGIN_ROOT="/claude", CODEX_HOME="/codex")
-        with self.assertRaisesRegex(self.bootstrap.InstallHostError, "choose from: " + ", ".join(HOST_IDS)):
+        with self.assertRaisesRegex(self.bootstrap.InstallHostError, "choose from: " + ", ".join(INSTALL_HOST_IDS)):
             self.bootstrap.parse_install_hosts("not-a-host")
         with self.assertRaisesRegex(self.bootstrap.InstallHostError, "conflicts with --hosts"):
             self.resolve("grok", CHAOS_ENGINE_HOST="codex")
@@ -206,7 +208,7 @@ class InteractiveSelectionTests(unittest.TestCase):
             self.bootstrap.ask_completion_hosts(
                 input_stream=io.StringIO("not-a-host\n"), output=rejected, which=lambda _name: None
             )
-        self.assertIn("Unknown client. Choose from: " + ", ".join(HOST_IDS), rejected.getvalue())
+        self.assertIn("Unknown client. Choose from: " + ", ".join(INSTALL_HOST_IDS), rejected.getvalue())
 
     def test_interactive_asks_once_and_explicit_hosts_skip_the_question(self):
         self._wizard("grok\ny\ny\n", hosts=None, expected=("grok",), question=True)
@@ -928,7 +930,7 @@ class AddonSeparationTests(unittest.TestCase):
         prerequisites = load("ce_prerequisites_7818", CE / "runtime" / "prerequisites.py")
         found = catalog.discover(CE)
         self.assertEqual([], catalog.resolve(found, set(), set(), set()))
-        for host in HOST_IDS:
+        for host in INSTALL_HOST_IDS:
             self.assertNotIn(host, found)
         with mock.patch.dict(os.environ, quiet_host_env(), clear=True):
             options = install.bundle_from_install_args(install.parser().parse_args([

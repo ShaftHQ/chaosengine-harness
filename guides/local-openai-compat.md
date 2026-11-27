@@ -2,13 +2,13 @@
 
 Optional local OpenAI-compatible servers treated as **third-party integrations**
 in the same class as FreeToken and OmniRoute: probe and dispatch against an
-already-running loopback server. ChaosEngine never installs them.
+already-running loopback server. ChaosEngine never installs them without explicit owner approval (delegation ladder rung 3).
 
 | | OmniRoute | FreeToken | Local OpenAI-compat |
 | --- | --- | --- | --- |
 | Role | Optional cloud-quota transport | Optional local MoE / weights | Optional Ollama / LM Studio / llama.cpp |
 | Loopback defaults | `http://127.0.0.1:20128` | `http://127.0.0.1:1919` | `:11434` / `:1234` / `:8080` |
-| ChaosEngine | Never installs providers | Never installs or starts `ft` | Never installs or starts these servers |
+| ChaosEngine | Never installs providers without explicit owner approval (delegation ladder rung 3) | Never installs or starts `ft` without explicit owner approval (delegation ladder rung 3) | Never installs or starts these servers without explicit owner approval (delegation ladder rung 3) |
 | Coupling | None to FreeToken | None to OmniRoute | None to OmniRoute or FreeToken |
 
 Skill: [local-openai-compat](../skills/local-runtimes/references/local-openai-compat.md).

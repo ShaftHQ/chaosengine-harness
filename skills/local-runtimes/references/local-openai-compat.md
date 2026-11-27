@@ -23,7 +23,7 @@ slot when the models path is loopback `/v1/models`.
 ## Hard rails (never regress)
 
 - Do **not** install Ollama, LM Studio, llamacpp, or download weights from this
-  skill. Do **not** start their servers from ChaosEngine.
+  skill without explicit owner approval (delegation ladder rung 3). Do **not** start their servers from ChaosEngine.
 - Do **not** rewrite Claude / Codex / OpenCode durable host config from here.
 - Do **not** clear cloud API keys. Do not persist route, model, or provider IDs
   in receipts or repository files.

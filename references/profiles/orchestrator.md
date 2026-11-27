@@ -17,7 +17,7 @@ Sixteen canonical skill names and five workflow sources. Each row is reuse of a 
 | Item | Disposition | Where |
 | --- | --- | --- |
 | automatest-voice | deferred | Private source, not ported |
-| chaosengine-bot-entry | reuse | `chaos-engine/references/bot-entry.md` |
+| references/bot-entry.md | reuse | `chaos-engine/references/bot-entry.md` |
 | host-cli-handoff | deferred | Private source, not ported |
 | job-applications | reuse | `chaos-engine/skills/job-applications/SKILL.md`, `chaos-engine/skills/job-apply/SKILL.md`, `chaos-engine/skills/job-search/SKILL.md` |
 | training-deck-design | reuse | `chaos-engine/skills/technical-presentations/SKILL.md`, `chaos-engine/addons/design-skills/references/craft/training-decks.md` |

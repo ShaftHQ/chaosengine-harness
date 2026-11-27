@@ -13,5 +13,5 @@ When the **same stage or gate fails twice**, a task **overruns its budget**, or
    beside the verified-findings round cap.
 
 Enforced by [`lessons_repeat_failure_pdca.py`](../../../rules/lessons_repeat_failure_pdca.py)
-(`evaluate_repeat_failure_pdca`). Always-loaded: [bot-entry](../../bot-entry.md#repeat-failure-pdca)
+(`evaluate_repeat_failure_pdca`). Always-loaded: [bot-entry](../../bot-entry.md#caps)
 and ChaosEngine skill Check and deliver.

@@ -6241,16 +6241,22 @@ def account_dependency_records_healthy(records: object) -> bool:
 def component_escalates_overall(item: dict[str, object]) -> bool:
     """Return True when one component should flip overall doctor to recovery-required.
 
-    Soft statuses (compatible-legacy / sync-advisory / degraded) never escalate
-    overall health (#G1). Optional absences stay non-blocking. Hard fails on
-    advisory stores (e.g. mempalace recovery-required) still escalate so doctor
-    stays strict for broken knowledge stores.
+    Soft statuses (compatible-legacy / sync-advisory, and advisory degraded)
+    never escalate overall health (#G1). Any component with error severity
+    (including degraded required or required-when-indexed components such as
+    graphify) fails closed and escalates overall doctor (#260).
     """
     status = str(item.get("status") or "unknown")
     impact = str(item.get("taskImpact") or "required")
-    if status in DOCTOR_NON_ESCALATING_STATUSES:
+    if status in {"healthy", "compatible-legacy", "sync-advisory"}:
         return False
     if impact == "optional":
+        return False
+    if status == "degraded":
+        return _component_severity(item) == "error"
+    if status == "empty" and impact == "advisory":
+        return False
+    if status in DOCTOR_NON_ESCALATING_STATUSES:
         return False
     # Advisory absences (e.g. gh CLI) are info-only; hard advisory fails still escalate.
     if status == "absent" and impact in {"advisory", "required-when-indexed"}:
@@ -6411,6 +6417,7 @@ _CORE_HOOK_SCRIPTS = (
 _INSTRUCTION_ONLY_GAPS = {
     "grok-bot": "GAP-GROKBOT-HOOKS",
     "independent-bot": "GAP-BOT-ENTRY",
+    "openbot": "GAP-OPENBOT-HOOKS",
 }
 _SELF_ENFORCED_COMMANDS = (
     "entry --full",
@@ -6519,10 +6526,48 @@ def _set_learning_enforcement(hooks: dict[str, object], hosts: list[str]) -> Non
     session["gateInstalled"] = False
 
 
+def _openbot_contract_check(project: Path, target: Path, host_controller: object | None = None) -> dict[str, object]:
+    """Verify OpenBot's canonical router skill contract (#260)."""
+    checker = getattr(host_controller, "openbot_skill_contract_status", None) if host_controller is not None else None
+    if callable(checker):
+        return checker(project)
+    try:
+        loaded = load_installed_controller(target, "hosts")
+        checker = getattr(loaded, "openbot_skill_contract_status", None)
+        if callable(checker):
+            return checker(project)
+    except (OSError, ImportError, RuntimeError, SyntaxError, ValueError):
+        pass
+    skill_path = target / "skills/chaos-engine/SKILL.md"
+    agents_path = project / "AGENTS.md"
+    if not skill_path.is_file() or not agents_path.is_file():
+        return {
+            "status": "recovery-required",
+            "code": "CE_OPENBOT_SKILL_MISSING",
+            "host": "openbot",
+            "enforcement": "instruction-only",
+            "retrieveMode": "explicit-retrieve-receipt",
+            "claimsHookEnforcement": False,
+            "detail": (
+                "OpenBot canonical router skill .chaos-engine/skills/chaos-engine/SKILL.md "
+                "or AGENTS.md is missing (instruction-only; explicit retrieve receipt; no hook enforcement)."
+            ),
+        }
+    return {
+        "status": "healthy",
+        "host": "openbot",
+        "enforcement": "instruction-only",
+        "retrieveMode": "explicit-retrieve-receipt",
+        "claimsHookEnforcement": False,
+    }
+
+
 def _apply_completion_hook_health(
     project: Path,
     target: Path,
     components: dict[str, dict[str, object]],
+    *,
+    host_controller: object | None = None,
 ) -> None:
     """Scope hook health to completion targets. Instruction-only hosts stay advisory."""
     hooks = components.get("hooks")
@@ -6534,6 +6579,21 @@ def _apply_completion_hook_health(
     targets = read_completion_targets(project)
     expected = [host for host in hosts if host in targets] if targets else list(hosts)
     rows = _instruction_only_rows(targets)
+    if "openbot" in targets:
+        contract = _openbot_contract_check(project, target, host_controller=host_controller)
+        hooks["openbotContract"] = contract
+        if contract.get("status") != "healthy":
+            hooks["status"] = "recovery-required"
+            hooks["taskImpact"] = "required"
+            hooks["scope"] = "completion-target"
+            hooks["completionTargets"] = list(targets)
+            hooks["hookHostsExpected"] = [paths[host] for host in expected if host in paths]
+            if rows:
+                hooks["instructionOnly"] = rows
+            hooks["code"] = str(contract.get("code") or "CE_OPENBOT_SKILL_MISSING")
+            hooks["detail"] = str(contract.get("detail") or "OpenBot canonical router skill is missing.")
+            hooks["fixNext"] = f"{_doctor_python_cli()} .chaos-engine/install.py repair --project . --component core"
+            return
     missing = [
         paths[host]
         for host in expected
@@ -6546,7 +6606,10 @@ def _apply_completion_hook_health(
         hooks["completionTargets"] = list(targets)
         hooks["hookHostsExpected"] = []
         hooks["instructionOnly"] = rows
-        hooks["detail"] = _instruction_only_detail(rows)
+        detail = _instruction_only_detail(rows)
+        if "openbot" in targets:
+            detail += "; explicit retrieve receipt; no hook enforcement"
+        hooks["detail"] = detail
         hooks["learningSession"] = {
             "status": "advisory",
             "enforcedBy": "self",
@@ -6559,6 +6622,10 @@ def _apply_completion_hook_health(
         hooks["hookHostsMissing"] = missing
         hooks["fixNext"] = "repair --project . --component hooks"
         hooks["hookHostsExpected"] = [paths[host] for host in expected if host in paths]
+        # No selected host: the row stays visible and must not fail the install.
+        # A completion target that is missing still keeps taskImpact required.
+        if not targets:
+            hooks["taskImpact"] = "advisory"
         if rows:
             hooks["instructionOnly"] = rows
             hooks["completionTargets"] = list(targets)
@@ -6748,8 +6815,42 @@ def attach_component_status(
     # Surface top-level hosts failures as a component row so they cannot mask
     # later checks (and later checks cannot hide hosts) (#2026.10.31.4).
     _promote_hosts_into_components(result, components)
-    _apply_completion_hook_health(project, target, components)
+    _apply_completion_hook_health(project, target, components, host_controller=host_controller)
     _finalize_doctor_component_rows(result, project, components)
+
+
+def _record_grok_doctor_probe(
+    result: dict[str, object],
+    project: Path,
+    host_controller: object,
+    completion_targets: tuple[str, ...],
+) -> None:
+    """Record the Grok probe. A failed or unbound probe does not make OpenBot a Grok hook host."""
+    classifier = getattr(host_controller, "classify_instruction_host", None)
+    instruction_host = (
+        classifier(project, targets=completion_targets) if callable(classifier) else None
+    )
+    grok_probe = host_controller.grok_runtime_status(project)  # type: ignore[attr-defined]
+    hosts = result["hosts"]
+    hosts["grok"] = grok_probe  # type: ignore[index]
+    completion_openbot = "openbot" in completion_targets and "grok" not in completion_targets
+    classified_openbot = instruction_host == "openbot" and "grok" not in completion_targets
+    failed_or_unbound = isinstance(grok_probe, dict) and grok_probe.get("status") == "failed"
+    if (
+        isinstance(grok_probe, dict)
+        and grok_probe.get("status") in {"sync-advisory", "failed"}
+        and not completion_openbot
+        and not (classified_openbot and failed_or_unbound)
+        and hosts.get("status") == "healthy"  # type: ignore[attr-defined]
+    ):
+        hosts["hostEnvironment"] = {  # type: ignore[index]
+            "status": "sync-advisory",
+            "detail": "grok-hooks-probe",
+            "fixNext": str(
+                grok_probe.get("detail")
+                or "Trust and reload Grok project hooks, then rerun doctor."
+            ),
+        }
 
 
 def status_with_dependencies(project: Path, *, active_probes: bool = False) -> dict[str, object]:
@@ -6811,24 +6912,14 @@ def status_with_dependencies(project: Path, *, active_probes: bool = False) -> d
                 pending_rollback=pending_rollback,
             )
             if active_probes:
+                completion_targets = read_completion_targets(project)
+                openbot_checker = getattr(host_controller, "openbot_skill_contract_status", None)
+                if "openbot" in completion_targets and callable(openbot_checker):
+                    result["hosts"]["openbot"] = openbot_checker(project)  # type: ignore[index]
                 # Grok CLI trust/loaded-hooks probe is host-environment, not install-owned (#5699).
                 # Untrusted/incomplete hooks are sync-advisory only; never flip overall/hosts
                 # to recovery-required solely for Grok trust.
-                grok_probe = host_controller.grok_runtime_status(project)
-                result["hosts"]["grok"] = grok_probe  # type: ignore[index]
-                if (
-                    isinstance(grok_probe, dict)
-                    and grok_probe.get("status") == "sync-advisory"
-                    and result["hosts"].get("status") == "healthy"  # type: ignore[index]
-                ):
-                    result["hosts"]["hostEnvironment"] = {  # type: ignore[index]
-                        "status": "sync-advisory",
-                        "detail": "grok-hooks-probe",
-                        "fixNext": str(
-                            grok_probe.get("detail")
-                            or "Trust and reload Grok project hooks, then rerun doctor."
-                        ),
-                    }
+                _record_grok_doctor_probe(result, project, host_controller, completion_targets)
                 codex_status = getattr(host_controller, "codex_hook_status", None)
                 if callable(codex_status):
                     codex_probe = codex_status(
@@ -9762,13 +9853,13 @@ def _attach_l84_l92_doctor_findings(
     mempalace = components.get("mempalace")
     if isinstance(mempalace, dict):
         status = str(mempalace.get("status") or "")
-        if status in {"healthy", "initialization-required", "degraded", "absent"}:
+        if status in {"healthy", "initialization-required", "degraded", "empty", "absent"}:
             sqlite_miss = _mempalace_sqlite_missing_finding(project)
             if sqlite_miss is not None:
                 components["mempalace"] = {**mempalace, **sqlite_miss}
                 mempalace = components["mempalace"]
                 status = str(mempalace.get("status") or status)
-        if status in {"healthy", "initialization-required", "degraded", "invalid", "absent"}:
+        if status in {"healthy", "initialization-required", "degraded", "empty", "invalid", "absent"}:
             previous_empty = _mempalace_empty_previous_finding(project)
             if previous_empty is not None and isinstance(mempalace, dict):
                 # Keep a stronger invalid sqlite miss over a degraded previous-* note.
@@ -10110,12 +10201,12 @@ def _ce_version_after_upgrade_finding(
 def _mempalace_empty_finding(
     project: Path, index: dict[str, object] | None
 ) -> dict[str, object] | None:
-    """#6377: a finished, failed or interrupted mine that left zero drawers is degraded.
+    """#260: a project palace with zero drawers is empty, never healthy.
 
-    No index record means the installer never started a mine; a running mine is
-    still filling the palace. Neither is evidence of an empty index yet.
+    A running mine is still filling the palace, and an absent palace has no
+    sqlite_exact.sqlite3 (count is None).
     """
-    if not isinstance(index, dict) or index.get("status") == "running":
+    if isinstance(index, dict) and index.get("status") == "running":
         return None
     try:
         stores = _load_stores_module()
@@ -10125,8 +10216,11 @@ def _mempalace_empty_finding(
     if count != 0:
         return None
     return {
-        "status": "degraded",
-        "detail": "MemPalace palace has zero drawers; retrieval returns nothing",
+        "status": "empty",
+        "detail": (
+            "MemPalace project palace has 0 drawers; retrieval returns nothing "
+            "(check mempalace.yaml exclude patterns or run repair/mine)."
+        ),
         "fixNext": f"{_doctor_python_cli()} .chaos-engine/install.py repair --project . --component mempalace",
     }
 
@@ -10538,12 +10632,20 @@ def token_economy_status(root: Path | None = None) -> tuple[str, ...]:
     return (status,) if status == "pass" else (status, f"({reason})")
 
 
-DOCTOR_FAILING_STATUSES = frozenset({"recovery-required", "failed"})
+DOCTOR_FAILING_STATUSES = frozenset({"recovery-required", "failed", "degraded"})
 
 
 def doctor_exit_code(document: dict[str, object]) -> int:
-    """Doctor exits non-zero when recovery is required, in every output mode."""
-    return 1 if str(document.get("status") or "") in DOCTOR_FAILING_STATUSES else 0
+    """Doctor exits non-zero when recovery is required or any error component fails."""
+    if str(document.get("status") or "") in DOCTOR_FAILING_STATUSES:
+        return 1
+    components = document.get("components")
+    if isinstance(components, dict) and any(
+        isinstance(item, dict) and component_escalates_overall(item)
+        for item in components.values()
+    ):
+        return 1
+    return 0
 
 
 def installed_project() -> Path:
@@ -10776,8 +10878,17 @@ def _hooks_instruction_advisory(document: dict[str, object]) -> str | None:
     rows = hooks.get("instructionOnly")
     if not isinstance(rows, list) or not rows:
         return None
+    gaps = list(
+        dict.fromkeys(
+            str(row.get("gap") or "")
+            for row in rows
+            if isinstance(row, dict) and row.get("gap")
+        )
+    )
+    if not gaps:
+        gaps = ["GAP-GROKBOT-HOOKS"]
     commands = ", ".join(_SELF_ENFORCED_COMMANDS)
-    return f"hooks: GAP-GROKBOT-HOOKS GAP-BOT-ENTRY self-enforced tool.py {commands}"
+    return f"hooks: {' '.join(gaps)} GAP-BOT-ENTRY self-enforced tool.py {commands}"
 
 
 def _release_commit_advisory(commit: str, note: str = "") -> tuple[str, ...]:
@@ -10809,6 +10920,8 @@ def format_health_report(document: dict[str, object], *, kind: str | None = None
     )
     total = len(rows)
     failures = [(name, item, severity) for name, item, severity in rows if severity != "ok"]
+    if status == "healthy" and any(component_escalates_overall(item) for _n, item, _s in rows):
+        status = "recovery-required"
     lines = [
         f"ChaosEngine {label}: {status}",
         f"commit: {commit_text}",

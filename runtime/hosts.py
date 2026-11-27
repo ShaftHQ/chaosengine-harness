@@ -3316,13 +3316,116 @@ MARKER_POLICY_FILES = (
 # #6178: hosts that read AGENTS.md but have no project hook runtime ChaosEngine installs.
 # The research-receipt `retrieve:` field substitutes for the read gate on these hosts.
 BOT_ENTRY = "chaos-engine/references/bot-entry.md"
+OPENBOT_SKILL = f"{INSTALLED_TREE}/skills/chaos-engine/SKILL.md"
 INSTRUCTION_ONLY_HOSTS = {
     # #6377: bots that auto-load nothing from the checkout (Grok Bot, GPTs, other
     # independent agents) start from the bot entry instead of AGENTS.md.
+    # #260: OpenBot reads AGENTS.md and loads .chaos-engine/skills/chaos-engine/SKILL.md
+    # directly with no hook runtime; explicit retrieve receipt substitutes for the read gate.
     # Cursor and OpenCode are hook hosts (#106, #107), not this set.
     "grok-bot": {"instructions": BOT_ENTRY, "gap": "GAP-GROKBOT-HOOKS"},
     "independent-bot": {"instructions": BOT_ENTRY, "gap": "GAP-BOT-ENTRY"},
+    "openbot": {
+        "instructions": "AGENTS.md",
+        "skill": OPENBOT_SKILL,
+        "gap": "GAP-OPENBOT-HOOKS",
+    },
 }
+
+
+def openbot_skill_contract_status(project: Path) -> dict[str, object]:
+    """Verify OpenBot's instruction-only contract uses the canonical router skill."""
+    root = Path(project)
+    skill_path = root / OPENBOT_SKILL
+    agents_path = root / "AGENTS.md"
+    issues: list[str] = []
+    skill_text = ""
+    if not skill_path.is_file():
+        issues.append(f"missing {OPENBOT_SKILL}")
+    else:
+        try:
+            skill_text = skill_path.read_text(encoding="utf-8")
+        except OSError:
+            issues.append(f"unreadable {OPENBOT_SKILL}")
+        else:
+            if (
+                len(skill_text.strip()) < 400
+                or "retrieve" not in skill_text
+                or "identity.md" not in skill_text
+            ):
+                issues.append(
+                    f"{OPENBOT_SKILL} is not the canonical router skill body"
+                )
+    if not agents_path.is_file():
+        issues.append("missing AGENTS.md")
+    else:
+        try:
+            agents_text = agents_path.read_text(encoding="utf-8")
+        except OSError:
+            issues.append("unreadable AGENTS.md")
+        else:
+            if OPENBOT_SKILL not in agents_text:
+                issues.append(f"AGENTS.md does not point to {OPENBOT_SKILL}")
+    if issues:
+        return {
+            "status": "recovery-required",
+            "code": "CE_OPENBOT_SKILL_MISSING",
+            "host": "openbot",
+            "instructions": "AGENTS.md",
+            "skill": OPENBOT_SKILL,
+            "gap": "GAP-OPENBOT-HOOKS",
+            "enforcement": "instruction-only",
+            "retrieveMode": "explicit-retrieve-receipt",
+            "claimsHookEnforcement": False,
+            "detail": (
+                "OpenBot contract failed ("
+                + "; ".join(issues)
+                + "). Instruction-only host requires canonical "
+                f"{OPENBOT_SKILL} and explicit retrieve receipt; no hook enforcement."
+            ),
+        }
+    return {
+        "status": "healthy",
+        "host": "openbot",
+        "instructions": "AGENTS.md",
+        "skill": OPENBOT_SKILL,
+        "gap": "GAP-OPENBOT-HOOKS",
+        "enforcement": "instruction-only",
+        "retrieveMode": "explicit-retrieve-receipt",
+        "claimsHookEnforcement": False,
+        "detail": (
+            f"OpenBot loads {OPENBOT_SKILL} directly via AGENTS.md "
+            "(instruction-only; explicit retrieve receipt; no hook enforcement)."
+        ),
+    }
+
+
+def classify_instruction_host(
+    project: Path,
+    *,
+    targets: tuple[str, ...] | list[str] | None = None,
+    environ: dict[str, str] | None = None,
+) -> str | None:
+    """Classify an active OpenBot or bot target without claiming Grok hooks."""
+    env = os.environ if environ is None else environ
+    target_set = {str(item).strip().casefold() for item in (targets or ())}
+    if "openbot" in target_set:
+        return "openbot"
+    explicit = str(env.get("CHAOS_ENGINE_HOST") or "").strip().casefold()
+    if explicit == "openbot":
+        return "openbot"
+    if any(str(env.get(key) or "").strip() for key in ("OPENBOT_HOME", "OPENBOT_SESSION_ID")):
+        return "openbot"
+    root = Path(project)
+    if (
+        not (root / ".git").exists()
+        and not (root / ".grok" / "hooks" / "lifecycle.json").is_file()
+        and (root / OPENBOT_SKILL).is_file()
+        and "grok" not in target_set
+        and not target_set
+    ):
+        return "openbot"
+    return None
 GITATTRIBUTES_START = "# CHAOSENGINE-EOL:START"
 GITATTRIBUTES_END = "# CHAOSENGINE-EOL:END"
 
@@ -8867,15 +8970,55 @@ def grok_runtime_status(
             timeout=30,
             check=False,
         )
-        payload = json.loads(completed.stdout or "{}") if completed.returncode == 0 else {}
-    except (OSError, subprocess.SubprocessError, ValueError):
-        payload = {}
+    except (OSError, subprocess.SubprocessError):
+        return {
+            "status": "failed",
+            "code": "CE_GROK_INSPECT_FAILED",
+            "hooksLoaded": False,
+            "detail": (
+                "Grok CLI probe (`grok inspect --json`) failed; "
+                "hooks did not load and runtime state is unverified."
+            ),
+        }
+    if completed.returncode != 0:
+        return {
+            "status": "failed",
+            "code": "CE_GROK_INSPECT_FAILED",
+            "hooksLoaded": False,
+            "detail": (
+                f"Grok CLI probe (`grok inspect --json`) exited {completed.returncode}; "
+                "hooks did not load and runtime state is unverified."
+            ),
+        }
+    try:
+        payload = json.loads(completed.stdout or "")
+    except ValueError:
+        payload = None
+    if not isinstance(payload, dict) or not payload:
+        return {
+            "status": "failed",
+            "code": "CE_GROK_INSPECT_FAILED",
+            "hooksLoaded": False,
+            "detail": (
+                "Grok CLI probe (`grok inspect --json`) returned empty or invalid JSON; "
+                "hooks did not load and runtime state is unverified."
+            ),
+        }
+    if "projectRoot" in payload and payload.get("projectRoot") is None:
+        return {
+            "status": "failed",
+            "code": "CE_GROK_PROJECT_UNBOUND",
+            "projectRoot": None,
+            "hooksLoaded": False,
+            "detail": (
+                "Grok has no projectRoot for this directory (for example, a non-git or "
+                "OpenBot workspace), so Grok project hooks cannot bind and did not load."
+            ),
+        }
     recovery = (
         "Run `grok inspect --json` from the project. If projectTrusted is false, "
         "review the project then run `/hooks-trust`; reload hooks and rerun doctor."
     )
-    if not isinstance(payload, dict) or not payload:
-        return {"status": "sync-advisory", "detail": recovery}
     if payload.get("projectTrusted") is not True:
         return {"status": "sync-advisory", "detail": recovery}
     hooks = payload.get("hooks")
