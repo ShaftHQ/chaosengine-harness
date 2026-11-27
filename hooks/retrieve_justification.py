@@ -1666,6 +1666,14 @@ EDIT_TOOLS = frozenset({
 })
 
 
+# Same deny surface as hooks/guard.py _PREVENTIVE_EVENTS. PermissionRequest is not in it.
+_PREVENTIVE_EVENTS = frozenset({
+    "PreToolUse",
+    "PreSkillShellCommand",
+    "UserPromptExpansion",
+})
+
+
 def _impact_edit(tool_name: str, tool_input: dict | None) -> bool:
     if tool_name in EDIT_TOOLS:
         return True
@@ -1865,7 +1873,7 @@ def impact_edit_block_reason(
     refresh first. Reads do not deny. A write under the declared scratch
     directory needs no receipt.
     """
-    if event_name != "PreToolUse" or not _impact_edit(tool_name, tool_input):
+    if event_name not in _PREVENTIVE_EVENTS or not _impact_edit(tool_name, tool_input):
         return None
     if _scratch_edit(project, tool_input):
         return None
@@ -1931,7 +1939,7 @@ def file_read_block_reason(
     records retrieveOwed for this session. Callers that only understand a deny
     string get None; the stop hook reads session_retrieve_gap.
     """
-    if event_name != "PreToolUse":
+    if event_name not in _PREVENTIVE_EVENTS:
         return None
     if tool_name in _READ_TOOLS:
         paths = _input_paths(tool_input)

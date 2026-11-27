@@ -89,6 +89,46 @@ def test_permission_request_keeps_a_deny_and_drops_an_allow():
     assert "allow" not in rendered
 
 
+def test_permission_request_strips_nested_and_paired_allows():
+    kernel = _kernel()
+    allow_forms = (
+        {"behavior": "allow"},
+        {"permissionDecision": "approve"},
+        {"decision": {"permissionDecision": "allow"}},
+        {"hookSpecificOutput": {"permissionDecision": "allow"}},
+        {"hookSpecificOutput": {"decision": {"behavior": "allow"}}},
+        {"hookSpecificOutput": {"decision": {"behavior": "approve"}, "permissionDecisionReason": "allow it"}},
+    )
+    for payload in allow_forms:
+        rendered = json.dumps(
+            kernel.adapt_hook_output(payload, "PermissionRequest", "claude")
+        )
+        assert "allow" not in rendered, payload
+        assert "approve" not in rendered, payload
+        assert "deny" not in rendered, payload
+    mixed_forms = (
+        {"decision": "deny", "permissionDecision": "allow", "reason": "blocked"},
+        {"decision": "deny", "behavior": "allow", "reason": "blocked"},
+        {
+            "decision": "deny",
+            "reason": "blocked",
+            "hookSpecificOutput": {"decision": {"behavior": "allow"}},
+        },
+        {
+            "decision": "deny",
+            "permissionDecision": "allow",
+            "permissionDecisionReason": "allow it",
+            "reason": "blocked",
+        },
+    )
+    for payload in mixed_forms:
+        adapted = kernel.adapt_hook_output(payload, "PermissionRequest", "claude")
+        assert adapted.get("decision") == "deny", payload
+        rendered = json.dumps(adapted)
+        assert "allow" not in rendered, payload
+        assert "approve" not in rendered, payload
+
+
 def test_permission_request_does_not_return_an_allow_decision():
     kernel = _kernel()
     adapted = kernel.adapt_hook_output(
