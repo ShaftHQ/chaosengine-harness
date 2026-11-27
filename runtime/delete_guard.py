@@ -2168,7 +2168,12 @@ def _scan_balanced_paren(text: str, pos: int) -> int:
             end = index + 1
             while end < n and text[end] in "|&":
                 end += 1
-            cmd_start = True
+            if not (
+                ch == "|"
+                and case_stack
+                and case_stack[-1] == (depth, "pattern")
+            ):
+                cmd_start = True
             index = end
             continue
         if ch == "!" and cmd_start:
@@ -2187,14 +2192,25 @@ def _scan_balanced_paren(text: str, pos: int) -> int:
             while end < n and (text[end].isalnum() or text[end] == "_"):
                 end += 1
             word = text[index:end]
+            prev = text[index - 1] if index > pos else " "
+            following = text[end] if end < n else " "
+            reserved = (
+                prev in " \t\r\n;&|()<>!{"
+                and following in " \t\r\n;&|()<>#"
+                and word in {
+                    "case", "esac", "in", "if", "then", "else", "elif",
+                    "while", "until", "do", "time",
+                }
+            )
             if cmd_start:
-                if word == "case":
+                if reserved and word == "case":
                     case_stack.append((depth, "in_head"))
                     cmd_start = False
                     index = end
                     continue
                 if (
-                    word == "esac"
+                    reserved
+                    and word == "esac"
                     and case_stack
                     and case_stack[-1][0] == depth
                     and case_stack[-1][1] in {"pattern", "body"}
@@ -2203,10 +2219,13 @@ def _scan_balanced_paren(text: str, pos: int) -> int:
                     cmd_start = False
                     index = end
                     continue
-                if word not in {"then", "do", "else", "elif"}:
+                if not reserved or word not in {
+                    "then", "do", "else", "elif", "if", "while", "until", "time",
+                }:
                     cmd_start = False
             if (
-                word == "in"
+                reserved
+                and word == "in"
                 and case_stack
                 and case_stack[-1][0] == depth
                 and case_stack[-1][1] == "in_head"
