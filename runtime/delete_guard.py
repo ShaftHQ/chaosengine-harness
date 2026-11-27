@@ -2121,37 +2121,256 @@ def _scan_balanced_paren(text: str, pos: int) -> int:
     depth = 0
     index = pos
     n = len(text)
+    case_stack: list[tuple[int, str]] = []
+    cmd_start = True
+    after_time = False
+    after_coproc = False
+
+    def skip_continuation(at: int) -> int:
+        if text[at] == "\\":
+            if at + 1 < n and text[at + 1] == "\n":
+                return at + 2
+            if at + 2 < n and text[at + 1] == "\r" and text[at + 2] == "\n":
+                return at + 3
+        return at
+
+    def clear_after() -> None:
+        nonlocal after_time, after_coproc
+        after_time = False
+        after_coproc = False
+
     while index < n:
         ch = text[index]
+        boundary = " \t\r\n;&|()<>#"
+        if after_time and cmd_start and ch == "-":
+            opt_chars: list[str] = []
+            scan = index
+            while scan < n:
+                if text[scan] in boundary:
+                    break
+                stepped = skip_continuation(scan)
+                if stepped != scan:
+                    scan = stepped
+                    continue
+                opt_chars.append(text[scan])
+                scan += 1
+            opt = "".join(opt_chars)
+            if opt == "-p":
+                index = scan
+                continue
+            if opt == "--":
+                after_time = False
+                index = scan
+                continue
+        if after_coproc and cmd_start and (ch.isalpha() or ch == "_"):
+            name_chars: list[str] = []
+            scan = index
+            while scan < n:
+                if text[scan].isalnum() or text[scan] == "_":
+                    name_chars.append(text[scan])
+                    scan += 1
+                    continue
+                stepped = skip_continuation(scan)
+                if stepped != scan:
+                    scan = stepped
+                    continue
+                break
+            name = "".join(name_chars)
+            after_end = skip_continuation(scan) if scan < n else scan
+            following = text[after_end] if after_end < n else " "
+            if following in boundary and name not in {
+                "case", "if", "while", "until", "for", "select",
+            }:
+                after_coproc = False
+                cmd_start = True
+                index = scan
+                continue
         if ch == "\\":
-            index += 2
+            if index + 2 < n and text[index + 1] == "\r" and text[index + 2] == "\n":
+                index += 3
+            else:
+                index += 2
             continue
         if ch == "'":
             _, index = _scan_single_quote(text, index)
+            cmd_start = False
+            clear_after()
             continue
         if ch == "$" and index + 1 < n and text[index + 1] == "'":
             _, index = _scan_ansi_c_quote(text, index)
+            cmd_start = False
+            clear_after()
             continue
         if ch == '"':
             _, index = _scan_double_quote(text, index, None)
+            cmd_start = False
+            clear_after()
             continue
         if ch == "`":
             _, index = _scan_backtick(text, index, in_dquote=False)
+            cmd_start = False
+            clear_after()
             continue
-        if ch == "#" and (index == pos or text[index - 1] in " \t\n;&|("):
+        if ch == "#" and (index == pos or text[index - 1] in " \t\n;&|({"):
             nl = text.find("\n", index)
             index = n if nl == -1 else nl + 1
             continue
-        if ch == "(":
-            depth += 1
+        if ch == ";":
+            end = index + 1
+            while end < n and text[end] == ";":
+                end += 1
+            if end < n and text[end] == "&":
+                end += 1
+            if (
+                end - index >= 2
+                and case_stack
+                and case_stack[-1][0] == depth
+                and case_stack[-1][1] == "body"
+            ):
+                case_stack[-1] = (depth, "pattern")
+            cmd_start = True
+            clear_after()
+            index = end
+            continue
+        if ch in "|&\n":
+            end = index + 1
+            while end < n and text[end] in "|&":
+                end += 1
+            if not (
+                ch == "|"
+                and case_stack
+                and case_stack[-1] == (depth, "pattern")
+            ):
+                cmd_start = True
+                clear_after()
+            index = end
+            continue
+        if ch == "!" and cmd_start:
             index += 1
-        elif ch == ")":
+            continue
+        if ch == "{":
+            cmd_start = True
+            clear_after()
+            index += 1
+            continue
+        if ch == "}":
+            cmd_start = False
+            clear_after()
+            index += 1
+            continue
+        if ch.isalpha() or ch == "_":
+            word_chars: list[str] = []
+            scan = index
+            while scan < n:
+                if text[scan].isalnum() or text[scan] == "_":
+                    word_chars.append(text[scan])
+                    scan += 1
+                    continue
+                stepped = skip_continuation(scan)
+                if stepped != scan:
+                    scan = stepped
+                    continue
+                break
+            word = "".join(word_chars)
+            end = scan
+            prev = text[index - 1] if index > pos else " "
+            after_end = skip_continuation(end) if end < n else end
+            following = text[after_end] if after_end < n else " "
+            reserved = (
+                prev in " \t\r\n;&|()<>!{"
+                and following in boundary
+                and word in {
+                    "case", "esac", "in", "if", "then", "else", "elif",
+                    "while", "until", "do", "time", "coproc",
+                }
+            )
+            if cmd_start:
+                if reserved and word == "case":
+                    case_stack.append((depth, "in_head"))
+                    cmd_start = False
+                    clear_after()
+                    index = end
+                    continue
+                if (
+                    reserved
+                    and word == "esac"
+                    and case_stack
+                    and case_stack[-1][0] == depth
+                    and case_stack[-1][1] in {"pattern", "body"}
+                ):
+                    case_stack.pop()
+                    cmd_start = False
+                    clear_after()
+                    index = end
+                    continue
+                if reserved and word == "time":
+                    cmd_start = True
+                    after_time = True
+                    after_coproc = False
+                    index = end
+                    continue
+                if reserved and word == "coproc":
+                    cmd_start = True
+                    after_coproc = True
+                    after_time = False
+                    index = end
+                    continue
+                if not reserved or word not in {
+                    "then", "do", "else", "elif", "if", "while", "until", "time", "coproc",
+                }:
+                    cmd_start = False
+                clear_after()
+            if (
+                reserved
+                and word == "in"
+                and case_stack
+                and case_stack[-1][0] == depth
+                and case_stack[-1][1] == "in_head"
+            ):
+                case_stack[-1] = (depth, "pattern")
+            index = end
+            continue
+        if ch == "(":
+            if (
+                case_stack
+                and case_stack[-1][0] == depth
+                and case_stack[-1][1] == "pattern"
+            ):
+                cmd_start = False
+                clear_after()
+                index += 1
+                continue
+            depth += 1
+            cmd_start = True
+            clear_after()
+            index += 1
+            continue
+        if ch == ")":
+            if (
+                case_stack
+                and case_stack[-1][0] == depth
+                and case_stack[-1][1] == "pattern"
+            ):
+                case_stack[-1] = (depth, "body")
+                cmd_start = True
+                clear_after()
+                index += 1
+                continue
             depth -= 1
+            cmd_start = False
+            clear_after()
             index += 1
             if depth == 0:
+                if case_stack:
+                    raise ValueError("unparsable case inside command substitution")
                 return index
-        else:
+            continue
+        if ch in " \t\r":
             index += 1
+            continue
+        cmd_start = False
+        clear_after()
+        index += 1
     raise ValueError("Unclosed parenthesis")
 
 
@@ -2181,7 +2400,7 @@ def _scan_balanced_brace(text: str, pos: int, cmd_subs: list[str] | None) -> int
             continue
         if ch == "$" and index + 1 < n and text[index + 1] == "(":
             end = _scan_balanced_paren(text, index + 1)
-            if index + 2 < n and text[index + 2] == "(":
+            if _is_arithmetic_expansion(text, index, end):
                 _note_arith_cmd_subs(text, index, end, cmd_subs)
             elif cmd_subs is not None:
                 cmd_subs.append(text[index + 2 : end - 1])
@@ -2233,7 +2452,7 @@ def _scan_double_quote(text: str, pos: int, cmd_subs: list[str] | None) -> tuple
             nxt = text[index + 1]
             if nxt == "(":
                 end = _scan_balanced_paren(text, index + 1)
-                if index + 2 < n and text[index + 2] == "(":
+                if _is_arithmetic_expansion(text, index, end):
                     _note_arith_cmd_subs(text, index, end, cmd_subs)
                 elif cmd_subs is not None:
                     cmd_subs.append(text[index + 2 : end - 1])
@@ -2250,6 +2469,21 @@ def _scan_double_quote(text: str, pos: int, cmd_subs: list[str] | None) -> tuple
     raise ValueError("No closing quotation")
 
 
+def _is_arithmetic_expansion(text: str, dollar_at: int, end: int) -> bool:
+    """True only for a genuine ``$(( ... ))`` arithmetic expansion.
+
+    The inner ``(`` at ``dollar_at + 2`` must close at the second-to-last
+    ``)``. If it closes earlier, the construct is ``$( (cmd); more )`` -- a
+    command substitution holding a subshell -- and its whole body is a command.
+    """
+    if dollar_at + 2 >= len(text) or text[dollar_at + 2] != "(":
+        return False
+    try:
+        return _scan_balanced_paren(text, dollar_at + 2) == end - 1
+    except ValueError:
+        return False
+
+
 def _note_arith_cmd_subs(text: str, dollar_at: int, end: int, cmd_subs: list[str] | None) -> None:
     """Collect ``$(...)`` and backticks inside the body of ``$(( ... ))``."""
     if cmd_subs is None:
@@ -2262,7 +2496,11 @@ def _note_arith_cmd_subs(text: str, dollar_at: int, end: int, cmd_subs: list[str
 
 
 def _scan_heredoc_cmd_subs(body: str) -> list[str]:
-    """Extract unescaped $(...) and `...` substitutions from an unquoted heredoc body."""
+    """Extract unescaped $(...) and `...` substitutions from an unquoted heredoc body.
+
+    Process substitutions are not expanded inside heredocs, so ``<(...)`` and
+    ``>(...)`` are data here.
+    """
     subs: list[str] = []
     index = 0
     n = len(body)
@@ -2279,21 +2517,85 @@ def _scan_heredoc_cmd_subs(body: str) -> list[str]:
                 index += 1
             continue
         if ch == "$" and index + 1 < n and body[index + 1] == "(":
-            if index + 2 < n and body[index + 2] == "(":
-                try:
-                    end = _scan_balanced_paren(body, index + 1)
-                except ValueError:
-                    index += 3
-                    continue
-                _note_arith_cmd_subs(body, index, end, subs)
-                index = end
-                continue
             try:
                 end = _scan_balanced_paren(body, index + 1)
-                subs.append(body[index + 2 : end - 1])
-                index = end
             except ValueError:
                 index += 2
+                continue
+            if _is_arithmetic_expansion(body, index, end):
+                _note_arith_cmd_subs(body, index, end, subs)
+            else:
+                subs.append(body[index + 2 : end - 1])
+            index = end
+            continue
+        index += 1
+    return subs
+
+
+def _scan_array_cmd_subs(body: str) -> list[str]:
+    """Extract command substitutions from an array literal's ``(...)`` body.
+
+    Single quotes, ANSI-C quotes, and comments hide substitutions. Double
+    quotes allow ``$(...)``, ``$((...))``, and backticks. Unquoted text also
+    allows ``<(...)`` and ``>(...)`` process substitutions.
+    """
+    subs: list[str] = []
+    index = 0
+    n = len(body)
+    while index < n:
+        ch = body[index]
+        if ch == "\\":
+            index += 2
+            continue
+        if ch == "#" and (index == 0 or body[index - 1] in " \t\n"):
+            nl = body.find("\n", index)
+            index = n if nl == -1 else nl + 1
+            continue
+        if ch == "'":
+            try:
+                _, index = _scan_single_quote(body, index)
+            except ValueError:
+                index += 1
+            continue
+        if ch == "$" and index + 1 < n and body[index + 1] == "'":
+            try:
+                _, index = _scan_ansi_c_quote(body, index)
+            except ValueError:
+                index += 2
+            continue
+        if ch == '"':
+            try:
+                _, index = _scan_double_quote(body, index, subs)
+            except ValueError:
+                index += 1
+            continue
+        if ch == "`":
+            try:
+                inner, index = _scan_backtick(body, index, in_dquote=False)
+                subs.append(inner)
+            except ValueError:
+                index += 1
+            continue
+        if ch == "$" and index + 1 < n and body[index + 1] == "(":
+            try:
+                end = _scan_balanced_paren(body, index + 1)
+            except ValueError:
+                index += 2
+                continue
+            if _is_arithmetic_expansion(body, index, end):
+                _note_arith_cmd_subs(body, index, end, subs)
+            else:
+                subs.append(body[index + 2 : end - 1])
+            index = end
+            continue
+        if ch in "<>" and index + 1 < n and body[index + 1] == "(":
+            try:
+                end = _scan_balanced_paren(body, index + 1)
+            except ValueError:
+                index += 2
+                continue
+            subs.append(body[index + 2 : end - 1])
+            index = end
             continue
         index += 1
     return subs
@@ -2333,6 +2635,8 @@ def _read_shell_word(
             # Array assignment foo=(...) stays attached to the assignment word.
             if ch == "(" and out and "".join(out).endswith("="):
                 end = _scan_balanced_paren(text, index)
+                if cmd_subs is not None:
+                    cmd_subs.extend(_scan_array_cmd_subs(text[index + 1 : end - 1]))
                 push(text[index:end], False)
                 index = end
                 continue
@@ -2379,7 +2683,7 @@ def _read_shell_word(
                 continue
             if nxt == "(":
                 end = _scan_balanced_paren(text, index + 1)
-                if index + 2 < n and text[index + 2] == "(":
+                if _is_arithmetic_expansion(text, index, end):
                     _note_arith_cmd_subs(text, index, end, cmd_subs)
                 elif cmd_subs is not None:
                     cmd_subs.append(text[index + 2 : end - 1])
@@ -2438,8 +2742,14 @@ def _read_heredoc_delimiter(text: str, pos: int) -> tuple[str, bool, int]:
             val, pos = _scan_double_quote(text, pos + 1, None)
             out.append(val)
         elif ch == "\\":
+            if pos + 2 < n and text[pos + 1] == "\r" and text[pos + 2] == "\n":
+                pos += 3
+                continue
+            if pos + 1 < n and text[pos + 1] == "\n":
+                pos += 2
+                continue
             quoted = True
-            if pos + 1 < n and text[pos + 1] != "\n":
+            if pos + 1 < n:
                 out.append(text[pos + 1])
                 pos += 2
             else:

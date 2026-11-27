@@ -39,8 +39,7 @@ first.
 - Do **not** silently fall back to cloud OmniRoute. Missing local runtime:
   tell the operator; continue with session agents / `SOLO` / OmniRoute only when
   the adopter explicitly asked for that path.
-- Do **not** install OpenCode from this skill. Operator install stays on vendor
-  docs (README third-party table).
+- Do **not** install OpenCode from this skill silently or unprompted. Inspect hardware, recommend fitting models, and obtain explicit owner approval before any install or configuration. Operator install stays on vendor docs (README third-party table).
 - Installer / doctor / status must **not** fail because OpenCode or a local
   runtime is missing.
 - Never bind or probe a non-loopback URL from ChaosEngine.
@@ -118,7 +117,7 @@ When `dispatch.py chat` returns OpenAI-compat `usage` and `--session-id` is set,
 
 Implementers write code directly; this skill is optional. Use local only when the
 handoff cost is well below generation cost (bulk mechanical edits, spec or ticket
-drafting, log summarization, offline or private work). See
+drafting, log summarization, offline or private work). For orchestrated multi-item work, proactively decompose into small bounded items so free/local models deliver them at highest effort; keep direct edits on the host only when decomposition cost genuinely exceeds value. See
 [when-to-use-local.md](references/when-to-use-local.md).
 
 ## Coach loop (when local is chosen)
@@ -132,6 +131,10 @@ grounded feedback, and never let it finish unsupervised. Playbook:
 [local-coding-delegate](../local-runtimes/references/local-coding-delegate.md) is a **compat shim**:
 hardware probe stays there; local OpenCode / agency routing lives here. Prefer
 this skill when the adopter names OpenCode or “local agents”.
+
+## Free-first policy
+
+See [delegation](../../references/delegation.md): decompose into small file-disjoint items; smartest free/local model at highest reasoning effort first; hardware-aware recommendations with opt-in setup; paid newest-cheapest fallback only when no free/local option.
 
 ## Related
 

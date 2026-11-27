@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -58,6 +59,22 @@ def _run(command: str, cwd: Path) -> subprocess.CompletedProcess[str]:
         text=True,
         check=False,
     )
+
+
+_RECORD_ARGV = (
+    "import json, os, sys\n"
+    "with open(os.environ['CE_TEST_ARGV'], 'w', encoding='utf-8') as handle:\n"
+    "    json.dump(sys.argv[1:], handle)\n"
+    'print("{}")\n'
+)
+_BLOCKING_JSON = (
+    '{"decision": "block", "reason": "ChaosEngine launch.py requires host name (e.g. claude)"}'
+)
+_BLOCK_LAUNCHER = (
+    "import sys\n"
+    f"print({_BLOCKING_JSON!r})\n"
+    "sys.exit(2)\n"
+)
 
 
 class RequiredCheckGateTests(unittest.TestCase):
@@ -323,6 +340,145 @@ class ConsumerStopTests(unittest.TestCase):
             if zsh:
                 checked = subprocess.run([zsh, "-n", "-c", command], capture_output=True, text=True, check=False)
                 self.assertEqual(0, checked.returncode, checked.stderr)
+
+
+class UnixHookLauncherArgTests(unittest.TestCase):
+    def _project(self, temporary: str, launcher: str) -> tuple[Path, Path]:
+        project = Path(temporary) / "project with spaces"
+        (project / ".chaos-engine" / "hooks").mkdir(parents=True)
+        target = project / ".chaos-engine" / "hooks" / "launch.py"
+        target.write_text(launcher, encoding="utf-8")
+        return project, target
+
+    def _run_shell(
+        self, shell: str, command: str, cwd: Path, env: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [shell, "-c", command],
+            cwd=cwd,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    def test_codex_stop_passes_separate_words_in_every_available_shell(self):
+        command = hosts.chaos_guard_locator_command(windows=False, host="codex", event="Stop")
+        shells = [shutil.which(name) for name in ("zsh", "bash", "sh")]
+        self.assertIsNotNone(shells[1])
+        self.assertIsNotNone(shells[2])
+        for shell in shells:
+            if shell is None:
+                continue
+            with self.subTest(shell=shell), tempfile.TemporaryDirectory(prefix="ce hook ") as temporary:
+                project, _launcher = self._project(temporary, _RECORD_ARGV)
+                argv_file = project / "argv.json"
+                env = dict(os.environ, CE_TEST_ARGV=str(argv_file))
+                result = self._run_shell(shell, command, project, env)
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertEqual("{}\n", result.stdout)
+                self.assertEqual(["codex", "Stop"], json.loads(argv_file.read_text(encoding="utf-8")))
+
+    def test_unix_command_uses_literal_words_without_variable_splitting(self):
+        for host, event, words in (
+            ("codex", "Stop", "codex Stop"),
+            ("grok", "PreToolUse", "grok PreToolUse"),
+            ("claude", None, "claude"),
+        ):
+            with self.subTest(host=host, event=event):
+                command = hosts.chaos_guard_locator_command(windows=False, host=host, event=event)
+                unix, _, _powershell = command.partition(": <<'#'")
+                self.assertNotIn("$a", unix)
+                self.assertNotIn('a="', unix)
+                self.assertIn(
+                    f'exec python3 "$f" {words}||exec py -3 "$f" {words}', unix
+                )
+        antigravity = hosts.chaos_guard_locator_command(
+            windows=False, host="antigravity", event="Stop"
+        )
+        self.assertNotIn("$a", antigravity)
+        self.assertIn('exec "$p" "$f" antigravity Stop', antigravity)
+        self.assertIn('exec "$p" -3 "$f" antigravity Stop', antigravity)
+
+    def test_py_fallback_gets_three_and_launcher_words_separately(self):
+        command = hosts.chaos_guard_locator_command(windows=False, host="codex", event="Stop")
+        bash = shutil.which("bash")
+        self.assertIsNotNone(bash)
+        with tempfile.TemporaryDirectory(prefix="ce hook ") as temporary:
+            project, launcher = self._project(temporary, _RECORD_ARGV)
+            bin_dir = Path(temporary) / "bin"
+            bin_dir.mkdir()
+            py = bin_dir / "py"
+            py.write_text(
+                f"#!{sys.executable}\n"
+                "import json, os, sys\n"
+                "with open(os.environ['CE_TEST_PY_ARGV'], 'w', encoding='utf-8') as handle:\n"
+                "    json.dump(sys.argv[1:], handle)\n"
+                'print("{}")\n',
+                encoding="utf-8",
+            )
+            py.chmod(0o755)
+            argv_file = project / "argv.json"
+            py_argv_file = project / "py-argv.json"
+            env = {
+                "CE_TEST_ARGV": str(argv_file),
+                "CE_TEST_PY_ARGV": str(py_argv_file),
+                "PATH": str(bin_dir),
+            }
+            result = self._run_shell(bash, command, project, env)
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual("{}\n", result.stdout)
+            self.assertEqual(
+                ["-3", str(launcher), "codex", "Stop"],
+                json.loads(py_argv_file.read_text(encoding="utf-8")),
+            )
+            self.assertFalse(argv_file.exists())
+
+    def test_host_only_launcher_gets_no_second_argument(self):
+        command = hosts.chaos_guard_locator_command(windows=False, host="claude")
+        bash = shutil.which("bash")
+        self.assertIsNotNone(bash)
+        with tempfile.TemporaryDirectory(prefix="ce hook ") as temporary:
+            project, _launcher = self._project(temporary, _RECORD_ARGV)
+            argv_file = project / "argv.json"
+            env = dict(os.environ, CE_TEST_ARGV=str(argv_file))
+            result = self._run_shell(bash, command, project, env)
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual(["claude"], json.loads(argv_file.read_text(encoding="utf-8")))
+
+    def test_launcher_exit_2_propagates_without_py_fallback(self):
+        command = hosts.chaos_guard_locator_command(windows=False, host="codex", event="Stop")
+        bash = shutil.which("bash")
+        self.assertIsNotNone(bash)
+        with tempfile.TemporaryDirectory(prefix="ce hook ") as temporary:
+            project, _launcher = self._project(temporary, _BLOCK_LAUNCHER)
+            bin_dir = Path(temporary) / "bin"
+            bin_dir.mkdir()
+            marker = bin_dir / "py-ran"
+            py = bin_dir / "py"
+            py.write_text(
+                f"#!{sys.executable}\n"
+                "import os, pathlib, sys\n"
+                "pathlib.Path(os.environ['CE_TEST_PY_MARKER']).write_text('ran')\n"
+                'print("{}")\n',
+                encoding="utf-8",
+            )
+            py.chmod(0o755)
+            env = dict(
+                os.environ,
+                CE_TEST_PY_MARKER=str(marker),
+                PATH=f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+            )
+            result = self._run_shell(bash, command, project, env)
+            self.assertEqual(2, result.returncode, result.stderr)
+            self.assertEqual(_BLOCKING_JSON + "\n", result.stdout)
+            self.assertFalse(marker.exists())
+
+    def test_unsafe_launch_arguments_fail_closed(self):
+        with self.assertRaises(ValueError):
+            hosts.chaos_guard_locator_command(windows=False, host="codex; stop")
+        with self.assertRaises(ValueError):
+            hosts.chaos_guard_locator_command(windows=False, host="codex", event="Stop extra")
 
 
 class DeliveryGuidanceTests(unittest.TestCase):

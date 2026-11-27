@@ -1,6 +1,6 @@
 # Delegation
 
-Cloud implementers write code directly; local runtimes are optional for narrow mechanical or offline jobs, and a local runtime never reviews its own diff.
+Cloud implementers write code directly; local runtimes are optional for narrow mechanical or offline jobs, and a local runtime never reviews its own diff. Direct single-thread edits stay on the host when small and tightly coupled, while orchestrated multi-item work proactively decomposes into small bounded work items for free/local models at the highest reasoning effort; smaller local models remain reserved for genuinely simple mechanical tasks.
 
 Default is single-thread: the main agent does the work itself. Delegate only
 when the owner enables delegation for the session or project.
@@ -85,6 +85,16 @@ Vendor-neutral. The host names the models; this policy does not pin a vendor.
 5. PR model attribution: on orchestrated pull requests, report transparently in the PR description or review summary which model and reasoning effort executed each implementation wave and each independent review, with a short field note of what worked and what hit quota or stalled. Do not persist provider or model IDs into machine receipts or vendor-lock policy with this reporting.
 6. Pre-dispatch canary & stall failover: before assigning real work to a free or unproven third-party delegate gateway, run a fast pre-dispatch canary (a short-timeout prompt/tool-call readiness check). Enforce a short idle-output stall threshold (3–5 minutes with zero file or log progress); when breached, cancel immediately and fail over to the next qualified model on the fallback ladder.
 7. Test-runner parallelism probe (`xdist`): before dispatching full-suite pytest runs in delegate briefs, probe `python3 -c "import xdist"`. When `xdist` is absent, run targeted local suites plus offline validators per wave and let CI run `pytest -n auto` (or run the full serial suite only once before PR creation) rather than burning ~25 min per wave serially.
+
+## Free-first delegation & hardware-aware local model policy
+
+Vendor-neutral. Free/local first; paid only as fallback.
+
+1. Proactive small work-item decomposition: proactively decompose orchestrated work into small, bounded, file-disjoint work items sized so free/local models deliver them reliably on the first pass.
+2. Smartest free/local model first: always pick the smartest free model (hardware-fit local model or `$0` free runtime/gateway) at its highest available reasoning effort (`high` / `max`) for most tasks. Do not use smaller or dumbed-down local models except for genuinely simple mechanical tasks where a lightweight model makes sense.
+3. Hardware-aware recommendations & opt-in setup: inspect the user's local hardware (RAM, GPU VRAM, CPU, disk) and recommend specific local models that fit that hardware and can perform the work. Offer to install and set up the local coding CLI/agent runtime only if the user explicitly agrees; never install tools or download large models without an owner yes.
+4. Paid fallback ladder: delegate to paid/metered models only when no free/local model can complete the task (or no local model exists and the user declines installing the local coding CLI and recommended local model). When falling back to paid models, pick the cheapest newest-generation qualified model at the lowest sufficient effort (lowest task-appropriate reasoning effort); never pick an older generation in the same price tier (e.g., if generations X.5, X.6, X.7 share a cost tier, select X.7 at lowest sufficient effort, never X.5).
+5. Independent adversarial review stays on a fresh-context host most-intelligent subagent; never the local/free writer.
 
 ## Orchestrator duties
 
