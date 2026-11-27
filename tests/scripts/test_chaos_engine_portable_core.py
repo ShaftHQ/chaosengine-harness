@@ -1102,6 +1102,16 @@ class OrchestratorModeContractTest(unittest.TestCase):
         self.assertIn("5 minutes for short or high-risk work", policy)
         self.assertIn("10 minutes for normal work", policy)
         self.assertIn("15 minutes for long stable jobs", policy)
+        self.assertIn("inspect at least once every 15 minutes", policy)
+        self.assertIn("consultation or facilitation", policy)
+        self.assertIn(
+            "decide whether to direct it or move the implementation to another model",
+            policy,
+        )
+        self.assertIn(
+            "A status line that does not ask and does not help is a heartbeat.",
+            policy,
+        )
         self.assertIn("without the owner asking", policy)
         self.assertIn("Do not inspect more often than the selected cadence", policy)
         self.assertIn("While any writer or required check is live", policy)

@@ -15,6 +15,14 @@ except on dispatch, completion, failure, or owner/delegate interrupt. First
 inspect as soon as dispatch yields a live handle. Use the host timer or
 scheduler when available; otherwise the next main-thread wake still owes the
 inspection.
+While a writer, reviewer, or required check is live, inspect at least once
+every 15 minutes. A shorter selected cadence still applies. Each inspection
+asks whether the delegate needs consultation or facilitation, then gives that
+help inside granted authority. Each inspection also reads progress. If the
+delegate is not progressing, or is going the wrong way, decide whether to
+direct it or move the implementation to another model, and record the evidence
+for that decision. A status line that does not ask and does not help is a
+heartbeat.
 No live writers or required checks: no scheduler — **unless** the owner asked
 for unattended babysitting or adaptive follow-ups; then follow
 [process-owner adaptive follow-up](process-owner-scrum-master.md#adaptive-follow-up-orchestrator-duty)
