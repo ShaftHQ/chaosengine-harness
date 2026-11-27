@@ -68,6 +68,29 @@ CLAUDE_EVENTS = (
     "PreCompact",
     "PostCompact",
     "SessionEnd",
+    "PreSkillShellCommand",
+    "UserPromptExpansion",
+    "PermissionRequest",
+    "Setup",
+    "InstructionsLoaded",
+    "MessageDisplay",
+    "PostToolBatch",
+    "PermissionDenied",
+    "Notification",
+    "TaskCreated",
+    "TaskCompleted",
+    "StopFailure",
+    "TeammateIdle",
+    "ConfigChange",
+    "CwdChanged",
+    "DirectoryAdded",
+    "FileChanged",
+    "WorktreeCreate",
+    "WorktreeRemove",
+    "PreModelSwitch",
+    "PostModelSwitch",
+    "Elicitation",
+    "ElicitationResult",
 )
 # Official Codex hooks have no PostToolUseFailure. Failure stays on PostToolUse.
 # PreCompact and PostCompact are official; the guard already emits them.
@@ -755,7 +778,7 @@ def normalize_hook_input(raw: Mapping[str, object]) -> dict[str, object]:
     return normalized
 
 
-_NO_DECISION_EVENTS = frozenset({"PermissionRequest", "Elicitation", "ElicitationResult"})
+_NO_DECISION_EVENTS = frozenset({"Elicitation", "ElicitationResult"})
 
 # Claude reads additionalContext only inside hookSpecificOutput, and only on
 # these events. PreCompact stdout is the compaction summary. PostCompact has
@@ -820,6 +843,14 @@ def adapt_hook_output(
     native_event: str = "",
 ) -> dict[str, object]:
     """Project canonical decisions/context into each host's native hook protocol."""
+    if event_name == "PermissionRequest":
+        adapted = dict(output)
+        decision = str(adapted.get("decision") or adapted.get("permissionDecision") or "").casefold()
+        if decision in {"allow", "approve"}:
+            return _drop_permission_decision(adapted)
+        if host == "claude":
+            _nest_claude_additional_context(adapted, event_name, native_event)
+        return adapted
     if event_name in _NO_DECISION_EVENTS:
         return _drop_permission_decision(dict(output))
     adapted = dict(output)

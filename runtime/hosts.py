@@ -5339,7 +5339,40 @@ REQUIRED_HOOK_EVENTS = (
     "SubagentStop",
     "SessionEnd",
 )
-CLAUDE_HOOK_EVENTS = (*REQUIRED_HOOK_EVENTS, "PreCompact", "PostCompact")
+CLAUDE_DENY_EVENTS = (
+    "PreSkillShellCommand",
+    "UserPromptExpansion",
+    "PermissionRequest",
+)
+CLAUDE_OBSERVE_EVENTS = (
+    "Setup",
+    "InstructionsLoaded",
+    "MessageDisplay",
+    "PostToolBatch",
+    "PermissionDenied",
+    "Notification",
+    "TaskCreated",
+    "TaskCompleted",
+    "StopFailure",
+    "TeammateIdle",
+    "ConfigChange",
+    "CwdChanged",
+    "DirectoryAdded",
+    "FileChanged",
+    "WorktreeCreate",
+    "WorktreeRemove",
+    "PreModelSwitch",
+    "PostModelSwitch",
+    "Elicitation",
+    "ElicitationResult",
+)
+CLAUDE_HOOK_EVENTS = (
+    *REQUIRED_HOOK_EVENTS,
+    "PreCompact",
+    "PostCompact",
+    *CLAUDE_DENY_EVENTS,
+    *CLAUDE_OBSERVE_EVENTS,
+)
 
 
 def lifecycle_event_names(host: str) -> tuple[str, ...]:

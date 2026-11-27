@@ -64,6 +64,31 @@ def test_post_compact_reinjects_the_same_locators_as_pre_compact():
     assert after == before
 
 
+def test_instructions_loaded_does_not_append_companion_bodies():
+    result = _hook("InstructionsLoaded")
+    assert result.returncode == 0, result.stderr
+    text = result.stdout + result.stderr
+    assert "Caveman" not in text
+    assert "Ponytail" not in text
+
+
+def test_permission_request_keeps_a_deny_and_drops_an_allow():
+    kernel = _kernel()
+    denied = kernel.adapt_hook_output(
+        {"decision": "deny", "reason": "blocked"},
+        "PermissionRequest",
+        "claude",
+    )
+    assert denied.get("decision") == "deny"
+    allowed = kernel.adapt_hook_output(
+        {"permissionDecision": "allow", "decision": "allow"},
+        "PermissionRequest",
+        "claude",
+    )
+    rendered = json.dumps(allowed)
+    assert "allow" not in rendered
+
+
 def test_permission_request_does_not_return_an_allow_decision():
     kernel = _kernel()
     adapted = kernel.adapt_hook_output(
