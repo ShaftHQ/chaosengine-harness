@@ -43,6 +43,8 @@ After plan approval, routine in-scope work is unattended. Stop for an owner deci
 
 Companions at task start via `tool.py entry` ([bot entry](../../references/bot-entry.md)): [Caveman](../../companions/caveman-ultra.md), [Ponytail](../../companions/ponytail-ultra.md). Off only: `stop caveman`, `stop ponytail`, `normal mode`.
 
+Before spawning a writer, follow [free-first delegation](../../references/delegation.md#free-first-delegation--hardware-aware-local-model-policy). Pick the smartest free or local model at its highest reasoning effort. A host session subagent is the paid fallback, and only after no free or local model can do that item. Every writer brief names the goal, the file scope, the acceptance checks, the test command, and the stop conditions. Adversarial review stays on a fresh host reviewer, never the writer.
+
 ## Check and deliver
 
 - PDCA cap is 3, not a quota. Review 1 starts with the self-accept push (review 1 with the self-accept push) ([delivery cycle](../../references/delivery-cycle.md)). Do not start both reviewers in one step.

@@ -464,7 +464,7 @@ def opencode_argv(
     workdir: str | None = None,
     auto: bool = False,
     pure: bool = True,
-    variant: str | None = "medium",
+    variant: str | None = "high",
 ) -> list[str]:
     """Build ``opencode run`` argv. Caller sets OPENCODE_CONFIG for the process."""
     argv = ["opencode", "run"]
@@ -683,9 +683,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     argv_p.add_argument("--no-pure", action="store_true", help="omit --pure")
     argv_p.add_argument(
         "--variant",
-        default="medium",
-        choices=("low", "medium", "high"),
-        help="OpenCode --variant for tool loops (default: medium)",
+        default="high",
+        choices=("low", "medium", "high", "max"),
+        help="OpenCode --variant. Free writers default to high. Pass medium only for a small mechanical model.",
     )
     argv_p.add_argument("--project", default=None, help="project root for CE brief locators")
     argv_p.add_argument("--with-ce-brief", action="store_true", help="attach locator-only CE brief JSON")

@@ -71,6 +71,28 @@ class FreeFirstDelegation252Test(unittest.TestCase):
         self.assertRegex(text, r"lowest .*sufficient|lowest task-appropriate|lowest sufficient")
         self.assertRegex(text, r"older generation")
 
+    def test_router_sends_writers_to_free_models_before_host_subagents(self) -> None:
+        skill = (ROOT / "skills" / "chaos-engine" / "SKILL.md").read_text(encoding="utf-8").casefold()
+        self.assertIn("free-first delegation", skill)
+        self.assertIn("highest reasoning effort", skill)
+        self.assertIn("paid fallback", skill)
+        self.assertIn("file scope", skill)
+        self.assertIn("acceptance checks", skill)
+        self.assertIn("test command", skill)
+        self.assertIn("stop conditions", skill)
+        self.assertNotIn("default orchestrator labor", (ROOT / "skills" / "local-agency" / "SKILL.md").read_text(encoding="utf-8").casefold())
+        dispatch = (ROOT / "skills" / "local-agency" / "scripts" / "dispatch.py").read_text(encoding="utf-8")
+        self.assertIn('default="high"', dispatch)
+        self.assertNotIn('default="medium"', dispatch)
+
+    def test_writer_brief_is_required_and_host_subagent_is_not_the_default_writer(self) -> None:
+        text = self.lowered
+        self.assertIn("not the default writer", text)
+        self.assertIn("file scope", text)
+        self.assertIn("acceptance checks", text)
+        self.assertIn("test command", text)
+        self.assertIn("stop conditions", text)
+
     def test_independent_adversarial_review_stays_on_host(self) -> None:
         text = self.lowered
         self.assertIn("adversarial review", text)

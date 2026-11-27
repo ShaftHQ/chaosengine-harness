@@ -93,7 +93,7 @@ turn after verbose logs, or miss gitignored trees via glob.
 With a READY local runtime on loopback:
 
 1. `dispatch.py resolve` → `state=READY` and a chosen local runtime
-2. `OPENCODE_CONFIG=<ephemeral>` `opencode run --pure --variant medium …`
+2. `OPENCODE_CONFIG=<ephemeral>` `opencode run --pure --variant high …` (`medium` only for a small mechanical model)
 3. Durable `~/.config/opencode/opencode.json` hash unchanged
 
 

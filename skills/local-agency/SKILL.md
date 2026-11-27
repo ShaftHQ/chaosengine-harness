@@ -1,8 +1,8 @@
 ---
 name: local-agency
 description: >-
-  Use when the adopter asks to delegate to local OSS agents (OpenCode) on a
-  READY local runtime.
+  Free-first writer path. Use before a host session writer whenever a free or
+  local model can do the item, including OpenCode on a READY local runtime.
 license: MIT
 permissions:
   - bash
@@ -22,8 +22,8 @@ first.
 
 | Path | When | Owner |
 | --- | --- | --- |
-| Session subagents / Task | Default orchestrator labor on the host | Host adapter + [delegation](../../references/delegation.md) |
-| Local agency (this skill) | Adopter asked for OpenCode / local OSS agency against local weights | This skill + READY runtime |
+| Session subagents / Task | Paid fallback after no free or local model can do the item | Host adapter + [delegation](../../references/delegation.md) |
+| Local agency (this skill) | Default writer path when a free model or a READY local runtime exists | This skill + READY runtime |
 
 ## Hard rails (never regress)
 
@@ -68,8 +68,8 @@ python3 .chaos-engine/skills/local-agency/scripts/dispatch.py argv --prompt '…
 `resolve` ranks FreeToken, then OpenAI-compat peers, then Colibri. Use `--prefer colibri` when the adopter asked for Colibri. On `READY`, `config` /
 `argv` emit ephemeral OpenCode material (`OPENCODE_CONFIG` path). Run OpenCode
 yourself with that env; do not persist the config into the durable user file.
-`argv` defaults include `--pure` and `--variant` (`medium`; use `low` or
-`medium` for tool loops). `--no-pure` exists for callers that already isolate
+`argv` defaults include `--pure` and `--variant high`. Pass `medium` only for a
+small mechanical model. `--no-pure` exists for callers that already isolate
 plugins. `--pure` still only disables plugins.
 
 ## Design-turn brief and OpenCode preflight
@@ -115,9 +115,7 @@ When `dispatch.py chat` returns OpenAI-compat `usage` and `--session-id` is set,
 
 ## When to use local
 
-Implementers write code directly; this skill is optional. Use local only when the
-handoff cost is well below generation cost (bulk mechanical edits, spec or ticket
-drafting, log summarization, offline or private work). For orchestrated multi-item work, proactively decompose into small bounded items so free/local models deliver them at highest effort; keep direct edits on the host only when decomposition cost genuinely exceeds value. See
+Orchestrated implementation uses a free or local writer first. Decompose the work into small file-disjoint items and send each one at the highest reasoning effort. A host session writer is the paid fallback after no free or local model can do that item. Keep a direct host edit only when splitting the item would cost more than the edit. See
 [when-to-use-local.md](references/when-to-use-local.md).
 
 ## Coach loop (when local is chosen)
