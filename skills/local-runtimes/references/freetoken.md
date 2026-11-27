@@ -16,8 +16,8 @@ the [transport-order table](../../../references/execution-workflows.md#transport
 | Guide | repo-only `chaos-engine/guides/freetoken.md` |
 
 **Standalone from OmniRoute.** Neither requires the other. Missing FreeToken is
-normal: use OmniRoute (if READY), a qualified native implementer, `SOLO`, or
-another local OpenAI-compat runtime.
+normal: use OmniRoute (if READY) or another local OpenAI-compat runtime. Who
+writes then follows the delegation ladder.
 
 **Peer to Colibri.** FreeToken is the default local coding MoE path for agency
 loops; [Colibri](colibri.md) (`:8000`) serves frontier multitier MoE when the

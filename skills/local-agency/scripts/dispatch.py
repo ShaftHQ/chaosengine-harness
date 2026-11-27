@@ -408,7 +408,7 @@ def resolve_local(
     payload["chosen"] = None
     advice = (
         "No READY local runtime. Start FreeToken/Ollama/LM Studio/llamacpp/Colibri "
-        "yourself, or ask explicitly for cloud OmniRoute / session agents."
+        "yourself. Who writes then follows the delegation ladder."
     )
     if allow_cloud:
         advice += " --allow-cloud set: caller may use OmniRoute deliberately."
