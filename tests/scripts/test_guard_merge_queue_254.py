@@ -420,5 +420,41 @@ class GlobalRepoBeforeMerge254Test(unittest.TestCase):
         self.assertEqual([("10", "real/red", False)], seen)
 
 
+class MalformedPreMergeRepo254Test(unittest.TestCase):
+    REPROS = (
+        "gh -R= pr merge 10",
+        "gh --repo= pr merge 10",
+        "gh pr -R= merge 10",
+        "gh -R -s pr merge 10",
+        "gh -R attacker/clean -R= pr merge 10",
+        "gh -R-x pr merge 10",
+        "gh pr --repo -x merge 10",
+        "gh -R= -R attacker/clean pr merge 10",
+    )
+
+    def test_tail_latches_unreadable_and_keeps_pr_merge(self) -> None:
+        for command in self.REPROS:
+            with self.subTest(command=command):
+                _head, arguments = GUARD.command_head(GUARD.shell_tokens(command))
+                tail = GUARD._gh_pr_merge_tail(arguments)
+                self.assertIsNotNone(tail)
+                normalized, pre_repo = tail
+                self.assertEqual(["pr", "merge", "10"], normalized)
+                self.assertIs(GUARD._UNREADABLE_MERGE, pre_repo)
+
+    def test_gate_fails_closed_for_every_malformed_pre_merge_repo(self) -> None:
+        for command in self.REPROS:
+            with self.subTest(command=command):
+                reason = GUARD.merge_before_ready_reason(command, probe=lambda _target: ready())
+                self.assertIn("could not be read", reason)
+
+    def test_later_valid_repo_cannot_overwrite_latched_unreadable(self) -> None:
+        command = "gh -R= -R attacker/clean pr merge 10"
+        _head, arguments = GUARD.command_head(GUARD.shell_tokens(command))
+        tail = GUARD._gh_pr_merge_tail(arguments)
+        self.assertIsNotNone(tail)
+        self.assertIs(GUARD._UNREADABLE_MERGE, tail[1])
+
+
 if __name__ == "__main__":
     unittest.main()

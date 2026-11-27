@@ -2123,26 +2123,73 @@ def _scan_balanced_paren(text: str, pos: int) -> int:
     n = len(text)
     case_stack: list[tuple[int, str]] = []
     cmd_start = True
+    after_time = False
+    after_coproc = False
+
+    def skip_continuation(at: int) -> int:
+        if text[at] == "\\":
+            if at + 1 < n and text[at + 1] == "\n":
+                return at + 2
+            if at + 2 < n and text[at + 1] == "\r" and text[at + 2] == "\n":
+                return at + 3
+        return at
+
+    def clear_after() -> None:
+        nonlocal after_time, after_coproc
+        after_time = False
+        after_coproc = False
+
     while index < n:
         ch = text[index]
+        boundary = " \t\r\n;&|()<>#"
+        if after_time and cmd_start and ch == "-":
+            if text.startswith("-p", index) and (
+                index + 2 >= n or text[index + 2] in boundary
+            ):
+                index += 2
+                continue
+            if text.startswith("--", index) and (
+                index + 2 >= n or text[index + 2] in boundary
+            ):
+                after_time = False
+                index += 2
+                continue
+        if after_coproc and cmd_start and (ch.isalpha() or ch == "_"):
+            end = index + 1
+            while end < n and (text[end].isalnum() or text[end] == "_"):
+                end += 1
+            if text[index:end] not in {
+                "case", "if", "while", "until", "for", "select",
+            }:
+                after_coproc = False
+                cmd_start = True
+                index = end
+                continue
         if ch == "\\":
-            index += 2
+            if index + 2 < n and text[index + 1] == "\r" and text[index + 2] == "\n":
+                index += 3
+            else:
+                index += 2
             continue
         if ch == "'":
             _, index = _scan_single_quote(text, index)
             cmd_start = False
+            clear_after()
             continue
         if ch == "$" and index + 1 < n and text[index + 1] == "'":
             _, index = _scan_ansi_c_quote(text, index)
             cmd_start = False
+            clear_after()
             continue
         if ch == '"':
             _, index = _scan_double_quote(text, index, None)
             cmd_start = False
+            clear_after()
             continue
         if ch == "`":
             _, index = _scan_backtick(text, index, in_dquote=False)
             cmd_start = False
+            clear_after()
             continue
         if ch == "#" and (index == pos or text[index - 1] in " \t\n;&|({"):
             nl = text.find("\n", index)
@@ -2162,6 +2209,7 @@ def _scan_balanced_paren(text: str, pos: int) -> int:
             ):
                 case_stack[-1] = (depth, "pattern")
             cmd_start = True
+            clear_after()
             index = end
             continue
         if ch in "|&\n":
@@ -2174,6 +2222,7 @@ def _scan_balanced_paren(text: str, pos: int) -> int:
                 and case_stack[-1] == (depth, "pattern")
             ):
                 cmd_start = True
+                clear_after()
             index = end
             continue
         if ch == "!" and cmd_start:
@@ -2181,31 +2230,45 @@ def _scan_balanced_paren(text: str, pos: int) -> int:
             continue
         if ch == "{":
             cmd_start = True
+            clear_after()
             index += 1
             continue
         if ch == "}":
             cmd_start = False
+            clear_after()
             index += 1
             continue
         if ch.isalpha() or ch == "_":
-            end = index + 1
-            while end < n and (text[end].isalnum() or text[end] == "_"):
-                end += 1
-            word = text[index:end]
+            word_chars: list[str] = []
+            scan = index
+            while scan < n:
+                if text[scan].isalnum() or text[scan] == "_":
+                    word_chars.append(text[scan])
+                    scan += 1
+                    continue
+                stepped = skip_continuation(scan)
+                if stepped != scan:
+                    scan = stepped
+                    continue
+                break
+            word = "".join(word_chars)
+            end = scan
             prev = text[index - 1] if index > pos else " "
-            following = text[end] if end < n else " "
+            after_end = skip_continuation(end) if end < n else end
+            following = text[after_end] if after_end < n else " "
             reserved = (
                 prev in " \t\r\n;&|()<>!{"
-                and following in " \t\r\n;&|()<>#"
+                and following in boundary
                 and word in {
                     "case", "esac", "in", "if", "then", "else", "elif",
-                    "while", "until", "do", "time",
+                    "while", "until", "do", "time", "coproc",
                 }
             )
             if cmd_start:
                 if reserved and word == "case":
                     case_stack.append((depth, "in_head"))
                     cmd_start = False
+                    clear_after()
                     index = end
                     continue
                 if (
@@ -2217,12 +2280,26 @@ def _scan_balanced_paren(text: str, pos: int) -> int:
                 ):
                     case_stack.pop()
                     cmd_start = False
+                    clear_after()
+                    index = end
+                    continue
+                if reserved and word == "time":
+                    cmd_start = True
+                    after_time = True
+                    after_coproc = False
+                    index = end
+                    continue
+                if reserved and word == "coproc":
+                    cmd_start = True
+                    after_coproc = True
+                    after_time = False
                     index = end
                     continue
                 if not reserved or word not in {
-                    "then", "do", "else", "elif", "if", "while", "until", "time",
+                    "then", "do", "else", "elif", "if", "while", "until", "time", "coproc",
                 }:
                     cmd_start = False
+                clear_after()
             if (
                 reserved
                 and word == "in"
@@ -2239,10 +2316,13 @@ def _scan_balanced_paren(text: str, pos: int) -> int:
                 and case_stack[-1][0] == depth
                 and case_stack[-1][1] == "pattern"
             ):
+                cmd_start = False
+                clear_after()
                 index += 1
                 continue
             depth += 1
             cmd_start = True
+            clear_after()
             index += 1
             continue
         if ch == ")":
@@ -2253,10 +2333,12 @@ def _scan_balanced_paren(text: str, pos: int) -> int:
             ):
                 case_stack[-1] = (depth, "body")
                 cmd_start = True
+                clear_after()
                 index += 1
                 continue
             depth -= 1
-            cmd_start = True
+            cmd_start = False
+            clear_after()
             index += 1
             if depth == 0:
                 if case_stack:
@@ -2267,6 +2349,7 @@ def _scan_balanced_paren(text: str, pos: int) -> int:
             index += 1
             continue
         cmd_start = False
+        clear_after()
         index += 1
     raise ValueError("Unclosed parenthesis")
 
