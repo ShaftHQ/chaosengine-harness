@@ -5,8 +5,10 @@ from __future__ import annotations
 import importlib.util
 import json
 import tempfile
+import time
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -128,17 +130,75 @@ class DelegationReceiptTest(unittest.TestCase):
                     self.assertIn("record a receipt", reason or "")
 
     def test_read_only_spawn_is_not_a_writer(self) -> None:
+        prompts = (
+            "Read the file. Do not edit.",
+            "Read hooks/delegation_gate.py and report whether classify returns host-writer.",
+            "Do not change any files. Only read and report.",
+        )
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            self.assertIsNone(
-                GATE.writer_block(
-                    "spawn_subagent",
-                    {"prompt": "Read the file. Do not edit."},
-                    (),
-                    root,
-                    now=1_000.0,
-                )
+            for prompt in prompts:
+                with self.subTest(prompt=prompt):
+                    self.assertIsNone(
+                        GATE.writer_block(
+                            "spawn_subagent",
+                            {"prompt": prompt},
+                            (),
+                            root,
+                            now=1_000.0,
+                        )
+                    )
+
+    def test_a_disclaimer_does_not_hide_the_edit(self) -> None:
+        prompts = (
+            "Modify hooks/delegation_gate.py. Do not edit unrelated files.",
+            "Refactor the parser. Do not edit unrelated files.",
+            "Create the missing regression test. Do not edit unrelated files.",
+            "Implement the parser fix. Do not edit unrelated files.",
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for prompt in prompts:
+                with self.subTest(prompt=prompt):
+                    reason = GATE.writer_block("Task", {"prompt": prompt}, (), root, now=1_000.0)
+                    self.assertIn("record a receipt", reason or "")
+
+    def test_the_last_variant_is_the_effort_that_counts(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "skills" / "chaos-engine").mkdir(parents=True)
+            (root / "skills" / "chaos-engine" / "SKILL.md").write_text("x", encoding="utf-8")
+            brief = self._brief(root)
+            self._receipt(root, brief=brief)
+            slipped = GATE.writer_block(
+                "run_terminal_command",
+                {},
+                (f"opencode run --variant high --variant low {brief}",),
+                root,
+                now=1_000.0,
             )
+            self.assertIn("--variant high", slipped or "")
+
+    def test_dispatch_carries_the_receipt_brief(self) -> None:
+        dispatch = load(
+            "ce_dispatch_brief_test",
+            ROOT / "skills" / "local-agency" / "scripts" / "dispatch.py",
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "skills" / "chaos-engine").mkdir(parents=True)
+            (root / "skills" / "chaos-engine" / "SKILL.md").write_text("x", encoding="utf-8")
+            brief = self._brief(root)
+            missing = SimpleNamespace(project=str(root), prompt="apply the change", workdir=None)
+            refused = dispatch._free_writer_block(missing, "opencode run --variant high")
+            self.assertIn("record a receipt", refused or "")
+            self._receipt(root, brief=brief, recorded_at=time.time())
+            argv = SimpleNamespace(project=str(root), prompt="apply the change", workdir=None)
+            self.assertIsNone(dispatch._free_writer_block(argv, "opencode run --variant high"))
+            self.assertIn(brief, argv.prompt)
+            chat = SimpleNamespace(project=str(root), prompt="apply the change", workdir=None)
+            self.assertIsNone(dispatch._free_writer_block(chat, "dispatch.py argv"))
+            self.assertIn(brief, chat.prompt)
 
     def test_direct_edit_needs_rung_direct(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

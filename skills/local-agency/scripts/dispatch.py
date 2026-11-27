@@ -532,10 +532,21 @@ def cmd_config(args: argparse.Namespace) -> int:
 
 
 def _free_writer_block(args: argparse.Namespace, command: str) -> str | None:
-    """Refuse a free writer until the shared ladder receipt matches. Every host."""
+    """Refuse a free writer until the shared ladder receipt matches. Every host.
+
+    The receipt names the brief. Put that path on the prompt and on the command
+    the gate sees, so argv and chat carry the same brief the receipt recorded.
+    """
     gate_path = SKILLS_ROOT.parent / "hooks" / "delegation_gate.py"
     gate = _load_module("ce_delegation_gate", gate_path)
     start = Path(getattr(args, "project", None) or getattr(args, "workdir", None) or Path.cwd())
+    receipt = gate.load_receipt(gate.project_root(start)) or {}
+    brief = str(receipt.get("brief") or "")
+    prompt = str(getattr(args, "prompt", "") or "")
+    if brief and brief not in prompt:
+        args.prompt = f"{prompt}\n{brief}".strip()
+    if brief and brief not in command:
+        command = f"{command} {brief}"
     return gate.writer_block("Bash", {}, (command,), start)
 
 

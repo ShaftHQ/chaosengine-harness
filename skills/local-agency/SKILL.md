@@ -22,7 +22,7 @@ first.
 
 | Path | When | Owner |
 | --- | --- | --- |
-| Session subagents / Task | Paid fallback after no free or local model can do the item | Host adapter + [delegation](../../references/delegation.md) |
+| Session subagents / Task | Paid rung of the [delegation ladder](../../skills/chaos-engine/SKILL.md#delegation-ladder), after the ask rung | Host adapter + [delegation](../../references/delegation.md) |
 | Local agency (this skill) | Default writer path when a free model or a READY local runtime exists | This skill + READY runtime |
 
 ## Hard rails (never regress)
@@ -36,9 +36,9 @@ first.
   out of that process. `--pure` only disables external plugins.
 - **Never** persist OpenCode settings under the durable user config directory (helper refuses those paths),
   **never** `ft launch` / `ft serve`, **never** start local servers from CE.
-- Do **not** silently fall back to cloud OmniRoute. Missing local runtime:
-  tell the operator; continue with session agents / `SOLO` / OmniRoute only when
-  the adopter explicitly asked for that path.
+- Do **not** silently fall back to cloud OmniRoute. A missing local runtime
+  follows the delegation ladder. Do not open a paid writer or a session agent
+  in that turn.
 - Do **not** install OpenCode from this skill silently or unprompted. Inspect hardware, recommend fitting models, and obtain explicit owner approval before any install or configuration. Operator install stays on vendor docs (README third-party table).
 - Installer / doctor / status must **not** fail because OpenCode or a local
   runtime is missing.

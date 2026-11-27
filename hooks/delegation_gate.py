@@ -36,8 +36,15 @@ _FREE_COMMAND = re.compile(
     re.IGNORECASE,
 )
 _REVIEW_TEXT = re.compile(r"adversarial review", re.IGNORECASE)
-_READ_ONLY = re.compile(r"read-only|do not edit|does not edit", re.IGNORECASE)
-_EDIT_VERB = re.compile(r"\b(?:implement|edit|fix|change|write|update|add)\b", re.IGNORECASE)
+_NEGATED_EDIT = re.compile(
+    r"\b(?:do not|don't|does not|never)\s+"
+    r"(?:implement|edit|fix|change|write|update|add|modify|refactor|create)\b",
+    re.IGNORECASE,
+)
+_EDIT_VERB = re.compile(
+    r"\b(?:implement|edit|fix|change|write|update|add|modify|refactor|create)\b",
+    re.IGNORECASE,
+)
 _DIRECT_TOOL = re.compile(
     r"^(?:write|edit|strreplace|multiedit|apply_?patch|notebookedit|search_replace|"
     r"write_file|writefile|write_to_file|writetofile|create_file|createfile|"
@@ -148,8 +155,8 @@ def _subagent_type(tool_input: object) -> str:
 
 
 def _editing(text: str) -> bool:
-    """True when the prompt still asks for a change after a read-only clause."""
-    return _EDIT_VERB.search(_READ_ONLY.sub(" ", text)) is not None
+    """True when a change verb remains after a negated instruction is removed."""
+    return _EDIT_VERB.search(_NEGATED_EDIT.sub(" ", text)) is not None
 
 
 def classify(tool_name: str, tool_input: object, commands: tuple[str, ...]) -> str | None:
@@ -161,11 +168,11 @@ def classify(tool_name: str, tool_input: object, commands: tuple[str, ...]) -> s
     if _WRITER_TOOL.match(tool_name or ""):
         kind = _subagent_type(tool_input)
         text = _blob(tool_input)
-        if _REVIEW_TYPE.search(kind):
+        if _REVIEW_TYPE.search(kind) and not _editing(text):
             return "review"
         if _REVIEW_TEXT.search(text) and not _editing(text):
             return "review"
-        if _READ_ONLY.search(text) and not _editing(text):
+        if not _editing(text):
             return None
         return "host-writer"
     if _DIRECT_TOOL.match(tool_name or ""):
@@ -191,8 +198,8 @@ def _free_problem(receipt: dict, command_text: str) -> str | None:
     mechanical = bool(receipt.get("mechanical"))
     if mechanical and "mechanical" not in brief.casefold():
         return "delegation ladder: a mechanical receipt needs the word mechanical in the brief."
-    found = _VARIANT.search(command_text)
-    variant = found.group(1).lower() if found else None
+    found = _VARIANT.findall(command_text)
+    variant = found[-1].lower() if found else None
     if variant is None and re.search(r"\bopencode\b", command_text, re.IGNORECASE) and re.search(
         r"\brun\b", command_text, re.IGNORECASE
     ):
