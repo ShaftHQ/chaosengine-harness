@@ -6622,6 +6622,10 @@ def _apply_completion_hook_health(
         hooks["hookHostsMissing"] = missing
         hooks["fixNext"] = "repair --project . --component hooks"
         hooks["hookHostsExpected"] = [paths[host] for host in expected if host in paths]
+        # No selected host: the row stays visible and must not fail the install.
+        # A completion target that is missing still keeps taskImpact required.
+        if not targets:
+            hooks["taskImpact"] = "advisory"
         if rows:
             hooks["instructionOnly"] = rows
             hooks["completionTargets"] = list(targets)
