@@ -426,6 +426,12 @@ class OperationBoundary262Test(unittest.TestCase):
             "flock /tmp/lock echo ok",
             "time -o /tmp/out echo ok",
             "exec -a name echo ok",
+            "exec -c echo ok",
+            "env -iu NAME echo ok",
+            "flock -xw 1 /tmp/lock echo ok",
+            "/usr/bin/time -ao /tmp/out echo ok",
+            "sudo --shell echo ok",
+            "setsid -c echo ok",
         ):
             with self.subTest(command=command):
                 self.assertIsNone(self.block(command))
@@ -450,6 +456,41 @@ class OperationBoundary262Test(unittest.TestCase):
             "time --output /tmp/out git push -f origin main",
             "/usr/bin/time -o /tmp/out git push -f origin main",
             "exec -a name git push -f origin main",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual("force-push-without-approval", self.block(command))
+
+    def test_review4_clusters_are_refused(self) -> None:
+        for command in (
+            "env -Sgit push -f origin main",
+            "env -S'git push -f origin main'",
+            "env -iSgit push -f origin main",
+            "env -vSgit push -f origin main",
+            "env -iS'git push -f origin main'",
+            "env -iu NAME git push -f origin main",
+            "env -vu NAME git push -f origin main",
+            "env -iC /tmp git push -f origin main",
+            "env -vC /tmp git push -f origin main",
+            "flock -xw 1 /tmp/lock git push -f origin main",
+            "flock -sw 1 /tmp/lock git push -f origin main",
+            "flock -nw 1 /tmp/lock git push -f origin main",
+            "flock -ow 1 /tmp/lock git push -f origin main",
+            "flock -Fw 1 /tmp/lock git push -f origin main",
+            "/usr/bin/time -ao /tmp/out git push -f origin main",
+            "/usr/bin/time -qo /tmp/out git push -f origin main",
+            "/usr/bin/time -vo /tmp/out git push -f origin main",
+            "/usr/bin/time -po /tmp/out git push -f origin main",
+            "/usr/bin/time -af '%e' git push -f origin main",
+            "/usr/bin/time -qf '%e' git push -f origin main",
+            "/usr/bin/time -vf '%e' git push -f origin main",
+            "exec -ca name git push -f origin main",
+            "exec -c git push -f origin main",
+            "exec -c -a name git push -f origin main",
+            "exec -a name -c git push -f origin main",
+            "sudo --shell git push -f origin main",
+            "sudo -Eu user git push -f origin main",
+            "setsid -c git push -f origin main",
+            "setsid -w git push -f origin main",
         ):
             with self.subTest(command=command):
                 self.assertEqual("force-push-without-approval", self.block(command))

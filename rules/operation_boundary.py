@@ -211,7 +211,7 @@ _SHELL_COMMANDS = frozenset({"bash", "sh", "dash", "ksh", "zsh"})
 # ``-g`` and ``--group`` do. Attached values (``-oL``, ``-c2``, ``--user=name``)
 # are not members, so they do not consume the command.
 _WRAPPER_VALUE_FLAGS = frozenset(
-    {"-u", "--user", "-g", "--group", "-C", "--chdir", "--shell", "-c"}
+    {"-u", "--user", "-g", "--group", "-C", "--chdir"}
 )
 # Flags whose next word is the value, only for that wrapper. A form with the
 # value attached (``-oL``, ``-c2``, ``-n5``) is not a member, so it does not
@@ -446,6 +446,57 @@ def _embedded_code(text: str) -> list[str]:
     return code
 
 
+_SHORT_VALUE = {
+    "env": "uCS",
+    "flock": "wEc",
+    "time": "of",
+    "exec": "a",
+    "sudo": "CDghpRrtTuU",
+    "ionice": "cnpPu",
+    "nice": "n",
+    "stdbuf": "oei",
+    "xargs": "IanPdELs",
+}
+_SHORT_COMMAND = {
+    "env": "S",
+    "flock": "c",
+}
+
+
+def _short_option(wrapper, word, words, index, depth):
+    """Read one single-dash cluster. Long options are not handled here."""
+    if not word.startswith("-") or word.startswith("--") or word == "-":
+        return None
+    body = word[1:]
+    values = _SHORT_VALUE.get(wrapper, "")
+    commands = _SHORT_COMMAND.get(wrapper, "")
+    cursor = 0
+    while cursor < len(body):
+        char = body[cursor]
+        cursor += 1
+        if char not in values and char not in commands:
+            continue
+        glued = body[cursor:]
+        if glued:
+            payload = glued
+            rest_index = index + 1
+        else:
+            payload = words[index + 1] if index + 1 < len(words) else ""
+            rest_index = index + 2
+        if char in commands and wrapper == "env":
+            rest = " ".join(words[rest_index:])
+            script = f"{payload} {rest}".strip()
+            if script and _has_git_push(script, depth + 1):
+                return ("push", 0)
+            return ("stop", 0)
+        if char in commands:
+            if payload and _has_git_push(payload, depth + 1):
+                return ("push", 0)
+            return ("next", rest_index)
+        return ("next", rest_index)
+    return ("next", index + 1)
+
+
 def _head_is_git_push(
     words: list[str], depth: int, heredocs: list[str] | None = None
 ) -> bool:
@@ -477,6 +528,14 @@ def _head_is_git_push(
         if name in _WRAPPER_COMMANDS:
             wrapper = name
             index += 1
+            continue
+        if wrapper and word.startswith("-") and not word.startswith("--"):
+            kind, nxt = _short_option(wrapper, word, words, index, depth)
+            if kind == "push":
+                return True
+            if kind == "stop":
+                return False
+            index = nxt
             continue
         if wrapper and word.startswith("-"):
             command_flags = _COMMAND_STRING_FLAGS.get(wrapper, frozenset())
