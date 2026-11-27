@@ -28,6 +28,7 @@ def _load(name: str, path: Path):
 GUARD = _load("chaos_engine_delete_guard_251", ROOT / "runtime" / "delete_guard.py")
 GATE = _load("chaos_engine_test_quality_gate_251", ROOT / "rules" / "test_quality_gate.py")
 HOOK = _load("chaos_engine_guard_251", ROOT / "hooks" / "guard.py")
+BOUNDARY = _load("chaos_engine_operation_boundary_262", ROOT / "rules" / "operation_boundary.py")
 
 
 def _git(cwd: Path, *argv: str) -> None:
@@ -209,6 +210,37 @@ class DeleteGuardParser251Test(unittest.TestCase):
             with self.subTest(command=command):
                 self.assert_refuses(command)
 
+    def test_quoted_and_escaped_coproc_names_before_case_are_refused(self) -> None:
+        for command in (
+            'echo "$(coproc \'mycp\' case x in x) rm -rf precious.txt;; esac; wait)"',
+            'echo "$(coproc "mycp" case x in x) rm -rf precious.txt;; esac; wait)"',
+            'echo "$(coproc $\'mycp\' case x in x) rm -rf precious.txt;; esac; wait)"',
+            'echo "$(coproc my\\cp case x in x) rm -rf precious.txt;; esac; wait)"',
+        ):
+            with self.subTest(command=command):
+                self.assert_refuses(command)
+
+    def test_prefix_redirection_before_case_is_refused(self) -> None:
+        for command in (
+            'echo "$(time -p >/dev/null case x in x) rm -rf precious.txt;; esac)"',
+            'echo "$(coproc mycp >/dev/null case x in x) rm -rf precious.txt;; esac; wait)"',
+        ):
+            with self.subTest(command=command):
+                self.assert_refuses(command)
+
+    def test_unclosed_redirect_inside_substitution_raises_value_error(self) -> None:
+        command = 'echo "$(>'
+        with self.assertRaises(ValueError):
+            GUARD._scan_balanced_paren(command, command.index("(") + 1)
+
+    def test_scan_balanced_paren_prefix_scan_is_linear(self) -> None:
+        text = "(" + ">/dev/null " * 4000 + "case x in x) echo ok;; esac)"
+        started = time.monotonic()
+        end = GUARD._scan_balanced_paren(text, 0)
+        elapsed = time.monotonic() - started
+        self.assertEqual(len(text), end)
+        self.assertLess(elapsed, 5.0)
+
     def test_array_literal_substitutions_are_refused(self) -> None:
         for command in (
             "foo=( $(rm -rf precious.txt) )",
@@ -242,6 +274,254 @@ class DeleteGuardParser251Test(unittest.TestCase):
 
     def test_plain_array_literal_stays_allowed(self) -> None:
         self.assertEqual("", self.reason("foo=(a b c)"))
+
+
+class OperationBoundary262Test(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+
+    def tearDown(self) -> None:
+        self.temp.cleanup()
+
+    def block(self, command: str) -> str | None:
+        return BOUNDARY.force_push_block(self.root, command)
+
+    def test_shell_statements_splits_unquoted_newlines(self) -> None:
+        self.assertEqual(
+            ["git push origin main", "gh workflow run ci -f key=val"],
+            BOUNDARY._shell_statements(
+                "git push origin main\ngh workflow run ci -f key=val"
+            ),
+        )
+        self.assertEqual(
+            ["echo a", "echo b"], BOUNDARY._shell_statements("echo a\r\necho b")
+        )
+
+    def test_shell_statements_keeps_continuations_quotes_and_heredocs(self) -> None:
+        for command in (
+            "echo a \\\nb",
+            'echo "a\nb"',
+            "echo $(printf 'a\nb')",
+            "cat <<EOF\nbody\nEOF\n",
+        ):
+            with self.subTest(command=command):
+                statements = BOUNDARY._shell_statements(command)
+                self.assertEqual(1, len(statements), statements)
+
+    def test_newline_separated_push_and_gh_workflow_flag_is_allowed(self) -> None:
+        self.assertIsNone(
+            self.block("git push origin main\ngh workflow run ci -f key=val")
+        )
+
+    def test_quoted_non_git_payloads_are_allowed(self) -> None:
+        for command in (
+            'gh issue create --body "git push -f -f here"',
+            'python3 -c "print(\'git push -f\')"',
+            'echo "git push --force here"',
+            "echo git push -f here | cat",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNone(self.block(command))
+
+    def test_true_force_pushes_are_refused(self) -> None:
+        for command in (
+            "git push origin main -f",
+            "git push --force origin main",
+            "git push --force-with-lease origin main",
+            "git push origin +main",
+            'bash -c "git push -f origin main"',
+            "/bin/bash -c 'git push -f origin main'",
+            'bash -c "echo x; git push -f origin main"',
+            'eval "git push -f origin main"',
+            "git -C /tmp push -f origin main",
+            "/usr/bin/git push -f origin main",
+            "sudo -u user git push -f origin main",
+            'echo "$(git push -f origin main)"',
+        ):
+            with self.subTest(command=command):
+                self.assertEqual("force-push-without-approval", self.block(command))
+
+    def test_review_force_push_bypasses_are_refused(self) -> None:
+        for command in (
+            ">/dev/null git push -f origin main",
+            "2>/dev/null git push -f origin main",
+            "if true; then git push -f origin main; fi",
+            "{ git push -f origin main; }",
+            "env -i git push -f origin main",
+            "sudo -S git push -f origin main",
+            "sudo -i git push -f origin main",
+            "sudo -g wheel git push -f origin main",
+            "bash -cl 'git push -f origin main'",
+            "bash -c $'git push -f origin main'",
+            'bash -c $"git push -f origin main"',
+            "eval -- git push -f origin main",
+            "bash <<EOF\ngit push -f origin main\nEOF\n",
+            "sh <<EOF\ngit push -f origin main\nEOF\n",
+            "dash <<'EOF'\ngit push -f origin main\nEOF\n",
+            "ksh <<EOF\ngit push -f origin main\nEOF\n",
+            "zsh <<EOF\ngit push -f origin main\nEOF\n",
+            "nice git push -f origin main",
+            "setsid git push -f origin main",
+            "stdbuf -oL git push -f origin main",
+            "ionice -c2 git push -f origin main",
+            "doas git push -f origin main",
+            "flock git push -f origin main",
+            "flock /tmp/lock git push -f origin main",
+            "xargs git push -f origin main",
+            "xargs -I {} git push -f origin main",
+            "stdbuf -o L git push -f origin main",
+            "nice -n 5 git push -f origin main",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual("force-push-without-approval", self.block(command))
+
+    def test_wrapper_option_values_are_refused(self) -> None:
+        for command in (
+            "ionice --class 2 git push -f origin main",
+            "ionice --classdata 4 git push -f origin main",
+            "ionice -c 2 git push -f origin main",
+            "sudo -D /tmp git push -f origin main",
+            "sudo --close-from 3 git push -f origin main",
+            "sudo -h localhost git push -f origin main",
+            "sudo --host localhost git push -f origin main",
+            "sudo -p prompt git push -f origin main",
+            "sudo --prompt prompt git push -f origin main",
+            "sudo -R / git push -f origin main",
+            "sudo --chroot / git push -f origin main",
+            "sudo -r unconfined_r git push -f origin main",
+            "sudo --role unconfined_r git push -f origin main",
+            "sudo -t unconfined_t git push -f origin main",
+            "sudo --type unconfined_t git push -f origin main",
+            "sudo -T 5 git push -f origin main",
+            "sudo --command-timeout 5 git push -f origin main",
+            "sudo -U other git push -f origin main",
+            "sudo --other-user other git push -f origin main",
+            "xargs --max-args 1 git push -f origin main",
+            "xargs --max-lines 1 git push -f origin main",
+            "xargs --arg-file /tmp/list git push -f origin main",
+            "xargs --delimiter , git push -f origin main",
+            "xargs --max-procs 1 git push -f origin main",
+            "xargs --max-chars 1000 git push -f origin main",
+            "xargs --process-slot-var SLOT git push -f origin main",
+            "flock -E 1 /tmp/lock git push -f origin main",
+            "flock --conflict-exit-code 1 /tmp/lock git push -f origin main",
+            "flock -c 'git push -f origin main'",
+            "flock --command 'git push -f origin main'",
+            "flock --command='git push -f origin main'",
+            "env -S 'git push -f origin main'",
+            "env --split-string 'git push -f origin main'",
+            "env --split-string='git push -f origin main'",
+            "env --unset NAME git push -f origin main",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual("force-push-without-approval", self.block(command))
+
+    def test_wrapper_option_values_do_not_hide_a_plain_command(self) -> None:
+        for command in (
+            "sudo -D /tmp echo ok",
+            "flock -c 'echo ok'",
+            "env -S 'echo ok'",
+            "env --unset NAME echo ok",
+            "flock /tmp/lock echo ok",
+            "time -o /tmp/out echo ok",
+            "exec -a name echo ok",
+            "exec -c echo ok",
+            "env -iu NAME echo ok",
+            "flock -xw 1 /tmp/lock echo ok",
+            "/usr/bin/time -ao /tmp/out echo ok",
+            "sudo --shell echo ok",
+            "setsid -c echo ok",
+            "env - echo ok",
+            "doas -u user echo ok",
+            "env -S'-i echo ok'",
+            "env -S'echo\\_ok'",
+            "flock -u echo ok",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNone(self.block(command))
+
+    def test_review3_operands_are_refused(self) -> None:
+        for command in (
+            "env -S git push -f origin main",
+            "env --split-string git push -f origin main",
+            "env -S 'git' push -f origin main",
+            "env --split-string=git push -f origin main",
+            "flock -c 'echo ok' git push -f origin main",
+            "flock --command='echo ok' git push -f origin main",
+            "flock /tmp/lock -c 'git push -f origin main'",
+            "flock /tmp/lock --command 'git push -f origin main'",
+            "flock -E 1 /tmp/lock -c 'git push -f origin main'",
+            "flock -w 1 /tmp/lock -c 'git push -f origin main'",
+            "flock --wait 1 /tmp/lock git push -f origin main",
+            "flock --timeout 1 /tmp/lock -c 'git push -f origin main'",
+            "time -o /tmp/out git push -f origin main",
+            "time -f '%e' git push -f origin main",
+            "time --format '%e' git push -f origin main",
+            "time --output /tmp/out git push -f origin main",
+            "/usr/bin/time -o /tmp/out git push -f origin main",
+            "exec -a name git push -f origin main",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual("force-push-without-approval", self.block(command))
+
+    def test_review4_clusters_are_refused(self) -> None:
+        for command in (
+            "env -Sgit push -f origin main",
+            "env -S'git push -f origin main'",
+            "env -iSgit push -f origin main",
+            "env -vSgit push -f origin main",
+            "env -iS'git push -f origin main'",
+            "env -iu NAME git push -f origin main",
+            "env -vu NAME git push -f origin main",
+            "env -iC /tmp git push -f origin main",
+            "env -vC /tmp git push -f origin main",
+            "flock -xw 1 /tmp/lock git push -f origin main",
+            "flock -sw 1 /tmp/lock git push -f origin main",
+            "flock -nw 1 /tmp/lock git push -f origin main",
+            "flock -ow 1 /tmp/lock git push -f origin main",
+            "flock -Fw 1 /tmp/lock git push -f origin main",
+            "/usr/bin/time -ao /tmp/out git push -f origin main",
+            "/usr/bin/time -qo /tmp/out git push -f origin main",
+            "/usr/bin/time -vo /tmp/out git push -f origin main",
+            "/usr/bin/time -po /tmp/out git push -f origin main",
+            "/usr/bin/time -af '%e' git push -f origin main",
+            "/usr/bin/time -qf '%e' git push -f origin main",
+            "/usr/bin/time -vf '%e' git push -f origin main",
+            "exec -ca name git push -f origin main",
+            "exec -c git push -f origin main",
+            "exec -c -a name git push -f origin main",
+            "exec -a name -c git push -f origin main",
+            "sudo --shell git push -f origin main",
+            "sudo -Eu user git push -f origin main",
+            "setsid -c git push -f origin main",
+            "setsid -w git push -f origin main",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual("force-push-without-approval", self.block(command))
+
+    def test_review5_env_and_doas_are_refused(self) -> None:
+        for command in (
+            "env - git push -f origin main",
+            "doas -u user git push -f origin main",
+            "doas -C /etc/doas.conf git push -f origin main",
+            "env -S'-i git push -f origin main'",
+            "env -S'-u NAME git push -f origin main'",
+            "env -S'-C /tmp git push -f origin main'",
+            "env -S'-v git push -f origin main'",
+            "env -S'git\\_push\\_-f\\_origin\\_main'",
+            "flock -u git push -f origin main",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual("force-push-without-approval", self.block(command))
+
+    def test_heredoc_data_is_not_a_force_push(self) -> None:
+        for command in (
+            "cat <<EOF\ngit push -f origin main\nEOF\n",
+            "bash -c 'echo ok' <<EOF\ngit push -f origin main\nEOF\n",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNone(self.block(command))
 
 
 class MarkerAlignment251Test(unittest.TestCase):

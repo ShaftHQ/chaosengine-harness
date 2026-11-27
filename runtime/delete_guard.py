@@ -2125,23 +2125,130 @@ def _scan_balanced_paren(text: str, pos: int) -> int:
     cmd_start = True
     after_time = False
     after_coproc = False
+    boundary = " \t\r\n;&|()<>#"
 
     def skip_continuation(at: int) -> int:
-        if text[at] == "\\":
+        if at < n and text[at] == "\\":
             if at + 1 < n and text[at + 1] == "\n":
                 return at + 2
             if at + 2 < n and text[at + 1] == "\r" and text[at + 2] == "\n":
                 return at + 3
         return at
 
+    def escaped(at: int) -> bool:
+        count = 0
+        cursor = at - 1
+        while cursor >= 0 and text[cursor] == "\\":
+            count += 1
+            cursor -= 1
+        return count % 2 == 1
+
     def clear_after() -> None:
         nonlocal after_time, after_coproc
         after_time = False
         after_coproc = False
 
+    def word_end(at: int) -> int | None:
+        """End of one word at at, including quotes and backslash escapes.
+
+        An unquoted reserved control word stays for the main scan to handle.
+        """
+        scan = at
+        chars: list[str] = []
+        quoted = False
+        while scan < n:
+            ch = text[scan]
+            if ch in boundary:
+                break
+            if ch == "\\":
+                stepped = skip_continuation(scan)
+                if stepped != scan:
+                    scan = stepped
+                    continue
+                if scan + 1 < n and text[scan + 1] not in "\n\r":
+                    chars.append(text[scan + 1])
+                    quoted = True
+                    scan += 2
+                    continue
+                break
+            if ch == "'":
+                end = scan + 1
+                while end < n and text[end] != "'":
+                    end += 1
+                if end >= n:
+                    break
+                chars.append(text[scan + 1 : end])
+                quoted = True
+                scan = end + 1
+                continue
+            if ch == '"':
+                end = scan + 1
+                while end < n:
+                    if text[end] == '"' and not escaped(end):
+                        break
+                    end += 1
+                if end >= n:
+                    break
+                chars.append(text[scan + 1 : end])
+                quoted = True
+                scan = end + 1
+                continue
+            if text.startswith("$'", scan):
+                end = scan + 2
+                while end < n and text[end] != "'":
+                    end += 2 if text[end] == "\\" and end + 1 < n else 1
+                if end >= n:
+                    break
+                chars.append(text[scan + 2 : end])
+                quoted = True
+                scan = end + 1
+                continue
+            chars.append(ch)
+            scan += 1
+        if not chars and not quoted:
+            return None
+        if not quoted and "".join(chars) in {
+            "case", "if", "while", "until", "for", "select",
+        }:
+            return None
+        after = skip_continuation(scan) if scan < n else scan
+        if after < n and text[after] not in boundary:
+            return None
+        return scan
+
+    def redirection_end(at: int) -> int | None:
+        """End of one prefix redirection at at, leaving command state intact."""
+        scan = at
+        if text[scan].isdigit():
+            while scan < n and text[scan].isdigit():
+                scan += 1
+        if scan >= n or text[scan] not in "<>":
+            return None
+        for operator in ("<<<", "<<", ">>", "<>", ">&", "<&"):
+            if text.startswith(operator, scan):
+                scan += len(operator)
+                break
+        else:
+            scan += 1
+        while scan < n and text[scan] in " \t":
+            scan += 1
+        stepped = skip_continuation(scan)
+        while stepped != scan:
+            scan = stepped
+            while scan < n and text[scan] in " \t":
+                scan += 1
+            stepped = skip_continuation(scan)
+        if scan >= n or text[scan] in "\r\n" or text[scan] in boundary:
+            return None
+        if text[scan] == "&":
+            scan += 1
+            while scan < n and text[scan].isdigit():
+                scan += 1
+            return scan
+        return word_end(scan) or scan + 1
+
     while index < n:
         ch = text[index]
-        boundary = " \t\r\n;&|()<>#"
         if after_time and cmd_start and ch == "-":
             opt_chars: list[str] = []
             scan = index
@@ -2162,28 +2269,15 @@ def _scan_balanced_paren(text: str, pos: int) -> int:
                 after_time = False
                 index = scan
                 continue
-        if after_coproc and cmd_start and (ch.isalpha() or ch == "_"):
-            name_chars: list[str] = []
-            scan = index
-            while scan < n:
-                if text[scan].isalnum() or text[scan] == "_":
-                    name_chars.append(text[scan])
-                    scan += 1
-                    continue
-                stepped = skip_continuation(scan)
-                if stepped != scan:
-                    scan = stepped
-                    continue
-                break
-            name = "".join(name_chars)
-            after_end = skip_continuation(scan) if scan < n else scan
-            following = text[after_end] if after_end < n else " "
-            if following in boundary and name not in {
-                "case", "if", "while", "until", "for", "select",
-            }:
-                after_coproc = False
-                cmd_start = True
-                index = scan
+        if after_coproc and cmd_start:
+            name_end = word_end(index)
+            if name_end is not None:
+                index = name_end
+                continue
+        if cmd_start:
+            redir_end = redirection_end(index)
+            if redir_end is not None:
+                index = redir_end
                 continue
         if ch == "\\":
             if index + 2 < n and text[index + 1] == "\r" and text[index + 2] == "\n":
