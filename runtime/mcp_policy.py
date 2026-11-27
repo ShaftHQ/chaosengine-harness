@@ -407,7 +407,7 @@ def user_skill_collision_error(home: Path | None = None) -> str | None:
     return f"{HEAL_PROMPT} User-home skills collide with ChaosEngine overlay. Seen: {rendered}."
 
 
-GH_PROBE_TIMEOUT_SECONDS = 15
+GH_PROBE_TIMEOUT_SECONDS = 5
 
 
 def gh_is_configured(

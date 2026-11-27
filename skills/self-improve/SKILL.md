@@ -23,6 +23,8 @@ Session procedure: [references/session-procedure.md](references/session-procedur
 1. **Harness** — skills, hooks, MemPalace, Graphify, installer/doctor. GitHub issue only. Never a local queue and never chat.
 2. **Product** — enhancements for the product under development (queued issues).
 
+Inspect sessions for friction/defects/gaps; infer fixes from evidence; file upstream issues/PRs (harness or libraries) after duplicate search, honoring owners.
+
 Details: [references/observation-taxonomy.md](references/observation-taxonomy.md).
 Product track: [references/product-track.md](references/product-track.md).
 Activation: [references/activation.md](references/activation.md).

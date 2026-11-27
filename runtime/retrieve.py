@@ -75,11 +75,11 @@ def is_empty_result(body: str) -> bool:
 
 
 def project_root(start: Path | None = None) -> Path:
+    """Active checkout root; no commondir redirect (#258).
+    Shared tool/store paths resolve their own main root."""
     here = (start or Path.cwd()).resolve()
     for candidate in (here, *here.parents):
-        if (candidate / ".chaos-engine" / "install.py").is_file() or (
-            candidate / "chaos-engine" / "install.py"
-        ).is_file():
+        if _has_overlay(candidate):
             return candidate
     return here
 
@@ -369,7 +369,7 @@ def _tool_py(project: Path) -> Path | None:
         path = project / relative
         if path.is_file():
             return path
-    return None
+    return _tool_py_in_root(_git_main_root(project))
 
 
 _HIT = re.compile(
@@ -534,8 +534,8 @@ def _source_name_hits(project: Path, body: str, limit: int = _HIT_LIMIT) -> list
     by_name: dict[str, list[str]] = {}
     for path in listed:
         by_name.setdefault(path.rsplit("/", 1)[-1], []).append(path)
-    hits = [{"path": by_name[name][0]} for name in names if len(by_name.get(name, [])) == 1]
-    return hits[:limit]
+    sections = _source_sections(body)
+    return [_source_hit(by_name[n][0], sections.get(n, "")) for n in names if len(by_name.get(n, [])) == 1][:limit]
 
 
 def _mempalace_hits(project: Path, body: str, query: str) -> list[dict[str, object]]:
@@ -721,7 +721,7 @@ def _store_hit_receipt(
     if store == "mempalace":
         hits = _mempalace_hits(project, body, query)
     elif store == "graphify":
-        hits = _graphify_hits(body, query=query)
+        hits = _normalize_graphify_paths(project, _graphify_hits(body, query=query))
     else:
         hits = _structured_hits(body, query=query)
     mindset = _mindset()
@@ -1003,6 +1003,7 @@ def _scope_for(project: Path, step: dict[str, Any]) -> dict[str, Any]:
 
 def _run_rg(project: Path, query: str, reason: str) -> dict[str, Any]:
     matched = re.search(r'"([^"]+)"|\'([^\']+)\'', query)
+    exact = matched is not None or bool(_EXACT_RE.search(query))
     if matched:
         needle = matched.group(1) or matched.group(2)
     elif _EXACT_RE.search(query):
@@ -1013,22 +1014,36 @@ def _run_rg(project: Path, query: str, reason: str) -> dict[str, Any]:
                 break
     else:
         needle = query
+    needles = [needle]
+    # A natural-language fallback must not end at a literal-string miss (#257).
+    if not exact and len(query.split()) > 1:
+        tokens = question_rare_tokens(query) or [
+            token
+            for token in re.findall(r"[A-Za-z0-9_.-]{3,}", query)
+            if token.casefold() not in _DOC_STOP
+        ]
+        tokens = list(dict.fromkeys(tokens))[:4]
+        if tokens:
+            needles.append("|".join(re.escape(token) for token in tokens))
     mindset = _mindset()
     if mindset is None or not hasattr(mindset, "run_rg"):
         return _miss_receipt("rg", query, "no-relevant-hits")
-    try:
-        completed = mindset.run_rg(
-            ["rg", "-n", "--no-heading", "--glob", "!.git/**", needle],
-            cwd=project,
-        )
-    except OSError as error:
-        return {
-            "store": "rg",
-            "status": STATUS_DEGRADED,
-            "reason": f"os-error:{type(error).__name__}",
-            "query": query,
-        }
-    if completed.returncode == 1 or is_empty_result(completed.stdout or ""):
+    for candidate in needles:
+        try:
+            completed = mindset.run_rg(
+                ["rg", "-n", "--no-heading", "--glob", "!.git/**", candidate],
+                cwd=project,
+            )
+        except OSError as error:
+            return {
+                "store": "rg",
+                "status": STATUS_DEGRADED,
+                "reason": f"os-error:{type(error).__name__}",
+                "query": query,
+            }
+        if completed.returncode != 1 and not is_empty_result(completed.stdout or ""):
+            break
+    else:
         return _miss_receipt("rg", query, "no-relevant-hits")
     if completed.returncode != 0:
         return {
@@ -1698,3 +1713,93 @@ def fts_source_hits(database: Path, query: str, root: Path) -> list[str]:
         return found
     finally:
         connection.close()
+
+
+def _has_overlay(candidate: Path) -> bool:
+    return (candidate / ".chaos-engine" / "install.py").is_file() or (
+        candidate / "chaos-engine" / "install.py"
+    ).is_file()
+
+
+def _git_main_root(start: Path) -> Path | None:
+    """Main worktree root from `.git` text, including a commondir worktree (#258)."""
+    here = start.resolve()
+    for candidate in (here, *here.parents):
+        if (candidate / ".git").is_file() or (candidate / ".git").is_dir():
+            common = _git_common_without_process(candidate)
+            return common.parent.resolve() if common is not None else None
+    return None
+
+
+def _tool_py_in_root(root: Path | None) -> Path | None:
+    if root is None:
+        return None
+    for relative in (".chaos-engine/tool.py", "chaos-engine/tool.py"):
+        path = root / relative
+        if path.is_file():
+            return path
+    return None
+
+
+_SECTION_BYTES = 512
+
+
+def _source_sections(body: str) -> dict[str, str]:
+    """Bounded MemPalace snippet under each ``Source:`` line (#257)."""
+    sections: dict[str, str] = {}
+    name: str | None = None
+    lines: list[str] = []
+
+    def keep() -> None:
+        if name is None:
+            return
+        text = _bounded_excerpt("\n".join(lines).strip(), _SECTION_BYTES)
+        if text and (name not in sections or len(text) > len(sections[name])):
+            sections[name] = text
+
+    for line in body.splitlines():
+        match = _SOURCE_LINE.match(line)
+        if match:
+            keep()
+            name = match.group("name")
+            lines = []
+        elif name is not None:
+            lines.append(line)
+    keep()
+    return sections
+
+
+def _source_hit(path: str, section: str) -> dict[str, object]:
+    return {"path": path, "section": section} if section else {"path": path}
+
+
+def _normalize_graphify_paths(
+    project: Path, hits: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Rewrite `source/` shadows without hiding distinct labels in one file (#257, #7179)."""
+    shadow = "source/"
+    bare = {
+        (str(hit.get("path") or ""), hit.get("label"))
+        for hit in hits
+        if not str(hit.get("path") or "").startswith(shadow)
+    }
+    seen: set[tuple[str, Any]] = set()
+    kept: list[dict[str, Any]] = []
+    for hit in hits:
+        path = str(hit.get("path") or "")
+        label = hit.get("label")
+        stripped = path[len(shadow) :] if path.startswith(shadow) else path
+        if not stripped:
+            continue
+        item = dict(hit)
+        if stripped != path and (
+            (not (project / path).is_file() and (project / stripped).is_file())
+            or (stripped, label) in bare
+        ):
+            item["path"] = stripped
+        key = (str(item["path"]), label)
+        if key in seen:
+            continue
+        seen.add(key)
+        kept.append(item)
+    return kept

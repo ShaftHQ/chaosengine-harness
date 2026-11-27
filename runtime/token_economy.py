@@ -25,7 +25,7 @@ MISSING = "missing-fresh-install"
 ETHICS_TEXT_SHA256 = {
     "companions/ethics-card.md": "d4978444698a231168f4a13e1933567919965c3ac6bad348e3d02baa14f79cf6",
     "references/ethical-conduct.md": "ed67e2d48b93d1d7c1b260c2ca8f26e63f851f64f922443ee815127b29fae1d1",
-    "identity.md": "0e9414bdcb7075540d9c0c37545b3e35c94b22bf593b10f18dc99bfab2d2fd60",
+    "identity.md": "64528a87f74517be2f759f8af6ae049e187f63336947da87b9bf2281b1e2e1c5",
 }
 
 

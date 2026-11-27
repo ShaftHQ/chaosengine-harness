@@ -731,13 +731,31 @@ def shared_project_root(project: Path) -> Path:
     """Resolve the primary checkout that owns shared MemPalace / Memory / Graphify state."""
     if not (project / "tools/repository-map/resolve_mempalace.py").is_file():
         return project.resolve()
-    completed = subprocess.run(  # nosec B603 - fixed Git query, no shell.
-        [_git_executable(), "rev-parse", "--git-common-dir"],
-        cwd=project,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
+    git_file = project / ".git"
+    if git_file.is_file():
+        try:
+            pointer = git_file.read_text(encoding="utf-8").strip()
+            if pointer.startswith("gitdir: "):
+                gitdir = Path(pointer[len("gitdir: ") :].strip())
+                if not gitdir.is_absolute():
+                    gitdir = (project / gitdir).resolve()
+                common_text = (gitdir / "commondir").read_text(encoding="utf-8").strip()
+                common = Path(common_text)
+                if not common.is_absolute():
+                    common = (gitdir / common).resolve()
+                return common.parent.resolve()
+        except (OSError, ValueError):
+            pass
+    try:
+        completed = subprocess.run(  # nosec B603 - fixed Git query, no shell.
+            [_git_executable(), "rev-parse", "--git-common-dir"],
+            cwd=project,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return project.resolve()
     common = Path(completed.stdout.strip())
     if not common.is_absolute():
         common = (project / common).resolve()
