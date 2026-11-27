@@ -98,6 +98,15 @@ class LearnContractTests(unittest.TestCase):
         self.assertIn("Verify", research)
         self.assertIn("cited", research.casefold())
         self.assertIn("Do not install duplicates under `~/.grok/skills`", learn)
+        self.assertIn("The launching session waits until `report.md` and `actions.json` exist.", learn)
+        self.assertIn("retires nothing", learn)
+        self.assertIn("The launching session stays until `report.md` and `actions.json` are on disk.", traces)
+        self.assertIn("A partial map is not a report.", traces)
+        retrospective = (
+            ROOT / "references/details/ce-lessons-2026-11-27/learn-retrospective.md"
+        ).read_text(encoding="utf-8")
+        self.assertIn("How the learn command runs", retrospective)
+        self.assertIn("https://github.com/ShaftHQ/chaosengine-harness/issues/284", retrospective)
 
     def test_repeated_session_lessons_join_the_owning_contract(self):
         work_item = WORK_ITEM.read_text(encoding="utf-8")

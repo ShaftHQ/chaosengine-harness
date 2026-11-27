@@ -25,6 +25,21 @@ host pager/runner) into this tree.
 5. **Report** — overview, action tables, coverage line, and a machine-readable
    action list. Git-tracked edits become patches or a PR, not home-dir copies.
 
+## After the report
+
+The launching session stays until `report.md` and `actions.json` are on disk.
+Ending that session earlier drops the run. A partial map is not a report.
+Apply nothing, and file nothing, before both files exist.
+
+Then present the overview, the action tables, and the coverage line. File each
+kept gap as a git issue and add the retrospective under `references/details/`.
+Write targets stay git-tracked overlay paths. A host home skill directory is
+not the write. See [harness-learn](harness-learn.md).
+
+When the host can price a run, show the kept-session count before collect. A
+later run reads sessions after the last completed record. A window the report
+calls too narrow retires nothing. Zero proposed actions is a valid report.
+
 A first-ever run is step/curate, never auto-delete. See
 [harness-learn](harness-learn.md).
 

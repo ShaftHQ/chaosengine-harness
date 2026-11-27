@@ -757,6 +757,12 @@ Retained: user-account packages; project knowledge data; shared Maven Tools MCP 
 
 Mixed or unknown ownership fails closed. Knowledge stores are never deleted by uninstall or rollback.
 
+### Clean installation
+
+The words **clean installation** mean uninstall, then the install one-liner in [Golden path](#golden-path-first-run). Uninstall removes the receipt-owned overlay listed under [What is removed vs retained](#what-is-removed-vs-retained). Edited files and knowledge stores stay.
+
+An upgrade is a different operation. It unlinks a receipt path this install no longer ships only when the bytes on disk still match the previous receipt (`remove_retired_receipt_files` in `runtime/hosts.py`). A file the operator changed, a directory, and a live memory file stay.
+
 ### Clean reinstall after a bad first run
 
 1. Run human doctor and follow each fix-next line.
