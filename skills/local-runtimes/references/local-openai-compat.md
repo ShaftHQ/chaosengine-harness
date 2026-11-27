@@ -8,8 +8,8 @@ loopback server. Not a workflow owner; select the canonical workflow in
 [execution workflows](../../../references/execution-workflows.md) first.
 
 **Standalone from OmniRoute and FreeToken.** Neither is required. Missing these
-runtimes is normal: use FreeToken (if READY), OmniRoute (if READY), a qualified
-native implementer, or `SOLO`.
+runtimes is normal: use FreeToken (if READY) or OmniRoute (if READY). Who
+writes then follows the delegation ladder.
 
 | Backend | Default loopback | Typical CLI on PATH |
 | --- | --- | --- |

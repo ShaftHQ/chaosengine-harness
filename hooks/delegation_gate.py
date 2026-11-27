@@ -154,15 +154,31 @@ def _subagent_type(tool_input: object) -> str:
     return ""
 
 
+def _unquoted(text: str) -> str:
+    """Drop quoted spans so a mention inside a string is not a dispatch."""
+    out: list[str] = []
+    quote = ""
+    for char in text:
+        if quote:
+            if char == quote:
+                quote = ""
+            continue
+        if char in {"'", '"'}:
+            quote = char
+            continue
+        out.append(char)
+    return "".join(out)
+
+
 def _editing(text: str) -> bool:
     """True when a change verb remains after a negated instruction is removed."""
     return _EDIT_VERB.search(_NEGATED_EDIT.sub(" ", text)) is not None
 
 
 def classify(tool_name: str, tool_input: object, commands: tuple[str, ...]) -> str | None:
-    command_text = "\n".join(commands)
+    command_text = _unquoted("\n".join(commands))
     if _FREE_COMMAND.search(command_text) or (
-        _SHELL_TOOL.search(tool_name or "") and _FREE_COMMAND.search(_blob(tool_input))
+        _SHELL_TOOL.search(tool_name or "") and _FREE_COMMAND.search(_unquoted(_blob(tool_input)))
     ):
         return "free-writer"
     if _WRITER_TOOL.match(tool_name or ""):

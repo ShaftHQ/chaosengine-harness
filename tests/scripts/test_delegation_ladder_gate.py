@@ -334,6 +334,28 @@ class AllHostsShareTheGateTest(unittest.TestCase):
                 self.assertNotIn("highest available reasoning effort", body)
                 self.assertIn("delegation ladder", body.casefold())
 
+    def test_runtime_failure_prose_follows_the_ladder(self) -> None:
+        paths = (
+            "skills/local-runtimes/references/freetoken.md",
+            "skills/local-runtimes/references/omniroute.md",
+            "skills/local-runtimes/references/local-openai-compat.md",
+            "skills/local-agency/scripts/dispatch.py",
+        )
+        for relative in paths:
+            body = (ROOT / relative).read_text(encoding="utf-8")
+            with self.subTest(path=relative):
+                self.assertNotIn("native implementer", body)
+                self.assertNotIn("session agents", body)
+                self.assertIn("delegation ladder", body.casefold())
+
+    def test_a_quoted_mention_is_not_a_free_writer(self) -> None:
+        mentioned = "python3 -c 'print(\"opencode run\")'"
+        self.assertIsNone(GATE.classify("run_terminal_command", {}, (mentioned,)))
+        self.assertEqual(
+            "free-writer",
+            GATE.classify("run_terminal_command", {}, ("opencode run --variant high",)),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

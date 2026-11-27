@@ -5,7 +5,7 @@ Peer ports for FreeToken, Colibri, OmniRoute, and local OpenAI-compat are the [t
 Optional provider-neutral transport. It is not a workflow owner; select the
 canonical workflow in [execution workflows](../../../references/execution-workflows.md)
 first. Missing, stopped, unauthenticated, exhausted, or unqualified OmniRoute
-is normal: use a qualified native implementer or `SOLO`.
+is normal: follow the delegation ladder. This file does not choose the writer.
 
 Do not install OmniRoute, create provider accounts, or write operator
 credentials. Do not expose credentials, account data, prompts, or consumer
@@ -50,8 +50,8 @@ command -v omniroute
 curl -sf --max-time 2 http://127.0.0.1:20128/api/health
 ```
 
-If `omniroute` is missing, do not install it; guide the operator or use native
-host-session models when OmniRoute was not required. If the binary exists and
+If `omniroute` is missing, do not install it; guide the operator. Who writes
+follows the delegation ladder. If the binary exists and
 health fails, start loopback only **on that same host**:
 
 ```text
@@ -162,7 +162,7 @@ Anti-patterns: static model allowlists as primary selector; `candidates` then na
 2. Live `candidates` (coding filter). First remaining identity; never reuse a just-failed id on 429.
 3. On `READY`, `omniroute run --model --provider <target>` before native host (target order above; skip `127`).
 4. On fail: skip identity/provider, requery, next id.
-5. Native host only on `RUNTIME_EXHAUSTED`, empty catalog, sealed-launcher `78`, or `ABSENT`.
+5. On `RUNTIME_EXHAUSTED`, an empty catalog, sealed-launcher `78`, or `ABSENT`, follow the delegation ladder.
 
 **Process failure:** `candidates` then native host while READY is not success.
 Catalog ≠ dispatch. When OmniRoute was required, that failure is a delivery
@@ -176,7 +176,7 @@ Retry from failure, not a pinned profile:
 - 429 / rate-limit / resource_exhausted / live-catalog 400 (`not available in the active live catalog`) / Stream closed before `response.completed`: skip identity, requery, next native id. Out-of-balance provider → skip family. Daemon `OMNIROUTE_ROTATE_ON_400=true` may hop inside gateway; ChaosEngine still skips the failed launch identity. Stream issues → Dashboard Translator.
 - Timeout / single network blip: retry same pick once.
 - 401/403 / invalid key: stop; fix credential (OAuth: Dashboard reconnect or `omniroute providers auth`).
-- Empty remaining catalog: `RUNTIME_EXHAUSTED`, then native host.
+- Empty remaining catalog: `RUNTIME_EXHAUSTED`. Who writes then follows the delegation ladder.
 
 Never pin a model in a Codex profile. Live catalog → rank → map display→native → `omniroute run`.
 
@@ -225,14 +225,13 @@ not reset the idle clock.
 Then follow [orchestrator follow-through](../../../references/orchestrator-follow-through.md)
 until the delegate exits with closing notes. Rank free/remaining catalog
 entries first. If those fail, use any other model the local endpoint can call.
-Native host models only when OmniRoute itself cannot run.
+When OmniRoute itself cannot run, follow the delegation ladder.
 
-Canonical orchestration must probe the fixed loopback endpoint before native
+Canonical orchestration must probe the fixed loopback endpoint before that
 fallback, with no endpoint prompt. On `READY` after a live `candidates` pick,
-**must** dispatch through `omniroute run` as above before any native host
-model. A concrete `RUNTIME_EXHAUSTED` health result, empty remaining catalog,
-missing OmniRoute binary, or sealed-launcher exit code `78` permits native
-implementer fallback.
+**must** dispatch through `omniroute run` as above. A concrete
+`RUNTIME_EXHAUSTED` health result, empty remaining catalog, missing OmniRoute
+binary, or sealed-launcher exit code `78` follows the delegation ladder.
 
 ## Runner
 
