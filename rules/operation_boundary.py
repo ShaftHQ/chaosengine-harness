@@ -232,13 +232,15 @@ _EXTRA_VALUE_FLAGS = {
         "--arg-file", "--delimiter", "--max-lines", "--max-args", "--max-procs",
         "--max-chars", "--process-slot-var",
     }),
-    "flock": frozenset({"-w", "--timeout", "-E", "--conflict-exit-code"}),
+    "flock": frozenset({"-w", "--timeout", "--wait", "-E", "--conflict-exit-code"}),
     "sudo": frozenset({
         "-D", "--close-from", "-h", "--host", "-p", "--prompt",
         "-R", "--chroot", "-r", "--role", "-t", "--type",
         "-T", "--command-timeout", "-U", "--other-user",
     }),
     "env": frozenset({"--unset"}),
+    "time": frozenset({"-o", "-f", "--format", "--output"}),
+    "exec": frozenset({"-a"}),
 }
 _SHELL_SYNTAX = frozenset(
     {
@@ -449,6 +451,7 @@ def _head_is_git_push(
 ) -> bool:
     index = 0
     wrapper = ""
+    flock_file = False
     while index < len(words):
         word = words[index]
         if _SIMPLE_ASSIGN.match(word):
@@ -477,24 +480,38 @@ def _head_is_git_push(
             continue
         if wrapper and word.startswith("-"):
             command_flags = _COMMAND_STRING_FLAGS.get(wrapper, frozenset())
+            matched = ""
             for flag in command_flags:
                 if word == flag or word.startswith(flag + "="):
-                    if word == flag:
-                        payload = words[index + 1] if index + 1 < len(words) else ""
-                    else:
-                        payload = word.split("=", 1)[1]
-                    return bool(payload) and _has_git_push(payload, depth + 1)
+                    matched = flag
+                    break
+            if matched:
+                if word == matched:
+                    payload = words[index + 1] if index + 1 < len(words) else ""
+                    rest_index = index + 2
+                else:
+                    payload = word.split("=", 1)[1]
+                    rest_index = index + 1
+                if wrapper == "env":
+                    rest = " ".join(words[rest_index:])
+                    script = f"{payload} {rest}".strip()
+                    return bool(script) and _has_git_push(script, depth + 1)
+                if payload and _has_git_push(payload, depth + 1):
+                    return True
+                index = rest_index
+                continue
             extra = _EXTRA_VALUE_FLAGS.get(wrapper, frozenset())
             index += 2 if word in _WRAPPER_VALUE_FLAGS or word in extra else 1
             continue
         if (
             wrapper == "flock"
+            and not flock_file
             and not word.startswith("-")
             and name != "git"
             and index + 1 < len(words)
         ):
+            flock_file = True
             index += 1
-            wrapper = ""
             continue
         if name == "git":
             cursor = index + 1

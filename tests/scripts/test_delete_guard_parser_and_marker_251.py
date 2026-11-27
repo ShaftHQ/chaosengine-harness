@@ -423,9 +423,36 @@ class OperationBoundary262Test(unittest.TestCase):
             "flock -c 'echo ok'",
             "env -S 'echo ok'",
             "env --unset NAME echo ok",
+            "flock /tmp/lock echo ok",
+            "time -o /tmp/out echo ok",
+            "exec -a name echo ok",
         ):
             with self.subTest(command=command):
                 self.assertIsNone(self.block(command))
+
+    def test_review3_operands_are_refused(self) -> None:
+        for command in (
+            "env -S git push -f origin main",
+            "env --split-string git push -f origin main",
+            "env -S 'git' push -f origin main",
+            "env --split-string=git push -f origin main",
+            "flock -c 'echo ok' git push -f origin main",
+            "flock --command='echo ok' git push -f origin main",
+            "flock /tmp/lock -c 'git push -f origin main'",
+            "flock /tmp/lock --command 'git push -f origin main'",
+            "flock -E 1 /tmp/lock -c 'git push -f origin main'",
+            "flock -w 1 /tmp/lock -c 'git push -f origin main'",
+            "flock --wait 1 /tmp/lock git push -f origin main",
+            "flock --timeout 1 /tmp/lock -c 'git push -f origin main'",
+            "time -o /tmp/out git push -f origin main",
+            "time -f '%e' git push -f origin main",
+            "time --format '%e' git push -f origin main",
+            "time --output /tmp/out git push -f origin main",
+            "/usr/bin/time -o /tmp/out git push -f origin main",
+            "exec -a name git push -f origin main",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual("force-push-without-approval", self.block(command))
 
     def test_heredoc_data_is_not_a_force_push(self) -> None:
         for command in (
