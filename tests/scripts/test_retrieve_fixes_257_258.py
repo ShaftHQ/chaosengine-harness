@@ -174,6 +174,48 @@ Unrelated line.
             )
         self.assertEqual([shadow], [hit["path"] for hit in hits])
 
+    def test_graphify_shadow_before_bare_keeps_bare_line(self):
+        with tempfile.TemporaryDirectory() as raw:
+            project = Path(raw)
+            shadow = "source/src/Foo.java"
+            bare = "src/Foo.java"
+            hits = self.retrieve._normalize_graphify_paths(
+                project,
+                [
+                    {"path": shadow, "label": "Foo", "line": 5},
+                    {"path": bare, "label": "Foo", "line": 42},
+                ],
+            )
+            self.assertEqual([bare], [hit["path"] for hit in hits])
+            self.assertEqual([42], [hit["line"] for hit in hits])
+            reversed_hits = self.retrieve._normalize_graphify_paths(
+                project,
+                [
+                    {"path": bare, "label": "Foo", "line": 42},
+                    {"path": shadow, "label": "Foo", "line": 5},
+                ],
+            )
+            self.assertEqual([bare], [hit["path"] for hit in reversed_hits])
+            self.assertEqual([42], [hit["line"] for hit in reversed_hits])
+
+    def test_graphify_real_source_file_preserved_when_bare_hit_also_present(self):
+        with tempfile.TemporaryDirectory() as raw:
+            project = Path(raw)
+            shadow = "source/foo/Widget.java"
+            bare = "foo/Widget.java"
+            for relative in (shadow, bare):
+                target = project / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text("class Widget {}\n", encoding="utf-8")
+            hits = self.retrieve._normalize_graphify_paths(
+                project,
+                [
+                    {"path": shadow, "label": "Widget", "line": 1},
+                    {"path": bare, "label": "Widget", "line": 2},
+                ],
+            )
+        self.assertEqual([shadow, bare], [hit["path"] for hit in hits])
+
     def test_multiword_rg_fallback_tries_rare_tokens_after_literal_miss(self):
         calls: list[str] = []
 
@@ -230,6 +272,46 @@ Unrelated line.
             self.assertEqual(main, self.tool.shared_project_root(worktree))
             self.assertEqual(worktree.resolve(), self.retrieve.project_root(worktree))
             self.assertEqual(tool_py, self.retrieve._tool_py(worktree))
+
+    def test_project_root_stops_at_linked_worktree_boundary(self):
+        with tempfile.TemporaryDirectory() as raw:
+            base = Path(raw)
+            main = base / "main"
+            overlay = main / ".chaos-engine"
+            overlay.mkdir(parents=True)
+            (overlay / "install.py").write_text("# install\n", encoding="utf-8")
+
+            wt = base / "wt"
+            (wt / ".chaos-engine").mkdir(parents=True)
+            (wt / ".chaos-engine" / "install.py").write_text("# install\n", encoding="utf-8")
+            (wt / ".git").write_text("gitdir: elsewhere\n", encoding="utf-8")
+            nested = wt / "src" / "nested"
+            nested.mkdir(parents=True)
+            self.assertEqual(wt.resolve(), self.retrieve.project_root(nested))
+
+            wt2 = base / "wt2"
+            (wt2 / "sub" / ".chaos-engine").mkdir(parents=True)
+            (wt2 / "sub" / ".chaos-engine" / "install.py").write_text(
+                "# install\n", encoding="utf-8"
+            )
+            (wt2 / ".git").write_text("gitdir: elsewhere\n", encoding="utf-8")
+            deep = wt2 / "sub" / "deep"
+            deep.mkdir(parents=True)
+            self.assertEqual((wt2 / "sub").resolve(), self.retrieve.project_root(deep))
+
+            wt3 = base / "wt3"
+            wt3.mkdir()
+            (wt3 / ".git").write_text("gitdir: elsewhere\n", encoding="utf-8")
+            nested3 = wt3 / "src" / "nested"
+            nested3.mkdir(parents=True)
+            self.assertEqual(wt3.resolve(), self.retrieve.project_root(nested3))
+
+            wt4 = main / "wt4"
+            wt4.mkdir()
+            (wt4 / ".git").write_text("gitdir: elsewhere\n", encoding="utf-8")
+            nested4 = wt4 / "src" / "nested"
+            nested4.mkdir(parents=True)
+            self.assertEqual(wt4.resolve(), self.retrieve.project_root(nested4))
 
     def test_linked_worktree_retrieval_and_receipts_stay_worktree_scoped(self):
         with tempfile.TemporaryDirectory() as raw:

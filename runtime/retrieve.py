@@ -79,7 +79,7 @@ def project_root(start: Path | None = None) -> Path:
     Shared tool/store paths resolve their own main root."""
     here = (start or Path.cwd()).resolve()
     for candidate in (here, *here.parents):
-        if _has_overlay(candidate):
+        if _has_overlay(candidate) or (candidate / ".git").exists():
             return candidate
     return here
 
@@ -1779,7 +1779,7 @@ def _normalize_graphify_paths(
     """Rewrite `source/` shadows without hiding distinct labels in one file (#257, #7179)."""
     shadow = "source/"
     bare = {
-        (str(hit.get("path") or ""), hit.get("label"))
+        (str(hit.get("path") or ""), hit.get("label")): hit
         for hit in hits
         if not str(hit.get("path") or "").startswith(shadow)
     }
@@ -1792,11 +1792,16 @@ def _normalize_graphify_paths(
         if not stripped:
             continue
         item = dict(hit)
-        if stripped != path and (
-            (not (project / path).is_file() and (project / stripped).is_file())
-            or (stripped, label) in bare
+        if (
+            stripped != path
+            and not (project / path).is_file()
+            and ((project / stripped).is_file() or (stripped, label) in bare)
         ):
-            item["path"] = stripped
+            bare_hit = bare.get((stripped, label))
+            if bare_hit is not None:
+                item = dict(bare_hit)
+            else:
+                item["path"] = stripped
         key = (str(item["path"]), label)
         if key in seen:
             continue
