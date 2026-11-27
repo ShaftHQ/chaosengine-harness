@@ -89,7 +89,7 @@ def test_docs_only_budget_matches_floor_and_cap():
     public = review_packet.budget(files=1, lines=12, public_contract=True)
     assert public["min"] == 2 and public["max"] == 2
     large = review_packet.budget(files=20, lines=4000, public_contract=True, blast="high")
-    assert large["min"] == 2 and large["max"] == 3
+    assert large["min"] == 2 and large["max"] == 2
     assert review_packet.blocks_at_max("nit: wording", at_max=True) is False
     assert review_packet.blocks_at_max("unsafe: secret left in the receipt", at_max=True) is True
 

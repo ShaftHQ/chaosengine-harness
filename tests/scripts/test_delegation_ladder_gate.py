@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import subprocess
 import tempfile
 import time
 import unittest
@@ -355,6 +356,70 @@ class AllHostsShareTheGateTest(unittest.TestCase):
             "free-writer",
             GATE.classify("run_terminal_command", {}, ("opencode run --variant high",)),
         )
+
+    def _review(self, root: Path, prompt: str) -> str | None:
+        return GATE.writer_block(
+            "spawn_subagent",
+            {"subagent_type": "chaos-engine-reviewer", "prompt": prompt},
+            (),
+            root,
+            now=1_000.0,
+        )
+
+    def test_a_third_adversarial_review_of_one_subject_is_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "skills" / "chaos-engine").mkdir(parents=True)
+            (root / "skills" / "chaos-engine" / "SKILL.md").write_text("x", encoding="utf-8")
+            prompt = "Read-only adversarial review. Do not edit. review-subject: ChaosEngine/one"
+            self.assertIsNone(self._review(root, prompt))
+            self.assertIsNone(self._review(root, prompt))
+            denied = self._review(root, prompt)
+            self.assertIn("ChaosEngine/one", denied or "")
+            self.assertIn("two adversarial reviews", denied or "")
+            self.assertIn("Close the class", denied or "")
+            other = "Read-only adversarial review. Do not edit. review-subject: ChaosEngine/two"
+            self.assertIsNone(self._review(root, other))
+
+    def test_an_unscoped_review_chain_stops_at_two(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            prompt = "Read-only adversarial review. Do not edit."
+            self.assertIsNone(self._review(root, prompt))
+            self.assertIsNone(self._review(root, prompt))
+            denied = self._review(root, prompt)
+            self.assertIn("unscoped", denied or "")
+            self.assertIn("review-subject", denied or "")
+
+    def test_a_worktree_path_in_the_prompt_is_its_own_subject(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo = root / "repo"
+            repo.mkdir()
+            subprocess.run(
+                ["git", "init", "-b", "ChaosEngine/sample"],
+                cwd=repo,
+                check=True,
+                capture_output=True,
+            )
+            prompt = f"Read-only adversarial review. Do not edit. Look at {repo}"
+            self.assertIsNone(self._review(root, prompt))
+            self.assertIsNone(self._review(root, prompt))
+            denied = self._review(root, prompt)
+            self.assertIn("ChaosEngine/sample", denied or "")
+
+    def test_the_review_chain_is_in_the_router_and_the_cycle(self) -> None:
+        skill = (ROOT / "skills" / "chaos-engine" / "SKILL.md").read_text(encoding="utf-8")
+        cycle = (ROOT / "references" / "delivery-cycle.md").read_text(encoding="utf-8")
+        delegation = (ROOT / "references" / "delegation.md").read_text(encoding="utf-8")
+        self.assertIn("The gate refuses another.", skill)
+        self.assertIn("A second failed review ends the chain", skill)
+        self.assertIn("PDCA cap is 3, not a quota", skill)
+        self.assertIn("The gate refuses a third.", cycle)
+        self.assertIn("MAX = MIN", cycle)
+        self.assertIn("at most 3", cycle)
+        self.assertNotIn("both reviews repeat", delegation)
+        self.assertIn("does not repeat both reviews", delegation)
 
 
 if __name__ == "__main__":
