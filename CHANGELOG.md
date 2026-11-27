@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Two adversarial reviews are the chain for one subject (`#269`, superseding PR `#270`). The gate refuses a third, commits review-round counts only after all PreToolUse checks pass, supports explicit owner session lift, exempts `opencode run --help`, and aligns mechanical/paid effort and subagent edit receipts.
+- OpenBot host support (`#260`): dedicated `openbot` instruction-only host across parity matrix, conformance, bootstrap, doctor, and bug template; unbound/failed `grok inspect` fails closed without `/hooks-trust`; doctor fails closed on error components; non-git Graphify refresh hides `.graphify-out.replacing` from fingerprinting; `memory` shim published to user `bin` on `PATH`; 0-drawer project MemPalace reported as `empty`.
+- Pre-rebase secret and `.gitignore` guard (`#266`): pure tree-diff check in `runtime/secret_guard.py --pre-rebase`, wired into `runtime/git_hooks.py` (`pre-rebase`) and `hooks/guard.py` PreToolUse, exiting `2` with path names only (never file contents) when a target deletes/renames `.gitignore` or adds `secrets.properties`, `login.json`, `*.apk`, `*.ipa`, or `*.aab`.
+- Retrieve fixes (`#263`): Graphify shadow dedupe keeps bare path and line even when a `source/` shadow arrives first, real `source/` files are never rewritten, and `project_root` stops at linked-worktree `.git` boundaries.
+- Harness contradiction cleanup and OpenCode parallel delegation workflow: reconciled review counts, delegation ladder fallback/install prose, local runtime ranking, host parity tables, Learning Session triggers, WIP caps, broken Markdown anchors, `guard.py` R8 quote-aware stash parsing and explicit staging, and shrunk always-loaded bundle to 18,573 bytes.
+
 ## 1.20261126.0 - 2026-11-26
 
 - Version stamps use `<major>.<YYYYMMDD>.<index>` from the UTC commit date. The index is the 0-based first-parent count that day. No GitHub Release is cut per commit.

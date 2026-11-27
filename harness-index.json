@@ -12,6 +12,7 @@
         "gemini": "adapter",
         "grok": "adapter",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "portable",
@@ -30,6 +31,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "portable",
@@ -48,6 +50,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "portable",
@@ -66,6 +69,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "portable",
@@ -84,6 +88,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "portable",
@@ -102,6 +107,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "portable",
@@ -120,6 +126,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "portable",
@@ -138,6 +145,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "portable",
@@ -156,6 +164,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "portable",
@@ -174,6 +183,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "portable",
@@ -192,6 +202,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "portable",
@@ -210,6 +221,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "portable",
@@ -228,6 +240,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "portable",
@@ -246,6 +259,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "portable",
@@ -264,6 +278,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "portable",
@@ -282,6 +297,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "portable",
@@ -300,6 +316,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "portable",
@@ -318,6 +335,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "portable",
@@ -336,6 +354,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "portable",
@@ -354,6 +373,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "portable",
@@ -372,6 +392,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "portable",
@@ -390,6 +411,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "portable",
@@ -408,6 +430,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "route",
@@ -415,7 +438,7 @@
       "path": "skills/omniroute/SKILL.md"
     },
     {
-      "description": "Standalone FreeToken process: install, READY probe and bounded dispatch. Use when the local-runtimes table points a job at FreeToken rather than a loopback server.",
+      "description": "Standalone FreeToken process: READY probe and bounded dispatch. Use when the local-runtimes table points a job at FreeToken rather than a loopback server.",
       "family": "local-runtime",
       "hosts": {
         "antigravity": "catalog",
@@ -426,6 +449,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "route",
@@ -444,6 +468,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "route",
@@ -462,6 +487,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "route",
@@ -480,6 +506,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "route",
@@ -499,6 +526,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "vendor",
@@ -518,6 +546,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "vendor",
@@ -537,6 +566,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "vendor",
@@ -556,6 +586,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "vendor",
@@ -575,6 +606,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "role",
@@ -594,6 +626,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "role",
@@ -613,6 +646,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "role",
@@ -632,6 +666,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "role",
@@ -651,6 +686,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "role",
@@ -669,6 +705,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "route",
@@ -687,6 +724,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "route",
@@ -705,6 +743,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "route",
@@ -723,6 +762,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "route",
@@ -741,6 +781,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "route",
@@ -759,6 +800,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "route",
@@ -777,6 +819,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "route",
@@ -795,6 +838,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "route",
@@ -813,6 +857,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "route",
@@ -831,6 +876,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "route",
@@ -849,6 +895,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "route",
@@ -867,6 +914,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "route",
@@ -885,6 +933,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "route",
@@ -903,6 +952,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "route",
@@ -921,6 +971,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "route",
@@ -939,6 +990,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "route",
@@ -957,6 +1009,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "route",
@@ -975,6 +1028,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "route",
@@ -993,6 +1047,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "route",
@@ -1011,6 +1066,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "route",
@@ -1029,6 +1085,7 @@
         "gemini": "catalog",
         "grok": "catalog",
         "grok-bot": "catalog",
+        "openbot": "catalog",
         "opencode": "catalog"
       },
       "kind": "route",
@@ -1083,6 +1140,7 @@
     "opencode",
     "cursor",
     "grok-bot",
+    "openbot",
     "antigravity"
   ],
   "schemaVersion": 1
