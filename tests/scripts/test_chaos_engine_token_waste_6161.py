@@ -489,7 +489,7 @@ class MemoryContentHashTest(unittest.TestCase):
 
 
 class LocalWriterOptionalTest(unittest.TestCase):
-    """#6171: implementers write code directly; local writers are an optional, narrow tool."""
+    """#6171: the ladder owns writer selection. A direct edit stays the one-change exception."""
 
     MANDATES = (
         r"no code by (?:the )?host",
@@ -526,17 +526,17 @@ class LocalWriterOptionalTest(unittest.TestCase):
         for token in (self.RULE, *self.JOBS, "no host-only memory exception") + HOSTS:
             with self.subTest(token=token):
                 self.assertIn(token, rule)
-        self.assertIn("implementers write code directly", rule)
-        self.assertIn("optional", rule)
+        self.assertIn("delegation ladder", rule)
+        self.assertNotIn("implementers write code directly", rule)
 
     def test_entrypoints_link_the_rule(self):
         """Skill, coach loop, guide, process owner, and orchestrator all route to the rule."""
         for path in (LOCAL_SKILL, ORCHESTRATOR, LOCAL_GUIDE, PROCESS_OWNER, ORCHESTRATOR):
             with self.subTest(path=path.name):
                 self.assertIn("when-to-use-local.md", text(path))
-        for path in (LOCAL_SKILL, ORCHESTRATOR):
-            with self.subTest(path=path.name, check="decision-rule"):
-                self.assertIn(self.RULE, text(path))
+        self.assertIn("delegation ladder", text(LOCAL_SKILL))
+        self.assertIn(self.RULE, text(ORCHESTRATOR))
+        self.assertIn(self.RULE, text(LOCAL_RULE))
 
     def test_token_accounting_method_documented(self):
         """Cost comparisons use real local-server counts (print_timing sums)."""

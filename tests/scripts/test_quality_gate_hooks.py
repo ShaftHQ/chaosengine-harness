@@ -9,6 +9,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -787,12 +788,18 @@ class GuardParityTests(unittest.TestCase):
         """A covered impact receipt still allows non-tests and clean tests."""
         with tempfile.TemporaryDirectory() as temporary:
             project = Path(temporary)
-            (project / ".chaos-engine").mkdir()
-            (project / ".chaos-engine" / "install.py").write_text("# marker\n", encoding="utf-8")
-            state = project / ".chaos-engine-state"
-            state.mkdir()
-            (state / "research-receipt.md").write_text("retrieve: used\n", encoding="utf-8")
+            self._covered_project(project, receipt=False)
             cwd = str(project)
+            blocked = self._run(
+                "claude",
+                "Write",
+                {"file_path": "src/app.py", "content": sleep_call()},
+                cwd=cwd,
+            )
+            blocked_blob = blocked.stdout + blocked.stderr
+            self.assertNotEqual(0, blocked.returncode, blocked_blob)
+            self.assertIn("rung=direct", blocked_blob)
+            self._direct_receipt(project)
             noisy = self._run(
                 "claude",
                 "Write",
@@ -814,12 +821,33 @@ class GuardParityTests(unittest.TestCase):
             self.assertEqual(0, clean.returncode, clean_blob)
             self.assertNotIn("GAP-EXIT2", clean_blob)
 
-    def _covered_project(self, root: Path) -> None:
+    def _covered_project(self, root: Path, *, receipt: bool = True) -> None:
         (root / ".chaos-engine").mkdir()
         (root / ".chaos-engine" / "install.py").write_text("# marker\n", encoding="utf-8")
         state = root / ".chaos-engine-state"
         state.mkdir()
         (state / "research-receipt.md").write_text("retrieve: used\n", encoding="utf-8")
+        if receipt:
+            self._direct_receipt(root)
+
+    def _direct_receipt(self, root: Path) -> None:
+        state = root / ".chaos-engine-state"
+        state.mkdir(exist_ok=True)
+        payload = {
+            "rung": "direct",
+            "effort": "low",
+            "free": "not-applicable",
+            "why": "quality-gate fixture",
+            "mechanical": False,
+            "escalated": False,
+            "prior": "",
+            "tier": "cheapest",
+            "brief_ok": True,
+            "brief": "",
+            "root": root.resolve().as_posix(),
+            "recorded_at": time.time(),
+        }
+        (state / "delegation-receipt.json").write_text(json.dumps(payload) + "\n", encoding="utf-8")
 
     def _deny_payload(self, host: str, tool_name: str, tool_input: dict, cwd: str | None = None) -> dict:
         completed = self._run(host, tool_name, tool_input, cwd=cwd)

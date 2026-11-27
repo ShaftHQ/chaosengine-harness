@@ -1,8 +1,8 @@
 ---
 name: local-agency
 description: >-
-  Use when the adopter asks to delegate to local OSS agents (OpenCode) on a
-  READY local runtime.
+  Free-first writer path. Use before a host session writer whenever a free or
+  local model can do the item, including OpenCode on a READY local runtime.
 license: MIT
 permissions:
   - bash
@@ -14,7 +14,7 @@ permissions:
 
 # Local agency (OpenCode)
 
-Optional **local coding agency** path. Not a workflow owner; select the
+Free-first writer path. Not a workflow owner; select the
 canonical workflow in [execution workflows](../../references/execution-workflows.md)
 first.
 
@@ -22,8 +22,8 @@ first.
 
 | Path | When | Owner |
 | --- | --- | --- |
-| Session subagents / Task | Default orchestrator labor on the host | Host adapter + [delegation](../../references/delegation.md) |
-| Local agency (this skill) | Adopter asked for OpenCode / local OSS agency against local weights | This skill + READY runtime |
+| Session subagents / Task | Paid rung of the [delegation ladder](../../skills/chaos-engine/SKILL.md#delegation-ladder), after the ask rung | Host adapter + [delegation](../../references/delegation.md) |
+| Local agency (this skill) | Default writer path when a free model or a READY local runtime exists | This skill + READY runtime |
 
 ## Hard rails (never regress)
 
@@ -36,9 +36,9 @@ first.
   out of that process. `--pure` only disables external plugins.
 - **Never** persist OpenCode settings under the durable user config directory (helper refuses those paths),
   **never** `ft launch` / `ft serve`, **never** start local servers from CE.
-- Do **not** silently fall back to cloud OmniRoute. Missing local runtime:
-  tell the operator; continue with session agents / `SOLO` / OmniRoute only when
-  the adopter explicitly asked for that path.
+- Do **not** silently fall back to cloud OmniRoute. A missing local runtime
+  follows the delegation ladder. Do not open a paid writer or a session agent
+  in that turn.
 - Do **not** install OpenCode from this skill silently or unprompted. Inspect hardware, recommend fitting models, and obtain explicit owner approval before any install or configuration. Operator install stays on vendor docs (README third-party table).
 - Installer / doctor / status must **not** fail because OpenCode or a local
   runtime is missing.
@@ -68,8 +68,8 @@ python3 .chaos-engine/skills/local-agency/scripts/dispatch.py argv --prompt '…
 `resolve` ranks FreeToken, then OpenAI-compat peers, then Colibri. Use `--prefer colibri` when the adopter asked for Colibri. On `READY`, `config` /
 `argv` emit ephemeral OpenCode material (`OPENCODE_CONFIG` path). Run OpenCode
 yourself with that env; do not persist the config into the durable user file.
-`argv` defaults include `--pure` and `--variant` (`medium`; use `low` or
-`medium` for tool loops). `--no-pure` exists for callers that already isolate
+`argv` defaults include `--pure` and `--variant high`. Further effort follows the delegation ladder.
+`--no-pure` exists for callers that already isolate
 plugins. `--pure` still only disables plugins.
 
 ## Design-turn brief and OpenCode preflight
@@ -100,7 +100,7 @@ python3 .chaos-engine/skills/local-agency/scripts/dispatch.py --mode design argv
 
 ## Mechanical dispatch
 
-A READY local coder is a mechanical runner. Procedure:
+A small local model is the mechanical case in the delegation ladder. Procedure:
 [mechanical-dispatch.md](references/mechanical-dispatch.md). The OpenCode bash
 timeout is **120s**: after a timeout kill of an apply script, re-run the same
 idempotent script from the orchestrator so product files are not left
@@ -115,10 +115,7 @@ When `dispatch.py chat` returns OpenAI-compat `usage` and `--session-id` is set,
 
 ## When to use local
 
-Implementers write code directly; this skill is optional. Use local only when the
-handoff cost is well below generation cost (bulk mechanical edits, spec or ticket
-drafting, log summarization, offline or private work). For orchestrated multi-item work, proactively decompose into small bounded items so free/local models deliver them at highest effort; keep direct edits on the host only when decomposition cost genuinely exceeds value. See
-[when-to-use-local.md](references/when-to-use-local.md).
+Follow the [delegation ladder](../../skills/chaos-engine/SKILL.md#delegation-ladder). The direct-edit exception is [when-to-use-local.md](references/when-to-use-local.md).
 
 ## Coach loop (when local is chosen)
 
@@ -134,7 +131,7 @@ this skill when the adopter names OpenCode or “local agents”.
 
 ## Free-first policy
 
-See [delegation](../../references/delegation.md): decompose into small file-disjoint items; smartest free/local model at highest reasoning effort first; hardware-aware recommendations with opt-in setup; paid newest-cheapest fallback only when no free/local option.
+Writer selection: the [delegation ladder](../../skills/chaos-engine/SKILL.md#delegation-ladder).
 
 ## Related
 

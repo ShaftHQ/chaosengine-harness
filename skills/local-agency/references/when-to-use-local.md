@@ -1,14 +1,10 @@
 # When to use a local writer
 
-Session and cloud implementers write code directly. A local model writer
-through [local-agency](../SKILL.md) is **optional**: a tool the implementer may
-pick, never a mandate for implementation and never a reason to stop writing code
-on the host. The same rule applies on Codex, Claude, Grok CLI, Gemini, Copilot,
-and Grok Bot (no host-only memory exception).
+Writer selection is the [delegation ladder](../../../skills/chaos-engine/SKILL.md#delegation-ladder). A direct host edit is not a writer dispatch. Use it only when the handoff cost is not well below generation cost, for one tightly coupled change. The same rule applies on Codex, Claude, Grok CLI, Gemini, Copilot, and Grok Bot (no host-only memory exception).
 
 ## Decision rule
 
-Use local only when the **handoff cost is well below generation cost**.
+Delegate when the **handoff cost is well below generation cost**. That choice follows the delegation ladder.
 
 - Handoff cost: everything the implementer pays to delegate. That includes spec
   and context packing, verifying each artifact, grounded feedback, and restarts
@@ -16,8 +12,7 @@ Use local only when the **handoff cost is well below generation cost**.
   implementer's own window.
 - Generation cost: the tokens the implementer would otherwise write itself.
 
-A local writer replaces just the writing step. When checking its output costs
-about as much as writing the code, write it directly.
+A direct host edit is the one-change exception when the brief would cost more than the edit.
 
 ## Suitable jobs
 

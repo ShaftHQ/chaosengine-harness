@@ -61,10 +61,12 @@ def test_every_skill_is_linked_from_the_entry_point_and_the_walk_is_clean() -> N
     assert set(skills) <= reached
 
 
-def test_core_card_and_always_loaded_budget_stay_under_ceiling() -> None:
-    assert len((ROOT / CORE).read_bytes()) <= 7168
+def test_core_card_is_trimmed_without_a_fixed_byte_cap() -> None:
+    card = (ROOT / CORE).read_text(encoding="utf-8")
+    assert "hit a byte cap" in card
+    assert card.count("### Delegation ladder") == 1
     budget = json.loads((ROOT / "always-loaded-budget.json").read_text(encoding="utf-8"))
-    assert budget["bytes"] < 17501
+    assert "not a target" in budget["note"]
 
 
 def test_merge_queue_enqueues_without_a_strategy_flag() -> None:

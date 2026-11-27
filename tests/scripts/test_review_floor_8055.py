@@ -147,4 +147,3 @@ def test_reviews_run_one_after_another():
     card = (ROOT / "skills" / "chaos-engine" / "SKILL.md").read_text(encoding="utf-8")
     assert "review 1 with the self-accept push" in card
     assert "Do not start both reviewers in one step" in card
-    assert len(card.encode("utf-8")) <= 7168

@@ -1,8 +1,7 @@
 ---
 name: local-runtimes
 description: >-
-  Use when choosing an optional local inference runtime for a narrow mechanical
-  or offline job.
+  Use when the delegation ladder has already selected a local runtime.
 license: MIT
 permissions:
   - bash
@@ -13,7 +12,7 @@ permissions:
 
 # Local runtimes
 
-Cloud implementers write code directly. A local runtime is optional and pays for small bounded work items at highest reasoning effort; smaller local models remain reserved for genuinely simple mechanical or offline jobs; never let it review its own diff. Direct single-thread edits stay on the host when small and tightly coupled, while orchestrated multi-item work proactively decomposes into small bounded work items for free/local models at the highest reasoning effort. Pick one row, then open only that route.
+Model choice is the [delegation ladder](../../skills/chaos-engine/SKILL.md#delegation-ladder). This skill only picks a READY local runtime after that ladder has selected a local writer. Pick one row, then open only that route. A local writer never reviews its own diff.
 
 | Need | Route | Open |
 | --- | --- | --- |
@@ -28,8 +27,8 @@ FreeToken and Colibri share the [loopback runtime contract](references/loopback-
 
 Rules:
 
-- A runtime is used only when its READY probe passes; otherwise stay on the
-  cloud implementer and record `local: skipped(<reason>)` once.
+- A runtime is used only when its READY probe passes; otherwise return to the
+  delegation ladder and record `local: skipped(<reason>)` once.
 - One-shot jobs only: one short spec in, one digest out. No parent relay.
 - Avoided-spend metering and USD/EGP lines are required only when a local
   inference channel was actually used
@@ -37,4 +36,4 @@ Rules:
 - Descriptions, paths and host exposure live in the
   [catalog](../../references/catalog.md).
 
-Free-first policy: see [delegation](../../references/delegation.md) (free/local first at highest reasoning effort; paid newest-cheapest fallback; hardware-aware, opt-in setup).
+Writer selection: the [delegation ladder](../../skills/chaos-engine/SKILL.md#delegation-ladder).

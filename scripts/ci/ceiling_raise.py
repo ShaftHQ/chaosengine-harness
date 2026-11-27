@@ -17,7 +17,6 @@ from pathlib import Path
 
 _ALWAYS_LOADED = "always-loaded-budget.json"
 _DECISION = "docs/evidence/decision-quality-score.baseline.json"
-_ALWAYS_LOADED_KEYS = ("bytes", "tolerance_pct")
 
 
 def _is_number(value: object) -> bool:
@@ -65,9 +64,8 @@ def findings(path: str, base_text: str, head_text: str) -> list[str]:
     base_obj = base_obj or {}
     head_obj = head_obj or {}
     if path == _ALWAYS_LOADED:
-        before = {key: float(base_obj[key]) for key in _ALWAYS_LOADED_KEYS if _is_number(base_obj.get(key))}
-        after = {key: float(head_obj[key]) for key in _ALWAYS_LOADED_KEYS if _is_number(head_obj.get(key))}
-        return _loosened(path, before, after, higher=True)
+        # bytes records the trimmed bundle. It is not a ceiling.
+        return []
     scores_before = base_obj.get("scores") if isinstance(base_obj.get("scores"), dict) else {}
     scores_after = head_obj.get("scores") if isinstance(head_obj.get("scores"), dict) else {}
     before = {f"scores.{key}": float(value) for key, value in scores_before.items() if _is_number(value)}

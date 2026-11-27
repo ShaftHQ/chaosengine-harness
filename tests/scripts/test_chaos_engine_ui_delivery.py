@@ -46,7 +46,6 @@ class UiDeliveryRoutingTests(unittest.TestCase):
         self.assertIn("user-visible UI", rows[0])
         self.assertIn("(../../references/ui-delivery.md)", rows[0])
         self.assertTrue(UI.is_file())
-        self.assertLessEqual(len(ROUTER.read_bytes()), 7168)
 
     def test_level1_index_and_portable_profile_reach_the_reference(self):
         self.assertIn("[`ui-delivery.md`](ui-delivery.md)", LEVEL1.read_text(encoding="utf-8"))

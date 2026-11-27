@@ -43,6 +43,18 @@ After plan approval, routine in-scope work is unattended. Stop for an owner deci
 
 Companions at task start via `tool.py entry` ([bot entry](../../references/bot-entry.md)): [Caveman](../../companions/caveman-ultra.md), [Ponytail](../../companions/ponytail-ultra.md). Off only: `stop caveman`, `stop ponytail`, `normal mode`.
 
+### Delegation ladder
+
+One writer-selection rule. Stop at the first rung that applies. Do not restate this ladder elsewhere. Trim repeated words. Do not add or cut a decision to hit a byte cap. Record a receipt before the tool call (`python3 .chaos-engine/hooks/delegation_gate.py record`). Hook hosts (Claude, Codex, Gemini, Grok, Copilot, Cursor, OpenCode, Antigravity) refuse a writer with no matching receipt from `hooks/guard.py` on PreToolUse. Hookless clients (Grok Bot, OpenBot, custom GPTs) receive this section from `tool.py entry`. `dispatch.py argv` and `dispatch.py chat` refuse a free writer with no receipt.
+
+1. Free writer. Proactively decompose the work into small file-disjoint items. Send each item to the smartest reachable free (`$0`) or local model at its highest available reasoning effort. A smaller model is only for an item the brief marks mechanical.
+2. Brief. Name the goal, the file scope, the behavior to preserve, the acceptance checks, the test command, and the stop conditions. The writer does not choose scope, model, or effort. A brief that only names an issue is not a dispatch. A host session subagent is not the default writer.
+3. Nothing free is reachable. Ask the owner in that turn for explicit approval to install OpenCode and/or llama, plus the free models that fit this hardware (RAM, GPU VRAM, CPU, disk). Do not install or open a paid writer in that turn. Owner yes: install only what was approved, then return to rung 1. Owner no: rung 4 and `free=unreachable-declined`. No answer: do not dispatch.
+4. Free models cannot do the item, or a free writer already failed the acceptance checks. Record `free=too-complex`. Use the cheapest of the paid / metered models that can do it, at the lowest task-appropriate effort (the lowest reasoning effort sufficient). When two models cost the same, pick the newer generation, never an older generation in that price tier.
+5. Stay on rung 4 until that choice fails the acceptance checks. Raise effort up to high before raising the model tier. Raise toward a premium model only after the cheaper tier cannot do the item. When a lower effort is sufficient, keep it.
+
+Independent adversarial review stays on a fresh-context host reviewer at its most intelligent setting. The writer never reviews its own diff. A direct host edit is only one tightly coupled change whose brief would cost more than the edit. Record `rung=direct`. Receipt fields: `rung` (`free`, `ask`, `paid`, `direct`), `effort`, `why`, and a brief that passes rung 2. `paid` requires `free` of `unreachable-declined` or `too-complex`. `free` requires effort `high` or `max` unless the item is mechanical.
+
 ## Check and deliver
 
 - PDCA cap is 3, not a quota. Review 1 starts with the self-accept push (review 1 with the self-accept push) ([delivery cycle](../../references/delivery-cycle.md)). Do not start both reviewers in one step.

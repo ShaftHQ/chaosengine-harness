@@ -49,9 +49,7 @@ coach the owner through how-to-work impediments; escalate owner-only decisions.
 
 ## Delivery and escalation
 
-Implementers write code directly. Offload to a local writer when
-[when-to-use-local](../skills/local-agency/references/when-to-use-local.md)
-favors it.
+Writer dispatch follows the [delegation ladder](../skills/chaos-engine/SKILL.md#delegation-ladder). The one-change exception is [when-to-use-local](../skills/local-agency/references/when-to-use-local.md).
 
 Opening a PR does not complete follow-through. Continue until the in-scope
 delivery condition is met. Unattended watch is one blocking

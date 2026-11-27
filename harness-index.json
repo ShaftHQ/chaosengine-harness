@@ -361,7 +361,7 @@
       "path": "skills/mobile-testing/SKILL.md"
     },
     {
-      "description": "Use when the adopter asks to delegate to local OSS agents (OpenCode) on a READY local runtime.",
+      "description": "Free-first writer path. Use before a host session writer whenever a free or local model can do the item, including OpenCode on a READY local runtime.",
       "family": "delegation",
       "hosts": {
         "antigravity": "catalog",
@@ -379,7 +379,7 @@
       "path": "skills/local-agency/SKILL.md"
     },
     {
-      "description": "Use when choosing an optional local inference runtime for a narrow mechanical or offline job.",
+      "description": "Use when the delegation ladder has already selected a local runtime.",
       "family": "local-runtime",
       "hosts": {
         "antigravity": "catalog",
