@@ -73,13 +73,15 @@ def _normalized(command: str) -> str:
 
 
 def _shell_statements(command: str) -> list[str]:
-    """Split on ``&&``, ``||``, ``;``, ``|``, and ``&`` outside quotes and substitutions.
+    """Split on unquoted newlines and on ``&&``, ``||``, ``;``, ``|``, and ``&``.
 
-    A quoted ref, ``$(...)``, or a backtick command may contain those separators.
+    A quoted ref, ``$(...)``, ``${...}``, a backtick command, a here-document
+    body, or a backslash-newline continuation keeps its separators.
     """
     parts: list[str] = []
     buf: list[str] = []
     quote = ""
+    pending: list[str] = []
     index = 0
 
     def append_quoted(mark: str, cursor: int) -> int:
@@ -99,6 +101,17 @@ def _shell_statements(command: str) -> list[str]:
             if char == quote and command[index - 1] != "\\":
                 quote = ""
             index += 1
+            continue
+        if pending and char in "\n\r":
+            buf.append(char)
+            index += 1
+            if char == "\r" and index < len(command) and command[index] == "\n":
+                buf.append("\n")
+                index += 1
+            while pending:
+                index = _consume_heredoc(command, index, pending.pop(0), buf)
+            parts.append("".join(buf))
+            buf = []
             continue
         if char in {"'", '"'}:
             quote = char
@@ -120,8 +133,33 @@ def _shell_statements(command: str) -> list[str]:
                     depth -= 1
                 index += 1
             continue
+        if command.startswith("${", index):
+            end = _matching_brace(command, index)
+            buf.append(command[index:end])
+            index = end
+            continue
         if char == "`":
             index = append_quoted("`", index)
+            continue
+        if command.startswith("\\\r\n", index) or command.startswith("\\\n", index):
+            step = 3 if command.startswith("\\\r\n", index) else 2
+            buf.append(command[index : index + step])
+            index += step
+            continue
+        if command.startswith("<<", index):
+            found = _heredoc_delimiter(command, index)
+            if found is not None:
+                delim, end = found
+                buf.append(command[index:end])
+                index = end
+                pending.append(delim)
+                continue
+        if char in "\n\r":
+            parts.append("".join(buf))
+            buf = []
+            index += 1
+            if char == "\r" and index < len(command) and command[index] == "\n":
+                index += 1
             continue
         if command.startswith("&&", index) or command.startswith("||", index):
             parts.append("".join(buf))
@@ -137,6 +175,228 @@ def _shell_statements(command: str) -> list[str]:
         index += 1
     parts.append("".join(buf))
     return [part.strip() for part in parts if part.strip()]
+
+
+_GIT_VALUE_FLAGS = frozenset(
+    {
+        "-C",
+        "-c",
+        "--git-dir",
+        "--work-tree",
+        "--namespace",
+        "--super-prefix",
+        "--exec-path",
+    }
+)
+_WRAPPER_COMMANDS = frozenset(
+    {"env", "command", "builtin", "exec", "nohup", "sudo", "time"}
+)
+_SHELL_COMMANDS = frozenset({"bash", "sh", "dash", "ksh", "zsh"})
+_WRAPPER_VALUE_FLAGS = frozenset(
+    {"-u", "--user", "-i", "--shell", "-C", "-c", "-S", "--chdir"}
+)
+_SIMPLE_ASSIGN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*\+?=")
+
+
+def _command_basename(word: str) -> str:
+    return word.rsplit("/", 1)[-1]
+
+
+def _command_words(text: str) -> list[str]:
+    """Dequoted words of one statement; a here-document body is not a word."""
+    words: list[str] = []
+    buf: list[str] = []
+    started = False
+    quote = ""
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if quote:
+            if char == quote and (quote == "'" or not _escaped(text, index)):
+                quote = ""
+            elif (
+                quote == '"'
+                and char == "\\"
+                and index + 1 < len(text)
+                and text[index + 1] in '$`"\\'
+            ):
+                buf.append(text[index + 1])
+                index += 2
+                continue
+            else:
+                buf.append(char)
+            index += 1
+            continue
+        if char in {"'", '"'}:
+            quote = char
+            started = True
+            index += 1
+            continue
+        if text.startswith("<<", index):
+            found = _heredoc_delimiter(text, index)
+            if found is not None:
+                delim, end = found
+                if started:
+                    words.append("".join(buf))
+                    buf = []
+                    started = False
+                words.append("<<")
+                index = end
+                newline = text.find("\n", index)
+                if newline < 0:
+                    break
+                index = _consume_heredoc(text, newline + 1, delim, [])
+                continue
+        if char == "\\" and index + 1 < len(text):
+            if text[index + 1] in "\n\r":
+                index += 2
+                continue
+            buf.append(text[index + 1])
+            started = True
+            index += 2
+            continue
+        if char.isspace() or char in ";&|()<>":
+            if started:
+                words.append("".join(buf))
+                buf = []
+                started = False
+            index += 1
+            continue
+        buf.append(char)
+        started = True
+        index += 1
+    if started:
+        words.append("".join(buf))
+    return words
+
+
+def _embedded_code(text: str) -> list[str]:
+    """Bodies of ``$()``, process substitutions, and backticks in one statement."""
+    code: list[str] = []
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if char == "'" and not _escaped(text, index):
+            end = index + 1
+            while end < len(text) and text[end] != "'":
+                end += 1
+            index = end + 1
+            continue
+        if char == "`" and not _escaped(text, index):
+            end = index + 1
+            while end < len(text) and text[end] != "`" and not _escaped(text, end):
+                end += 1
+            code.append(text[index + 1 : end])
+            index = end + 1
+            continue
+        if (
+            text.startswith("$(", index)
+            or text.startswith("<(", index)
+            or text.startswith(">(", index)
+        ):
+            depth = 1
+            end = index + 2
+            quote = ""
+            while end < len(text) and depth:
+                if quote:
+                    if text[end] == quote and not _escaped(text, end):
+                        quote = ""
+                    end += 1
+                    continue
+                if text[end] in {"'", '"'}:
+                    quote = text[end]
+                    end += 1
+                    continue
+                if text[end] == "(":
+                    depth += 1
+                elif text[end] == ")":
+                    depth -= 1
+                end += 1
+            code.append(text[index + 2 : end - 1 if depth == 0 else end])
+            index = end
+            continue
+        index += 1
+    return code
+
+
+def _head_is_git_push(words: list[str], depth: int) -> bool:
+    index = 0
+    wrapper_prefix = False
+    while index < len(words):
+        word = words[index]
+        if _SIMPLE_ASSIGN.match(word):
+            index += 1
+            continue
+        if word == "eval":
+            payload = " ".join(words[index + 1 :])
+            return bool(payload) and _has_git_push(payload, depth + 1)
+        name = _command_basename(word)
+        if name in _SHELL_COMMANDS:
+            for cursor in range(index + 1, len(words)):
+                if words[cursor] in {"-c", "-lc", "-ec", "-ic"}:
+                    return cursor + 1 < len(words) and _has_git_push(
+                        words[cursor + 1], depth + 1
+                    )
+            return False
+        if name in _WRAPPER_COMMANDS:
+            wrapper_prefix = True
+            index += 1
+            continue
+        if wrapper_prefix and word.startswith("-"):
+            index += 2 if word in _WRAPPER_VALUE_FLAGS else 1
+            continue
+        if name == "git":
+            cursor = index + 1
+            while cursor < len(words):
+                option = words[cursor]
+                if option in _GIT_VALUE_FLAGS:
+                    cursor += 2
+                    continue
+                if option == "push":
+                    return True
+                if option.startswith("-"):
+                    cursor += 1
+                    continue
+                return False
+            return False
+        return False
+    return False
+
+
+def _has_git_push(text: str, depth: int = 0) -> bool:
+    """True when a statement really executes ``git push``, not just mentions it."""
+    if depth > 4:
+        return False
+    for statement in _shell_statements(text or ""):
+        if _head_is_git_push(_command_words(statement), depth):
+            return True
+        for code in _embedded_code(statement):
+            if _has_git_push(code, depth + 1):
+                return True
+    return False
+
+
+def _unquoted_code(text: str) -> str:
+    """Blank quoted payloads while keeping every other character in place."""
+    out: list[str] = []
+    quote = ""
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if quote:
+            out.append(char if char == "\n" else " ")
+            if char == quote and (quote == "'" or not _escaped(text, index)):
+                quote = ""
+            index += 1
+            continue
+        if char in {"'", '"'}:
+            quote = char
+            out.append(" ")
+            index += 1
+            continue
+        out.append(char)
+        index += 1
+    return "".join(out)
 
 
 def _strip_unquoted_comment(part: str) -> str:
@@ -568,16 +828,15 @@ def _approval_root(root: Path) -> Path:
 
 
 def _collapsed_force(command: str) -> bool:
-    """True when one collapsed statement still contains a force push.
+    """True when one statement still contains a force push.
 
-    A newline is not a separator once there is no ``;`` or ``&&``.
-    A hash ends its own line, so a later line is still a push.
-    Only a one-line approval command is left out.
+    An unquoted newline separates statements, but a continuation, quote,
+    here-document, or substitution keeps the flag on the same push. A hash
+    ends its own line. Only a one-line approval command is left out.
     """
     if "\n" not in (command or "") and "\r" not in (command or "") and _is_approve_invocation(command):
         return False
-    text = _normalized(command)
-    segments = [part for part in _shell_statements(text) if _PUSH.search(part)]
+    segments = [part for part in _shell_statements(command or "") if _has_git_push(part)]
     return any(_FORCE.search(part) for part in segments)
 
 
@@ -587,7 +846,7 @@ def force_push_block(root: Path, command: str) -> str | None:
     segments = [
         part
         for part in pieces
-        if _PUSH.search(part) and not _is_approve_invocation(part)
+        if _has_git_push(part) and not _is_approve_invocation(part)
     ]
     borrowed = any(re.search(r"[`$]", part) for part in segments) and any(
         (
@@ -599,7 +858,7 @@ def force_push_block(root: Path, command: str) -> str | None:
     )
     if (
         not any(_FORCE.search(part) for part in segments)
-        and not (segments and _FORCE_WORD.search(text))
+        and not (segments and _FORCE_WORD.search(_unquoted_code(text)))
         and not borrowed
         and not _collapsed_force(command)
     ):

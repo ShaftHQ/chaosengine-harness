@@ -28,6 +28,7 @@ def _load(name: str, path: Path):
 GUARD = _load("chaos_engine_delete_guard_251", ROOT / "runtime" / "delete_guard.py")
 GATE = _load("chaos_engine_test_quality_gate_251", ROOT / "rules" / "test_quality_gate.py")
 HOOK = _load("chaos_engine_guard_251", ROOT / "hooks" / "guard.py")
+BOUNDARY = _load("chaos_engine_operation_boundary_262", ROOT / "rules" / "operation_boundary.py")
 
 
 def _git(cwd: Path, *argv: str) -> None:
@@ -209,6 +210,37 @@ class DeleteGuardParser251Test(unittest.TestCase):
             with self.subTest(command=command):
                 self.assert_refuses(command)
 
+    def test_quoted_and_escaped_coproc_names_before_case_are_refused(self) -> None:
+        for command in (
+            'echo "$(coproc \'mycp\' case x in x) rm -rf precious.txt;; esac; wait)"',
+            'echo "$(coproc "mycp" case x in x) rm -rf precious.txt;; esac; wait)"',
+            'echo "$(coproc $\'mycp\' case x in x) rm -rf precious.txt;; esac; wait)"',
+            'echo "$(coproc my\\cp case x in x) rm -rf precious.txt;; esac; wait)"',
+        ):
+            with self.subTest(command=command):
+                self.assert_refuses(command)
+
+    def test_prefix_redirection_before_case_is_refused(self) -> None:
+        for command in (
+            'echo "$(time -p >/dev/null case x in x) rm -rf precious.txt;; esac)"',
+            'echo "$(coproc mycp >/dev/null case x in x) rm -rf precious.txt;; esac; wait)"',
+        ):
+            with self.subTest(command=command):
+                self.assert_refuses(command)
+
+    def test_unclosed_redirect_inside_substitution_raises_value_error(self) -> None:
+        command = 'echo "$(>'
+        with self.assertRaises(ValueError):
+            GUARD._scan_balanced_paren(command, command.index("(") + 1)
+
+    def test_scan_balanced_paren_prefix_scan_is_linear(self) -> None:
+        text = "(" + ">/dev/null " * 4000 + "case x in x) echo ok;; esac)"
+        started = time.monotonic()
+        end = GUARD._scan_balanced_paren(text, 0)
+        elapsed = time.monotonic() - started
+        self.assertEqual(len(text), end)
+        self.assertLess(elapsed, 5.0)
+
     def test_array_literal_substitutions_are_refused(self) -> None:
         for command in (
             "foo=( $(rm -rf precious.txt) )",
@@ -242,6 +274,73 @@ class DeleteGuardParser251Test(unittest.TestCase):
 
     def test_plain_array_literal_stays_allowed(self) -> None:
         self.assertEqual("", self.reason("foo=(a b c)"))
+
+
+class OperationBoundary262Test(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+
+    def tearDown(self) -> None:
+        self.temp.cleanup()
+
+    def block(self, command: str) -> str | None:
+        return BOUNDARY.force_push_block(self.root, command)
+
+    def test_shell_statements_splits_unquoted_newlines(self) -> None:
+        self.assertEqual(
+            ["git push origin main", "gh workflow run ci -f key=val"],
+            BOUNDARY._shell_statements(
+                "git push origin main\ngh workflow run ci -f key=val"
+            ),
+        )
+        self.assertEqual(
+            ["echo a", "echo b"], BOUNDARY._shell_statements("echo a\r\necho b")
+        )
+
+    def test_shell_statements_keeps_continuations_quotes_and_heredocs(self) -> None:
+        for command in (
+            "echo a \\\nb",
+            'echo "a\nb"',
+            "echo $(printf 'a\nb')",
+            "cat <<EOF\nbody\nEOF\n",
+        ):
+            with self.subTest(command=command):
+                statements = BOUNDARY._shell_statements(command)
+                self.assertEqual(1, len(statements), statements)
+
+    def test_newline_separated_push_and_gh_workflow_flag_is_allowed(self) -> None:
+        self.assertIsNone(
+            self.block("git push origin main\ngh workflow run ci -f key=val")
+        )
+
+    def test_quoted_non_git_payloads_are_allowed(self) -> None:
+        for command in (
+            'gh issue create --body "git push -f -f here"',
+            'python3 -c "print(\'git push -f\')"',
+            'echo "git push --force here"',
+            "echo git push -f here | cat",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNone(self.block(command))
+
+    def test_true_force_pushes_are_refused(self) -> None:
+        for command in (
+            "git push origin main -f",
+            "git push --force origin main",
+            "git push --force-with-lease origin main",
+            "git push origin +main",
+            'bash -c "git push -f origin main"',
+            "/bin/bash -c 'git push -f origin main'",
+            'bash -c "echo x; git push -f origin main"',
+            'eval "git push -f origin main"',
+            "git -C /tmp push -f origin main",
+            "/usr/bin/git push -f origin main",
+            "sudo -u user git push -f origin main",
+            'echo "$(git push -f origin main)"',
+        ):
+            with self.subTest(command=command):
+                self.assertEqual("force-push-without-approval", self.block(command))
 
 
 class MarkerAlignment251Test(unittest.TestCase):
