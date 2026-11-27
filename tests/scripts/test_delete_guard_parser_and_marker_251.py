@@ -128,6 +128,29 @@ class DeleteGuardParser251Test(unittest.TestCase):
     def test_bare_case_word_is_not_a_case_keyword(self) -> None:
         self.assertEqual("", self.reason('echo "$(echo case)" && echo hi'))
 
+    def test_reserved_word_and_pattern_alternation_bypasses_are_refused(self) -> None:
+        for command in (
+            'echo "$(if case x in x) rm -rf precious.txt;; esac; then :; fi)"',
+            'echo "$(while case x in x) rm -rf precious.txt; false;; esac; do :; done)"',
+            'echo "$(until case x in x) rm -rf precious.txt;; esac; do :; done)"',
+            'echo "$(time case x in x) rm -rf precious.txt;; esac)"',
+            'echo "$(case esac in a|esac) rm -rf precious.txt;; esac)"',
+            'echo "$(case y in x) esac=1;; y) rm -rf precious.txt;; esac)"',
+            'echo "$(case "esac=1" in x) true;; esac=1) rm -rf precious.txt;; esac)"',
+            'echo "$(case y in x) true; esac-foo;; y) rm -rf precious.txt;; esac)"',
+        ):
+            with self.subTest(command=command):
+                self.assert_refuses(command)
+
+    def test_benign_case_word_inside_echo_with_tracked_rm_stays_allowed(self) -> None:
+        bare = self.base / "origin.git"
+        subprocess.run(  # nosec B603 - fixed git argv, temp fixture path.
+            [GIT, "init", "--bare", "-q", str(bare)], check=True, capture_output=True
+        )
+        _git(self.repo, "remote", "add", "origin", str(bare))
+        _git(self.repo, "push", "-q", "-u", "origin", "main")
+        self.assertEqual("", self.reason('echo "$(echo case)" && rm keep.txt'))
+
     def test_posix_optional_leading_paren_in_case_pattern_is_refused(self) -> None:
         for command in (
             'echo "$(case x in (a|b) rm -rf precious.txt;; esac)"',

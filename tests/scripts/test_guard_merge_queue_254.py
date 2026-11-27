@@ -358,6 +358,67 @@ class UnifiedMergeFlagParser254Test(unittest.TestCase):
         self.assertEqual("", GUARD.merge_before_ready_reason(command, probe=probe))
         self.assertEqual([("77", "ShaftHQ/clean", True)], seen)
 
+    def test_empty_equals_short_value_does_not_consume_next_token(self) -> None:
+        seen = []
+
+        def probe(target, *, repo=None, has_strategy_flag=None, seen=seen):
+            seen.append((target, repo, has_strategy_flag))
+            return ready(checks=[{"name": "ci", "status": "COMPLETED", "conclusion": "FAILURE"}])
+
+        command = "gh pr merge 10 -R attacker/clean -b= -R real/red"
+        reason = GUARD.merge_before_ready_reason(command, probe=probe)
+        self.assertNotEqual("", reason)
+        self.assertEqual([("10", "real/red", False)], seen)
+
+    def test_empty_equals_body_value_exposes_smuggled_strategy_flag(self) -> None:
+        for flag in ("--admin", "--squash"):
+            with self.subTest(flag=flag):
+                seen = []
+
+                def probe(target, *, repo=None, has_strategy_flag=None, seen=seen):
+                    seen.append(has_strategy_flag)
+                    return blocked()
+
+                reason = GUARD.merge_before_ready_reason(f"gh pr merge 10 -b= {flag}", probe=probe)
+                self.assertIn("BLOCKED", reason)
+                self.assertEqual([True], seen)
+
+    def test_repo_bare_equals_fails_closed(self) -> None:
+        reason = GUARD.merge_before_ready_reason(
+            "gh pr merge 10 -R= attacker/clean", probe=lambda _target: ready()
+        )
+        self.assertIn("could not be read", reason)
+
+
+class GlobalRepoBeforeMerge254Test(unittest.TestCase):
+    def test_global_and_parent_repo_flags_route_the_gate(self) -> None:
+        for command in (
+            "gh pr -R real/red merge 10",
+            "gh -R real/red pr merge 10",
+            "gh --repo=real/red pr merge 10",
+            "gh pr --repo real/red merge 10",
+        ):
+            with self.subTest(command=command):
+                seen = []
+
+                def probe(target, *, repo=None, has_strategy_flag=None, seen=seen):
+                    seen.append((target, repo, has_strategy_flag))
+                    return ready()
+
+                self.assertEqual("", GUARD.merge_before_ready_reason(command, probe=probe))
+                self.assertEqual([("10", "real/red", False)], seen)
+
+    def test_repo_after_merge_overrides_pre_merge_repo(self) -> None:
+        seen = []
+
+        def probe(target, *, repo=None, has_strategy_flag=None, seen=seen):
+            seen.append((target, repo, has_strategy_flag))
+            return ready()
+
+        command = "gh -R attacker/clean pr merge 10 -R real/red"
+        self.assertEqual("", GUARD.merge_before_ready_reason(command, probe=probe))
+        self.assertEqual([("10", "real/red", False)], seen)
+
 
 if __name__ == "__main__":
     unittest.main()
