@@ -39,7 +39,12 @@ _REVIEW_TEXT = re.compile(r"adversarial review", re.IGNORECASE)
 _READ_ONLY = re.compile(r"read-only|do not edit|does not edit", re.IGNORECASE)
 _EDIT_VERB = re.compile(r"\b(?:implement|edit|fix|change|write|update|add)\b", re.IGNORECASE)
 _DIRECT_TOOL = re.compile(
-    r"^(?:write|edit|strreplace|multiedit|apply_?patch|notebookedit|search_replace|write_file|edit_file)$",
+    r"^(?:write|edit|strreplace|multiedit|apply_?patch|notebookedit|search_replace|"
+    r"write_file|writefile|write_to_file|writetofile|create_file|createfile|"
+    r"edit_file|editfile|replace|replace_string_in_file|replacestringinfile|"
+    r"multi_replace_string_in_file|multireplacestringinfile|"
+    r"replace_file_content|replacefilecontent|"
+    r"multi_replace_file_content|multireplacefilecontent)$",
     re.IGNORECASE,
 )
 _VARIANT = re.compile(r"--variant(?:=|\s+)(low|medium|high|max)\b", re.IGNORECASE)

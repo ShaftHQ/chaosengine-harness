@@ -4640,18 +4640,19 @@ def _run_event(event: dict, _host: str) -> int:
     ethics_reason = _ethics_pretool_reason(event, commands, tool_input)
     if ethics_reason:
         return _deny(event, event_name, tool_name, ethics_reason)
-    delegation_reason = _delegation_block(event, event_name, tool_name, tool_input, commands)
-    if delegation_reason:
-        return _deny(event, event_name, tool_name, delegation_reason)
     blocked = _stash_block(event, event_name, tool_name, commands)
     if blocked is not None:
         return blocked
-    # #219: preventive test-quality deny. Runs before the lifecycle kernel so a
-    # bad test edit is the reason the host sees. Non-test paths and a missing
-    # rules/test_quality_gate.py fall through. Inline allow tokens are the bypass.
+    # #219: preventive test-quality deny. Runs before the delegation receipt and
+    # the lifecycle kernel so a bad test edit is the reason the host sees.
+    # Non-test paths and a missing rules/test_quality_gate.py fall through.
+    # Inline allow tokens are the bypass.
     quality = _test_quality_block(event, event_name, tool_name, tool_input, _host)
     if quality is not None:
         return quality
+    delegation_reason = _delegation_block(event, event_name, tool_name, tool_input, commands)
+    if delegation_reason:
+        return _deny(event, event_name, tool_name, delegation_reason)
     session_id = _scope_session(event)
     kernel_blocked, _normalized = _kernel_block(
         event, event_name, tool_name, tool_input, commands, session_id, _host

@@ -147,6 +147,16 @@ class DelegationReceiptTest(unittest.TestCase):
             (root / "skills" / "chaos-engine" / "SKILL.md").write_text("x", encoding="utf-8")
             reason = GATE.writer_block("Write", {"path": "rules/operation_boundary.py"}, (), root, now=1_000.0)
             self.assertIn("rung=direct", reason or "")
+            for tool in (
+                "write_to_file",
+                "replace_file_content",
+                "multi_replace_file_content",
+                "create_file",
+                "replace_string_in_file",
+            ):
+                with self.subTest(tool=tool):
+                    missed = GATE.writer_block(tool, {"path": "rules/operation_boundary.py"}, (), root, now=1_000.0)
+                    self.assertIn("rung=direct", missed or "")
             self._receipt(root, rung="direct", free="not-applicable", effort="low", brief_ok=True)
             self.assertIsNone(
                 GATE.writer_block("Edit", {"path": "rules/operation_boundary.py"}, (), root, now=1_000.0)
