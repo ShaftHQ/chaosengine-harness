@@ -97,10 +97,11 @@ when unsure.
 ## Always-loaded budget
 
 Bytes a bot host loads every task (`tool.py entry --full`, bot entry,
-`AGENTS.md`) may grow at most 5% over
-[always-loaded-budget.json](../always-loaded-budget.json); the harness gate
-fails beyond that. Move new detail to an on-demand reference instead. When the
-bundle shrinks by more than 10%, lower `bytes` to lock in the gain.
+`AGENTS.md`) are recorded in
+[always-loaded-budget.json](../always-loaded-budget.json). The binding limit
+is to trim waste and keep every decision. Do not add or cut a decision to hit
+a byte cap. `bytes` is the measured size, not a target. When the bundle
+shrinks, lower `bytes` to the new measurement.
 
 ## Moving guidance text
 

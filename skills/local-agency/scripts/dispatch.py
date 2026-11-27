@@ -408,7 +408,7 @@ def resolve_local(
     payload["chosen"] = None
     advice = (
         "No READY local runtime. Start FreeToken/Ollama/LM Studio/llamacpp/Colibri "
-        "yourself, or ask explicitly for cloud OmniRoute / session agents."
+        "yourself. Who writes then follows the delegation ladder."
     )
     if allow_cloud:
         advice += " --allow-cloud set: caller may use OmniRoute deliberately."
@@ -464,7 +464,7 @@ def opencode_argv(
     workdir: str | None = None,
     auto: bool = False,
     pure: bool = True,
-    variant: str | None = "medium",
+    variant: str | None = "high",
 ) -> list[str]:
     """Build ``opencode run`` argv. Caller sets OPENCODE_CONFIG for the process."""
     argv = ["opencode", "run"]
@@ -531,7 +531,31 @@ def cmd_config(args: argparse.Namespace) -> int:
     return 0
 
 
+def _free_writer_block(args: argparse.Namespace, command: str) -> str | None:
+    """Refuse a free writer until the shared ladder receipt matches. Every host.
+
+    The receipt names the brief. Put that path on the prompt and on the command
+    the gate sees, so argv and chat carry the same brief the receipt recorded.
+    """
+    gate_path = SKILLS_ROOT.parent / "hooks" / "delegation_gate.py"
+    gate = _load_module("ce_delegation_gate", gate_path)
+    start = Path(getattr(args, "project", None) or getattr(args, "workdir", None) or Path.cwd())
+    receipt = gate.load_receipt(gate.project_root(start)) or {}
+    brief = str(receipt.get("brief") or "")
+    prompt = str(getattr(args, "prompt", "") or "")
+    if brief and brief not in prompt:
+        args.prompt = f"{prompt}\n{brief}".strip()
+    if brief and brief not in command:
+        command = f"{command} {brief}"
+    return gate.writer_block("Bash", {}, (command,), start)
+
+
 def cmd_argv(args: argparse.Namespace) -> int:
+    variant = getattr(args, "variant", None) or "high"
+    blocked = _free_writer_block(args, f"opencode run --variant {variant}")
+    if blocked:
+        print(json.dumps({"state": "UNHEALTHY", "advice": blocked, "durable_config_rewrite": False}, sort_keys=True))
+        return 2
     pointers = require_ce_pointers(_project_root_from_args(args))
     if not pointers.get("ok"):
         print(json.dumps({"state": "UNHEALTHY", "ce_pointers": pointers, "durable_config_rewrite": False}, sort_keys=True))
@@ -589,6 +613,10 @@ def cmd_brief(args: argparse.Namespace) -> int:
 
 def cmd_chat(args: argparse.Namespace) -> int:
     """POST one chat completion to a READY local OpenAI-compat runtime (#6068)."""
+    blocked = _free_writer_block(args, "dispatch.py argv")
+    if blocked:
+        print(json.dumps({"state": "UNHEALTHY", "advice": blocked}, sort_keys=True))
+        return 2
     payload = resolve_local(prefer=args.prefer, model=args.model, allow_cloud=args.allow_cloud)
     chosen = _chosen_or_fail(payload)
     if chosen is None:
@@ -683,9 +711,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     argv_p.add_argument("--no-pure", action="store_true", help="omit --pure")
     argv_p.add_argument(
         "--variant",
-        default="medium",
-        choices=("low", "medium", "high"),
-        help="OpenCode --variant for tool loops (default: medium)",
+        default="high",
+        choices=("low", "medium", "high", "max"),
+        help="OpenCode --variant. Free writers default to high. Pass medium only for a small mechanical model.",
     )
     argv_p.add_argument("--project", default=None, help="project root for CE brief locators")
     argv_p.add_argument("--with-ce-brief", action="store_true", help="attach locator-only CE brief JSON")

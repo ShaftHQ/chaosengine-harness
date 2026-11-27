@@ -50,8 +50,7 @@ Machine map: `hooks/lifecycle.py` → `TRIAGE_TO_TOKEN_BUDGET` /
 
 ## Default writer
 
-Sole implementer is the default. A same-model delegate loads a second system
+Writer selection is the delegation ladder in the router. A same-model delegate loads a second system
 prompt, tool list, and the files it reads. Caveman ultra shortens bot-to-bot
-wording only. Delegate when a measured receipt shows the reads the parent
-would otherwise keep cost more than that second context.
+wording only.
 

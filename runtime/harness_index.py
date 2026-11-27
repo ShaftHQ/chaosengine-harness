@@ -126,9 +126,9 @@ SKILLS = (
      "Use when authoring or running Android or iOS UI tests: probe the host, then apply locator, deep-link, permission, and reset patterns.",
      "on-demand"),
     ("local-agency", "portable", "skills/local-agency/SKILL.md",
-     "Use when the adopter asks to delegate to local OSS agents (OpenCode) on a READY local runtime.", "delegation"),
+     "Free-first writer path. Use before a host session writer whenever a free or local model can do the item, including OpenCode on a READY local runtime.", "delegation"),
     ("local-runtimes", "portable", "skills/local-runtimes/SKILL.md",
-     "Use when choosing an optional local inference runtime for a narrow mechanical or offline job.", "local-runtime"),
+     "Use when the delegation ladder has already selected a local runtime.", "local-runtime"),
     ("omniroute", "route", "skills/omniroute/SKILL.md",
      "Use when local-runtimes selected the OmniRoute process for bounded work: runner, delegate "
      "continuity, capability enforcement and proof of dispatch.", "local-runtime"),

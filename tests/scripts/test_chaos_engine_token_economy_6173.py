@@ -45,8 +45,10 @@ def temp_repo(path: Path) -> Path:
 class LeanBootstrapTest(unittest.TestCase):
     """#6176."""
 
-    def test_router_core_card_is_small(self):
-        self.assertLessEqual(len((SOURCE / "skills/chaos-engine/SKILL.md").read_bytes()), 7168)
+    def test_router_core_card_is_trimmed_without_a_fixed_byte_cap(self):
+        text = (SOURCE / "skills/chaos-engine/SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("hit a byte cap", text)
+        self.assertEqual(1, text.count("### Delegation ladder"))
 
     def test_mandated_chain_budget_holds_on_every_host(self):
         guidance = load_module("ce_c_guidance", ROOT / "scripts/ci/validate_agent_guidance.py")
@@ -315,8 +317,8 @@ class OverlayCleanupTest(unittest.TestCase):
 
     def test_identity_line_matches_6171(self):
         identity = (SOURCE / "references/delegation.md").read_text(encoding="utf-8")
-        self.assertIn("Cloud implementers write code directly", identity)
-        self.assertIn("local runtimes are optional for narrow mechanical or offline jobs", identity)
+        self.assertIn("delegation ladder", identity)
+        self.assertNotIn("local runtimes are optional for narrow mechanical or offline jobs", identity)
 
     def test_no_always_loaded_file_mandates_local_writers(self):
         for relative in self.ALWAYS_LOADED:

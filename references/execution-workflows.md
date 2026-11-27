@@ -48,8 +48,7 @@ Prefer FreeToken for coding agency; Colibri when the operator hosts frontier MoE
 Colibri does not replace FreeToken or OmniRoute and is not a workflow owner.
 FreeToken does not replace OmniRoute, does not require OmniRoute, and is not a workflow owner.
 
-5. A qualified host-native lower-capability implementer.
-6. No qualified delegate: `SOLO`.
+5. Who writes is the delegation ladder in the router. This transport list does not choose the writer.
 
 The transport does not change the selected workflow, role boundaries, tests,
 review, learning, or completion duties. Canonical orchestration must probe the
@@ -64,9 +63,9 @@ ids. Rank remaining free candidates first from live ids, then any
 other model the endpoint can call; architecture/review uses most-intelligent
 only. Receipts and repository files never persist route, model, or provider IDs.
 `RUNTIME_EXHAUSTED`, an empty remaining catalog, or sealed-launcher exit code
-`78` falls back to the current host session's native models or `SOLO`. OmniRoute is absent,
+`78` follows the delegation ladder. OmniRoute is absent,
 unhealthy, unauthenticated, or unqualified does the same. This is
-normal fallback, not harness failure. When the adopter or process-owner
+normal fallback, not harness failure. Do not open a host session writer in that turn. When the adopter or process-owner
 **requires** OmniRoute for a delivery, absence of an `omniroute run` receipt
 (or coding completion call_log) is a failed OmniRoute attempt / explicit
 blocker — catalog, candidates, and CredentialHealth probes alone never count
