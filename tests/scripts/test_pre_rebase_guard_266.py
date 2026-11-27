@@ -313,6 +313,77 @@ class PreRebaseTreeGuardTest(unittest.TestCase):
         self.assertEqual(0, silent.verify_eval_parity())
         self.assertEqual(2, silent.verify_eval_parity(fixtures=ROOT / "evals" / "parity-fixtures.json"))
 
+    def test_optional_sign_flags_and_stacked_dash_c_keep_the_poison_ref(self) -> None:
+        cases = {
+            "git rebase -S poison": "poison",
+            "git rebase --gpg-sign poison": "poison",
+            "git rebase --rebase-merges poison": "poison",
+            "git merge -S poison": "poison",
+            "git merge --gpg-sign poison": "poison",
+            "git pull --rebase --recurse-submodules origin poison": "origin/poison",
+            "git rebase --gpg-sign=KEY poison": "poison",
+            "git rebase --rebase-merges=ort poison": "poison",
+            "git pull --rebase --recurse-submodules=checkout origin poison": "origin/poison",
+        }
+        for command, target in cases.items():
+            _directory, targets = self.guard._pre_rebase_targets(command)
+            with self.subTest(command=command):
+                self.assertIn(target, [item[1] for item in targets])
+                self.assertNotEqual([], targets)
+                self.assertNotEqual([("HEAD", "@{upstream}")], targets)
+        directory, targets = self.guard._pre_rebase_targets("git -C a -C b rebase poison")
+        self.assertEqual("a/b", directory)
+        self.assertEqual("poison", targets[0][1])
+        directory, _targets = self.guard._pre_rebase_targets("git -Ca -Cb rebase poison")
+        self.assertEqual("a/b", directory)
+        directory, _targets = self.guard._pre_rebase_targets("git -C a -C /tmp/abs rebase poison")
+        self.assertEqual("/tmp/abs", directory)
+        directory, _targets = self.guard._pre_rebase_targets("git -Ca -C/tmp/abs rebase poison")
+        self.assertEqual("/tmp/abs", directory)
+        directory, _targets = self.guard._pre_rebase_targets("git -C a -C C:/abs rebase poison")
+        self.assertEqual("C:/abs", directory)
+        directory, _targets = self.guard._pre_rebase_targets("git -Ca -CC:\\\\abs rebase poison")
+        self.assertEqual("C:\\abs", directory)
+
+        _git(self.repo, "checkout", "-q", "-b", "feature")
+        (self.repo / "feature.txt").write_text("work\n", encoding="utf-8")
+        _git(self.repo, "add", "feature.txt")
+        _git(self.repo, "commit", "-q", "-m", "work")
+        _git(self.repo, "checkout", "-q", "-b", "poison", "main")
+        _git(self.repo, "rm", "-q", ".gitignore")
+        (self.repo / "login.json").write_text(
+            f'{{"token":"{SYNTHETIC_SECRET}"}}', encoding="utf-8"
+        )
+        _git(self.repo, "add", "login.json")
+        _git(self.repo, "commit", "-q", "-m", "poison")
+        _git(self.repo, "checkout", "-q", "feature")
+        _git(self.repo, "update-ref", "refs/remotes/origin/poison", "poison")
+        (self.repo / "a" / "b").mkdir(parents=True)
+        abs_repo = str(self.repo.resolve())
+        blocked = [
+            "git rebase -S poison",
+            "git rebase --gpg-sign poison",
+            "git rebase --rebase-merges poison",
+            "git merge -S poison",
+            "git merge --gpg-sign poison",
+            "git pull --rebase --recurse-submodules origin poison",
+            "git rebase --gpg-sign=KEY poison",
+            "git rebase --rebase-merges=ort poison",
+            "git -C a -C b rebase poison",
+            "git -Ca -Cb rebase poison",
+            f"git -C a -C {abs_repo} rebase poison",
+            f"git -Ca -C{abs_repo} rebase poison",
+        ]
+        for command in blocked:
+            with self.subTest(command=command):
+                proc = self._run_guard_pretool(command)
+                self.assertEqual(2, proc.returncode, msg=proc.stdout + proc.stderr)
+                self.assertTrue(
+                    ".gitignore" in proc.stdout or "login.json" in proc.stdout,
+                    msg=proc.stdout,
+                )
+                self.assertNotIn(SYNTHETIC_SECRET, proc.stdout + proc.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

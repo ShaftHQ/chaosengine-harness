@@ -6253,7 +6253,7 @@ def component_escalates_overall(item: dict[str, object]) -> bool:
     if impact == "optional":
         return False
     if status == "degraded":
-        return impact == "required-when-indexed" and _component_severity(item) == "error"
+        return _component_severity(item) == "error"
     if status == "empty" and impact == "advisory":
         return False
     if status in DOCTOR_NON_ESCALATING_STATUSES:
@@ -6815,6 +6815,40 @@ def attach_component_status(
     _finalize_doctor_component_rows(result, project, components)
 
 
+def _record_grok_doctor_probe(
+    result: dict[str, object],
+    project: Path,
+    host_controller: object,
+    completion_targets: tuple[str, ...],
+) -> None:
+    """Record the Grok probe. A failed or unbound probe does not make OpenBot a Grok hook host."""
+    classifier = getattr(host_controller, "classify_instruction_host", None)
+    instruction_host = (
+        classifier(project, targets=completion_targets) if callable(classifier) else None
+    )
+    grok_probe = host_controller.grok_runtime_status(project)  # type: ignore[attr-defined]
+    hosts = result["hosts"]
+    hosts["grok"] = grok_probe  # type: ignore[index]
+    completion_openbot = "openbot" in completion_targets and "grok" not in completion_targets
+    classified_openbot = instruction_host == "openbot" and "grok" not in completion_targets
+    failed_or_unbound = isinstance(grok_probe, dict) and grok_probe.get("status") == "failed"
+    if (
+        isinstance(grok_probe, dict)
+        and grok_probe.get("status") in {"sync-advisory", "failed"}
+        and not completion_openbot
+        and not (classified_openbot and failed_or_unbound)
+        and hosts.get("status") == "healthy"  # type: ignore[attr-defined]
+    ):
+        hosts["hostEnvironment"] = {  # type: ignore[index]
+            "status": "sync-advisory",
+            "detail": "grok-hooks-probe",
+            "fixNext": str(
+                grok_probe.get("detail")
+                or "Trust and reload Grok project hooks, then rerun doctor."
+            ),
+        }
+
+
 def status_with_dependencies(project: Path, *, active_probes: bool = False) -> dict[str, object]:
     project = project.resolve()
     runtime = project / ".chaos-engine-runtime"
@@ -6881,22 +6915,7 @@ def status_with_dependencies(project: Path, *, active_probes: bool = False) -> d
                 # Grok CLI trust/loaded-hooks probe is host-environment, not install-owned (#5699).
                 # Untrusted/incomplete hooks are sync-advisory only; never flip overall/hosts
                 # to recovery-required solely for Grok trust.
-                grok_probe = host_controller.grok_runtime_status(project)
-                result["hosts"]["grok"] = grok_probe  # type: ignore[index]
-                if (
-                    isinstance(grok_probe, dict)
-                    and grok_probe.get("status") in {"sync-advisory", "failed"}
-                    and not ("openbot" in completion_targets and "grok" not in completion_targets)
-                    and result["hosts"].get("status") == "healthy"  # type: ignore[index]
-                ):
-                    result["hosts"]["hostEnvironment"] = {  # type: ignore[index]
-                        "status": "sync-advisory",
-                        "detail": "grok-hooks-probe",
-                        "fixNext": str(
-                            grok_probe.get("detail")
-                            or "Trust and reload Grok project hooks, then rerun doctor."
-                        ),
-                    }
+                _record_grok_doctor_probe(result, project, host_controller, completion_targets)
                 codex_status = getattr(host_controller, "codex_hook_status", None)
                 if callable(codex_status):
                     codex_probe = codex_status(

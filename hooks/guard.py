@@ -2746,6 +2746,22 @@ def _command_is_destructive(command: str) -> bool:
 
 STASH_READ_ONLY = frozenset({"list", "show"})
 GIT_OPTIONS_WITH_VALUE = frozenset({"-c", "-C", "--git-dir", "--work-tree", "--namespace"})
+
+
+def _git_path_is_absolute(path: str) -> bool:
+    if path.startswith("/") or path.startswith("\\"):
+        return True
+    return len(path) >= 3 and path[0].isalpha() and path[1] == ":" and path[2] in "/\\"
+
+
+def _stack_git_directory(current: str, nxt: str) -> str:
+    """Join git -C paths. An absolute path replaces the stack; empty leaves it."""
+    if nxt == "":
+        return current
+    if _git_path_is_absolute(nxt) or not current:
+        return nxt
+    sep = "\\" if "\\" in current and "/" not in current else "/"
+    return current.rstrip("/\\") + sep + nxt
 STASH_R8_REASON = (
     "R8 (#6223): `git stash{sub}` mutates the stash list in the shared .git, which this "
     "checkout shares with its linked worktrees, so another session can pop or drop it. "
@@ -2878,11 +2894,11 @@ def _consume_git_subcommand(arguments: list[str]) -> tuple[str, str, list[str]]:
         if option.startswith("-"):
             if option in GIT_OPTIONS_WITH_VALUE and index + 1 < len(arguments):
                 if option == "-C":
-                    directory = arguments[index + 1]
+                    directory = _stack_git_directory(directory, arguments[index + 1])
                 index += 2
                 continue
             if option.startswith("-C") and len(option) > 2:
-                directory = option[2:]
+                directory = _stack_git_directory(directory, option[2:])
             index += 1
             continue
         return directory, option.casefold(), arguments[index + 1 :]
@@ -2900,7 +2916,7 @@ def _pre_rebase_targets(statement: str) -> tuple[str, list[tuple[str, str]]]:
             return directory, []
         value_flags = {
             "--onto", "-s", "--strategy", "-X", "--strategy-option",
-            "-S", "--gpg-sign", "-x", "--exec", "--empty", "--rebase-merges", "-C",
+            "-x", "--exec", "--empty", "-C",
         }
         onto = ""
         positionals: list[str] = []
@@ -2936,7 +2952,7 @@ def _pre_rebase_targets(statement: str) -> tuple[str, list[tuple[str, str]]]:
             return directory, []
         value_flags = {
             "-s", "--strategy", "-X", "--strategy-option", "-m", "-F", "--file",
-            "-S", "--gpg-sign", "--into-name", "--cleanup",
+            "--into-name", "--cleanup",
         }
         positionals = []
         idx = 0
@@ -2963,7 +2979,7 @@ def _pre_rebase_targets(statement: str) -> tuple[str, list[tuple[str, str]]]:
             return directory, []
         value_flags = {
             "-s", "--strategy", "-X", "--strategy-option", "-o", "--upload-pack",
-            "--depth", "--recurse-submodules", "-j", "--jobs",
+            "--depth", "-j", "--jobs",
         }
         positionals = []
         idx = 0
@@ -4067,7 +4083,14 @@ def _delegation_block(
     if module is None:
         return ""
     cwd = Path(str(event.get("cwd") or Path.cwd()))
-    return module.writer_block(tool_name, tool_input, commands, cwd, commit_review=False) or ""
+    return module.writer_block(
+        tool_name,
+        tool_input,
+        commands,
+        cwd,
+        commit_review=False,
+        is_subagent=bool(event.get("agent_id") or event.get("agentId")),
+    ) or ""
 
 
 def _delegation_commit_review(

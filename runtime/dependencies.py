@@ -659,29 +659,48 @@ def _write_memory_shim(
 ) -> Path:
     """Publish a user-facing ``memory`` shim in ``directory`` for clean-PATH shells."""
     directory.mkdir(parents=True, exist_ok=True)
+    try:
+        resolved = target.resolve()
+    except (OSError, RuntimeError):
+        resolved = Path(target)
     cmd = directory / "memory.cmd"
-    if target.suffix.lower() == ".js" and node is not None:
-        cmd.write_text(f'@echo off\r\n"{node}" "{target}" %*\r\n', encoding="utf-8")
-    else:
-        cmd.write_text(f'@echo off\r\n"{target}" %*\r\n', encoding="utf-8")
+    javascript = resolved.suffix.lower() == ".js" and node is not None
+    try:
+        cmd_is_target = (cmd.exists() or cmd.is_symlink()) and cmd.resolve() == resolved
+    except (OSError, RuntimeError):
+        cmd_is_target = False
+    if not cmd_is_target:
+        if javascript:
+            cmd.write_text(f'@echo off\r\n"{node}" "{resolved}" %*\r\n', encoding="utf-8")
+        else:
+            cmd.write_text(f'@echo off\r\n"{resolved}" %*\r\n', encoding="utf-8")
     if os.name == "nt":
         return cmd
     shim = directory / "memory"
+    if javascript:
+        script = f'#!/bin/sh\nexec "{node}" "{resolved}" "$@"\n'
+        try:
+            current = (
+                shim.read_text(encoding="utf-8")
+                if shim.is_file() and not shim.is_symlink()
+                else None
+            )
+        except OSError:
+            current = None
+        if current != script:
+            if shim.exists() or shim.is_symlink():
+                shim.unlink()
+            shim.write_text(script, encoding="utf-8")
+            shim.chmod(0o755)
+        return shim
     try:
-        if shim.resolve() == target.resolve() and not shim.is_symlink():
+        if (shim.exists() or shim.is_symlink()) and shim.resolve() == resolved:
             return shim
-    except OSError:
+    except (OSError, RuntimeError):
         pass
     if shim.exists() or shim.is_symlink():
         shim.unlink()
-    if target.suffix.lower() == ".js" and node is not None:
-        shim.write_text(
-            f'#!/bin/sh\nexec "{node}" "{target}" "$@"\n',
-            encoding="utf-8",
-        )
-        shim.chmod(0o755)
-        return shim
-    shim.symlink_to(target)
+    shim.symlink_to(resolved)
     return shim
 
 

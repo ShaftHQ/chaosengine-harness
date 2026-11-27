@@ -176,6 +176,27 @@ class OpenBotIssue260Tests(unittest.TestCase):
         self.assertEqual("recovery-required", reconciled["status"])
         self.assertEqual(1, self.install.doctor_exit_code(reconciled))
 
+        required_degraded = {"status": "degraded", "taskImpact": "required"}
+        self.assertTrue(self.install.component_escalates_overall(required_degraded))
+        self.assertFalse(
+            self.install.component_escalates_overall(
+                {"status": "degraded", "taskImpact": "advisory"}
+            )
+        )
+        required_doc = {
+            "status": "healthy",
+            "commit": "b" * 40,
+            "components": {
+                "core": {"status": "healthy", "taskImpact": "required"},
+                "tools": required_degraded,
+            },
+            "hosts": {"status": "healthy"},
+        }
+        self.assertEqual(1, self.install.doctor_exit_code(required_doc))
+        required_rendered = self.install.format_health_report(required_doc)
+        self.assertNotIn("ChaosEngine doctor: healthy", required_rendered)
+        self.assertIn("ChaosEngine doctor: recovery-required", required_rendered)
+
     def test_d5_non_git_graphify_refresh_matches_project_content_revision_and_recovers_backup(self):
         with tempfile.TemporaryDirectory() as temporary:
             project = Path(temporary) / "nongit"
@@ -247,6 +268,109 @@ class OpenBotIssue260Tests(unittest.TestCase):
             )
             self.assertEqual(0, completed.returncode, completed.stderr)
             self.assertIn("memory-ok:--help", completed.stdout)
+
+    def test_f3_memory_shim_repeat_calls_do_not_point_at_themselves(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            real = root / "tool" / "memory-bin"
+            real.parent.mkdir(parents=True)
+            real.write_text("#!/bin/sh\necho memory-ok\n", encoding="utf-8")
+            real.chmod(0o755)
+            posix_bin = root / "posix-bin"
+            self.deps._write_memory_shim(posix_bin, real)
+            link = posix_bin / "memory"
+            self.assertTrue(link.is_symlink())
+            self.deps._write_memory_shim(posix_bin, link)
+            self.assertTrue(link.is_symlink())
+            self.assertEqual(real.resolve(), link.resolve())
+
+            windows_bin = root / "windows-bin"
+            with mock.patch.object(self.deps.os, "name", "nt"):
+                self.deps._write_memory_shim(windows_bin, real)
+                first = (windows_bin / "memory.cmd").read_text(encoding="utf-8")
+                self.assertIn(str(real.resolve()), first)
+                self.deps._write_memory_shim(windows_bin, windows_bin / "memory.cmd")
+                second = (windows_bin / "memory.cmd").read_text(encoding="utf-8")
+            self.assertEqual(first, second)
+            self.assertNotIn("memory.cmd", second)
+            self.assertIn(str(real.resolve()), second)
+
+    def test_f3_javascript_symlink_is_wrapped_with_node_not_linked_to_bin(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            script = root / "pkg" / "memory.js"
+            script.parent.mkdir(parents=True)
+            script.write_text("console.log('memory-ok')\n", encoding="utf-8")
+            bin_link = root / "node_modules" / ".bin" / "memory"
+            bin_link.parent.mkdir(parents=True)
+            bin_link.symlink_to(script)
+            node = root / "node"
+            node.write_text("#!/bin/sh\necho node\n", encoding="utf-8")
+            bindir = root / "bin"
+            self.deps._write_memory_shim(bindir, bin_link, node=node)
+            self.deps._write_memory_shim(bindir, bin_link, node=node)
+            shim = bindir / "memory"
+            self.assertFalse(shim.is_symlink())
+            body = shim.read_text(encoding="utf-8")
+            self.assertIn(f'exec "{node}" "{script.resolve()}"', body)
+            self.assertNotIn(str(bin_link), body)
+            cmd = (bindir / "memory.cmd").read_text(encoding="utf-8")
+            self.assertIn(str(script.resolve()), cmd)
+            self.assertNotIn(str(bin_link), cmd)
+
+    def test_f6_openbot_doctor_skips_failed_or_unbound_grok_host_environment(self):
+        unbound = {
+            "status": "failed",
+            "code": "CE_GROK_PROJECT_UNBOUND",
+            "detail": "Grok has no projectRoot for this directory",
+        }
+        failed = {
+            "status": "failed",
+            "code": "CE_GROK_INSPECT_FAILED",
+            "detail": "Grok CLI probe failed",
+        }
+        untrusted = {
+            "status": "sync-advisory",
+            "detail": "projectTrusted is false; run `/hooks-trust`",
+        }
+
+        def record(project: Path, probe: dict, targets: tuple[str, ...], controller=None):
+            result = {"hosts": {"status": "healthy"}}
+            host = self.hosts if controller is None else controller
+            with mock.patch.dict(
+                os.environ,
+                {"OPENBOT_HOME": "", "OPENBOT_SESSION_ID": "", "CHAOS_ENGINE_HOST": ""},
+            ), mock.patch.object(host, "grok_runtime_status", return_value=probe):
+                self.install._record_grok_doctor_probe(result, project, host, targets)
+            return result
+
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            skill = project / ".chaos-engine/skills/chaos-engine/SKILL.md"
+            skill.parent.mkdir(parents=True)
+            skill.write_text("# ChaosEngine\n", encoding="utf-8")
+
+            for probe in (unbound, failed):
+                recorded = record(project, probe, ())
+                self.assertEqual(probe["code"], recorded["hosts"]["grok"]["code"])
+                self.assertNotIn("hostEnvironment", recorded["hosts"])
+                self.assertNotIn("/hooks-trust", json.dumps(recorded))
+
+            both = record(project, failed, ("openbot", "grok"))
+            self.assertEqual("grok-hooks-probe", both["hosts"]["hostEnvironment"]["detail"])
+
+            trusted_false = record(project, untrusted, ())
+            self.assertIn("/hooks-trust", trusted_false["hosts"]["hostEnvironment"]["fixNext"])
+
+            openbot_only = record(project, failed, ("openbot",))
+            self.assertNotIn("hostEnvironment", openbot_only["hosts"])
+
+            bare = type("BareController", (), {})()
+            bare.grok_runtime_status = lambda _project: failed
+            bare_result = {"hosts": {"status": "healthy"}}
+            self.install._record_grok_doctor_probe(bare_result, project, bare, ())
+            self.assertEqual("grok-hooks-probe", bare_result["hosts"]["hostEnvironment"]["detail"])
+            self.assertNotIn("/hooks-trust", str(bare_result["hosts"]["hostEnvironment"]["fixNext"]))
 
     def test_d7_empty_mempalace_reports_empty_not_healthy_even_without_index_record(self):
         with tempfile.TemporaryDirectory() as temporary:

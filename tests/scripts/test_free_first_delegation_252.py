@@ -101,6 +101,41 @@ class FreeFirstDelegation252Test(unittest.TestCase):
         self.assertIn("adversarial review", text)
         self.assertIn("fresh-context", text)
 
+    def test_hosted_free_quota_does_not_skip_a_live_local_runtime(self) -> None:
+        text = self.skill_lowered
+        self.assertIn(
+            'hosted free quota or usage failure is not "nothing free is reachable" while a local runtime answers',
+            text,
+        )
+        self.assertIn(
+            "continue on that local model at its highest available reasoning effort before any paid writer",
+            text,
+        )
+        self.assertIn(
+            "smaller-model rule applies only while a smarter free model is still reachable",
+            text,
+        )
+
+    def test_best_judgment_after_a_dismissed_question_is_silence(self) -> None:
+        text = self.skill_lowered
+        self.assertIn("silence: do not dispatch", text)
+        self.assertIn(
+            "host message to continue with best judgment after a dismissed question is silence",
+            text,
+        )
+        self.assertIn("not owner approval", text)
+
+    def test_delegation_stall_is_not_log_silence_with_zero_edits(self) -> None:
+        guide = (ROOT / "guides" / "local-agency.md").read_text(encoding="utf-8")
+        for body in (self.delegation, self.local_agency, guide):
+            self.assertNotIn("log silence with 0 edits", body)
+            self.assertNotIn("after spawn", body)
+            self.assertIn("no product-file change", body)
+            self.assertIn("delegate-log progress", body)
+            self.assertIn("valid paid receipt may edit", body)
+            self.assertIn("own direct edit", body)
+        self.assertNotIn("log silence with 0 edits", self.delegation)
+
     def test_no_vendor_lock_in_terms_introduced(self) -> None:
         for forbidden in (
             r"\bopenai\b",

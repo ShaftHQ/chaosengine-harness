@@ -219,6 +219,20 @@ class DelegationReceiptTest(unittest.TestCase):
             ),
         )
 
+    def test_substitution_before_opencode_help_is_a_free_writer(self) -> None:
+        for command in (
+            'X=$(opencode run -m foo "edit") opencode run --help',
+            '$(opencode run --model free "edit file") opencode run --help',
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(
+                    "free-writer",
+                    GATE.classify("run_terminal_command", {}, (command,)),
+                )
+        self.assertIsNone(
+            GATE.classify("run_terminal_command", {}, ("FOO=1 opencode run --help",)),
+        )
+
     def test_paid_receipt_with_valid_brief_allows_subagent_direct_edit(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -226,8 +240,19 @@ class DelegationReceiptTest(unittest.TestCase):
             (root / "skills" / "chaos-engine" / "SKILL.md").write_text("x", encoding="utf-8")
             brief = self._brief(root)
             self._receipt(root, rung="paid", free="too-complex", effort="low", brief=brief, brief_ok=True)
+            denied_main = GATE.writer_block(
+                "edit_file", {"path": "hooks/guard.py"}, (), root, now=1_000.0
+            )
+            self.assertIn("rung=direct", denied_main or "")
             self.assertIsNone(
-                GATE.writer_block("edit_file", {"path": "hooks/guard.py"}, (), root, now=1_000.0)
+                GATE.writer_block(
+                    "edit_file",
+                    {"path": "hooks/guard.py"},
+                    (),
+                    root,
+                    now=1_000.0,
+                    is_subagent=True,
+                )
             )
             self._receipt(root, rung="free", free="selected", effort="high", brief=brief, brief_ok=True)
             denied = GATE.writer_block("edit_file", {"path": "hooks/guard.py"}, (), root, now=1_000.0)
@@ -356,6 +381,10 @@ class AllHostsShareTheGateTest(unittest.TestCase):
         guard = (ROOT / "hooks" / "guard.py").read_text(encoding="utf-8")
         self.assertIn("def _delegation_block", guard)
         self.assertIn("delegation_gate", guard)
+        self.assertIn(
+            'is_subagent=bool(event.get("agent_id") or event.get("agentId"))',
+            guard,
+        )
         matchers = json.loads((ROOT / "hooks" / "matchers.json").read_text(encoding="utf-8"))
         preventive = " ".join(matchers["preventive"])
         for tool in ("spawn_subagent", "spawn_agent", "Task", "run_terminal_command", "Bash", "search_replace"):
@@ -620,6 +649,68 @@ class AllHostsShareTheGateTest(unittest.TestCase):
         self.assertIn("at most 3", cycle)
         self.assertNotIn("both reviews repeat", delegation)
         self.assertIn("does not repeat both reviews", delegation)
+
+    def test_review_subject_drops_trailing_punctuation(self) -> None:
+        root = Path("/tmp")
+        for prompt in (
+            "`review-subject: ChaosEngine/foo`",
+            "review-subject: ChaosEngine/foo.",
+            "review-subject: ChaosEngine/foo,",
+            "review-subject: ChaosEngine/foo)",
+        ):
+            with self.subTest(prompt=prompt):
+                self.assertEqual(
+                    "ChaosEngine/foo",
+                    GATE.review_subject({"prompt": prompt}, root),
+                )
+
+    def test_windows_cwd_and_drive_path_are_review_subjects(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            real_is_dir = Path.is_dir
+            real_exists = Path.exists
+
+            def is_dir(self: Path) -> bool:
+                text = os.fspath(self)
+                if len(text) >= 2 and text[0].isalpha() and text[1] == ":":
+                    return True
+                return real_is_dir(self)
+
+            def exists(self: Path) -> bool:
+                text = os.fspath(self)
+                if len(text) >= 2 and text[0].isalpha() and text[1] == ":":
+                    return self.name == ".git"
+                return real_exists(self)
+
+            with (
+                mock.patch.object(Path, "is_dir", is_dir),
+                mock.patch.object(Path, "exists", exists),
+                mock.patch.object(GATE, "_git_branch", return_value="ChaosEngine/winwt"),
+            ):
+                self.assertEqual(
+                    "ChaosEngine/winwt",
+                    GATE.review_subject({"cwd": "C:/repo"}, root),
+                )
+                self.assertEqual(
+                    "ChaosEngine/winwt",
+                    GATE.review_subject({"directory": "C:\\repo"}, root),
+                )
+                self.assertEqual(
+                    "ChaosEngine/winwt",
+                    GATE.review_subject(
+                        {"prompt": "Read-only adversarial review. Do not edit. Look at C:/repo/wt"},
+                        root,
+                    ),
+                )
+                self.assertEqual(
+                    "ChaosEngine/winwt",
+                    GATE.review_subject(
+                        {
+                            "prompt": "Read-only adversarial review. Do not edit. Look at C:\\repo\\wt"
+                        },
+                        root,
+                    ),
+                )
 
 
 if __name__ == "__main__":

@@ -62,8 +62,15 @@ _DIRECT_TOOL = re.compile(
 )
 _VARIANT = re.compile(r"--variant(?:=|\s+)(low|medium|high|max)\b", re.IGNORECASE)
 _VARIANT_RANK = {"low": 0, "medium": 1, "high": 2, "max": 3}
-_REVIEW_SUBJECT = re.compile(r"review-subject:\s*([^\s\"']+)", re.IGNORECASE)
-_ABS_PATH = re.compile(r"(?<![A-Za-z0-9])(/(?:[\w.+@=-]+/)+[\w.+@=-]+)")
+_REVIEW_SUBJECT = re.compile(r"review-subject:\s*([A-Za-z0-9._/@-]+)", re.IGNORECASE)
+_WIN_DRIVE = re.compile(r"^[A-Za-z]:[\\/]")
+_ABS_PATH = re.compile(
+    r"(?<![A-Za-z0-9])("
+    r"/(?:[\w.+@=-]+/)+[\w.+@=-]+"
+    r"|[A-Za-z]:(?:\\\\|\\|/)+(?:[\w.+@=-]+(?:\\\\|\\|/))+[\w.+@=-]+"
+    r")"
+)
+_ENV_ASSIGN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 
 
 def project_root(start: Path) -> Path:
@@ -223,7 +230,11 @@ def _split_statements(text: str) -> list[str]:
 
 
 def _is_opencode_help(statement: str) -> bool:
-    """True when a statement is solely ``opencode ... run --help|-h`` inspection."""
+    """True only when the command head is ``opencode`` and that run is help."""
+    if "$(" in statement or "`" in statement:
+        return False
+    if any(mark in statement for mark in (";", "&&", "||")):
+        return False
     try:
         parts = shlex.split(statement, posix=True)
     except ValueError:
@@ -240,17 +251,24 @@ def _is_opencode_help(statement: str) -> bool:
         if re.match(r"^(?:\d*>&\d+|\d*>>?\S+|<\S+)$", token):
             continue
         cleaned.append(token)
-    for idx, tok in enumerate(cleaned):
-        base = tok.rsplit("/", 1)[-1].casefold()
-        if base != "opencode":
-            continue
-        for run_idx in range(idx + 1, len(cleaned)):
-            if cleaned[run_idx].casefold() == "run":
-                tail = cleaned[run_idx + 1 :]
-                return bool(tail) and tail[0] in {"--help", "-h"} and all(
-                    item in {"--help", "-h"} for item in tail
-                )
+    index = 0
+    while index < len(cleaned) and _ENV_ASSIGN.match(cleaned[index]):
+        index += 1
+    if index >= len(cleaned):
         return False
+    head = cleaned[index].rsplit("/", 1)[-1].casefold()
+    if head != "opencode":
+        return False
+    rest = cleaned[index + 1 :]
+    for run_idx, tok in enumerate(rest):
+        if not tok.startswith("-") and tok.casefold() != "run":
+            return False
+        if tok.casefold() != "run":
+            continue
+        tail = rest[run_idx + 1 :]
+        return bool(tail) and tail[0] in {"--help", "-h"} and all(
+            item in {"--help", "-h"} for item in tail
+        )
     return False
 
 
@@ -353,7 +371,7 @@ def _explicit_cwd(tool_input: object) -> Path | None:
         return None
     for key in ("cwd", "directory", "dir", "workdir"):
         value = tool_input.get(key)
-        if isinstance(value, str) and value.startswith("/"):
+        if isinstance(value, str) and (value.startswith("/") or _WIN_DRIVE.match(value)):
             path = Path(value)
             if path.is_dir():
                 return path
@@ -365,7 +383,10 @@ def review_subject(tool_input: object, cwd: Path) -> str:
     blob = _blob(tool_input)
     marker = _REVIEW_SUBJECT.search(blob)
     if marker:
-        return marker.group(1)
+        # `.` is a legal subject character; a trailing sentence period is not the key.
+        subject = marker.group(1).rstrip(".")
+        if subject:
+            return subject
     explicit = _explicit_cwd(tool_input)
     if explicit is not None:
         branch = _git_branch(explicit)
@@ -473,6 +494,7 @@ def writer_block(
     now: float | None = None,
     *,
     commit_review: bool = True,
+    is_subagent: bool = False,
 ) -> str | None:
     kind = classify(tool_name, tool_input, commands)
     if kind is None:
@@ -491,10 +513,12 @@ def writer_block(
     problem = validate(receipt)
     if problem:
         return f"delegation ladder: receipt is not valid ({problem})."
-    if kind == "direct-edit" and not (
-        receipt.get("rung") == "direct"
-        or (receipt.get("rung") == "paid" and bool(receipt.get("brief_ok")))
-    ):
+    paid_subagent_edit = (
+        is_subagent
+        and receipt.get("rung") == "paid"
+        and bool(receipt.get("brief_ok"))
+    )
+    if kind == "direct-edit" and receipt.get("rung") != "direct" and not paid_subagent_edit:
         return "delegation ladder: a direct host edit needs rung=direct."
     if kind == "host-writer" and receipt.get("rung") != "paid":
         return "delegation ladder: a host writer is the paid fallback. The receipt rung is not paid."
