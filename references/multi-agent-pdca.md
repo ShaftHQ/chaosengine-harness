@@ -36,6 +36,8 @@ only the final Done, with evidence.
   action the user did not already ask for; those still need the user.
 - A sign-off names the full head SHA it reviewed. Before merging, check it
   equals the PR head; on a mismatch or no SHA, ask for a re-sign-off.
+  Exception: a class-closing edit after a failed second adversarial review is
+  proven by its named test and does not trigger a third review on SHA mismatch.
 - Reviewer evidence: re-run every check on a fresh copy of the artifact; the
   implementer's own tool output is never evidence. A reject names the
   location, the measured value and the expected value. When the work claims a
@@ -47,12 +49,13 @@ only the final Done, with evidence.
   after the review copy was taken, re-review.
 - Cap: 3 PDCA iterations without acceptance, owned by
   [delivery cycle](delivery-cycle.md). The in-session reviewer is Check.
-  The two independent adversarial reviews are the cycle's close, not a
-  fourth iteration. Adversarial review 1 starts with the self-accept push.
-  They do not start in one step. Develop, test, and accept
-  the first review's findings before the second review starts. Do not run
-  them in parallel. Stop and escalate with the open findings and each
-  agent's position.
+  The independent adversarial review chain (one for ordinary reversible work; two
+  in sequence for public-contract, irreversible, or outbound work) is the cycle's
+  close, not a fourth iteration. Adversarial review 1 starts with the
+  self-accept push. For two-review work, they do not start in one step: develop,
+  test, and accept the first review's findings before the second review starts,
+  and never run them in parallel. Stop and escalate with the open findings and
+  each agent's position.
 
 ## After each delivery
 

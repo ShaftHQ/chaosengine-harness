@@ -65,6 +65,15 @@ Vendor-neutral. The host names the models; this policy does not pin a vendor.
 6. Pre-dispatch canary & stall failover: before assigning real work to a free or unproven third-party delegate gateway, run a fast pre-dispatch canary (a short-timeout prompt/tool-call readiness check). Enforce a short idle-output stall threshold (3–5 minutes with zero file or log progress); when breached, cancel immediately and fail over through the delegation ladder.
 7. Test-runner parallelism probe (`xdist`): before dispatching full-suite pytest runs in delegate briefs, probe `python3 -c "import xdist"`. When `xdist` is absent, run targeted local suites plus offline validators per wave and let CI run `pytest -n auto` (or run the full serial suite only once before PR creation) rather than burning ~25 min per wave serially.
 
+### OpenCode free-model dispatch workflow (Rung 1)
+
+1. **Probe reachable free models:** run `opencode models` to list reachable `$0` models (or resolve a local loopback runtime via `dispatch.py resolve`) and select `--variant high`.
+2. **Stage the brief inside the isolated worktree:** write each worker's brief inside its own git worktree (for example `.ce-brief.md`, kept untracked and never staged or committed) so OpenCode's `external_directory` permission guard does not auto-reject reading the brief.
+3. **Record the Rung 1 receipt before dispatch:** run `python3 .chaos-engine/hooks/delegation_gate.py record --rung free --free selected --effort high --brief <brief-path> --why "..."` before invoking `opencode run --model <free-model> --variant high "..."`. For parallel fan-out across N isolated worktrees, either record a master brief referenced in each command or record sequentially per stream.
+4. **Parallel rate-limit hygiene:** spread parallel free writers across distinct free models (or cap to 1–2 concurrent workers per free endpoint) so concurrent `--variant high` sessions do not hit a shared free-tier rate limit.
+5. **Stall or complexity escalation to Rung 4:** if a free writer stalls (for example >2–3 minutes of log silence with 0 edits) or fails acceptance checks on large or multi-file modules, cancel the stalled process, switch to another reachable free model if available or record Rung 4 (`--rung paid --free too-complex --effort low --tier cheapest --brief <brief-path> --why "<evidence>"`), and dispatch parallel cheapest-paid host subagents (lowest sufficient tier) across the same file-disjoint worktrees.
+6. **Subagent edit receipt note:** on hook hosts where spawned subagents share the parent workspace's `PreToolUse` hook, if a subagent's file-edit tool requires `rung=direct` after spawn, record `rung=direct` after spawning (or rely on the worktree-local receipt).
+
 ## Delegation ladder
 
 The only writer-selection rule is the [delegation ladder](../skills/chaos-engine/SKILL.md#delegation-ladder). Hook hosts run it from `hooks/guard.py` on PreToolUse. Hookless clients receive it from `tool.py entry`. Do not restate the ladder.
@@ -103,7 +112,7 @@ or adjacent prose with blocker notes, HEAD SHA, and root-learning handoff
 
 ## Independent adversarial review
 
-Follow [delivery cycle](delivery-cycle.md) for review 1 with the self-accept push, the reconcile push that starts review 2, the required-check merge rule, and `gh pr merge --squash` in this repository. Do not start both reviewers in one step. An unchanged head gets at most two reviews. Never review individual implementation steps. A pull request that changes an existing test contract, or whose CI does not run the changed surface ([UI delivery](ui-delivery.md)), does not skip that pair. Time pressure never skips this pair.
+Follow [delivery cycle](delivery-cycle.md) for review 1 with the self-accept push, the reconcile push that starts review 2, the required-check merge rule, and `gh pr merge --squash` in this repository. Do not start both reviewers in one step. One subject gets at most two adversarial reviews in sequence, and an unchanged head is never reviewed a third time. Never review individual implementation steps. A pull request that changes an existing test contract, or whose CI does not run the changed surface ([UI delivery](ui-delivery.md)), does not skip that pair. Time pressure never skips this pair.
 Independence:
 
 - The reviewer is a **separate agent instance, never the author** of the work.
@@ -139,9 +148,11 @@ work.
 
 When implementation is delegated to a local runtime (FreeToken / OpenCode),
 OmniRoute, or any writer that is not the host session model, the orchestrator
-**must** still trigger the two independent adversarial reviews as **new instances of
-the same host model** (native reviewer subagents). Never assign that review to
-the local or OmniRoute writer. Transport does not change the reviewer.
+**must** still trigger the required fresh-context adversarial reviews (one for
+ordinary reversible work; two in sequence for public-contract, irreversible, or
+outbound work) as **new instances of the same host model** (native reviewer
+subagents). Never assign that review to the local or OmniRoute writer. Transport
+does not change the reviewer.
 When FreeToken is READY and the owner selected orchestrator mode, the
 orchestrator must not implement product or overlay chunks; dispatch a
 file-disjoint local writer. OPENCODE `context_length_exceeded` is a writer
@@ -181,13 +192,16 @@ a row that already exists.
 
 ### Review disposition
 
-Run the two reviews the delivery cycle names, both on the same head. A
-blocking finding inside the brief's fixtures is Act inside the remaining PDCA
-cap, then both reviews repeat on the new head. A finding outside those
-fixtures and the recorded non-goals is filed. The head stays. The iteration
-is not spent. Do not add a third review of an unchanged head. A
-finding that changes architecture returns work to planning. Extra local tests
-run only after this terminal review stage.
+Run the adversarial reviews the delivery cycle names (one for ordinary
+reversible work; two in sequence for public-contract, irreversible, or outbound
+work). On a two-review chain, a blocking finding on the first review is fixed,
+then the second review runs on that new head. A blocking finding on the second
+review closes that class in the edit. The test proves the class. That edit does
+not start another reviewer, and it does not repeat both reviews. A finding
+outside the brief's fixtures and the recorded non-goals is filed. The head stays.
+Do not add a third review of an unchanged head, or a third review that hunts the
+next example of a closed class. A finding that changes architecture returns work
+to planning. Extra local tests run only after this terminal review stage.
 
 Post the findings as a pull-request review, not only in chat. Findings that live
 only in a transcript die with the session, which is how the same class gets

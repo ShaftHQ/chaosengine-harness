@@ -103,7 +103,7 @@ claim READY from a box probe of the work-machine ports.
 1. Run `python3 .chaos-engine/skills/local-agency/scripts/tip_preflight.py` before every push (the `git push` guard runs it too).
 2. Bandit B607: resolve argv0 with `shutil.which`; `# nosec B603` alone does not cover a bare executable.
 3. README inventory: a new import in a packaged `*.py` changes the inventory. On an adopter tree that is `chaos-engine/**/*.py` (external-example). On this root-layout repository (`install.py` and `VERSION` at the repo root) it is any `*.py` outside `tests/`, `scripts/`, `.github/`, and `experiments/`. Run the validator `--write` in the same commit.
-4. `.memory/` bodies touched outside `memory save --stdin`: `tip_preflight.py --rehash <sidecar>` in the same tip.
+4. `.memory/` bodies touched outside `<python> .chaos-engine/tool.py memory save --stdin` (portable wrapper for `memory`): `tip_preflight.py --rehash <sidecar>` in the same tip.
 5. Known flake fingerprint (see [CI status economy](../../../references/ci-status-economy.md)): no tip.
 
 Executor / Task prompts: `brief_path:` pointer plus the delta slice only; check with `executor_brief.py lint` (4096-byte cap). Failed CI logs: fingerprint first, at most 40 lines (`executor_brief.py log-budget`). See [tip-churn preflight](../../../references/tip-churn-preflight.md).

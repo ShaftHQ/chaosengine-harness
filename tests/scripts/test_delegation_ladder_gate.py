@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
+import subprocess
 import tempfile
 import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -178,6 +181,57 @@ class DelegationReceiptTest(unittest.TestCase):
                 now=1_000.0,
             )
             self.assertIn("--variant high", slipped or "")
+
+    def test_mechanical_free_writer_allows_low_effort(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "skills" / "chaos-engine").mkdir(parents=True)
+            (root / "skills" / "chaos-engine" / "SKILL.md").write_text("x", encoding="utf-8")
+            brief = self._brief(root, BRIEF + "\nmechanical: true\n")
+            payload = self._receipt(root, brief=brief, mechanical=True, effort="low")
+            self.assertIsNone(GATE.validate(payload))
+            self.assertIsNone(
+                GATE.writer_block(
+                    "run_terminal_command",
+                    {},
+                    (f"opencode run --variant low {brief}",),
+                    root,
+                    now=1_000.0,
+                )
+            )
+
+    def test_opencode_run_help_is_not_free_writer(self) -> None:
+        self.assertIsNone(GATE.classify("run_terminal_command", {}, ("opencode run --help",)))
+        self.assertIsNone(GATE.classify("run_terminal_command", {}, ("opencode run -h",)))
+        self.assertIsNone(
+            GATE.classify("Bash", {"command": "opencode run --help 2>&1 | head -n 20"}, ())
+        )
+        self.assertEqual(
+            "free-writer",
+            GATE.classify("run_terminal_command", {}, ('opencode run --help "edit foo.py"',)),
+        )
+        self.assertEqual(
+            "free-writer",
+            GATE.classify(
+                "run_terminal_command",
+                {},
+                ("opencode run --help && opencode run --variant high brief.md",),
+            ),
+        )
+
+    def test_paid_receipt_with_valid_brief_allows_subagent_direct_edit(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "skills" / "chaos-engine").mkdir(parents=True)
+            (root / "skills" / "chaos-engine" / "SKILL.md").write_text("x", encoding="utf-8")
+            brief = self._brief(root)
+            self._receipt(root, rung="paid", free="too-complex", effort="low", brief=brief, brief_ok=True)
+            self.assertIsNone(
+                GATE.writer_block("edit_file", {"path": "hooks/guard.py"}, (), root, now=1_000.0)
+            )
+            self._receipt(root, rung="free", free="selected", effort="high", brief=brief, brief_ok=True)
+            denied = GATE.writer_block("edit_file", {"path": "hooks/guard.py"}, (), root, now=1_000.0)
+            self.assertIn("rung=direct", denied or "")
 
     def test_dispatch_carries_the_receipt_brief(self) -> None:
         dispatch = load(
@@ -355,6 +409,153 @@ class AllHostsShareTheGateTest(unittest.TestCase):
             "free-writer",
             GATE.classify("run_terminal_command", {}, ("opencode run --variant high",)),
         )
+
+
+    def _review(self, root: Path, prompt: str) -> str | None:
+        return GATE.writer_block(
+            "spawn_subagent",
+            {"subagent_type": "chaos-engine-reviewer", "prompt": prompt},
+            (),
+            root,
+            now=1_000.0,
+        )
+
+    def test_a_third_adversarial_review_of_one_subject_is_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "skills" / "chaos-engine").mkdir(parents=True)
+            (root / "skills" / "chaos-engine" / "SKILL.md").write_text("x", encoding="utf-8")
+            prompt = "Read-only adversarial review. Do not edit. review-subject: ChaosEngine/one"
+            self.assertIsNone(self._review(root, prompt))
+            self.assertIsNone(self._review(root, prompt))
+            denied = self._review(root, prompt)
+            self.assertIn("ChaosEngine/one", denied or "")
+            self.assertIn("two adversarial reviews", denied or "")
+            self.assertIn("Close the class", denied or "")
+            other = "Read-only adversarial review. Do not edit. review-subject: ChaosEngine/two"
+            self.assertIsNone(self._review(root, other))
+
+    def test_an_unscoped_review_chain_stops_at_two(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            prompt = "Read-only adversarial review. Do not edit."
+            self.assertIsNone(self._review(root, prompt))
+            self.assertIsNone(self._review(root, prompt))
+            denied = self._review(root, prompt)
+            self.assertIn("unscoped", denied or "")
+            self.assertIn("review-subject", denied or "")
+
+    def test_a_worktree_path_in_the_prompt_is_its_own_subject(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo = root / "repo"
+            repo.mkdir()
+            subprocess.run(
+                ["git", "init", "-b", "ChaosEngine/sample"],
+                cwd=repo,
+                check=True,
+                capture_output=True,
+            )
+            prompt = f"Read-only adversarial review. Do not edit. Look at {repo}"
+            self.assertIsNone(self._review(root, prompt))
+            self.assertIsNone(self._review(root, prompt))
+            denied = self._review(root, prompt)
+            self.assertIn("ChaosEngine/sample", denied or "")
+
+    def test_downstream_pretooluse_denial_does_not_consume_review_round(self) -> None:
+        guard = load("ce_guard_review_chain_test", ROOT / "hooks" / "guard.py")
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "skills" / "chaos-engine").mkdir(parents=True)
+            (root / "skills" / "chaos-engine" / "SKILL.md").write_text("x", encoding="utf-8")
+            prompt = "Read-only adversarial review. Do not edit. review-subject: ChaosEngine/downstream"
+            tool_input = {"subagent_type": "chaos-engine-reviewer", "prompt": prompt}
+            self.assertIsNone(
+                GATE.writer_block("spawn_subagent", tool_input, (), root, now=1_000.0, commit_review=False)
+            )
+            rounds_file = root / GATE.REVIEW_ROUNDS_NAME
+            self.assertFalse(rounds_file.exists())
+
+            event = {
+                "hook_event_name": "PreToolUse",
+                "session_id": "s2-review",
+                "cwd": str(root),
+                "tool_name": "spawn_subagent",
+                "tool_input": tool_input,
+            }
+            with mock.patch.object(guard, "_kernel_block", return_value=(2, None)):
+                rc = guard._run_event(event, "claude")
+                self.assertEqual(2, rc)
+            self.assertFalse(rounds_file.exists())
+
+            with (
+                mock.patch.object(guard, "_kernel_block", return_value=(None, None)),
+                mock.patch.object(guard, "_command_guard_state", return_value=(False, False, "")),
+                mock.patch.object(guard, "_open_pr_pretool", return_value=("", None)),
+            ):
+                rc_ok = guard._run_event(event, "claude")
+                self.assertEqual(0, rc_ok)
+            saved = json.loads(rounds_file.read_text(encoding="utf-8"))
+            self.assertEqual(1, saved["subjects"]["ChaosEngine/downstream"])
+
+    def test_owner_session_lift_via_receipt_and_env(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "skills" / "chaos-engine").mkdir(parents=True)
+            (root / "skills" / "chaos-engine" / "SKILL.md").write_text("x", encoding="utf-8")
+            prompt = "Read-only adversarial review. Do not edit. review-subject: ChaosEngine/lifted"
+
+            # Smaller/invalid review_cap is rejected and never lowers default cap below 2.
+            bad_rc = GATE.main(
+                [
+                    "record",
+                    "--rung", "direct",
+                    "--effort", "low",
+                    "--free", "not-applicable",
+                    "--why", "invalid cap",
+                    "--review-cap", "1",
+                    "--root", str(root),
+                ]
+            )
+            self.assertEqual(2, bad_rc)
+
+            ok_rc = GATE.main(
+                [
+                    "record",
+                    "--rung", "direct",
+                    "--effort", "low",
+                    "--free", "not-applicable",
+                    "--why", "owner lifted review cap",
+                    "--review-cap", "4",
+                    "--root", str(root),
+                ]
+            )
+            self.assertEqual(0, ok_rc)
+            for _ in range(4):
+                self.assertIsNone(self._review(root, prompt))
+            denied = self._review(root, prompt)
+            self.assertIn("4 adversarial reviews", denied or "")
+
+            prompt_env = "Read-only adversarial review. Do not edit. review-subject: ChaosEngine/env-lifted"
+            GATE.receipt_path(root).unlink()
+            with mock.patch.dict(os.environ, {GATE.REVIEW_CAP_LIFT_ENV: "3"}):
+                for _ in range(3):
+                    self.assertIsNone(self._review(root, prompt_env))
+                denied_env = self._review(root, prompt_env)
+                self.assertIn("3 adversarial reviews", denied_env or "")
+
+    def test_the_review_chain_is_in_the_router_and_the_cycle(self) -> None:
+        skill = (ROOT / "skills" / "chaos-engine" / "SKILL.md").read_text(encoding="utf-8")
+        cycle = (ROOT / "references" / "delivery-cycle.md").read_text(encoding="utf-8")
+        delegation = (ROOT / "references" / "delegation.md").read_text(encoding="utf-8")
+        self.assertIn("The gate refuses another.", skill)
+        self.assertIn("A second failed review ends the chain", skill)
+        self.assertIn("PDCA cap is 3, not a quota", skill)
+        self.assertIn("The gate refuses a third.", cycle)
+        self.assertIn("MAX = MIN", cycle)
+        self.assertIn("at most 3", cycle)
+        self.assertNotIn("both reviews repeat", delegation)
+        self.assertIn("does not repeat both reviews", delegation)
 
 
 if __name__ == "__main__":

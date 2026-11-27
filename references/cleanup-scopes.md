@@ -20,7 +20,7 @@ event is repository-scope scavenger cleanup, and neither deletes unique
 commits or leftover dirty task branches.
 
 A task worktree made by hand with `git worktree add` has no `.chaos-engine/`.
-Run `python3 <primary>/.chaos-engine/worktree_overlay.py materialize --primary <primary> --session <worktree>`
+Run `python3 <primary>/.chaos-engine/runtime/worktree_overlay.py materialize --primary <primary> --session <worktree>`
 before `tool.py entry`; do not copy harness files by hand.
 
 ### Task scope (default)
@@ -138,5 +138,8 @@ machine-scope cleanup.
 
 Filesystem scratch still follows [delete-check discipline](delete-check-discipline.md)
 and [delete guard](delete-guard.md): clean + pushed may pass; dirty / unpushed
-need owner codes; never-touch paths refuse even with a code. Never infer
+need owner codes; never-touch paths refuse even with a code. The pre-rebase
+secret/artifact guard exits `2` with the offending path list on stderr (never
+printing contents) and refuses deleting `.gitignore` or adding
+`secrets.properties`, `login.json`, `*.apk`, `*.ipa`, or `*.aab`. Never infer
 machine cleanup from parallelism alone; never remove another stream's artifacts.

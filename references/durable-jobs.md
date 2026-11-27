@@ -5,7 +5,7 @@ description: Use when work runs longer than a few minutes and must survive the a
 # Durable jobs
 
 Hosts kill agent sessions at a hard limit; see the
-[session cap](bot-entry.md#session-cap-grok-bot-default). A durable job runs
+[session cap](bot-entry.md#caps). A durable job runs
 detached from the session under a supervisor that keeps a **lease** (PID,
 process group, command, heartbeat) and a **checkpoint log**. Any later
 session or watchdog reads the lease instead of guessing.
@@ -33,7 +33,7 @@ session or watchdog reads the lease instead of guessing.
 
 - Agent work itself (not a command) checkpoints to the task ledger
   ([`task_ledger.py`](../runtime/task_ledger.py)) and stops at 35 minutes:
-  [session cap](bot-entry.md#session-cap-grok-bot-default).
+  [session cap](bot-entry.md#caps).
 
 ## Commands
 

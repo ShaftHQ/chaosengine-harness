@@ -22,7 +22,7 @@ from pathlib import Path
 
 HOOKS_DIRECTORY = "chaos-engine-hooks"
 CHAIN_KEY = "chaosengine.chainedHooksPath"
-GUARDED = ("pre-commit", "pre-push")
+GUARDED = ("pre-commit", "pre-push", "pre-rebase")
 # #7323: only git's own hook names get shims; helper files in a chained dir (a copied
 # secret_guard.py, __init__.py, README) must never overwrite what we install.
 GIT_HOOK_NAMES = frozenset({
@@ -65,6 +65,12 @@ if [ -n "$chained" ] && [ -x "$chained/pre-push" ]; then
   exit $?
 fi
 """
+_PRE_REBASE = _PREAMBLE + """PY=$(command -v python3 || command -v python)
+"$PY" "$(dirname "$0")/secret_guard.py" --pre-rebase "$1" "$2" || exit $?
+if [ -n "$chained" ] && [ -x "$chained/pre-rebase" ]; then
+  exec "$chained/pre-rebase" "$@"
+fi
+"""
 _SHIM = _PREAMBLE + """if [ -n "$chained" ] && [ -x "$chained/{name}" ]; then
   exec "$chained/{name}" "$@"
 fi
@@ -99,8 +105,12 @@ def _write_executable(path: Path, text: str) -> None:
 
 
 def hook_text(name: str) -> str:
-    """Script text for one hook: the guard for pre-commit and pre-push, else a pass-through shim."""
-    template = {"pre-commit": _PRE_COMMIT, "pre-push": _PRE_PUSH}.get(name, _SHIM)
+    """Script text for one hook: the guard for pre-commit, pre-push, and pre-rebase, else a pass-through shim."""
+    template = {
+        "pre-commit": _PRE_COMMIT,
+        "pre-push": _PRE_PUSH,
+        "pre-rebase": _PRE_REBASE,
+    }.get(name, _SHIM)
     return template.replace("{key}", CHAIN_KEY).replace("{name}", name)
 
 

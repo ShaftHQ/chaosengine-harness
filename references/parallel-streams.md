@@ -69,8 +69,11 @@ pushes the pull-request branch.
 Separate agent instance; no author reasoning history; confirm the head SHA
 before findings. Re-run the named tests; when the PR claims a live gate, exercise
 **live behaviour** (real URL, real build, real HTML) — unit green alone is not
-evidence. Sign-off names the full head SHA; mismatch → re-review. Cap: at most 3 PDCA
-iterations, then the two reviews ([delivery cycle](delivery-cycle.md)).
+evidence. Sign-off names the full head SHA; mismatch → re-review (except a
+class-closing edit after a failed review 2, which is proven by its named test
+and does not start a third review). Cap: at most 3 PDCA iterations, then the
+adversarial review chain (1 for ordinary reversible; 2 in sequence for
+public-contract, irreversible, or outbound; [delivery cycle](delivery-cycle.md)).
 
 ## Merge and rebase
 
@@ -118,10 +121,10 @@ profiles); those refuse even with an owner code. Hygiene refuses `never-touch-pa
 ## WIP and system cap
 
 - Inside a stream: WIP limit 1 until Done (both sign-offs and shipped).
-- Across streams: default cap three implementers and three reviewers, or fewer
-  when free disk is under the [disk gate](#disk-gate) or the review queue is
-  deeper than one round (Theory of Constraints: cap in front of review / disk /
-  attention, not coding).
+- Across streams: cap four parallel file-disjoint implementers (or three when
+  constrained by box RAM/disk) and three reviewers, or fewer when free disk is
+  under the [disk gate](#disk-gate) or the review queue is deeper than one round
+  (Theory of Constraints: cap in front of review / disk / attention, not coding).
 
 ## Design-kind WIP (same-kind batch = conflict)
 
@@ -131,8 +134,12 @@ Rules:
 
 1. **WIP = 1 per design kind.** Parallel across different kinds is allowed when
    path globs are still disjoint.
-2. Each item must finish **build → Adversarial review 1 with the self-accept push, then review 2 after that reconcile → orchestrator sign-off →
-   lessons captured** before the next same-kind item starts. Do not start both reviewers in one step.
+2. Each item must finish **build → Adversarial review 1 with the self-accept push
+   (plus review 2 in sequence after reconcile for public-contract, irreversible,
+   or outbound work; class-closing edits after a failed review 2 are proven by
+   their named test with no third review) → orchestrator sign-off → lessons
+   captured** before the next same-kind item starts. Do not start both
+   reviewers in one step.
 3. After **two consecutive first-pass sign-offs** for that kind, the kind may
    rise to **WIP = 2**. Any reject drops that kind back to WIP = 1 (streak
    resets to 0).

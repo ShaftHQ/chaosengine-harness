@@ -9,7 +9,7 @@ Maps the ChaosEngine delivery loop to **hooks** (machine-checkable) vs **skills*
 | Research receipt | Hook when enforced | PreToolUse research-before-mutation gate | [research-receipt](research-receipt.md) |
 | Implement (Do) | Hook | PreToolUse session identity, catastrophic deny, worktree | playbooks / roles |
 | Check | Skill + tests | PostToolUse records outcomes | consolidated proof commands |
-| Two adversarial reviews | Skill | review 1 with the self-accept push; do not start both reviewers in one step | [delivery cycle](delivery-cycle.md) |
+| Adversarial review chain | Skill | 1 for ordinary reversible; 2 in sequence (review 1 with the self-accept push; do not start both reviewers in one step) for public-contract, irreversible, or outbound; class-closing edit after a failed review 2 is proven by its named test (no third review) | [delivery cycle](delivery-cycle.md) |
 | Merge | Hook | PreToolUse refuses `gh pr merge` until the required checks pass and review threads are resolved. A skipped or neutral check outside the required set does not block. A failed, cancelled, or pending check blocks when it is required and when no check is marked required. An unmarked skip blocks. An empty check list is not success. A pending check is not success. This repository merges with `gh pr merge --squash`. `--auto` is not a bypass | [delivery cycle](delivery-cycle.md) |
 | Learning Session | Hook | Stop requires terminal Learning Session | [learning](../runtime/learning.py) + [self-improve](../skills/self-improve/SKILL.md) |
 
@@ -58,8 +58,8 @@ is stated with evidence. When the only remaining gate is an owner-only artifact 
 - Skills still own thoroughness of the eight-step receipt content.
 - Hooks only prove that a preflight marker exists before mutation when enforced.
 - Safety denials and session-identity rules remain higher priority than this gate.
-- Learning Session Stop gate fires after confirmed delivery only when a trigger
-  fired (failure, surprise, owner ask). Harness lessons, findings, and potential
+- Learning Session Stop gate fires after every confirmed final delivery (with or
+  without a failure, surprise, or owner ask). Harness lessons, findings, and potential
   enhancements are GitHub issues only. Do not write them to a local queue or
   into chat. Product lessons may report `product queued N` or `nothing durable`.
 - Harness parity: lasting policy lives in the portable overlay, not one agent.

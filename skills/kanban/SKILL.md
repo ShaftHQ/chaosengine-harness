@@ -29,7 +29,7 @@ session state directory, never in tracked files:
 Columns: `backlog` -> `ready` -> `doing` -> `review` -> `done`.
 
 - `ready` requires acceptance criteria and a proof command. No criteria, no pull.
-- `doing` WIP **1 writer** per repository: one card being edited at a time.
+- `doing` WIP **1 writer** per stream (1 doing item per stream; see [execution workflows](../../references/execution-workflows.md) for cross-stream parallel fan-out, capped at 4 parallel file-disjoint implementers or 3 if constrained by box RAM/disk).
 - `review` WIP **2**: at two cards waiting for review or CI, pull nothing new.
   Ordinary reversible cards get one fresh-context adversarial review. A public-contract or hard-to-reverse card gets two, one after another.
   The open-PR advisory default is this review WIP times one stream. With no
@@ -98,7 +98,9 @@ passed downstream (Poppendieck's seven wastes).
 
 ## Status
 
-Every status report is a Markdown table, one row per card
-(`ID | Issue(s) | PR | Status | Proof or blocker`), then Risks. Never prose or
+In single-agent Kanban, every status report is a 5-column Markdown table, one row per card
+(`ID | Issue(s) | PR | Status | Proof or blocker`), then Risks (multi-agent
+orchestrated mode uses the 7-column format in [delegation](../../references/delegation.md)
+and [orchestrator-bootstrap](../../references/orchestrator-bootstrap.md)). Never prose or
 bullet lists. No separate status rituals. Report only rows that changed since
 the last report; say nothing when nothing changed.

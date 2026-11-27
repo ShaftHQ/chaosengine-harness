@@ -16,7 +16,7 @@ One checkout on the configured default branch. `HEAD` equals that remote tip. `g
 The worktree is dirty, or another local branch or linked worktree exists.
 
 Attended: ask first, and explain this procedure before changing anything.
-Unattended: decide and run it.
+Unattended: default to task scope; run unattended repository-scope cleanup only when the owner already authorized repository-scope cleanup.
 
 ## Procedure
 
@@ -34,4 +34,4 @@ One checkout, only the configured default branch, `HEAD` equals that remote tip,
 
 ## Limits
 
-Do not stash. Do not `reset --hard`. Do not force-push. Do not use `--force-with-lease`. Do not delete remote branches. Do not rewrite remote history. Do not discard unique commits without explicit authorization. Do not commit generated plugin directories.
+Do not stash. Do not `reset --hard`. Do not force-push. Do not use `--force-with-lease`. Do not delete remote branches. Do not rewrite remote history. Do not discard unique commits without explicit authorization. Do not commit generated plugin directories. The pre-rebase guard exits `2`, prints only the offending path list on stderr (never printing file contents), and refuses deleting `.gitignore` or adding `secrets.properties`, `login.json`, `*.apk`, `*.ipa`, or `*.aab`.

@@ -23,8 +23,8 @@ enough; do not retry, repair, refresh, poll, or watch during an ordinary task:
   MemPalace, and targeted `rg`.
 
 ```text
-python .chaos-engine/tool.py graphify query "<bounded structural question>" --graph graphify-out/graph.json
-python .chaos-engine/tool.py graphify diagnose multigraph --graph graphify-out/graph.json --json
+python3 .chaos-engine/tool.py graphify query "<bounded structural question>" --graph graphify-out/graph.json
+python3 .chaos-engine/tool.py graphify diagnose multigraph --graph graphify-out/graph.json --json
 ```
 
 If the cache is stale, either read-only command fails, or returned paths do not
@@ -93,7 +93,7 @@ distinct files.
 Useful bounded reads:
 
 ```text
-python .chaos-engine/tool.py graphify explain "<symbol>" --graph graphify-out/graph.json
-python .chaos-engine/tool.py graphify affected "<symbol>" --depth 2 --graph graphify-out/graph.json
-python .chaos-engine/tool.py graphify path "<source>" "<target>" --graph graphify-out/graph.json
+python3 .chaos-engine/tool.py graphify explain "<symbol>" --graph graphify-out/graph.json
+python3 .chaos-engine/tool.py graphify affected "<symbol>" --depth 2 --graph graphify-out/graph.json
+python3 .chaos-engine/tool.py graphify path "<source>" "<target>" --graph graphify-out/graph.json
 ```

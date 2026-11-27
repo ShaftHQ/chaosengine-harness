@@ -1,7 +1,7 @@
 ---
 name: freetoken
 description: >-
-  Standalone FreeToken process: install, READY probe and bounded dispatch. Use
+  Standalone FreeToken process: READY probe and bounded dispatch. Use
   when the local-runtimes table points a job at FreeToken rather than a loopback
   server.
 license: MIT

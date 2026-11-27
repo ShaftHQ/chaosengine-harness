@@ -177,8 +177,8 @@ while work is live. [Roles](roles.md) owns role boundaries. The main orchestrato
 
 Implementation follows [TDD and its PDCA boundary](tdd.md#workflow).
 
-Capability comes in three levels on every host: most intelligent, default, and
-mechanical. Name them that way, never by provider or product.
+Capability levels follow [delegation](delegation.md): Most intelligent, Free,
+Paid, and Mechanical. Name them that way, never by provider or product.
 [Delegation](delegation.md) defines levels and the [delivery cycle](delivery-cycle.md) reviews.
 
 ## Ownership and completion
