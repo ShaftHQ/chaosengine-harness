@@ -4,7 +4,7 @@ Writer selection is the [delegation ladder](../../../skills/chaos-engine/SKILL.m
 
 ## Decision rule
 
-Delegate when the **handoff cost is well below generation cost**.
+Delegate when the **handoff cost is well below generation cost**. That choice follows the delegation ladder.
 
 - Handoff cost: everything the implementer pays to delegate. That includes spec
   and context packing, verifying each artifact, grounded feedback, and restarts
@@ -12,8 +12,7 @@ Delegate when the **handoff cost is well below generation cost**.
   implementer's own window.
 - Generation cost: the tokens the implementer would otherwise write itself.
 
-A local writer replaces just the writing step. When checking its output costs
-about as much as writing the code, write it directly.
+A direct host edit is the one-change exception when the brief would cost more than the edit.
 
 ## Suitable jobs
 

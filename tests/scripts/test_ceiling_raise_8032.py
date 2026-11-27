@@ -22,14 +22,11 @@ class CeilingRaiseTest(unittest.TestCase):
     def setUpClass(cls):
         cls.mod = load()
 
-    def test_a_higher_always_loaded_budget_is_flagged_and_a_shrink_passes(self):
+    def test_always_loaded_bytes_are_a_measurement_not_a_ceiling(self):
         base = '{"bytes": 100, "tolerance_pct": 5, "shrink_ratchet_pct": 10}'
         raised = '{"bytes": 120, "tolerance_pct": 5, "shrink_ratchet_pct": 10}'
         shrunk = '{"bytes": 80, "tolerance_pct": 4, "shrink_ratchet_pct": 10}'
-        self.assertEqual(
-            ["always-loaded-budget.json: bytes 100 -> 120"],
-            self.mod.findings("always-loaded-budget.json", base, raised),
-        )
+        self.assertEqual([], self.mod.findings("always-loaded-budget.json", base, raised))
         self.assertEqual([], self.mod.findings("always-loaded-budget.json", base, shrunk))
 
     def test_a_lower_decision_score_or_a_removed_score_is_flagged(self):

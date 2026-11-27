@@ -59,10 +59,10 @@ Vendor-neutral. The host names the models; this policy does not pin a vendor.
 
 1. The Architect-Orchestrator is the most capable model at high reasoning. It refines requirements, decides architecture, writes the detailed plan and spec, decomposes tasks, selects model and effort, and oversees verification. It does not implement when it is delegating.
 2. Model and effort follow the delegation ladder in the router. Do not add a second effort rule here.
-3. Quota-exhaustion failover: when the active delegate exhausts usage or quota, checkpoint state and continue on the next cheapest qualified model down the fallback ladder until delivery completes.
+3. Quota-exhaustion failover: when the active delegate exhausts usage or quota, checkpoint state and continue on the next cheapest qualified model named by the delegation ladder. Do not open a second fallback ladder.
 4. Plan persistence: record an orchestrated multi-step plan in a GitHub tracking issue so any later agent can resume from that ticket.
 5. PR model attribution: on orchestrated pull requests, report transparently in the PR description or review summary which model and reasoning effort executed each implementation wave and each independent review, with a short field note of what worked and what hit quota or stalled. Do not persist provider or model IDs into machine receipts or vendor-lock policy with this reporting.
-6. Pre-dispatch canary & stall failover: before assigning real work to a free or unproven third-party delegate gateway, run a fast pre-dispatch canary (a short-timeout prompt/tool-call readiness check). Enforce a short idle-output stall threshold (3–5 minutes with zero file or log progress); when breached, cancel immediately and fail over to the next qualified model on the fallback ladder.
+6. Pre-dispatch canary & stall failover: before assigning real work to a free or unproven third-party delegate gateway, run a fast pre-dispatch canary (a short-timeout prompt/tool-call readiness check). Enforce a short idle-output stall threshold (3–5 minutes with zero file or log progress); when breached, cancel immediately and fail over through the delegation ladder.
 7. Test-runner parallelism probe (`xdist`): before dispatching full-suite pytest runs in delegate briefs, probe `python3 -c "import xdist"`. When `xdist` is absent, run targeted local suites plus offline validators per wave and let CI run `pytest -n auto` (or run the full serial suite only once before PR creation) rather than burning ~25 min per wave serially.
 
 ## Delegation ladder

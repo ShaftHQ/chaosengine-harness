@@ -14,7 +14,7 @@ permissions:
 
 # Local agency (OpenCode)
 
-Optional **local coding agency** path. Not a workflow owner; select the
+Free-first writer path. Not a workflow owner; select the
 canonical workflow in [execution workflows](../../references/execution-workflows.md)
 first.
 
@@ -68,8 +68,8 @@ python3 .chaos-engine/skills/local-agency/scripts/dispatch.py argv --prompt '…
 `resolve` ranks FreeToken, then OpenAI-compat peers, then Colibri. Use `--prefer colibri` when the adopter asked for Colibri. On `READY`, `config` /
 `argv` emit ephemeral OpenCode material (`OPENCODE_CONFIG` path). Run OpenCode
 yourself with that env; do not persist the config into the durable user file.
-`argv` defaults include `--pure` and `--variant high`. Pass `medium` only for a
-small mechanical model. `--no-pure` exists for callers that already isolate
+`argv` defaults include `--pure` and `--variant high`. Further effort follows the delegation ladder.
+`--no-pure` exists for callers that already isolate
 plugins. `--pure` still only disables plugins.
 
 ## Design-turn brief and OpenCode preflight
@@ -100,7 +100,7 @@ python3 .chaos-engine/skills/local-agency/scripts/dispatch.py --mode design argv
 
 ## Mechanical dispatch
 
-A READY local coder is a mechanical runner. Procedure:
+A small local model is the mechanical case in the delegation ladder. Procedure:
 [mechanical-dispatch.md](references/mechanical-dispatch.md). The OpenCode bash
 timeout is **120s**: after a timeout kill of an apply script, re-run the same
 idempotent script from the orchestrator so product files are not left

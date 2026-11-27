@@ -31,14 +31,19 @@ _SHELL_TOOL = re.compile(
     re.IGNORECASE,
 )
 _REVIEW_TYPE = re.compile(r"reviewer", re.IGNORECASE)
-_WRITER_TYPE = re.compile(r"implementer|mechanical-helper", re.IGNORECASE)
 _FREE_COMMAND = re.compile(
     r"\bopencode\b[^\n]{0,160}\brun\b|\bdispatch\.py\b[^\n]{0,160}\bargv\b",
     re.IGNORECASE,
 )
 _REVIEW_TEXT = re.compile(r"adversarial review", re.IGNORECASE)
 _READ_ONLY = re.compile(r"read-only|do not edit|does not edit", re.IGNORECASE)
-_IMPLEMENT = re.compile(r"\bimplement\b", re.IGNORECASE)
+_EDIT_VERB = re.compile(r"\b(?:implement|edit|fix|change|write|update|add)\b", re.IGNORECASE)
+_DIRECT_TOOL = re.compile(
+    r"^(?:write|edit|strreplace|multiedit|apply_?patch|notebookedit|search_replace|write_file|edit_file)$",
+    re.IGNORECASE,
+)
+_VARIANT = re.compile(r"--variant(?:=|\s+)(low|medium|high|max)\b", re.IGNORECASE)
+_VARIANT_RANK = {"low": 0, "medium": 1, "high": 2, "max": 3}
 
 
 def project_root(start: Path) -> Path:
@@ -137,26 +142,61 @@ def _subagent_type(tool_input: object) -> str:
     return ""
 
 
+def _editing(text: str) -> bool:
+    """True when the prompt still asks for a change after a read-only clause."""
+    return _EDIT_VERB.search(_READ_ONLY.sub(" ", text)) is not None
+
+
 def classify(tool_name: str, tool_input: object, commands: tuple[str, ...]) -> str | None:
     command_text = "\n".join(commands)
     if _FREE_COMMAND.search(command_text) or (
         _SHELL_TOOL.search(tool_name or "") and _FREE_COMMAND.search(_blob(tool_input))
     ):
         return "free-writer"
-    if not _WRITER_TOOL.match(tool_name or ""):
-        return None
-    kind = _subagent_type(tool_input)
-    text = _blob(tool_input)
-    if _REVIEW_TYPE.search(kind):
-        return "review"
-    if _WRITER_TYPE.search(kind):
+    if _WRITER_TOOL.match(tool_name or ""):
+        kind = _subagent_type(tool_input)
+        text = _blob(tool_input)
+        if _REVIEW_TYPE.search(kind):
+            return "review"
+        if _REVIEW_TEXT.search(text) and not _editing(text):
+            return "review"
+        if _READ_ONLY.search(text) and not _editing(text):
+            return None
         return "host-writer"
-    if _READ_ONLY.search(text):
-        return None
-    if _REVIEW_TEXT.search(text) and not _IMPLEMENT.search(text):
-        return "review"
-    if _IMPLEMENT.search(text):
-        return "host-writer"
+    if _DIRECT_TOOL.match(tool_name or ""):
+        return "direct-edit"
+    return None
+
+
+def _brief_text(receipt: dict) -> str:
+    path = str(receipt.get("brief") or "")
+    if not path:
+        return ""
+    try:
+        return Path(path).read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
+def _free_problem(receipt: dict, command_text: str) -> str | None:
+    brief_path = str(receipt.get("brief") or "")
+    brief = _brief_text(receipt)
+    if not brief_path or brief_path not in command_text or not brief_ok(brief):
+        return "delegation ladder: the free writer command must name the brief file."
+    mechanical = bool(receipt.get("mechanical"))
+    if mechanical and "mechanical" not in brief.casefold():
+        return "delegation ladder: a mechanical receipt needs the word mechanical in the brief."
+    found = _VARIANT.search(command_text)
+    variant = found.group(1).lower() if found else None
+    if variant is None and re.search(r"\bopencode\b", command_text, re.IGNORECASE) and re.search(
+        r"\brun\b", command_text, re.IGNORECASE
+    ):
+        return "delegation ladder: free opencode dispatch must pass --variant high or max."
+    if variant is None:
+        variant = "high"
+    floor = "medium" if mechanical and receipt.get("effort") == "medium" else "high"
+    if _VARIANT_RANK[variant] < _VARIANT_RANK[floor]:
+        return "delegation ladder: free opencode dispatch must pass --variant high or max."
     return None
 
 
@@ -173,6 +213,8 @@ def writer_block(
     root = project_root(cwd)
     receipt = load_receipt(root, now)
     if receipt is None:
+        if kind == "direct-edit":
+            return "delegation ladder: a direct host edit needs rung=direct."
         return (
             "delegation ladder: record a receipt before this writer "
             "(python3 .chaos-engine/hooks/delegation_gate.py record)."
@@ -180,19 +222,15 @@ def writer_block(
     problem = validate(receipt)
     if problem:
         return f"delegation ladder: receipt is not valid ({problem})."
+    if kind == "direct-edit" and receipt.get("rung") != "direct":
+        return "delegation ladder: a direct host edit needs rung=direct."
     if kind == "host-writer" and receipt.get("rung") != "paid":
         return "delegation ladder: a host writer is the paid fallback. The receipt rung is not paid."
     if kind == "free-writer" and receipt.get("rung") != "free":
         return "delegation ladder: a free writer needs rung=free."
     if kind == "free-writer":
         command_text = "\n".join(commands) or _blob(tool_input)
-        command_text = command_text.casefold()
-        if "opencode" in command_text and "run" in command_text:
-            allowed = ("--variant high", "--variant max")
-            if receipt.get("mechanical"):
-                allowed = ("--variant medium", "--variant high", "--variant max")
-            if not any(token in command_text for token in allowed):
-                return "delegation ladder: free opencode dispatch must pass --variant high or max."
+        return _free_problem(receipt, command_text)
     return None
 
 

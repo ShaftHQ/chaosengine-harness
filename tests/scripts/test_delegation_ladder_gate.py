@@ -83,16 +83,22 @@ class DelegationReceiptTest(unittest.TestCase):
                 )
             )
 
+    def _brief(self, root: Path, text: str = BRIEF) -> str:
+        path = root / "brief.md"
+        path.write_text(text, encoding="utf-8")
+        return path.resolve().as_posix()
+
     def test_free_opencode_requires_high_effort_and_a_free_receipt(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             (root / "skills" / "chaos-engine").mkdir(parents=True)
             (root / "skills" / "chaos-engine" / "SKILL.md").write_text("x", encoding="utf-8")
-            self._receipt(root)
+            brief = self._brief(root)
+            self._receipt(root, brief=brief)
             blocked = GATE.writer_block(
                 "run_terminal_command",
                 {},
-                ("opencode run --variant medium --model example",),
+                (f"opencode run --variant medium --model example {brief}",),
                 root,
                 now=1_000.0,
             )
@@ -101,11 +107,83 @@ class DelegationReceiptTest(unittest.TestCase):
                 GATE.writer_block(
                     "run_terminal_command",
                     {},
-                    ("opencode run --variant high --model example",),
+                    (f"opencode run --variant high --model example {brief}",),
                     root,
                     now=1_100.0,
                 )
             )
+
+    def test_unlabeled_host_spawns_need_a_paid_receipt(self) -> None:
+        prompts = (
+            ("Task", {"subagent_type": "general-purpose", "prompt": "Fix hooks/guard.py and add the regression test."}),
+            ("spawn_subagent", {"prompt": "Edit hooks/delegation_gate.py so unlabeled spawns are refused."}),
+            ("Task", {"prompt": "Implement the parser fix. Do not edit unrelated files."}),
+            ("Agent", {"agent_type": "coder", "prompt": "change the gate"}),
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for tool, payload in prompts:
+                with self.subTest(tool=tool, prompt=payload.get("prompt")):
+                    reason = GATE.writer_block(tool, payload, (), root, now=1_000.0)
+                    self.assertIn("record a receipt", reason or "")
+
+    def test_read_only_spawn_is_not_a_writer(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.assertIsNone(
+                GATE.writer_block(
+                    "spawn_subagent",
+                    {"prompt": "Read the file. Do not edit."},
+                    (),
+                    root,
+                    now=1_000.0,
+                )
+            )
+
+    def test_direct_edit_needs_rung_direct(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "skills" / "chaos-engine").mkdir(parents=True)
+            (root / "skills" / "chaos-engine" / "SKILL.md").write_text("x", encoding="utf-8")
+            reason = GATE.writer_block("Write", {"path": "rules/operation_boundary.py"}, (), root, now=1_000.0)
+            self.assertIn("rung=direct", reason or "")
+            self._receipt(root, rung="direct", free="not-applicable", effort="low", brief_ok=True)
+            self.assertIsNone(
+                GATE.writer_block("Edit", {"path": "rules/operation_boundary.py"}, (), root, now=1_000.0)
+            )
+
+    def test_free_receipt_is_bound_to_its_brief_and_variant(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "skills" / "chaos-engine").mkdir(parents=True)
+            (root / "skills" / "chaos-engine" / "SKILL.md").write_text("x", encoding="utf-8")
+            brief = self._brief(root)
+            self._receipt(root, brief=brief)
+            unrelated = GATE.writer_block(
+                "run_terminal_command",
+                {},
+                ("opencode run --variant high --prompt other",),
+                root,
+                now=1_000.0,
+            )
+            self.assertIn("brief file", unrelated or "")
+            low = GATE.writer_block(
+                "run_terminal_command",
+                {},
+                (f"dispatch.py argv --variant low {brief}",),
+                root,
+                now=1_000.0,
+            )
+            self.assertIn("--variant high", low or "")
+            self._receipt(root, brief=brief, mechanical=True, effort="medium")
+            medium = GATE.writer_block(
+                "run_terminal_command",
+                {},
+                (f"opencode run --variant medium {brief}",),
+                root,
+                now=1_000.0,
+            )
+            self.assertIn("mechanical", medium or "")
 
     def test_reviewer_spawn_is_not_a_writer(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -156,7 +234,7 @@ class AllHostsShareTheGateTest(unittest.TestCase):
         self.assertIn("delegation_gate", guard)
         matchers = json.loads((ROOT / "hooks" / "matchers.json").read_text(encoding="utf-8"))
         preventive = " ".join(matchers["preventive"])
-        for tool in ("spawn_subagent", "spawn_agent", "Task", "run_terminal_command", "Bash"):
+        for tool in ("spawn_subagent", "spawn_agent", "Task", "run_terminal_command", "Bash", "search_replace"):
             with self.subTest(tool=tool):
                 self.assertIn(tool, preventive)
 

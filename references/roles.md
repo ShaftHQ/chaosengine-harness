@@ -21,7 +21,7 @@ It requires transparent
 PR model attribution: per-wave / per-review model attribution in the pull
 request, naming which model and reasoning effort ran, with a short field note
 of what worked and what hit quota or stalled. When a delegate exhausts usage or quota, it
-checkpoints and fails over to the next cheapest qualified model until
+checkpoints and continues under the delegation ladder until
 delivery completes. It records the
 orchestration plan in a GitHub tracking issue. When the owner selects
 parallelized implementation, it assigns strictly file-disjoint ownership
