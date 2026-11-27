@@ -75,12 +75,12 @@ def is_empty_result(body: str) -> bool:
 
 
 def project_root(start: Path | None = None) -> Path:
+    """Active checkout root; no commondir redirect (#258).
+    Shared tool/store paths resolve their own main root."""
     here = (start or Path.cwd()).resolve()
     for candidate in (here, *here.parents):
         if _has_overlay(candidate):
             return candidate
-    main_root = _git_main_root(here)
-    if main_root is not None and _has_overlay(main_root): return main_root
     return here
 
 
@@ -1776,21 +1776,30 @@ def _source_hit(path: str, section: str) -> dict[str, object]:
 def _normalize_graphify_paths(
     project: Path, hits: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
-    """Drop `source/` shadows, preferring the existing repo-relative path (#257)."""
+    """Rewrite `source/` shadows without hiding distinct labels in one file (#257, #7179)."""
     shadow = "source/"
-    originals = {str(hit.get("path") or "") for hit in hits}
-    seen: set[str] = set()
+    bare = {
+        (str(hit.get("path") or ""), hit.get("label"))
+        for hit in hits
+        if not str(hit.get("path") or "").startswith(shadow)
+    }
+    seen: set[tuple[str, Any]] = set()
     kept: list[dict[str, Any]] = []
     for hit in hits:
         path = str(hit.get("path") or "")
+        label = hit.get("label")
         stripped = path[len(shadow) :] if path.startswith(shadow) else path
-        if not stripped or stripped in seen:
-            continue
-        if stripped != path and stripped in originals:
+        if not stripped:
             continue
         item = dict(hit)
-        if stripped != path and (project / stripped).is_file():
+        if stripped != path and (
+            (not (project / path).is_file() and (project / stripped).is_file())
+            or (stripped, label) in bare
+        ):
             item["path"] = stripped
-        seen.add(stripped)
+        key = (str(item["path"]), label)
+        if key in seen:
+            continue
+        seen.add(key)
         kept.append(item)
     return kept
