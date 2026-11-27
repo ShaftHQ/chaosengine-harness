@@ -578,6 +578,66 @@ class RetrieveGateTests(unittest.TestCase):
         )
         cls.shim = load(ROOT / "hooks" / "receipt_shim.py", "ce_hook_parity_shim")
 
+    def test_skill_shell_and_prompt_expansion_share_pretool_denies(self):
+        justify = self.justification
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            docs = project / "docs"
+            docs.mkdir()
+            (docs / "a.md").write_text("x\n", encoding="utf-8")
+            command = "cat docs/*.md"
+            baseline = justify.file_read_block_reason(
+                project=project,
+                event_name="PreToolUse",
+                tool_name="Bash",
+                tool_input={"command": command},
+                commands=(command,),
+                session_id="base",
+            )
+            self.assertIsNotNone(baseline)
+            for event_name in ("PreSkillShellCommand", "UserPromptExpansion"):
+                with self.subTest(event_name=event_name, gate="read"):
+                    reason = justify.file_read_block_reason(
+                        project=project,
+                        event_name=event_name,
+                        tool_name="Bash",
+                        tool_input={"command": command},
+                        commands=(command,),
+                        session_id=event_name,
+                    )
+                    self.assertEqual(baseline, reason)
+                with self.subTest(event_name=event_name, gate="edit"):
+                    blocked = justify.impact_edit_block_reason(
+                        project=project,
+                        event_name=event_name,
+                        tool_name="Edit",
+                        session_id=event_name,
+                        tool_input={"file_path": "kept.txt"},
+                    )
+                    self.assertEqual(justify.IMPACT_EDIT_BLOCK, blocked)
+            for event_name in ("PermissionRequest", "PostToolUse"):
+                with self.subTest(event_name=event_name, gate="read"):
+                    self.assertIsNone(
+                        justify.file_read_block_reason(
+                            project=project,
+                            event_name=event_name,
+                            tool_name="Bash",
+                            tool_input={"command": command},
+                            commands=(command,),
+                            session_id=event_name,
+                        )
+                    )
+                with self.subTest(event_name=event_name, gate="edit"):
+                    self.assertIsNone(
+                        justify.impact_edit_block_reason(
+                            project=project,
+                            event_name=event_name,
+                            tool_name="Edit",
+                            session_id=event_name,
+                            tool_input={"file_path": "kept.txt"},
+                        )
+                    )
+
     def test_shim_edit_tools_and_graph_commands_clear_owe(self):
         self.assertIn("antigravity", self.shim.SHIM_HOSTS)
         self.assertIn("apply_patch", self.justification.EDIT_TOOLS)

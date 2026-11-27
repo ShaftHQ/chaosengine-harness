@@ -25,6 +25,17 @@ import urllib.parse
 from collections.abc import Mapping
 from pathlib import Path
 
+# PreToolUse plus the Claude events that share its deny policy.
+_PREVENTIVE_EVENTS = frozenset({
+    "PreToolUse",
+    "PreSkillShellCommand",
+    "UserPromptExpansion",
+})
+
+
+def _preventive_event(event_name: str) -> bool:
+    return event_name in _PREVENTIVE_EVENTS
+
 
 def _overlay_module(name: str) -> Path:
     """Prefer runtime/<name> at the tree root; fall back to a flat file."""
@@ -802,7 +813,7 @@ def _open_pr_numbers(cwd: Path) -> list[int] | None:
 
 def _open_pr_pretool(event: dict, event_name: str, commands: tuple[str, ...]) -> tuple[str, str | None]:
     """Return ``(deny reason, advisory)``. The advisory does not deny the command."""
-    if event_name != "PreToolUse" or not _open_pr_action(commands):
+    if not _preventive_event(event_name) or not _open_pr_action(commands):
         return "", None
     cwd = Path(str(event.get("cwd") or Path.cwd()))
     cap, problem = _open_pr_cap(cwd)
@@ -3680,15 +3691,15 @@ def _command_guard_state(
             return receipt_command, mutation, post_block
     checkpoint = reflection.pending_checkpoint(session_id)
     unchanged_test = _unchanged_test_requested(event, commands, tool_name, session_id)
-    if event_name == "PreToolUse":
+    if _preventive_event(event_name):
         project = Path(str(event.get("cwd") or Path.cwd()))
         boundary_block = _operation_boundary_block(commands, project)
         if boundary_block:
             return receipt_command, mutation, boundary_block
-    push_block = (_overlay_push_block(commands) or _pr_body_block(commands)) if event_name == "PreToolUse" else ""
+    push_block = (_overlay_push_block(commands) or _pr_body_block(commands)) if _preventive_event(event_name) else ""
     if push_block:
         return receipt_command, mutation, push_block
-    if event_name == "PreToolUse":
+    if _preventive_event(event_name):
         permission_block = github_permission_denied_reason(session_id, commands)
         if permission_block:
             return receipt_command, mutation, permission_block
@@ -3703,7 +3714,7 @@ def _command_guard_state(
         identity_block = commit_identity_pre_commit_reason(cwd, commands)
         if identity_block:
             return receipt_command, mutation, identity_block
-    if event_name == "PreToolUse" and checkpoint and not receipt_command and (mutation or unchanged_test):
+    if _preventive_event(event_name) and checkpoint and not receipt_command and (mutation or unchanged_test):
         return receipt_command, mutation, checkpoint_reason(checkpoint, session_id)
     uninspectable = _uninspectable_functions_call(
         tool_name, tool_input, functions_source, functions_direct, original
@@ -3842,7 +3853,7 @@ def _phase_ledger_triage(session_id: str) -> str | None:
 
 def _research_before_mutation_reason(event_name: str, mutation: bool, session_id: str) -> str | None:
     """Triage-scaled research gate (#5623); hard for public-contract, soft for one-file."""
-    if event_name != "PreToolUse" or not mutation:
+    if not _preventive_event(event_name) or not mutation:
         return None
     triage = _phase_ledger_triage(session_id)
     flag = str(os.environ.get("CHAOS_ENGINE_ENFORCE_RESEARCH_RECEIPT") or "").strip().casefold()
@@ -3975,7 +3986,7 @@ def classifier_complexity_gate_hint(
     commands: tuple[str, ...] = (),
 ) -> str | None:
     """Return soft checklist hint when mutating classifier / interaction surfaces."""
-    if event_name != "PreToolUse" or not mutation:
+    if not _preventive_event(event_name) or not mutation:
         return None
     blob = _mutation_path_blobs(tool_name, tool_input, commands)
     if not blob:
@@ -4045,7 +4056,7 @@ def _repeat_api():
 
 
 def _repeat_advice(event_name: str, session_id: str, tool_name: str, tool_input: object) -> str | None:
-    if event_name not in {"PostToolUse", "PostToolUseFailure", "PreToolUse"}:
+    if event_name not in {"PostToolUse", "PostToolUseFailure"} and not _preventive_event(event_name):
         return None
     module = _repeat_api()
     if module is None:
@@ -4077,7 +4088,7 @@ def _delegation_block(
     commands: tuple,
 ) -> str:
     """PreToolUse writer gate. One module, every hook host. Missing file fails open."""
-    if event_name != "PreToolUse":
+    if not _preventive_event(event_name):
         return ""
     module = _delegation_module()
     if module is None:
@@ -4101,7 +4112,7 @@ def _delegation_commit_review(
     commands: tuple,
 ) -> str:
     """Record a review round only after all downstream PreToolUse checks pass."""
-    if event_name != "PreToolUse":
+    if not _preventive_event(event_name):
         return ""
     module = _delegation_module()
     if module is None or not hasattr(module, "record_review_round"):
@@ -4113,7 +4124,7 @@ def _delegation_commit_review(
 
 
 def _deny(event: dict, event_name: str, tool_name: str, reason: str) -> int:
-    if event_name == "PreToolUse" and justification is not None:
+    if _preventive_event(event_name) and justification is not None:
         with contextlib.suppress(Exception):
             cwd = Path(str(event.get("cwd") or Path.cwd()))
             commands = _event_commands(tool_name, event.get("tool_input"))
@@ -4127,7 +4138,7 @@ def _deny(event: dict, event_name: str, tool_name: str, reason: str) -> int:
                 justification.note_retrieve_blocked(root, _scope_session(event))
     _record_denial_with_significance(event, event_name, tool_name)
     advice = None
-    if event_name == "PreToolUse":
+    if _preventive_event(event_name):
         advice = _repeat_advice(
             event_name, _scope_session(event), tool_name, event.get("tool_input")
         )
@@ -4268,7 +4279,7 @@ def _test_quality_block(
     event: dict, event_name: str, tool_name: str, tool_input: object, host: str
 ) -> int | None:
     """PreToolUse Write/Edit/apply_patch on a test path. Missing gate fails open."""
-    if event_name != "PreToolUse":
+    if not _preventive_event(event_name):
         return None
     canonical = _quality_tool_name(tool_name)
     if canonical not in _QUALITY_TOOLS:
@@ -4325,7 +4336,7 @@ def _large_read_api():
 
 def _large_read_reason(event: dict, tool_name: str, tool_input: object) -> str | None:
     event_name = str(event.get("hook_event_name") or event.get("hookEventName") or "")
-    if event_name != "PreToolUse":
+    if not _preventive_event(event_name):
         return None
     module = _large_read_api()
     if module is None:
@@ -4353,7 +4364,7 @@ def _ethics_api():
 def _ethics_pretool_reason(event: dict, commands: tuple, tool_input: object) -> str | None:
     """Deny assessment-shaped submits when the ethics receipt is missing or person-only."""
     event_name = str(event.get("hook_event_name") or event.get("hookEventName") or "")
-    if event_name != "PreToolUse":
+    if not _preventive_event(event_name):
         return None
     module = _ethics_api()
     if module is None:
@@ -4369,7 +4380,7 @@ def _ethics_pretool_reason(event: dict, commands: tuple, tool_input: object) -> 
 
 
 def _stash_block(event: dict, event_name: str, tool_name: str, commands: tuple) -> int | None:
-    if event_name != "PreToolUse":
+    if not _preventive_event(event_name):
         return None
     # R8 is session-independent: enforce it before identity or ledger checks.
     reason = linked_worktree_stash_reason(commands, Path(str(event.get("cwd") or Path.cwd())))
@@ -4379,7 +4390,7 @@ def _stash_block(event: dict, event_name: str, tool_name: str, commands: tuple) 
 
 
 def _pre_rebase_block(event: dict, event_name: str, tool_name: str, commands: tuple) -> int | None:
-    if event_name != "PreToolUse":
+    if not _preventive_event(event_name):
         return None
     reason = pre_rebase_guard_reason(commands, Path(str(event.get("cwd") or Path.cwd())))
     if reason:
@@ -4873,7 +4884,7 @@ def _emit_notes(
         event_name, mutation=mutation, tool_name=tool_name, tool_input=tool_input, commands=commands
     )
     retrieve_note = None
-    if justification is not None and event_name == "PreToolUse":
+    if justification is not None and _preventive_event(event_name):
         retrieve_note = justification.broad_search_context(
             justification.project_root(Path(str(event.get("cwd") or Path.cwd()))),
             session_id,
@@ -4965,7 +4976,7 @@ def _run_event(event: dict, _host: str) -> int:
 
 def _guarded_event(event: dict, host: str) -> int:
     """#7251: the delete guard runs first on PreToolUse, session-independent like R8."""
-    if isinstance(event, dict) and str(event.get("hook_event_name") or event.get("hookEventName") or "") == "PreToolUse":
+    if isinstance(event, dict) and _preventive_event(str(event.get("hook_event_name") or event.get("hookEventName") or "")):
         tool_input = event.get("tool_input", {})
         cwd = Path(str(event.get("cwd") or Path.cwd()))
         commands = tuple(
@@ -4977,7 +4988,8 @@ def _guarded_event(event: dict, host: str) -> int:
         )
         reason = delete_guard_reason(commands, cwd)
         if reason:
-            return _deny(event, "PreToolUse", str(event.get("tool_name", "")), reason)
+            native = str(event.get("hook_event_name") or event.get("hookEventName") or "")
+            return _deny(event, native, str(event.get("tool_name", "")), reason)
     return _run_event(event, host)
 
 

@@ -314,6 +314,22 @@ class ChaosEngineKernelTest(TestCase):
             "CE_SESSION_REQUIRED", self.kernel.evaluate(shell_read).diagnostic_code
         )
 
+    def test_skill_shell_and_prompt_expansion_share_session_deny(self):
+        for event_name in ("PreSkillShellCommand", "UserPromptExpansion"):
+            with self.subTest(event_name=event_name):
+                event = self.kernel.normalize_event(
+                    {
+                        "hook_event_name": event_name,
+                        "tool_name": "bash",
+                        "tool_input": {"command": "git tag release"},
+                    },
+                    "claude",
+                )
+                report = self.kernel.evaluate(event)
+                self.assertEqual(event_name, event.name)
+                self.assertEqual("deny", report.decision)
+                self.assertEqual("CE_SESSION_REQUIRED", report.diagnostic_code)
+
     def test_missing_session_allows_only_explicit_direct_read_tools(self):
         for tool_name in ("Read", "Grep", "Glob"):
             with self.subTest(tool_name=tool_name):

@@ -124,7 +124,36 @@ LIFECYCLE_EVENTS = (
     "PreCompact",
     "PostCompact",
     "SessionEnd",
+    "PreSkillShellCommand",
+    "UserPromptExpansion",
+    "PermissionRequest",
+    "Setup",
+    "InstructionsLoaded",
+    "MessageDisplay",
+    "PostToolBatch",
+    "PermissionDenied",
+    "Notification",
+    "TaskCreated",
+    "TaskCompleted",
+    "StopFailure",
+    "TeammateIdle",
+    "ConfigChange",
+    "CwdChanged",
+    "DirectoryAdded",
+    "FileChanged",
+    "WorktreeCreate",
+    "WorktreeRemove",
+    "PreModelSwitch",
+    "PostModelSwitch",
+    "Elicitation",
+    "ElicitationResult",
 )
+_CLAUDE_DENY_EXIT = frozenset({
+    "PreToolUse",
+    "PreSkillShellCommand",
+    "UserPromptExpansion",
+    "PermissionRequest",
+})
 HOOK_PROTOCOL_ERROR = "Lifecycle hook produced invalid JSON output."
 
 
@@ -686,7 +715,7 @@ def run_hook_protocol(
             output = {}
         # Claude PreToolUse is a hard block: exit 2 and JSON on stderr.
         # Every other event keeps the historical fail-open exit 0.
-        if host == "claude" and event_name == "PreToolUse":
+        if host == "claude" and event_name in _CLAUDE_DENY_EXIT:
             result = 2
             if not output:
                 output = {"decision": "block", "reason": HOOK_PROTOCOL_ERROR}

@@ -1097,9 +1097,16 @@ class ChaosEngineHostsTest(unittest.TestCase):
         module = load(HOSTS, "chaos_engine_post_compact_events")
         self.assertIn("PreCompact", module.CLAUDE_HOOK_EVENTS)
         self.assertIn("PostCompact", module.CLAUDE_HOOK_EVENTS)
-        self.assertNotIn("PermissionRequest", module.CLAUDE_HOOK_EVENTS)
-        self.assertNotIn("Elicitation", module.CLAUDE_HOOK_EVENTS)
+        self.assertIn("PermissionRequest", module.CLAUDE_HOOK_EVENTS)
+        self.assertIn("Elicitation", module.CLAUDE_HOOK_EVENTS)
+        self.assertIn("PreSkillShellCommand", module.CLAUDE_HOOK_EVENTS)
+        self.assertIn("InstructionsLoaded", module.CLAUDE_HOOK_EVENTS)
+        lifecycle = load(ROOT / "hooks" / "lifecycle.py", "chaos_engine_lifecycle_events_274")
+        self.assertIn("PreSkillShellCommand", lifecycle.LIFECYCLE_EVENTS)
+        self.assertIn("InstructionsLoaded", lifecycle.LIFECYCLE_EVENTS)
         document = json.loads(module.lifecycle_hooks_document("claude"))
+        for name in ("PreSkillShellCommand", "PermissionRequest", "InstructionsLoaded", "Elicitation"):
+            self.assertIn(name, document["hooks"])
         for field in ("command", "commandWindows"):
             command = document["hooks"]["PostCompact"][0]["hooks"][0][field]
             self.assertLessEqual(len(command), module.HOOK_COMMAND_MAX_CHARS, field)

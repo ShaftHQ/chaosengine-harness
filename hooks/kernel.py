@@ -68,6 +68,29 @@ CLAUDE_EVENTS = (
     "PreCompact",
     "PostCompact",
     "SessionEnd",
+    "PreSkillShellCommand",
+    "UserPromptExpansion",
+    "PermissionRequest",
+    "Setup",
+    "InstructionsLoaded",
+    "MessageDisplay",
+    "PostToolBatch",
+    "PermissionDenied",
+    "Notification",
+    "TaskCreated",
+    "TaskCompleted",
+    "StopFailure",
+    "TeammateIdle",
+    "ConfigChange",
+    "CwdChanged",
+    "DirectoryAdded",
+    "FileChanged",
+    "WorktreeCreate",
+    "WorktreeRemove",
+    "PreModelSwitch",
+    "PostModelSwitch",
+    "Elicitation",
+    "ElicitationResult",
 )
 # Official Codex hooks have no PostToolUseFailure. Failure stays on PostToolUse.
 # PreCompact and PostCompact are official; the guard already emits them.
@@ -755,7 +778,7 @@ def normalize_hook_input(raw: Mapping[str, object]) -> dict[str, object]:
     return normalized
 
 
-_NO_DECISION_EVENTS = frozenset({"PermissionRequest", "Elicitation", "ElicitationResult"})
+_NO_DECISION_EVENTS = frozenset({"Elicitation", "ElicitationResult"})
 
 # Claude reads additionalContext only inside hookSpecificOutput, and only on
 # these events. PreCompact stdout is the compaction summary. PostCompact has
@@ -775,7 +798,7 @@ _CLAUDE_CONTEXT_EVENTS = frozenset({
 
 
 def _drop_permission_decision(output: dict[str, object]) -> dict[str, object]:
-    """PermissionRequest and elicitation stay guide-only. Never allow or deny."""
+    """Elicitation stays guide-only. Never allow or deny."""
     cleaned = dict(output)
     for key in ("permissionDecision", "decision", "behavior"):
         cleaned.pop(key, None)
@@ -785,6 +808,48 @@ def _drop_permission_decision(output: dict[str, object]) -> dict[str, object]:
         for key in ("permissionDecision", "permissionDecisionReason", "decision", "behavior"):
             inner.pop(key, None)
         cleaned["hookSpecificOutput"] = inner
+    return cleaned
+
+
+_ALLOW_DECISIONS = frozenset({"allow", "approve"})
+_DENY_DECISIONS = frozenset({"deny", "block"})
+_DECISION_KEYS = ("permissionDecision", "decision", "behavior")
+
+
+def _has_deny(node: object) -> bool:
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key in _DECISION_KEYS and isinstance(value, str) and value.casefold() in _DENY_DECISIONS:
+                return True
+            if _has_deny(value):
+                return True
+        return False
+    if isinstance(node, list):
+        return any(_has_deny(item) for item in node)
+    return False
+
+
+def _strip_permission_allows(node: object) -> object:
+    """Drop allow and approve decisions. Keep a deny that shares the payload."""
+    if isinstance(node, list):
+        return [_strip_permission_allows(item) for item in node]
+    if not isinstance(node, dict):
+        return node
+    cleaned: dict[str, object] = {}
+    for key, value in node.items():
+        if key in _DECISION_KEYS and isinstance(value, str) and value.casefold() in _ALLOW_DECISIONS:
+            continue
+        cleaned[key] = _strip_permission_allows(value) if isinstance(value, (dict, list)) else value
+    for key in _DECISION_KEYS:
+        value = cleaned.get(key)
+        if isinstance(value, dict) and not _has_deny(value):
+            cleaned.pop(key, None)
+    permission = cleaned.get("permissionDecision")
+    permission_denies = (
+        isinstance(permission, str) and permission.casefold() in _DENY_DECISIONS
+    ) or (isinstance(permission, dict) and _has_deny(permission))
+    if not permission_denies:
+        cleaned.pop("permissionDecisionReason", None)
     return cleaned
 
 
@@ -820,6 +885,13 @@ def adapt_hook_output(
     native_event: str = "",
 ) -> dict[str, object]:
     """Project canonical decisions/context into each host's native hook protocol."""
+    if event_name == "PermissionRequest":
+        adapted = _strip_permission_allows(dict(output))
+        if not isinstance(adapted, dict):
+            adapted = {}
+        if host == "claude":
+            _nest_claude_additional_context(adapted, event_name, native_event)
+        return adapted
     if event_name in _NO_DECISION_EVENTS:
         return _drop_permission_decision(dict(output))
     adapted = dict(output)
@@ -1450,8 +1522,16 @@ def evaluate(
             remedy=None,
             terminal_reason="blocked",
         )
+    # PreSkillShellCommand and UserPromptExpansion share PreToolUse denies.
+    # The host-facing name stays. Allow rules do not come along.
+    shares_pretool_deny = event.name in {"PreSkillShellCommand", "UserPromptExpansion"}
     applicable = sorted(
-        (rule for rule in rules if rule.event in {event.name, "*"}),
+        (
+            rule
+            for rule in rules
+            if rule.event in {event.name, "*"}
+            or (shares_pretool_deny and rule.event == "PreToolUse" and rule.decision == "deny")
+        ),
         key=lambda rule: (-rule.priority, rule.code),
     )
     for rule in applicable:
