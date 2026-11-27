@@ -21,6 +21,7 @@ import subprocess  # nosec B404 - fixed git argv for toplevel.
 import shlex
 import sys
 import tempfile
+import urllib.parse
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -953,8 +954,84 @@ _MERGE_VALUE_FLAGS = frozenset({
     "--repo", "-R", "--match-head-commit", "--subject", "-t",
     "--body", "-b", "--body-file", "-F", "--author-email", "-A",
 })
+_MERGE_STRATEGY_FLAGS = frozenset({"--squash", "--merge", "--rebase"})
+_MERGE_VALUE_SHORT = frozenset({"R", "b", "t", "F", "A"})
+_MERGE_STRATEGY_SHORT = frozenset({"s", "m", "r"})
 _PR_URL = re.compile(r"github\.com/([^/]+)/([^/]+)/pull/(\d+)")
 _GITHUB_NAME = re.compile(r"^[A-Za-z0-9_.-]+\Z")
+
+
+def _gh_repo_value(token: str, following: str | None) -> tuple[str | object, int]:
+    """Parse a ``-R``/``--repo`` flag before ``merge``.
+
+    Returns (repo, consumed) where consumed is 0, 1, or 2 tokens,
+    ``(_UNREADABLE_MERGE, 0)`` for a missing or flag-like value,
+    ``(_UNREADABLE_MERGE, 2)`` for an explicitly empty value, and ``(None, 0)``
+    when the token is not a repository flag.
+    """
+    if token in {"-R", "--repo"}:
+        if following is None or following.startswith("-"):
+            return _UNREADABLE_MERGE, 0
+        if following == "":
+            return _UNREADABLE_MERGE, 2
+        return following, 2
+    if token.startswith("--repo="):
+        value = token[len("--repo=") :]
+        if not value or value.startswith("-"):
+            return _UNREADABLE_MERGE, 0
+        return value, 1
+    if token.startswith("-R") and len(token) > 2:
+        value = token[2:]
+        if value.startswith("="):
+            value = value[1:]
+        if not value or value.startswith("-"):
+            return _UNREADABLE_MERGE, 0
+        return value, 1
+    return None, 0
+
+
+def _gh_pr_merge_tail(
+    arguments: list[str] | tuple[str, ...],
+) -> tuple[list[str], str | object] | None:
+    """Locate ``merge`` after ``pr`` across global and parent flags.
+
+    Returns (["pr", "merge", *tail], repo_before_merge). The second element is
+    ``None``, a repo string, or ``_UNREADABLE_MERGE`` when a pre-``merge`` repo
+    value is malformed. Returns None when this is not a ``gh ... pr ... merge``.
+    """
+    tokens = list(arguments)
+    index = 0
+    pre_repo: str | object = None
+    pr_seen = False
+    while index < len(tokens):
+        token = tokens[index]
+        following = tokens[index + 1] if index + 1 < len(tokens) else None
+        repo, consumed = _gh_repo_value(token, following)
+        if repo is _UNREADABLE_MERGE:
+            pre_repo = _UNREADABLE_MERGE
+            index += consumed or 1
+            continue
+        if consumed:
+            if pre_repo is not _UNREADABLE_MERGE:
+                pre_repo = repo
+            index += consumed
+            continue
+        if token in _GH_VALUE_FLAGS and "=" not in token:
+            index += 2
+            continue
+        if token.startswith("-"):
+            index += 1
+            continue
+        if not pr_seen:
+            if token != "pr":
+                return None
+            pr_seen = True
+            index += 1
+            continue
+        if token != "merge":
+            return None
+        return ["pr", "merge", *tokens[index + 1 :]], pre_repo
+    return None
 
 
 def _invokes_pr_merge(parsed: list[str]) -> bool:
@@ -968,9 +1045,99 @@ def _invokes_pr_merge(parsed: list[str]) -> bool:
         current.append(token)
     for statement in statements:
         head, arguments = command_head(statement)
-        if head == "gh" and arguments[:2] == ["pr", "merge"]:
+        if head == "gh" and _gh_pr_merge_tail(arguments) is not None:
             return True
     return False
+
+
+def _parse_gh_pr_merge(
+    arguments: list[str], initial_repo: str | None = None
+) -> tuple[str | object, str | None, bool]:
+    """Parse one ``gh pr merge`` argument tail into (target, repo, has_strategy).
+
+    ``target`` is the first positional token, ``""`` for the current branch, or
+    ``_UNREADABLE_MERGE`` when a value flag or repository value is malformed.
+    Value flags always swallow their value token, even when it looks like a
+    flag, so a smuggled ``-R`` or strategy flag cannot change the routing or
+    the merge-queue exception. ``--admin`` bypasses the merge queue like a
+    strategy flag, so it is reported through ``has_strategy`` too. A repo found
+    before ``merge`` is passed as ``initial_repo`` and may be overridden by a
+    later ``-R``/``--repo`` in the tail, matching ``gh``.
+    """
+    target: str | object = ""
+    repo: str | None = initial_repo
+    has_strategy = False
+    positional = False
+    index = 2
+    n = len(arguments)
+    while index < n:
+        arg = arguments[index]
+        if arg == "--":
+            for rest in arguments[index + 1 :]:
+                if not positional:
+                    target = rest
+                    positional = True
+            break
+        if arg.startswith("--"):
+            key, sep, value = arg.partition("=")
+            if key == "--repo":
+                if sep:
+                    if not value or value.startswith("-"):
+                        return _UNREADABLE_MERGE, None, False
+                    repo = value
+                else:
+                    if index + 1 >= n:
+                        return _UNREADABLE_MERGE, None, False
+                    repo = arguments[index + 1]
+                    if not repo or repo.startswith("-"):
+                        return _UNREADABLE_MERGE, None, False
+                    index += 1
+            elif key in _MERGE_STRATEGY_FLAGS or key == "--admin":
+                if not sep or value.casefold() != "false":
+                    has_strategy = True
+            elif key in _MERGE_VALUE_FLAGS:
+                if not sep:
+                    if index + 1 >= n:
+                        return _UNREADABLE_MERGE, None, False
+                    index += 1
+            index += 1
+            continue
+        if arg.startswith("-") and len(arg) > 1:
+            body = arg[1:]
+            cursor = 0
+            while cursor < len(body):
+                flag = body[cursor]
+                if flag in _MERGE_STRATEGY_SHORT:
+                    has_strategy = True
+                    cursor += 1
+                    continue
+                if flag in _MERGE_VALUE_SHORT:
+                    raw = body[cursor + 1 :]
+                    if raw == "":
+                        if index + 1 >= n:
+                            return _UNREADABLE_MERGE, None, False
+                        value = arguments[index + 1]
+                        index += 1
+                        if flag == "R":
+                            if not value or value.startswith("-"):
+                                return _UNREADABLE_MERGE, None, False
+                            repo = value
+                    elif flag == "R":
+                        if raw == "=" or raw.startswith("=-") or raw.startswith("-"):
+                            return _UNREADABLE_MERGE, None, False
+                        value = raw[1:] if raw.startswith("=") else raw
+                        if not value or value.startswith("-"):
+                            return _UNREADABLE_MERGE, None, False
+                        repo = value
+                    break
+                cursor += 1
+            index += 1
+            continue
+        if not positional:
+            target = arg
+            positional = True
+        index += 1
+    return target, repo, has_strategy
 
 
 def pull_request_merge_target(command: str) -> str | object | None:
@@ -986,25 +1153,18 @@ def pull_request_merge_target(command: str) -> str | object | None:
     if any(item in {";", "&&", "||", "|", "&"} for item in parsed):
         return _UNREADABLE_MERGE if _invokes_pr_merge(parsed) else None
     head, arguments = command_head(parsed)
-    if head != "gh" or arguments[:2] != ["pr", "merge"]:
+    if head != "gh":
         return None
-    index = 2
-    while index < len(arguments):
-        arg = arguments[index]
-        if arg.startswith("-") and "=" in arg:
-            index += 1
-            continue
-        flag = arg.split("=", 1)[0]
-        if flag in _MERGE_VALUE_FLAGS:
-            if index + 1 >= len(arguments) or arguments[index + 1].startswith("-"):
-                return _UNREADABLE_MERGE
-            index += 2
-            continue
-        if arg.startswith("-"):
-            index += 1
-            continue
-        return arg
-    return ""
+    tail = _gh_pr_merge_tail(arguments)
+    if tail is None:
+        return None
+    normalized, pre_repo = tail
+    if pre_repo is _UNREADABLE_MERGE:
+        return _UNREADABLE_MERGE
+    target, _repo, _has_strategy = _parse_gh_pr_merge(
+        normalized, initial_repo=pre_repo if isinstance(pre_repo, str) else None
+    )
+    return target
 
 
 def _check_block_reason(check: object) -> str:
@@ -1108,7 +1268,14 @@ def merge_readiness_reason(snapshot: Mapping) -> str:
     if error:
         return "ChaosEngine refused gh pr merge: " + error
     state = str(snapshot.get("mergeStateStatus") or "").strip().upper()
-    if state in {"DRAFT", "DIRTY", "BLOCKED"}:
+    merge_queue_enqueue = (
+        state == "BLOCKED"
+        and snapshot.get("baseHasMergeQueue") is True
+        and snapshot.get("hasStrategyFlag") is not True
+        and str(snapshot.get("reviewDecision") or "").strip().upper()
+        not in {"CHANGES_REQUESTED", "REVIEW_REQUIRED"}
+    )
+    if state in {"DRAFT", "DIRTY"} or (state == "BLOCKED" and not merge_queue_enqueue):
         return "ChaosEngine refused gh pr merge: merge state is " + state + "."
     if snapshot.get("hasNextPage") is True:
         return "ChaosEngine refused gh pr merge: review threads did not fit in one page."
@@ -1304,9 +1471,16 @@ def _paginate_pr_files(
     return collected, False
 
 
-def live_merge_probe(target: str) -> dict:
+def live_merge_probe(
+    target: str, *, repo: str | None = None, has_strategy_flag: bool | None = None
+) -> dict:
     """Read check rollup, complete PR files, and unresolved review threads. Fail closed on any gap."""
-    view = ["pr", "view", "--json", "id,statusCheckRollup,url,mergeStateStatus,files"]
+    view = [
+        "pr", "view", "--json",
+        "id,statusCheckRollup,url,mergeStateStatus,baseRefName,reviewDecision,files",
+    ]
+    if repo:
+        view.extend(["--repo", repo])
     if target:
         view.insert(2, target)
     payload, error = _gh_json(view)
@@ -1320,6 +1494,19 @@ def live_merge_probe(target: str) -> dict:
     owner, name, number = match.group(1), match.group(2), match.group(3)
     if _GITHUB_NAME.fullmatch(owner) is None or _GITHUB_NAME.fullmatch(name) is None:
         return {"error": "the pull request URL could not be read."}
+    merge_state = str(payload.get("mergeStateStatus") or "").strip().upper()
+    base_ref = str(payload.get("baseRefName") or "").strip()
+    review_decision = str(payload.get("reviewDecision") or "").strip()
+    base_has_merge_queue = False
+    if merge_state == "BLOCKED" and has_strategy_flag is not True and base_ref:
+        encoded_base = urllib.parse.quote(base_ref, safe="")
+        rules_path = "repos/%s/%s/rules/branches/%s" % (owner, name, encoded_base)
+        rules, rules_error = _gh_json(["api", rules_path])
+        if not rules_error and isinstance(rules, list):
+            base_has_merge_queue = any(
+                isinstance(rule, Mapping) and rule.get("type") == "merge_queue"
+                for rule in rules
+            )
     query = (
         "query { repository(owner: \"%s\", name: \"%s\") { pullRequest(number: %d) "
         "{ files(first: 100) { pageInfo { hasNextPage endCursor } nodes { path } } "
@@ -1379,6 +1566,9 @@ def live_merge_probe(target: str) -> dict:
         "unresolved": unresolved,
         "hasNextPage": page.get("hasNextPage") is True,
         "mergeStateStatus": str(payload.get("mergeStateStatus") or ""),
+        "baseHasMergeQueue": base_has_merge_queue,
+        "reviewDecision": review_decision,
+        "hasStrategyFlag": has_strategy_flag is True,
         "files": combined_files,
         "filesComplete": files_complete,
     }
@@ -1459,13 +1649,32 @@ def merge_before_ready_reason(command: str, probe=None) -> str:
         saw = True
         if target is _UNREADABLE_MERGE:
             return "ChaosEngine refused gh pr merge: the command could not be read."
+        parsed = shell_tokens(part)
+        _head, arguments = command_head(parsed) if parsed else ("", [])
+        tail = _gh_pr_merge_tail(arguments) if parsed else None
+        if tail is None:
+            continue
+        normalized, pre_repo = tail
+        if pre_repo is _UNREADABLE_MERGE:
+            return "ChaosEngine refused gh pr merge: the command could not be read."
+        target, repo, has_strategy = _parse_gh_pr_merge(
+            normalized, initial_repo=pre_repo if isinstance(pre_repo, str) else None
+        )
+        if target is _UNREADABLE_MERGE:
+            return "ChaosEngine refused gh pr merge: the command could not be read."
         try:
-            snapshot = reader(target)
+            try:
+                snapshot = reader(target, repo=repo, has_strategy_flag=has_strategy)
+            except TypeError:
+                snapshot = reader(target)
         except Exception:
             # Any probe failure denies the merge. Allowing it would merge on unread checks.
             return "ChaosEngine refused gh pr merge: the pull request checks could not be read."
         if not isinstance(snapshot, Mapping):
             return "ChaosEngine refused gh pr merge: the pull request checks could not be read."
+        if isinstance(snapshot, dict):
+            snapshot = dict(snapshot)
+            snapshot["hasStrategyFlag"] = has_strategy
         reason = merge_readiness_reason(snapshot)
         if reason:
             return reason

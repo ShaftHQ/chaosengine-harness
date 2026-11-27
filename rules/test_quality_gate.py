@@ -675,7 +675,7 @@ def _assertion_hits(
 ) -> list[dict]:
     hits: list[dict] = []
     is_new = old_text is None or old_text == ""
-    if old_text and _weakened(old_text, new_text) and not _change_has_token(lines_by_no, added, "assertion-justified:"):
+    if old_text and _weakened(old_text, new_text) and not _change_has_token(lines_by_no, added, ("assert-justified:", "assertion-justified:")):
         line_no = _weakening_line(added, lines_by_no)
         hits.append(_hit("assertion-weakening", line_no, "assertion removed or downgraded", path))
     function_hits = _missing_test_functions(path, new_text, lines_by_no, None if is_new else added_numbers)
@@ -685,6 +685,7 @@ def _assertion_hits(
         and not function_hits
         and not _ANY_ASSERT.search(_mask_counted_source(new_text))
         and "assert-justified:" not in new_text
+        and "assertion-justified:" not in new_text
         and not (_java_like(path) and _PAGE_VERIFY.search(new_text))
     ):
         if new_text.strip():
@@ -697,10 +698,11 @@ def _assertion_hits(
     return hits
 
 
-def _change_has_token(lines_by_no: dict[int, str], added: list[tuple[int, str]], token: str) -> bool:
+def _change_has_token(lines_by_no: dict[int, str], added: list[tuple[int, str]], token: str | tuple[str, ...]) -> bool:
     if not added:
         return False
-    return any(_has_token(lines_by_no, number, (token,)) for number, _line in added)
+    tokens = (token,) if isinstance(token, str) else token
+    return any(_has_token(lines_by_no, number, tokens) for number, _line in added)
 
 
 def _weakening_line(added: list[tuple[int, str]], lines_by_no: dict[int, str]) -> int:
@@ -744,9 +746,9 @@ def _missing_python_tests(
             continue
         end = int(getattr(node, "end_lineno", node.lineno) or node.lineno)
         body = "\n".join(lines_by_no.get(index, "") for index in range(node.lineno, end + 1))
-        if _ANY_ASSERT.search(_mask_counted_source(body)) or "assert-justified:" in body:
+        if _ANY_ASSERT.search(_mask_counted_source(body)) or "assert-justified:" in body or "assertion-justified:" in body:
             continue
-        if node.lineno > 1 and "assert-justified:" in lines_by_no.get(node.lineno - 1, ""):
+        if node.lineno > 1 and ("assert-justified:" in lines_by_no.get(node.lineno - 1, "") or "assertion-justified:" in lines_by_no.get(node.lineno - 1, "")):
             continue
         hits.append(_hit(
             "assertion-weakening",
@@ -861,11 +863,11 @@ def _missing_regex_tests(
         first_annotation = _annotation_start(lines_by_no, number) if java_like else number
         above = lines_by_no.get(first_annotation - 1, "") if first_annotation > 1 else ""
         searchable = above + "\n" + body
-        if _ANY_ASSERT.search(_mask_counted_source(body)) or "assert-justified:" in searchable:
+        if _ANY_ASSERT.search(_mask_counted_source(body)) or "assert-justified:" in searchable or "assertion-justified:" in searchable:
             continue
         if java_like and _PAGE_VERIFY.search(body):
             continue
-        if number > 1 and "assert-justified:" in lines_by_no.get(number - 1, ""):
+        if number > 1 and ("assert-justified:" in lines_by_no.get(number - 1, "") or "assertion-justified:" in lines_by_no.get(number - 1, "")):
             continue
         name = next((group for group in match.groups() if group), "test")
         hits.append(_hit(
@@ -934,7 +936,7 @@ def _diff_assertion_hits(path: str, item: dict) -> list[dict]:
     added_numbers = [number for number in item["added_numbers"]]
     added_text = "\n".join(item["lines"][number] for number in added_numbers)
     added_pairs = [(number, item["lines"][number]) for number in added_numbers]
-    if _weakened(removed, added_text) and not _change_has_token(item["lines"], added_pairs, "assertion-justified:"):
+    if _weakened(removed, added_text) and not _change_has_token(item["lines"], added_pairs, ("assert-justified:", "assertion-justified:")):
         hits.append(
             _hit(
                 "assertion-weakening",

@@ -9,6 +9,7 @@ import base64
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
+import datetime as dt
 import email.utils
 import hashlib
 import importlib.util
@@ -1667,14 +1668,241 @@ def source_tree_url(repository: str, commit: str, *, root_layout: bool) -> str:
 # download, so the sibling VERSION file is not there yet. Keep this equal to VERSION.
 _EMBEDDED_VERSION = "1.20261126.0"
 
+_MAJOR_VERSION = 1
+_DERIVED_VERSION_ENV = "CHAOS_ENGINE_DERIVED_VERSION"
+_COMMIT_VERSION_RE = re.compile(r"^[1-9]\d*\.\d{8}\.\d+$")
+_EXTERNAL_DERIVED_VERSION: str | None = None
+_DERIVED_VERSION_FROM_STARTUP = False
+_DERIVED_VERSION_STATE_STACK: list[tuple[str | None, bool]] = []
 
-def product_version() -> str:
+
+def valid_commit_version(value: object) -> bool:
+    """Fail-closed check for ``<major>.<YYYYMMDD>.<index>`` versions."""
+    if not isinstance(value, str):
+        return False
+    match = _COMMIT_VERSION_RE.fullmatch(value.strip())
+    if match is None:
+        return False
+    text = value.strip().split(".")
+    try:
+        dt.date(int(text[1][:4]), int(text[1][4:6]), int(text[1][6:8]))
+    except ValueError:
+        return False
+    return True
+
+
+def derived_version_override() -> str | None:
+    """A propagated derived version, or None when the override is absent/invalid."""
+    value = (os.environ.get(_DERIVED_VERSION_ENV) or "").strip()
+    return value if valid_commit_version(value) else None
+
+
+def derive_commit_version(root: Path, *, major: int = _MAJOR_VERSION, ref: str = "HEAD") -> str:
+    """``<major>.<UTC YYYYMMDD>.<0-based first-parent index on that UTC day>``.
+
+    Self-contained stdlib equivalent of scripts/ci/ce_version.py: install.sh
+    downloads bootstrap.py on its own, with no sibling scripts or packages.
+    """
+    if major < 1:
+        raise ValueError("major must be >= 1")
+    git = shutil.which("git")
+    if git is None:
+        raise ValueError("git is unavailable")
+    env = {**os.environ, "TZ": "UTC"}
+
+    def git_output(*arguments: str) -> tuple[int, str]:
+        completed = subprocess.run(  # nosec B603 B607 - fixed argv, no shell.
+            [git, "-C", str(root), *arguments],
+            capture_output=True,
+            text=True,
+            check=False,
+            env=env,
+            timeout=15,
+        )
+        return completed.returncode, completed.stdout.strip()
+
+    status, shallow = git_output("rev-parse", "--is-shallow-repository")
+    if status == 0 and shallow == "true":
+        raise ValueError("shallow checkout has no reliable first-parent history")
+    status, shown = git_output("show", "-s", "--format=%ct", ref)
+    if status != 0 or not shown:
+        raise ValueError("git show failed for the requested ref")
+    target_day = f"{dt.datetime.fromtimestamp(int(shown), dt.timezone.utc):%Y%m%d}"
+    status, log = git_output("log", "--first-parent", "--format=%ct", ref)
+    if status != 0:
+        raise ValueError("git log failed for the requested ref")
+    same_day = 0
+    for line in log.splitlines():
+        if not line.strip():
+            continue
+        day = f"{dt.datetime.fromtimestamp(int(line.strip()), dt.timezone.utc):%Y%m%d}"
+        if day < target_day:
+            break
+        if day == target_day:
+            same_day += 1
+    index = same_day - 1
+    if index < 0:
+        raise ValueError(f"no commit on {target_day} for {ref}")
+    return f"{major}.{target_day}.{index}"
+
+
+def commit_version_or_none(root: Path, ref: str = "HEAD") -> str | None:
+    """Derive a commit version, or None for shallow/non-git/unreadable history."""
+    try:
+        value = derive_commit_version(root, ref=ref)
+    except (ValueError, OSError, subprocess.TimeoutExpired):
+        return None
+    return value if valid_commit_version(value) else None
+
+
+def startup_commit_version() -> str | None:
+    """Version of the checkout running bootstrap, before any network access.
+
+    ``git show``/``git log`` are purely local, so offline installs launched
+    from a checkout still know their own version. ``CHAOS_ENGINE_OFFLINE``
+    only blocks the network derivation in ``derive_remote_commit_version``.
+    """
+    return commit_version_or_none(Path(__file__).resolve().parent)
+
+
+def _iso_day(value: object) -> str | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        moment = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=dt.timezone.utc)
+    return f"{moment.astimezone(dt.timezone.utc):%Y%m%d}"
+
+
+def _commit_stamp(commit: object) -> str | None:
+    """Committer ISO timestamp (matches ``git show --format=%ct``), falling back to author."""
+    if not isinstance(commit, dict):
+        return None
+    for role in ("committer", "author"):
+        actor = commit.get(role)
+        if isinstance(actor, dict):
+            date = actor.get("date")
+            if isinstance(date, str) and date:
+                return date
+    return None
+
+
+def _count_remote_same_day(listing: list[object], sha: str, day: str) -> int | None:
+    """Count same-day first-parent commits up to and including ``sha``.
+
+    GitHub's ``/commits?sha=<sha>`` endpoint returns commits newest-first so
+    ``sha`` is normally ``listing[0]``. When ``parents`` links are present, walk
+    the first-parent chain (matching ``git log --first-parent``) so merge commits
+    do not inflate the daily index. When minimal fixtures omit ``parents``, count
+    all same-day entries from ``sha`` onward (or up to ``sha`` if oldest-first).
+    """
+    entries = [item for item in listing if isinstance(item, dict) and isinstance(item.get("sha"), str)]
+    by_sha = {str(item["sha"]): item for item in entries}
+    target = by_sha.get(sha)
+    if target is None or _iso_day(_commit_stamp(target.get("commit"))) != day:
+        return None
+    has_parents = any(isinstance(item.get("parents"), list) and item.get("parents") for item in entries)
+    if has_parents:
+        count = 0
+        current = sha
+        seen: set[str] = set()
+        while current and current not in seen:
+            if current not in by_sha:
+                # A full API page means the walk can end before reaching the
+                # previous day. Counting only the page would under-index (#253).
+                return None if len(entries) >= 100 else count
+            seen.add(current)
+            item = by_sha[current]
+            if _iso_day(_commit_stamp(item.get("commit"))) != day:
+                break
+            count += 1
+            parents = item.get("parents")
+            if isinstance(parents, list) and parents and isinstance(parents[0], dict):
+                nxt = parents[0].get("sha")
+                current = nxt if isinstance(nxt, str) else ""
+            else:
+                break
+        return count
+    same_day = [item for item in entries if _iso_day(_commit_stamp(item.get("commit"))) == day]
+    return len(same_day)
+
+
+def derive_remote_commit_version(
+    repository: str, ref: str, *, major: int = _MAJOR_VERSION, fetcher=None
+) -> str | None:
+    """Commit-date version from GitHub metadata; None on any offline/invalid reply.
+
+    Only call this during an online bootstrap with an explicit repository/ref.
+    Offline local installs never reach the network from version calculation.
+    """
+    if major < 1:
+        return None
+    try:
+        normalized = normalize_repository(repository)
+        components = normalized.split("/")
+        if (
+            REPOSITORY.fullmatch(normalized) is None
+            or len(components) != 2
+            or any(component in {".", ".."} for component in components)
+        ):
+            return None
+        if COMMIT.fullmatch(ref) is None and not valid_branch(ref):
+            return None
+        opener = urllib.request.urlopen if fetcher is None else fetcher
+        base = f"https://api.github.com/repos/{normalized}"
+        document = json.loads(
+            _read_url_bytes(
+                opener, f"{base}/commits/{urllib.parse.quote(ref, safe='')}"
+            ).decode("utf-8")
+        )
+        if not isinstance(document, dict):
+            return None
+        sha = document.get("sha")
+        if not isinstance(sha, str) or COMMIT.fullmatch(sha) is None:
+            return None
+        stamp = _commit_stamp(document.get("commit"))
+        day = _iso_day(stamp)
+        if day is None or not isinstance(stamp, str):
+            return None
+        since = f"{day[:4]}-{day[4:6]}-{day[6:8]}T00:00:00Z"
+        query = (
+            f"since={urllib.parse.quote(since, safe=':-')}"
+            f"&until={urllib.parse.quote(stamp, safe=':-')}"
+            f"&sha={sha}&per_page=100"
+        )
+        listing = json.loads(
+            _read_url_bytes(opener, f"{base}/commits?{query}").decode("utf-8")
+        )
+        if not isinstance(listing, list):
+            return None
+        count = _count_remote_same_day(listing, sha, day)
+        if count is None or count < 1:
+            return None
+        value = f"{major}.{day}.{count - 1}"
+        return value if valid_commit_version(value) else None
+    except Exception:  # nosec B110 - an advisory version never fails the install.
+        return None
+
+
+def product_version(source_root: Path | None = None) -> str:
     """Version string shipped in this bootstrap.
 
-    The sibling ``VERSION`` file wins in a checkout. The embedded copy covers
-    the one-liner, which runs a lone ``bootstrap.py``.
+    A propagated remote version wins; an explicitly named checkout is derived
+    from its first-parent history. Everything else uses the sibling ``VERSION``
+    file, then the embedded copy for a lone ``bootstrap.py`` one-liner.
     """
-    path = Path(__file__).resolve().parent / "VERSION"
+    override = derived_version_override()
+    if override:
+        return override
+    root = Path(source_root) if source_root is not None else Path(__file__).resolve().parent
+    if source_root is not None:
+        derived = commit_version_or_none(root)
+        if derived:
+            return derived
+    path = root / "VERSION"
     try:
         text = path.read_text(encoding="utf-8").strip()
     except OSError:
@@ -2723,6 +2951,7 @@ class InstallReporter:
             total=total,
             clients=client_map,
             trace=install_trace_path(Path(project)).as_posix(),
+            version=derived_version_override(),
         )
         self.close()
         write_install_receipt(Path(project), self.install_receipt)
@@ -2966,9 +3195,10 @@ def install_receipt_document(
     total: int,
     clients: dict[str, object],
     trace: str,
+    version: str | None = None,
 ) -> dict[str, object]:
     """Machine receipt. The same object is written to disk and added to ``--json``."""
-    return {
+    document: dict[str, object] = {
         "commit": commit,
         "doctorStatus": doctor_status,
         "doctorHealthy": int(healthy),
@@ -2976,6 +3206,9 @@ def install_receipt_document(
         "clients": dict(clients) if isinstance(clients, dict) else {},
         "trace": trace,
     }
+    if valid_commit_version(version):
+        document["version"] = str(version).strip()
+    return document
 
 
 def attach_install_receipt(result: dict[str, object], reporter: object) -> dict[str, object]:
@@ -6198,6 +6431,43 @@ def _bootstrap_scope_mode(installer, install_args, project: Path, commit: str) -
     return None
 
 
+def _resolve_announced_version(repository: str, branch: str | None, opener, install_args) -> None:
+    """F6: a standalone one-liner announces the remote branch version.
+
+    A checkout knows its own version from local git, and an explicit override
+    wins everywhere. Only a lone ``bootstrap.py`` (no git, no override, online)
+    needs this bounded pre-header lookup; any failure falls back to the
+    embedded version.
+    """
+    if (
+        _EXTERNAL_DERIVED_VERSION is not None
+        or derived_version_override() is not None
+        or startup_commit_version() is not None
+        or os.environ.get("CHAOS_ENGINE_OFFLINE") == "1"
+        or opener is not urllib.request.urlopen
+        or getattr(install_args, "from_bundle", None) is not None
+    ):
+        return
+    version = derive_remote_commit_version(repository, branch or "main", fetcher=opener)
+    if version is not None:
+        os.environ[_DERIVED_VERSION_ENV] = version
+
+
+def _resolve_remote_install_version(repository: str, commit: str, opener) -> None:
+    """F5: the downloaded commit's version wins over a local startup version."""
+    if (
+        _EXTERNAL_DERIVED_VERSION is not None
+        or os.environ.get("CHAOS_ENGINE_OFFLINE") == "1"
+        or opener is not urllib.request.urlopen
+    ):
+        return
+    remote_version = derive_remote_commit_version(repository, commit, fetcher=opener)
+    if remote_version is not None:
+        os.environ[_DERIVED_VERSION_ENV] = remote_version
+    elif _DERIVED_VERSION_FROM_STARTUP:
+        os.environ.pop(_DERIVED_VERSION_ENV, None)
+
+
 def _run_core_install(
     project: Path,
     scratch: dict,
@@ -6222,6 +6492,7 @@ def _run_core_install(
     confirm("Resolve source")
     reporter.start("Resolve source", remaining=remaining("Resolve source"))
     commit, resolved_branch = resolve_latest(repository, branch, opener=opener)
+    _resolve_remote_install_version(repository, commit, opener)
     note_commit = getattr(reporter, "note_commit", None)
     if callable(note_commit):
         note_commit(commit)
@@ -6630,6 +6901,7 @@ def install_latest(
         project, skip_tools=skip_tools, requested=with_maven_tools
     )
     reporter = reporter or InstallReporter()
+    _resolve_announced_version(repository, branch, opener, install_args)
     reporter.announce(project, repository, branch or "default")
     terminal_context, terminal_input = _open_install_terminal(interactive, terminal_factory)
     if terminal_input is not None:
@@ -7652,7 +7924,11 @@ def _run_bundled_install(args) -> int:
 
 def apply_install_flags(args) -> dict[str, str | None]:
     """Copy one-liner flags into the environment the download plan already reads."""
+    global _EXTERNAL_DERIVED_VERSION, _DERIVED_VERSION_FROM_STARTUP, _DERIVED_VERSION_STATE_STACK
     previous: dict[str, str | None] = {}
+    _DERIVED_VERSION_STATE_STACK.append(
+        (_EXTERNAL_DERIVED_VERSION, _DERIVED_VERSION_FROM_STARTUP)
+    )
 
     def assign(key: str, value: str | None) -> None:
         if key not in previous:
@@ -7695,15 +7971,26 @@ def apply_install_flags(args) -> dict[str, str | None]:
     skills = getattr(args, "shaft_skills_version", None)
     if isinstance(skills, str) and skills.strip():
         assign("CHAOS_ENGINE_SHAFT_SKILLS_VERSION", skills.strip())
+    external = derived_version_override()
+    if _EXTERNAL_DERIVED_VERSION is None:
+        _EXTERNAL_DERIVED_VERSION = external
+    startup = None if _EXTERNAL_DERIVED_VERSION else startup_commit_version()
+    assign(_DERIVED_VERSION_ENV, _EXTERNAL_DERIVED_VERSION or startup)
+    _DERIVED_VERSION_FROM_STARTUP = bool(startup) and not bool(_EXTERNAL_DERIVED_VERSION)
     return previous
 
 
 def restore_install_flags(previous: dict[str, str | None]) -> None:
+    global _EXTERNAL_DERIVED_VERSION, _DERIVED_VERSION_FROM_STARTUP, _DERIVED_VERSION_STATE_STACK
     for key, value in previous.items():
         if value is None:
             os.environ.pop(key, None)
         else:
             os.environ[key] = value
+    if _DERIVED_VERSION_STATE_STACK:
+        _EXTERNAL_DERIVED_VERSION, _DERIVED_VERSION_FROM_STARTUP = _DERIVED_VERSION_STATE_STACK.pop()
+    else:
+        _EXTERNAL_DERIVED_VERSION, _DERIVED_VERSION_FROM_STARTUP = None, False
 
 
 def resolve_version_pin(repository: str, pin: str | None, opener) -> str | None:
@@ -7733,6 +8020,9 @@ def utf8_text_stream(stream) -> None:
 
 
 def main() -> int:
+    global _EXTERNAL_DERIVED_VERSION, _DERIVED_VERSION_FROM_STARTUP
+    _EXTERNAL_DERIVED_VERSION = derived_version_override()
+    _DERIVED_VERSION_FROM_STARTUP = False
     utf8_text_stream(sys.stdout)
     harden_stream_encoding(sys.stderr)
     if sys.version_info < MINIMUM_PYTHON:
