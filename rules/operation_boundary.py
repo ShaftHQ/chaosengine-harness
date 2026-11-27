@@ -216,12 +216,29 @@ _WRAPPER_VALUE_FLAGS = frozenset(
 # Flags whose next word is the value, only for that wrapper. A form with the
 # value attached (``-oL``, ``-c2``, ``-n5``) is not a member, so it does not
 # consume ``git``.
+# The operand is itself a command string. Scan it. Do not skip it.
+_COMMAND_STRING_FLAGS = {
+    "flock": frozenset({"-c", "--command"}),
+    "env": frozenset({"-S", "--split-string"}),
+}
 _EXTRA_VALUE_FLAGS = {
     "stdbuf": frozenset({"-o", "-e", "-i", "--output", "--error", "--input"}),
     "nice": frozenset({"-n", "--adjustment"}),
-    "ionice": frozenset({"-n", "-p"}),
-    "xargs": frozenset({"-I", "-a", "-n", "-P", "-d", "-E", "-L", "-s"}),
-    "flock": frozenset({"-w", "--timeout"}),
+    "ionice": frozenset({
+        "-n", "-p", "-c", "--class", "--classdata", "--pid", "-P", "--pgid", "--uid",
+    }),
+    "xargs": frozenset({
+        "-I", "-a", "-n", "-P", "-d", "-E", "-L", "-s",
+        "--arg-file", "--delimiter", "--max-lines", "--max-args", "--max-procs",
+        "--max-chars", "--process-slot-var",
+    }),
+    "flock": frozenset({"-w", "--timeout", "-E", "--conflict-exit-code"}),
+    "sudo": frozenset({
+        "-D", "--close-from", "-h", "--host", "-p", "--prompt",
+        "-R", "--chroot", "-r", "--role", "-t", "--type",
+        "-T", "--command-timeout", "-U", "--other-user",
+    }),
+    "env": frozenset({"--unset"}),
 }
 _SHELL_SYNTAX = frozenset(
     {
@@ -459,6 +476,14 @@ def _head_is_git_push(
             index += 1
             continue
         if wrapper and word.startswith("-"):
+            command_flags = _COMMAND_STRING_FLAGS.get(wrapper, frozenset())
+            for flag in command_flags:
+                if word == flag or word.startswith(flag + "="):
+                    if word == flag:
+                        payload = words[index + 1] if index + 1 < len(words) else ""
+                    else:
+                        payload = word.split("=", 1)[1]
+                    return bool(payload) and _has_git_push(payload, depth + 1)
             extra = _EXTRA_VALUE_FLAGS.get(wrapper, frozenset())
             index += 2 if word in _WRAPPER_VALUE_FLAGS or word in extra else 1
             continue

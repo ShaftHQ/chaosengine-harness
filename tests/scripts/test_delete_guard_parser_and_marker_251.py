@@ -376,6 +376,57 @@ class OperationBoundary262Test(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertEqual("force-push-without-approval", self.block(command))
 
+    def test_wrapper_option_values_are_refused(self) -> None:
+        for command in (
+            "ionice --class 2 git push -f origin main",
+            "ionice --classdata 4 git push -f origin main",
+            "ionice -c 2 git push -f origin main",
+            "sudo -D /tmp git push -f origin main",
+            "sudo --close-from 3 git push -f origin main",
+            "sudo -h localhost git push -f origin main",
+            "sudo --host localhost git push -f origin main",
+            "sudo -p prompt git push -f origin main",
+            "sudo --prompt prompt git push -f origin main",
+            "sudo -R / git push -f origin main",
+            "sudo --chroot / git push -f origin main",
+            "sudo -r unconfined_r git push -f origin main",
+            "sudo --role unconfined_r git push -f origin main",
+            "sudo -t unconfined_t git push -f origin main",
+            "sudo --type unconfined_t git push -f origin main",
+            "sudo -T 5 git push -f origin main",
+            "sudo --command-timeout 5 git push -f origin main",
+            "sudo -U other git push -f origin main",
+            "sudo --other-user other git push -f origin main",
+            "xargs --max-args 1 git push -f origin main",
+            "xargs --max-lines 1 git push -f origin main",
+            "xargs --arg-file /tmp/list git push -f origin main",
+            "xargs --delimiter , git push -f origin main",
+            "xargs --max-procs 1 git push -f origin main",
+            "xargs --max-chars 1000 git push -f origin main",
+            "xargs --process-slot-var SLOT git push -f origin main",
+            "flock -E 1 /tmp/lock git push -f origin main",
+            "flock --conflict-exit-code 1 /tmp/lock git push -f origin main",
+            "flock -c 'git push -f origin main'",
+            "flock --command 'git push -f origin main'",
+            "flock --command='git push -f origin main'",
+            "env -S 'git push -f origin main'",
+            "env --split-string 'git push -f origin main'",
+            "env --split-string='git push -f origin main'",
+            "env --unset NAME git push -f origin main",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual("force-push-without-approval", self.block(command))
+
+    def test_wrapper_option_values_do_not_hide_a_plain_command(self) -> None:
+        for command in (
+            "sudo -D /tmp echo ok",
+            "flock -c 'echo ok'",
+            "env -S 'echo ok'",
+            "env --unset NAME echo ok",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNone(self.block(command))
+
     def test_heredoc_data_is_not_a_force_push(self) -> None:
         for command in (
             "cat <<EOF\ngit push -f origin main\nEOF\n",
