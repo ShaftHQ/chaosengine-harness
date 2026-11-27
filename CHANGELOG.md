@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Two adversarial reviews are the chain for one subject. The gate refuses a third. A second failed review closes that class in the edit. The test proves the class. A further example is a follow-up.
+
 ## 1.20261126.0 - 2026-11-26
 
 - Version stamps use `<major>.<YYYYMMDD>.<index>` from the UTC commit date. The index is the 0-based first-parent count that day. No GitHub Release is cut per commit.

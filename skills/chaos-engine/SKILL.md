@@ -60,6 +60,7 @@ Independent adversarial review stays on a fresh-context host reviewer at its mos
 - PDCA cap is 3, not a quota. Review 1 starts with the self-accept push (review 1 with the self-accept push) ([delivery cycle](../../references/delivery-cycle.md)). Do not start both reviewers in one step.
 - Ordinary reversible: one fresh-context adversarial review. Public-contract or hard-to-reverse: two in sequence.
 - Two failed attempts on one approach: step back and re-plan.
+- Two adversarial reviews are the chain for one subject. The gate refuses another. A second failed review ends the chain: the next edit closes that class and the test proves the class. A further example is a follow-up.
 - A pending check is not success. Babysit until merged or `blocking: unverifiable`.
 - Learning Session after every final delivery. Never local queues.
 - Work is not done until the pull request is merged.

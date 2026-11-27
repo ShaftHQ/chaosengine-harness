@@ -181,13 +181,15 @@ a row that already exists.
 
 ### Review disposition
 
-Run the two reviews the delivery cycle names, both on the same head. A
-blocking finding inside the brief's fixtures is Act inside the remaining PDCA
-cap, then both reviews repeat on the new head. A finding outside those
-fixtures and the recorded non-goals is filed. The head stays. The iteration
-is not spent. Do not add a third review of an unchanged head. A
-finding that changes architecture returns work to planning. Extra local tests
-run only after this terminal review stage.
+Run the two reviews the delivery cycle names, one after another. A blocking
+finding on the first review is fixed, then the second review runs on that new
+head. A blocking finding on the second review closes that class in the edit.
+The test proves the class. That edit does not start another reviewer, and it
+does not repeat both reviews. A finding outside the brief's fixtures and the
+recorded non-goals is filed. The head stays. Do not add a third review of an
+unchanged head, or a third review that hunts the next example of a closed
+class. A finding that changes architecture returns work to planning. Extra
+local tests run only after this terminal review stage.
 
 Post the findings as a pull-request review, not only in chat. Findings that live
 only in a transcript die with the session, which is how the same class gets

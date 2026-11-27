@@ -9,12 +9,16 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
+import subprocess
 import sys
 import time
 from pathlib import Path
 
 RECEIPT_NAME = ".chaos-engine-state/delegation-receipt.json"
+REVIEW_ROUNDS_NAME = ".chaos-engine-state/review-rounds.json"
+REVIEW_CHAIN_CAP = 2
 TTL_SECONDS = 2 * 60 * 60
 BRIEF_MARKERS = ("goal", "file scope", "preserve", "acceptance", "test command", "stop")
 RUNGS = ("free", "ask", "paid", "direct")
@@ -56,6 +60,8 @@ _DIRECT_TOOL = re.compile(
 )
 _VARIANT = re.compile(r"--variant(?:=|\s+)(low|medium|high|max)\b", re.IGNORECASE)
 _VARIANT_RANK = {"low": 0, "medium": 1, "high": 2, "max": 3}
+_REVIEW_SUBJECT = re.compile(r"review-subject:\s*([^\s\"']+)", re.IGNORECASE)
+_ABS_PATH = re.compile(r"(?<![A-Za-z0-9])(/(?:[\w.+@=-]+/)+[\w.+@=-]+)")
 
 
 def project_root(start: Path) -> Path:
@@ -228,6 +234,94 @@ def _free_problem(receipt: dict, command_text: str) -> str | None:
     return None
 
 
+def _git_branch(path: Path) -> str:
+    env = os.environ.copy()
+    env.pop("GIT_DIR", None)
+    env.pop("GIT_WORK_TREE", None)
+    try:
+        completed = subprocess.run(
+            ["git", "-C", os.fspath(path), "symbolic-ref", "--short", "HEAD"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=2,
+            env=env,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    if completed.returncode != 0:
+        return ""
+    return completed.stdout.strip()
+
+
+def _explicit_cwd(tool_input: object) -> Path | None:
+    if not isinstance(tool_input, dict):
+        return None
+    for key in ("cwd", "directory", "dir", "workdir"):
+        value = tool_input.get(key)
+        if isinstance(value, str) and value.startswith("/"):
+            path = Path(value)
+            if path.is_dir():
+                return path
+    return None
+
+
+def review_subject(tool_input: object, cwd: Path) -> str:
+    """Branch key for one review chain. The session checkout is not a subject."""
+    blob = _blob(tool_input)
+    marker = _REVIEW_SUBJECT.search(blob)
+    if marker:
+        return marker.group(1)
+    explicit = _explicit_cwd(tool_input)
+    if explicit is not None:
+        branch = _git_branch(explicit)
+        if branch:
+            return branch
+    root = project_root(cwd).resolve()
+    for raw in _ABS_PATH.findall(blob)[:8]:
+        path = Path(raw)
+        if not path.is_dir() or not (path / ".git").exists():
+            continue
+        if path.resolve() == root:
+            continue
+        branch = _git_branch(path)
+        if branch:
+            return branch
+    return "unscoped"
+
+
+def _review_chain_block(tool_input: object, cwd: Path) -> str | None:
+    """Refuse a third adversarial review of one subject. Count only an allowed spawn."""
+    root = project_root(cwd)
+    subject = review_subject(tool_input, cwd)
+    path = root / REVIEW_ROUNDS_NAME
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        payload = {}
+    subjects = payload.get("subjects") if isinstance(payload, dict) else None
+    if not isinstance(subjects, dict):
+        subjects = {}
+    used = subjects.get(subject, 0)
+    if not isinstance(used, int) or isinstance(used, bool):
+        used = 0
+    if used >= REVIEW_CHAIN_CAP:
+        return (
+            "delegation ladder: subject "
+            f"{subject} used its two adversarial reviews. "
+            "Name review-subject for a different change. "
+            "Close the class in the edit and prove that class with the test. "
+            "Do not open another reviewer for a further example."
+        )
+    subjects[subject] = used + 1
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"subjects": subjects}, indent=2) + "\n", encoding="utf-8")
+    except OSError:
+        return "delegation ladder: cannot record the review round."
+    return None
+
+
 def writer_block(
     tool_name: str,
     tool_input: object,
@@ -236,8 +330,10 @@ def writer_block(
     now: float | None = None,
 ) -> str | None:
     kind = classify(tool_name, tool_input, commands)
-    if kind is None or kind == "review":
+    if kind is None:
         return None
+    if kind == "review":
+        return _review_chain_block(tool_input, cwd)
     root = project_root(cwd)
     receipt = load_receipt(root, now)
     if receipt is None:

@@ -179,7 +179,7 @@ def budget(
     outbound: bool = False,
     blast: str = "low",
 ) -> dict:
-    """MIN/MAX review rounds. MAX never exceeds the delivery-cycle cap of 3."""
+    """MIN/MAX review rounds. MAX never exceeds two adversarial reviews."""
     minimum = required_reviews(
         public_contract=public_contract,
         irreversible=irreversible,
@@ -188,11 +188,9 @@ def budget(
     small = files <= 1 or lines <= 90
     if small and blast != "high":
         maximum = minimum
-    elif blast == "high" or files > 8 or lines > 400:
-        maximum = min(minimum + 2, 3)
     else:
-        maximum = min(minimum + 1, 3)
-    maximum = min(max(maximum, minimum), 3)
+        maximum = min(minimum + 1, 2)
+    maximum = min(max(maximum, minimum), 2)
     return {
         "min": minimum,
         "max": maximum,
