@@ -7488,7 +7488,7 @@ def apply_mcp_policy_doctor(
     if callable(repair_fn):
         try:
             repaired = repair_fn()
-        except OSError:
+        except (OSError, subprocess.TimeoutExpired):
             repaired = None
         if isinstance(repaired, dict) and repaired.get("stripped"):
             mcps["githubMcpRepair"] = repaired
