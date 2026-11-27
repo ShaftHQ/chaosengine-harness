@@ -309,11 +309,56 @@ class ConformanceTests(unittest.TestCase):
         fixture = self.conformance.load_fixture()
         pins = fixture["hook_events"]
         url = next(pin["url"] for pin in pins if pin["host"] == "cursor")
-        unknown = self.conformance.check_hook_event_registry({"cursor": {"workspaceOpen"}}, pins)
-        self.assertTrue(any("cursor" in item and "workspaceOpen" in item and url in item for item in unknown))
+        unknown = self.conformance.check_hook_event_registry({"cursor": {"notARealCursorEvent"}}, pins)
+        self.assertTrue(any("cursor" in item and "notARealCursorEvent" in item and url in item for item in unknown))
         alias = self.conformance.check_hook_event_registry({"codex": {"PostToolUseFailure"}}, pins)
         codex_url = next(pin["url"] for pin in pins if pin["host"] == "codex")
         self.assertTrue(any("codex" in item and "PostToolUseFailure" in item and codex_url in item for item in alias))
+
+    def test_saved_headings_are_registered_or_an_exception(self):
+        fixture = self.conformance.load_fixture()
+        pins = fixture["hook_events"]
+        self.assertEqual([], self.conformance.check_saved_headings(pins))
+        copied = json.loads(json.dumps(pins[0]))
+        copied["headings"] = list(copied["headings"]) + ["NotARealHeading"]
+        copied["native_events"] = list(copied["native_events"]) + ["NotARealHeading"]
+        errors = self.conformance.check_saved_headings([copied])
+        self.assertTrue(
+            any("absent from registered and exception" in item and "NotARealHeading" in item for item in errors),
+            errors,
+        )
+        self.assertFalse(
+            any("absent from native_events" in item and "NotARealHeading" in item for item in errors),
+            errors,
+        )
+        off_page = json.loads(json.dumps(pins[0]))
+        off_page["headings"] = list(off_page["headings"]) + ["NotARealHeading"]
+        off_page["registered"] = list(off_page["registered"]) + ["NotARealHeading"]
+        off_errors = self.conformance.check_saved_headings([off_page])
+        self.assertTrue(
+            any("absent from native_events" in item and "NotARealHeading" in item for item in off_errors),
+            off_errors,
+        )
+        self.assertFalse(
+            any("absent from registered and exception" in item and "NotARealHeading" in item for item in off_errors),
+            off_errors,
+        )
+        bad = json.loads(json.dumps(pins[0]))
+        event = bad["headings"][0]
+        bad["registered"] = [name for name in bad["registered"] if name != event]
+        bad["exception"] = [{"event": event, "reason": "not implemented yet"}]
+        failed = self.conformance.check_saved_headings([bad])
+        self.assertTrue(any("not implemented" in item for item in failed), failed)
+        phrase = json.loads(json.dumps(pins[0]))
+        phrase_event = phrase["headings"][0]
+        phrase["registered"] = [name for name in phrase["registered"] if name != phrase_event]
+        phrase["exception"] = [{"event": phrase_event, "reason": "logged for humans only"}]
+        phrase_failed = self.conformance.check_saved_headings([phrase])
+        self.assertTrue(
+            any("does not contain cannot affect" in item for item in phrase_failed),
+            phrase_failed,
+        )
+        self.assertFalse(any("not implemented" in item for item in phrase_failed), phrase_failed)
 
     def test_hook_drift_review_does_not_adopt_and_a_failed_fetch_is_not_a_pass(self):
         fixture = self.conformance.load_fixture()
@@ -336,6 +381,36 @@ class ConformanceTests(unittest.TestCase):
         self.assertEqual("error", failed["status"])
         self.assertNotEqual("pass", failed["status"])
         self.assertEqual("fetch-failed", failed["classification"])
+
+        opencode = next(item for item in fixture["hook_events"] if item["host"] == "opencode")
+        legacy = [name for name in opencode["native_events"] if name not in opencode["headings"]]
+        self.assertEqual(
+            ["tool.execute.before", "tool.execute.after", "session.created", "session.idle"],
+            legacy,
+        )
+        kept = opencode["recorded_excerpt"] + "\n" + "\n".join(opencode["headings"])
+        for name in ("tool.execute.after", "session.created", "session.idle"):
+            self.assertNotIn(name, kept)
+
+        def headings_only(_url: str) -> tuple[int, bytes]:
+            return 200, kept.encode()
+
+        stayed = self.conformance.check_hook_event_drift([opencode], headings_only)[0]
+        self.assertEqual("pass", stayed["status"], stayed)
+        self.assertNotIn("pinned events absent", stayed["detail"])
+
+        dropped = "execute.before"
+        short = opencode["recorded_excerpt"] + "\n" + "\n".join(
+            name for name in opencode["headings"] if name != dropped
+        )
+
+        def missing_heading(_url: str) -> tuple[int, bytes]:
+            return 200, short.encode()
+
+        drifted = self.conformance.check_hook_event_drift([opencode], missing_heading)[0]
+        self.assertEqual("drift: review", drifted["status"], drifted)
+        self.assertIn(dropped, drifted["detail"])
+        self.assertIn("pinned events absent", drifted["detail"])
 
     def test_unmeasured_golden_check_is_not_a_pass(self):
         corpus = self.conformance.load_golden_corpus()

@@ -1425,7 +1425,7 @@ def _marked_required_checks(owner: str, name: str, number: str, pr_id: str) -> t
     A rollup that does not fit in one page is an error. A failed query falls
     back to the unmarked REST rollup instead of allowing every skip.
     """
-    if not re.fullmatch(r"[A-Za-z0-9_]+", pr_id or ""):
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", pr_id or ""):
         return None, ""
     query = (
         "query { repository(owner: \"%s\", name: \"%s\") { pullRequest(number: %d) "

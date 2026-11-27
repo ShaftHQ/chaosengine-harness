@@ -489,6 +489,46 @@ def check_hook_event_registry(registry: dict[str, set[str]], pins: list[dict]) -
     return errors
 
 
+def check_saved_headings(pins: list[dict]) -> list[str]:
+    """Fail when a saved heading is not registered and not an exception.
+
+    ``headings`` may be a proper subset of ``native_events``. Every heading
+    must be native. An exception reason must contain "cannot affect" and
+    must not use "not implemented".
+    """
+    errors: list[str] = []
+    for pin in pins:
+        host = str(pin.get("host") or "hook")
+        headings = [str(item) for item in pin.get("headings") or []]
+        registered = [str(item) for item in pin.get("registered") or []]
+        native = {str(item) for item in pin.get("native_events") or []}
+        registered_set = set(registered)
+        exception_events: set[str] = set()
+        for row in pin.get("exception") or []:
+            event = str(row.get("event") or "") if isinstance(row, dict) else ""
+            reason = str(row.get("reason") or "") if isinstance(row, dict) else ""
+            if not event or not reason:
+                errors.append(f"{host}: exception lacks event or reason")
+                continue
+            exception_events.add(event)
+            if "not implemented" in reason:
+                errors.append(f"{host}: exception {event} uses not implemented")
+            if "cannot affect" not in reason:
+                errors.append(f"{host}: exception {event} does not contain cannot affect")
+            if event in registered_set:
+                errors.append(f"{host}: exception {event} is also registered")
+        heading_set = set(headings)
+        for name in headings:
+            if name not in registered_set and name not in exception_events:
+                errors.append(f"{host}: heading {name} is absent from registered and exception")
+            if name not in native:
+                errors.append(f"{host}: heading {name} is absent from native_events")
+        for name in registered:
+            if name not in heading_set:
+                errors.append(f"{host}: registered {name} is absent from headings")
+    return errors
+
+
 def check_hook_event_drift(pins: list[dict], fetch: Fetch) -> list[dict]:
     """Live refresh. A new upstream event is drift: review and is not adopted.
 
@@ -576,7 +616,10 @@ def _one_hook_pin(pin: dict, fetch: Fetch) -> dict:
             "detail": f"excerpt absent for {host}; not adopted",
             "adopted": False,
         }
-    missing = [event for event in native if event not in text]
+    # Headings are the current page. A native name that is not a heading
+    # may stay in the registry after the page drops it.
+    page_names = [str(event) for event in (pin.get("headings") or native)]
+    missing = [event for event in page_names if event not in text]
     if missing:
         return {
             "pin": label,

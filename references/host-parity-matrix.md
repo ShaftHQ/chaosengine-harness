@@ -98,16 +98,20 @@ The nine named hosts are not the whole set. Any other AI client uses the same ou
 
 
 
-## Official hook docs read 2026-11-22
+## Official hook docs read 2026-11-27
 
 Pins in `evals/host-doc-conformance.json` follow the pages below. A missing official event is registered only when `LIFECYCLE_EVENTS` already handles it and the adapter already renders that payload. Provider-only events that need new policy stay in the pin and are not stripped for consistency.
 
-| Host | Doc read 2026-11-22 | Registered this pass | Recorded, not registered |
+| Host | Doc read 2026-11-27 | Registered this pass | Recorded, not registered |
 | --- | --- | --- | --- |
-| Claude Code | https://code.claude.com/docs/en/hooks | none; guard events were already registered once | Setup, InstructionsLoaded, UserPromptExpansion, MessageDisplay, PostToolBatch, PermissionDenied, Notification, TaskCreated, TaskCompleted, TeammateIdle, ConfigChange, CwdChanged, DirectoryAdded, FileChanged, WorktreeCreate, WorktreeRemove, PreModelSwitch, PostModelSwitch, PermissionRequest, StopFailure, Elicitation, ElicitationResult |
-| Codex | https://developers.openai.com/codex/hooks | PreCompact, PostCompact | PermissionRequest, PreModelRequest, PostModelRequest, Interrupt. PostToolUseFailure is not on the page. |
+| Claude Code | https://code.claude.com/docs/en/hooks | none; guard events were already registered once | Setup, InstructionsLoaded, UserPromptExpansion, MessageDisplay, PostToolBatch, PermissionDenied, Notification, TaskCreated, TaskCompleted, TeammateIdle, ConfigChange, CwdChanged, DirectoryAdded, FileChanged, WorktreeCreate, WorktreeRemove, PreModelSwitch, PostModelSwitch, PermissionRequest, StopFailure, Elicitation, ElicitationResult, PreSkillShellCommand |
+| Codex | https://learn.chatgpt.com/docs/hooks | PreCompact, PostCompact | PermissionRequest, PreModelRequest, PostModelRequest, Interrupt. PostToolUseFailure is not on the page. |
 | Grok | https://docs.x.ai/build/features/hooks | PreCompact, PostCompact | PermissionDenied, StopFailure, Notification |
-| Gemini CLI | https://geminicli.com/docs/hooks | none | BeforeModel, AfterModel, BeforeToolSelection, Notification |
+| Gemini CLI | https://geminicli.com/docs/hooks/ | none | BeforeModel, AfterModel, BeforeToolSelection, Notification |
+| Copilot | https://docs.github.com/en/copilot/reference/hooks-reference | none | userPromptTransformed, permissionRequest, subagentStart, errorOccurred, notification |
+| Cursor | https://cursor.com/docs/hooks | none | beforeShellExecution, afterShellExecution, beforeMCPExecution, afterMCPExecution, beforeReadFile, afterFileEdit, beforeTabFileRead, afterTabFileEdit, afterAgentResponse, afterAgentThought, workspaceOpen |
+| OpenCode | https://opencode.ai/docs/build/plugins/server | none | prompt, context, compaction, generate, title, experimental.model.resolve, model.request, http.request, http.response, experimental.ws.handshake, experimental.ws.send, experimental.ws.receive, retry, fork, evaluate, create.before |
+| Antigravity | https://antigravity.google/docs/hooks.md | none | none |
 
 The previous Grok URL `https://docs.x.ai/docs/guides/grok-build/hooks` returned HTTP 404. The live page lists PascalCase only. Snake_case `GROK_HOOK_EVENT` values stay convenience spellings, not a second command. That page says exit code 2 denies and every other failure is fail-open. `HostCapability.process_exit2_honored` stays false until a live probe.
 
