@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import os
 import subprocess  # nosec B404 - fixed argv list only, never shell=True.
 import sys
 from collections.abc import Callable, Sequence
@@ -103,15 +104,31 @@ def verify_learning_session_finalize(session_id: str, *, disposition: str = "iss
 
 
 def verify_eval_parity(fixtures: Path | None = None) -> int:
-    root = Path(__file__).resolve().parents[2]
-    script = root / "scripts" / "ci" / "chaos_engine_eval_parity.py"
-    if not script.is_file():
-        # Portable install may lack monorepo scripts — treat as skip-success for overlay.
-        return SUCCESS_EXIT
-    argv = [sys.executable, str(script)]
+    core_root = Path(__file__).resolve().parents[1]
+    candidate_roots = [core_root]
+    if core_root.name in {"chaos-engine", ".chaos-engine"}:
+        candidate_roots.append(core_root.parent)
+    for root in candidate_roots:
+        parity = root / "scripts" / "ci" / "chaos_engine_eval_parity.py"
+        if parity.is_file():
+            argv = [sys.executable, str(parity)]
+            if fixtures is not None:
+                argv.extend(["--fixtures", str(fixtures)])
+            return run_argv(argv, cwd=root)
     if fixtures is not None:
-        argv.extend(["--fixtures", str(fixtures)])
-    return run_argv(argv, cwd=root)
+        return silent_result(
+            False,
+            failure_message="eval-parity runner missing for --fixtures",
+        )
+    validator = core_root / "scripts" / "ci" / "validate_skills.py"
+    if validator.is_file():
+        return run_argv([sys.executable, str(validator), "--check"], cwd=core_root)
+    if os.environ.get("CHAOS_ENGINE_ALLOW_MISSING_EVAL") == "1":
+        return SUCCESS_EXIT
+    return silent_result(
+        False,
+        failure_message="eval-parity validator missing (set CHAOS_ENGINE_ALLOW_MISSING_EVAL=1 to skip)",
+    )
 
 
 def main(argv: list[str] | None = None) -> int:

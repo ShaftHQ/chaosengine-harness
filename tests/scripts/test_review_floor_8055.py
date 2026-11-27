@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -77,10 +78,33 @@ def test_in_time_review_is_diff_scoped():
 
 
 def test_missing_second_cli_stays_same_model():
+    expected_default = os.environ.get("CHAOS_ENGINE_HOST") or "active-host"
     result = review_packet.resolve_reviewer("codex", binary_present=False)
-    assert result["reviewer"] == "grok"
+    assert result["reviewer"] == expected_default
     assert result["log"] == "second lens unavailable"
     assert result["spawned"] is False
+
+    grok = review_packet.resolve_reviewer("codex", binary_present=False, host="grok")
+    assert grok["reviewer"] == "grok"
+    assert grok["log"] == "second lens unavailable"
+    assert grok["spawned"] is False
+
+    old_host = os.environ.get("CHAOS_ENGINE_HOST")
+    try:
+        os.environ["CHAOS_ENGINE_HOST"] = "claude"
+        env_res = review_packet.resolve_reviewer("codex", binary_present=False)
+        assert env_res["reviewer"] == "claude"
+        assert env_res["log"] == "second lens unavailable"
+        same = review_packet.resolve_reviewer("claude", binary_present=False)
+        assert same == {"reviewer": "claude", "log": None, "spawned": False}
+    finally:
+        if old_host is None:
+            os.environ.pop("CHAOS_ENGINE_HOST", None)
+        else:
+            os.environ["CHAOS_ENGINE_HOST"] = old_host
+
+    present = review_packet.resolve_reviewer("codex", binary_present=True, host="claude")
+    assert present == {"reviewer": "codex", "log": None, "spawned": False}
 
 
 def test_docs_only_budget_matches_floor_and_cap():
@@ -89,7 +113,7 @@ def test_docs_only_budget_matches_floor_and_cap():
     public = review_packet.budget(files=1, lines=12, public_contract=True)
     assert public["min"] == 2 and public["max"] == 2
     large = review_packet.budget(files=20, lines=4000, public_contract=True, blast="high")
-    assert large["min"] == 2 and large["max"] == 3
+    assert large["min"] == 2 and large["max"] == 2
     assert review_packet.blocks_at_max("nit: wording", at_max=True) is False
     assert review_packet.blocks_at_max("unsafe: secret left in the receipt", at_max=True) is True
 

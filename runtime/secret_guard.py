@@ -53,6 +53,9 @@ PROTECTED_REFS = ("refs/heads/main", "refs/heads/master")
 BLOCKED_PATH = re.compile(
     r"(?i)((^|/)secrets\.properties$|(^|/)browserstack\.yml$)"
 )
+PRE_REBASE_BLOCKED_ADD = re.compile(
+    r"(?i)(?:(?:^|/)secrets\.properties$|(?:^|/)login\.json$|\.(?:apk|ipa|aab)$)"
+)
 TOKEN = re.compile(rb"eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}")
 ASSIGNMENT = re.compile(
     rb"(?i)(client_?secret|access_?key|password|api_?key|session_?id)[\"']?\s*[:=]\s*[\"']?"
@@ -650,6 +653,80 @@ def _parse_exec_with_secret_argv(argv: Sequence[str]) -> tuple[list[tuple[str, s
     return None
 
 
+def pre_rebase_findings_from_diff(diff_output: str) -> list[str]:
+    """Flag `.gitignore` deletion/rename or new secret/binary adds from `git diff --name-status -M` output."""
+    if not diff_output:
+        return []
+    found: list[str] = []
+    if "\0" in diff_output:
+        tokens = [tok for tok in diff_output.split("\0") if tok != ""]
+        index = 0
+        while index < len(tokens):
+            status = tokens[index]
+            index += 1
+            if status.startswith(("R", "C")):
+                if index + 1 >= len(tokens):
+                    break
+                old_path = tokens[index]
+                new_path = tokens[index + 1]
+                index += 2
+                _collect_pre_rebase_entry(status, old_path, new_path, found)
+            else:
+                if index >= len(tokens):
+                    break
+                path = tokens[index]
+                index += 1
+                _collect_pre_rebase_entry(status, path, path, found)
+        return found
+    for raw_line in diff_output.splitlines():
+        line = raw_line.strip("\r\n")
+        if not line:
+            continue
+        parts = line.split("\t")
+        if len(parts) < 2:
+            continue
+        status = parts[0]
+        if status.startswith(("R", "C")) and len(parts) >= 3:
+            _collect_pre_rebase_entry(status, parts[1], parts[2], found)
+        else:
+            _collect_pre_rebase_entry(status, parts[1], parts[1], found)
+    return found
+
+
+def _collect_pre_rebase_entry(status: str, old_path: str, new_path: str, found: list[str]) -> None:
+    if status == "D" and old_path == ".gitignore":
+        found.append(".gitignore (deleted)")
+    elif status.startswith("R") and old_path == ".gitignore" and new_path != ".gitignore":
+        found.append(f".gitignore (renamed to {new_path})")
+    elif status == "A" or status.startswith("C"):
+        if PRE_REBASE_BLOCKED_ADD.search(new_path):
+            found.append(f"{new_path} (added)")
+    elif status.startswith("R"):
+        if PRE_REBASE_BLOCKED_ADD.search(new_path) and not PRE_REBASE_BLOCKED_ADD.search(old_path):
+            found.append(f"{new_path} (renamed from {old_path})")
+
+
+def pre_rebase_findings(
+    base_ref: str, target_ref: str, *, cwd: Path | None = None
+) -> list[str]:
+    """Compare `base_ref` against `target_ref` tree-only via `git diff --name-status -M`."""
+    argv = [_git_executable()]
+    env = os.environ.copy()
+    if cwd is not None:
+        argv.extend(["-C", str(cwd)])
+        if (cwd / ".git").exists():
+            env.pop("GIT_DIR", None)
+            env.pop("GIT_WORK_TREE", None)
+    argv.extend(["diff", "--name-status", "-M", "-z", base_ref, target_ref, "--"])
+    completed = subprocess.run(  # nosec B603 - fixed git argv, no shell
+        argv, capture_output=True, check=False, env=env
+    )
+    if completed.returncode != 0:
+        err = completed.stderr.decode("utf-8", errors="replace").strip()
+        raise RuntimeError(err or f"git diff exited {completed.returncode}")
+    return pre_rebase_findings_from_diff(completed.stdout.decode("utf-8", errors="replace"))
+
+
 def _resolve_root() -> Path:
     try:
         return Path(git("rev-parse", "--show-toplevel").decode().strip())
@@ -659,6 +736,31 @@ def _resolve_root() -> Path:
 
 def main(argv: list[str], stdin: str = "") -> int:
     """Run the guard; return the process exit code."""
+    if argv[:1] == ["--pre-rebase"]:
+        args = argv[1:]
+        if not args or not args[0].strip():
+            print("secret_guard: usage: secret_guard.py --pre-rebase <target> [branch]", file=sys.stderr)
+            return 2
+        target_ref = args[0].strip()
+        branch_arg = args[1].strip() if len(args) > 1 else ""
+        base_ref = branch_arg or "HEAD"
+        try:
+            found = pre_rebase_findings(base_ref, target_ref, cwd=_resolve_root())
+        except (RuntimeError, OSError) as exc:
+            print(f"secret_guard BLOCKED pre-rebase: {exc}", file=sys.stderr)
+            return 2
+        if found:
+            print(
+                "secret_guard BLOCKED pre-rebase (contents not shown):\n  " + "\n  ".join(found),
+                file=sys.stderr,
+            )
+            print(
+                "Fix or reject the poisoned target before rebasing. Never use --no-verify.",
+                file=sys.stderr,
+            )
+            return 2
+        return 0
+
     if argv[:1] and (argv[0] == "--exec-with-secret" or argv[0].startswith("--exec-with-secret=")):
         parsed = _parse_exec_with_secret_argv(argv)
         if parsed is None:

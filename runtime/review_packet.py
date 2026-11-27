@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Same-model review floor (ShaftHQ/SHAFT_ENGINE#8055, #8048 R2, #8063).
 
-Does not call a model. A missing second CLI stays on Grok and spawns nothing.
+Does not call a model. A missing second CLI stays on the active host and spawns nothing.
 """
 
 from __future__ import annotations
 
+import os
 import re
 
 from runtime.review_contract import classify_unbound_example
@@ -163,11 +164,15 @@ def bounded_round(
     return result
 
 
-def resolve_reviewer(name: str | None, *, binary_present: bool) -> dict:
-    """Default is Grok. A missing local CLI does not spawn a cloud agent."""
-    if name and name != "grok" and not binary_present:
-        return {"reviewer": "grok", "log": "second lens unavailable", "spawned": False}
-    return {"reviewer": "grok", "log": None, "spawned": False}
+def resolve_reviewer(
+    name: str | None, *, binary_present: bool, host: str | None = None
+) -> dict:
+    """Default is the active host. A missing local CLI does not spawn a cloud agent."""
+    active = (host or os.environ.get("CHAOS_ENGINE_HOST") or "active-host").strip() or "active-host"
+    if name and name != active and not binary_present:
+        return {"reviewer": active, "log": "second lens unavailable", "spawned": False}
+    reviewer = name if (name and binary_present) else active
+    return {"reviewer": reviewer, "log": None, "spawned": False}
 
 
 def budget(
@@ -179,7 +184,7 @@ def budget(
     outbound: bool = False,
     blast: str = "low",
 ) -> dict:
-    """MIN/MAX review rounds. MAX never exceeds the delivery-cycle cap of 3."""
+    """MIN/MAX review rounds. MAX never exceeds two adversarial reviews."""
     minimum = required_reviews(
         public_contract=public_contract,
         irreversible=irreversible,
@@ -188,11 +193,9 @@ def budget(
     small = files <= 1 or lines <= 90
     if small and blast != "high":
         maximum = minimum
-    elif blast == "high" or files > 8 or lines > 400:
-        maximum = min(minimum + 2, 3)
     else:
-        maximum = min(minimum + 1, 3)
-    maximum = min(max(maximum, minimum), 3)
+        maximum = min(minimum + 1, 2)
+    maximum = min(max(maximum, minimum), 2)
     return {
         "min": minimum,
         "max": maximum,
