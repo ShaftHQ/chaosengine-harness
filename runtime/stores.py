@@ -766,6 +766,13 @@ def graphify_doctor_row(cwd: Path) -> dict[str, str] | None:
             "detail": message,
             "fixNext": f"{python_cli()} .chaos-engine/tool.py stores refresh --if-stale",
         }
+    if message == "stale - shared Graphify cache has no indexed revision marker":
+        # Present files with no stamp are not a failed install. A bad stamp stays degraded.
+        return {
+            "status": "sync-advisory",
+            "detail": message,
+            "fixNext": f"{python_cli()} .chaos-engine/tool.py stores refresh --if-stale",
+        }
     return {
         "status": "degraded",
         "detail": message,

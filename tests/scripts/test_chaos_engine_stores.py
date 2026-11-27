@@ -460,6 +460,18 @@ class SharedStoreTest(unittest.TestCase):
         self.assertIn("stale", row["detail"])
         self.assertIn("repair --project . --component graphify", row["fixNext"])
 
+    def test_unstamped_graph_stays_sync_advisory(self):
+        graph_out = self.primary / "graphify-out"
+        graph_out.mkdir()
+        (graph_out / "graph.json").write_text("{}\n", encoding="utf-8")
+        (graph_out / "manifest.json").write_text("{}\n", encoding="utf-8")
+
+        row = self.stores.graphify_doctor_row(self.primary)
+
+        self.assertEqual("sync-advisory", row["status"])
+        self.assertIn("no indexed revision marker", row["detail"])
+        self.assertIn("stores refresh --if-stale", row["fixNext"])
+
     def test_tip_lag_is_sync_advisory_and_ancestor_refresh_is_incremental(self):
         revision = self.git("rev-parse", "HEAD", cwd=self.primary).stdout.strip()
         self._fresh_graph(revision)
