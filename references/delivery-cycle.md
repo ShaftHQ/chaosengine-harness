@@ -10,8 +10,6 @@ Standard order. A one-file reversible change uses the 1-line bigger-picture note
 
 Ordinary reversible changes, including a typo-sized diff and non-code work, get one fresh-context adversarial review. There is no zero-review path. Public-contract or hard-to-reverse changes, irreversible work, or an outbound action get two independent adversarial reviews, and those two run one after another. The author is neither reviewer.
 
-Two adversarial reviews are the chain for one subject. The gate refuses a third. Name that subject in the review prompt as `review-subject: <branch>`, or name the worktree path. A second failed review ends the chain: the next edit closes that class and the named test proves the class. A further example of that class is a follow-up. It does not start a reviewer.
-
 Sequence:
 
 1. Develop, then test, then self-accept. Then, without waiting for either to finish, push the branch so CI starts and start Adversarial review 1 on that same head.
@@ -36,6 +34,8 @@ Merge:
 - When the only remaining gate is an owner-only artifact this session cannot create, record `blocking: unverifiable` once and end the goal (`runtime/owner_gate.py`).
 
 A commit that acts on review N is the input to review N+1 only while that subject has a review left. It does not restart finished reviews in parallel. The second review is the last. Do not review an unchanged head a third time, and do not open a third review to hunt the next example of a class the edit should already close.
+
+Two adversarial reviews are the chain for one subject. The gate refuses a third. Name that subject in the review prompt as `review-subject: <branch>`, or name the worktree path. A second failed review ends the chain: the next edit closes that class and the named test proves the class. A further example of that class is a follow-up. It does not start a reviewer.
 
 Each reviewer gets a diff-scoped packet (artifact, SHA, acceptance, proof, checklist). A packet that contains a `## Plan` heading or author reasoning fails the packet lint. LGTM alone is not a pass. A timeout counts as the round already used and falls back to self-review with no retry.
 
