@@ -329,6 +329,16 @@ class ConformanceTests(unittest.TestCase):
         bad["exception"] = [{"event": event, "reason": "not implemented yet"}]
         failed = self.conformance.check_saved_headings([bad])
         self.assertTrue(any("not implemented" in item for item in failed), failed)
+        phrase = json.loads(json.dumps(pins[0]))
+        phrase_event = phrase["headings"][0]
+        phrase["registered"] = [name for name in phrase["registered"] if name != phrase_event]
+        phrase["exception"] = [{"event": phrase_event, "reason": "logged for humans only"}]
+        phrase_failed = self.conformance.check_saved_headings([phrase])
+        self.assertTrue(
+            any("does not contain cannot affect" in item for item in phrase_failed),
+            phrase_failed,
+        )
+        self.assertFalse(any("not implemented" in item for item in phrase_failed), phrase_failed)
 
     def test_hook_drift_review_does_not_adopt_and_a_failed_fetch_is_not_a_pass(self):
         fixture = self.conformance.load_fixture()
