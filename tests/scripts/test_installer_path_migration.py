@@ -49,6 +49,7 @@ KEPT_CI = (
 )
 EXCLUDED_DETAILS = (
     "references/details/ce-lessons-2026-11-21/learn-retrospective.md",
+    "references/details/ce-lessons-2026-11-27/learn-retrospective.md",
     "references/details/ce-repeat-failure-pdca/repeat-failure-pdca.md",
 )
 KEPT_DETAILS = (
