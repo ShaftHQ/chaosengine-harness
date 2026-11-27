@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import argparse
 import importlib.util
+import io
 import json
 import os
 import shutil
 import subprocess
 import tempfile
 import unittest
+import urllib.request
 from pathlib import Path
 from unittest import mock
 
@@ -287,9 +290,13 @@ class InstallerDerivedVersion253Test(unittest.TestCase):
             _git(project, "commit", "-qm", "checkout third", when="2026-11-26T03:00:00Z")
 
             overlay = INSTALL.install(project, source, third)
-            self.assertEqual(expected, (overlay / "VERSION").read_text(encoding="utf-8").strip())
+            self.assertEqual((source / "VERSION").read_bytes(), (overlay / "VERSION").read_bytes())
             manifest = json.loads((overlay / "manifest.json").read_text(encoding="utf-8"))
             self.assertEqual(third, manifest["source"]["commit"])
+            self.assertEqual(expected, manifest["source"]["version"])
+            self.assertEqual(
+                INSTALL.file_sha256(source / "VERSION"), manifest["files"]["VERSION"]
+            )
             self.assertEqual(third, INSTALL.verify_install(overlay)["source"]["commit"])
 
             finding = INSTALL._ce_version_after_upgrade_finding(project, overlay)
@@ -299,6 +306,308 @@ class InstallerDerivedVersion253Test(unittest.TestCase):
             self.assertEqual(expected, finding["intendedVersion"])
             self.assertNotIn("(L92)", str(finding["detail"]))
             self.assertNotEqual(first, second)
+
+
+class ManifestPayloadInvariant253Test(unittest.TestCase):
+    def test_install_keeps_payload_bytes_and_records_version_in_manifest(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project = root / "consumer"
+            project.mkdir()
+            source = _minimal_source(root / "source")
+            _git(source, "init", "-q", "-b", "main")
+            first = _commit(source, "2026-11-26T01:00:00Z", "first")
+            second = _commit(source, "2026-11-26T02:00:00Z", "second")
+            expected = "1.20261126.1"
+            with mock.patch.dict(
+                os.environ, {"CHAOS_ENGINE_DERIVED_VERSION": ""}, clear=False
+            ):
+                overlay = INSTALL.install(project, source, second)
+            manifest = json.loads((overlay / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(expected, INSTALL.resolved_source_version(source))
+            self.assertEqual(expected, manifest["source"]["version"])
+            self.assertEqual((source / "VERSION").read_bytes(), (overlay / "VERSION").read_bytes())
+            self.assertEqual(
+                INSTALL.file_sha256(source / "VERSION"), manifest["files"]["VERSION"]
+            )
+            self.assertEqual(INSTALL.verify_install(overlay)["source"]["version"], expected)
+
+            before = {
+                path.relative_to(overlay): path.read_bytes()
+                for path in overlay.rglob("*")
+                if path.is_file()
+            }
+            with mock.patch.dict(
+                os.environ, {"CHAOS_ENGINE_DERIVED_VERSION": ""}, clear=False
+            ):
+                INSTALL.install(project, source, second)
+            after = {
+                path.relative_to(overlay): path.read_bytes()
+                for path in overlay.rglob("*")
+                if path.is_file()
+            }
+            self.assertEqual(before, after)
+            self.assertFalse((project / ".chaos-engine.backup").exists())
+            self.assertNotEqual(first, second)
+
+    def test_legacy_static_pin_is_never_replaced_by_commit_version(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project = root / "consumer"
+            project.mkdir()
+            source = _minimal_source(root / "source")
+            legacy = "0.4.20261115.5"
+            (source / "VERSION").write_text(legacy + "\n", encoding="utf-8")
+            _git(source, "init", "-q", "-b", "main")
+            _commit(source, "2026-11-26T01:00:00Z", "first")
+            _commit(source, "2026-11-26T02:00:00Z", "second")
+
+            (project / "install.py").write_text("# checkout stub\n", encoding="utf-8")
+            skill = project / "skills" / "chaos-engine"
+            skill.mkdir(parents=True)
+            (skill / "SKILL.md").write_text("# checkout stub\n", encoding="utf-8")
+            (project / "VERSION").write_text(legacy + "\n", encoding="utf-8")
+            _git(project, "init", "-q", "-b", "main")
+            _git(project, "add", "install.py", "skills/chaos-engine/SKILL.md", "VERSION")
+            _git(project, "commit", "-qm", "checkout", when="2026-11-26T01:00:00Z")
+            head = _git(project, "rev-parse", "HEAD")
+
+            with mock.patch.dict(
+                os.environ, {"CHAOS_ENGINE_DERIVED_VERSION": ""}, clear=False
+            ):
+                self.assertEqual(legacy, INSTALL.resolved_source_version(source))
+                self.assertEqual(legacy, INSTALL.source_intended_version(source))
+                overlay = INSTALL.install(project, source, head)
+                manifest = json.loads((overlay / "manifest.json").read_text(encoding="utf-8"))
+                self.assertEqual(legacy, manifest["source"]["version"])
+                finding = INSTALL._ce_version_after_upgrade_finding(project, overlay)
+            self.assertEqual((source / "VERSION").read_bytes(), (overlay / "VERSION").read_bytes())
+            self.assertEqual("healthy", finding["status"])
+            self.assertEqual(legacy, finding["installedVersion"])
+            self.assertEqual(legacy, finding["intendedVersion"])
+
+
+class StaleCheckoutDerivedVersion253Test(unittest.TestCase):
+    def _checkout(self, root: Path, first_version: str, second_version: str) -> tuple[Path, str, str]:
+        project = root / "harness"
+        project.mkdir(parents=True)
+        (project / "install.py").write_text("# checkout stub\n", encoding="utf-8")
+        skill = project / "skills" / "chaos-engine"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text("# checkout stub\n", encoding="utf-8")
+        (project / "VERSION").write_text(first_version + "\n", encoding="utf-8")
+        _git(project, "init", "-q", "-b", "main")
+        _git(project, "add", "install.py", "skills/chaos-engine/SKILL.md", "VERSION")
+        _git(project, "commit", "-qm", "first", when="2026-11-26T01:00:00Z")
+        first = _git(project, "rev-parse", "HEAD")
+        (project / "VERSION").write_text(second_version + "\n", encoding="utf-8")
+        _git(project, "add", "VERSION")
+        _git(project, "commit", "-qm", "second", when="2026-11-26T02:00:00Z")
+        second = _git(project, "rev-parse", "HEAD")
+        _git(project, "checkout", "-q", first)
+        return project, first, second
+
+    def _finding(self, project: Path, commit: str, installed_version: str):
+        overlay = project / ".chaos-engine"
+        overlay.mkdir(parents=True, exist_ok=True)
+        (overlay / "VERSION").write_text(installed_version + "\n", encoding="utf-8")
+        manifest = {
+            "source": {"commit": commit, "kind": "local", "version": installed_version}
+        }
+        (overlay / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        return INSTALL._ce_version_after_upgrade_finding(project, overlay)
+
+    def test_manifest_version_recognizes_stale_checkout_as_drift(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            project, first, second = self._checkout(
+                Path(temporary), "1.20261126.0", "1.20261126.1"
+            )
+            with mock.patch.dict(
+                os.environ, {"CHAOS_ENGINE_DERIVED_VERSION": ""}, clear=False
+            ):
+                finding = self._finding(project, second, "1.20261126.1")
+        self.assertEqual("healthy", finding["status"])
+        self.assertTrue(finding["checkoutDrift"])
+        self.assertEqual("1.20261126.1", finding["installedVersion"])
+        self.assertEqual("1.20261126.0", finding["intendedVersion"])
+        self.assertNotIn("(L92)", str(finding["detail"]))
+        self.assertIn(second[:12], str(finding["detail"]))
+        self.assertIn(first[:12], str(finding["detail"]))
+
+    def test_empty_version_at_installed_commit_still_derives_expected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            project, _first, second = self._checkout(
+                Path(temporary), "1.20261126.0", ""
+            )
+            with mock.patch.dict(
+                os.environ, {"CHAOS_ENGINE_DERIVED_VERSION": ""}, clear=False
+            ):
+                finding = self._finding(project, second, "1.20261126.1")
+        self.assertEqual("healthy", finding["status"])
+        self.assertTrue(finding["checkoutDrift"])
+
+
+class BootstrapVersionFlags253Test(unittest.TestCase):
+    def test_external_override_is_not_replaced_by_startup_or_remote(self):
+        with mock.patch.object(BOOTSTRAP, "_EXTERNAL_DERIVED_VERSION", None), mock.patch.object(
+            BOOTSTRAP, "_DERIVED_VERSION_FROM_STARTUP", False
+        ), mock.patch.object(
+            BOOTSTRAP, "startup_commit_version", return_value="1.20261126.0"
+        ), mock.patch.object(
+            BOOTSTRAP, "derive_remote_commit_version", return_value="1.20261127.0"
+        ) as derive, mock.patch.dict(
+            os.environ,
+            {
+                "CHAOS_ENGINE_DERIVED_VERSION": "1.20261123.4",
+                "CHAOS_ENGINE_OFFLINE": "",
+            },
+        ):
+            previous = BOOTSTRAP.apply_install_flags(argparse.Namespace())
+            try:
+                self.assertEqual("1.20261123.4", os.environ["CHAOS_ENGINE_DERIVED_VERSION"])
+                self.assertFalse(BOOTSTRAP._DERIVED_VERSION_FROM_STARTUP)
+                BOOTSTRAP._resolve_remote_install_version(
+                    "ShaftHQ/chaosengine-harness", "f" * 40, urllib.request.urlopen
+                )
+                derive.assert_not_called()
+                self.assertEqual("1.20261123.4", os.environ["CHAOS_ENGINE_DERIVED_VERSION"])
+            finally:
+                BOOTSTRAP.restore_install_flags(previous)
+
+    def test_startup_version_yields_to_remote_and_is_cleared_on_failure(self):
+        with mock.patch.object(BOOTSTRAP, "_EXTERNAL_DERIVED_VERSION", None), mock.patch.object(
+            BOOTSTRAP, "_DERIVED_VERSION_FROM_STARTUP", False
+        ), mock.patch.object(
+            BOOTSTRAP, "startup_commit_version", return_value="1.20261126.0"
+        ), mock.patch.dict(
+            os.environ,
+            {"CHAOS_ENGINE_DERIVED_VERSION": "", "CHAOS_ENGINE_OFFLINE": ""},
+        ):
+            with mock.patch.object(
+                BOOTSTRAP, "derive_remote_commit_version", return_value="1.20261127.0"
+            ) as derive:
+                previous = BOOTSTRAP.apply_install_flags(argparse.Namespace())
+                try:
+                    self.assertEqual("1.20261126.0", os.environ["CHAOS_ENGINE_DERIVED_VERSION"])
+                    self.assertTrue(BOOTSTRAP._DERIVED_VERSION_FROM_STARTUP)
+                    BOOTSTRAP._resolve_remote_install_version(
+                        "ShaftHQ/chaosengine-harness", "a" * 40, urllib.request.urlopen
+                    )
+                    derive.assert_called_once_with(
+                        "ShaftHQ/chaosengine-harness", "a" * 40, fetcher=urllib.request.urlopen
+                    )
+                    self.assertEqual("1.20261127.0", os.environ["CHAOS_ENGINE_DERIVED_VERSION"])
+                finally:
+                    BOOTSTRAP.restore_install_flags(previous)
+            with mock.patch.object(
+                BOOTSTRAP, "derive_remote_commit_version", return_value=None
+            ):
+                previous = BOOTSTRAP.apply_install_flags(argparse.Namespace())
+                try:
+                    self.assertEqual("1.20261126.0", os.environ["CHAOS_ENGINE_DERIVED_VERSION"])
+                    BOOTSTRAP._resolve_remote_install_version(
+                        "ShaftHQ/chaosengine-harness", "b" * 40, urllib.request.urlopen
+                    )
+                    self.assertNotIn("CHAOS_ENGINE_DERIVED_VERSION", os.environ)
+                finally:
+                    BOOTSTRAP.restore_install_flags(previous)
+
+    def test_standalone_announce_uses_remote_version_before_the_header(self):
+        with mock.patch.object(BOOTSTRAP, "_EXTERNAL_DERIVED_VERSION", None), mock.patch.object(
+            BOOTSTRAP, "startup_commit_version", return_value=None
+        ), mock.patch.object(
+            BOOTSTRAP, "derive_remote_commit_version", return_value="1.20261127.0"
+        ) as derive, mock.patch.dict(
+            os.environ,
+            {
+                "CHAOS_ENGINE_DERIVED_VERSION": "",
+                "CHAOS_ENGINE_OFFLINE": "",
+                "CHAOS_ENGINE_QUIET": "",
+                "NO_COLOR": "1",
+            },
+        ):
+            BOOTSTRAP._resolve_announced_version(
+                "ShaftHQ/chaosengine-harness", None, urllib.request.urlopen, argparse.Namespace()
+            )
+            derive.assert_called_once_with(
+                "ShaftHQ/chaosengine-harness", "main", fetcher=urllib.request.urlopen
+            )
+            stream = io.StringIO()
+            reporter = BOOTSTRAP.InstallReporter(stream=stream)
+            reporter.announce(Path("/project"), "ShaftHQ/chaosengine-harness", "main")
+            self.assertIn("1.20261127.0", stream.getvalue())
+
+    def test_announce_skips_remote_lookup_offline_external_and_bundle(self):
+        with mock.patch.object(BOOTSTRAP, "_EXTERNAL_DERIVED_VERSION", None), mock.patch.object(
+            BOOTSTRAP, "startup_commit_version", return_value=None
+        ), mock.patch.object(
+            BOOTSTRAP, "derive_remote_commit_version", return_value="1.20261127.0"
+        ) as derive, mock.patch.dict(
+            os.environ,
+            {"CHAOS_ENGINE_DERIVED_VERSION": "", "CHAOS_ENGINE_OFFLINE": "1"},
+        ):
+            BOOTSTRAP._resolve_announced_version(
+                "ShaftHQ/chaosengine-harness", "main", urllib.request.urlopen, argparse.Namespace()
+            )
+            derive.assert_not_called()
+        with mock.patch.object(
+            BOOTSTRAP, "_EXTERNAL_DERIVED_VERSION", "1.20261126.0"
+        ), mock.patch.object(
+            BOOTSTRAP, "derive_remote_commit_version", return_value="1.20261127.0"
+        ) as derive, mock.patch.dict(
+            os.environ,
+            {
+                "CHAOS_ENGINE_DERIVED_VERSION": "1.20261126.0",
+                "CHAOS_ENGINE_OFFLINE": "",
+            },
+        ):
+            BOOTSTRAP._resolve_announced_version(
+                "ShaftHQ/chaosengine-harness", "main", urllib.request.urlopen, argparse.Namespace()
+            )
+            derive.assert_not_called()
+        with mock.patch.object(BOOTSTRAP, "_EXTERNAL_DERIVED_VERSION", None), mock.patch.object(
+            BOOTSTRAP, "startup_commit_version", return_value=None
+        ), mock.patch.object(
+            BOOTSTRAP, "derive_remote_commit_version", return_value="1.20261127.0"
+        ) as derive, mock.patch.dict(
+            os.environ,
+            {"CHAOS_ENGINE_DERIVED_VERSION": "", "CHAOS_ENGINE_OFFLINE": ""},
+        ):
+            BOOTSTRAP._resolve_announced_version(
+                "ShaftHQ/chaosengine-harness",
+                "main",
+                urllib.request.urlopen,
+                argparse.Namespace(from_bundle="bundle.tar.gz"),
+            )
+            derive.assert_not_called()
+
+    def test_truncated_remote_page_fails_closed(self):
+        day = "20261126"
+        entries = [
+            _commit_document(
+                f"{index:040x}",
+                "2026-11-26T03:00:00Z",
+                parents=[f"{index + 1:040x}"],
+            )
+            for index in range(100)
+        ]
+        self.assertIsNone(BOOTSTRAP._count_remote_same_day(entries, entries[0]["sha"], day))
+        short = entries[:99]
+        self.assertEqual(99, BOOTSTRAP._count_remote_same_day(short, short[0]["sha"], day))
+
+    def test_startup_version_still_derives_locally_when_offline(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = _repository(Path(temporary) / "harness")
+            with mock.patch.object(
+                BOOTSTRAP, "__file__", str(repo / "bootstrap.py")
+            ), mock.patch.dict(
+                os.environ,
+                {
+                    "CHAOS_ENGINE_OFFLINE": "1",
+                    "CHAOS_ENGINE_DERIVED_VERSION": "",
+                },
+            ):
+                self.assertEqual(EXPECTED_DAY + ".0", BOOTSTRAP.startup_commit_version())
 
 
 if __name__ == "__main__":
