@@ -149,10 +149,10 @@ work.
 When implementation is delegated to a local runtime (FreeToken / OpenCode),
 OmniRoute, or any writer that is not the host session model, the orchestrator
 **must** still trigger the required fresh-context adversarial reviews (one for
-ordinary reversible work; two in sequence for public-contract, irreversible, or
-outbound work) as **new instances of the same host model** (native reviewer
-subagents). Never assign that review to the local or OmniRoute writer. Transport
-does not change the reviewer.
+ordinary reversible work; two independent adversarial reviews in sequence for
+public-contract, irreversible, or outbound work) as **new instances of the same
+host model** (native reviewer subagents). Never assign that review to the local
+or OmniRoute writer. Transport does not change the reviewer.
 When FreeToken is READY and the owner selected orchestrator mode, the
 orchestrator must not implement product or overlay chunks; dispatch a
 file-disjoint local writer. OPENCODE `context_length_exceeded` is a writer

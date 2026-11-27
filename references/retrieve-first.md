@@ -138,7 +138,7 @@ The [learning session](work-github-playbook.md#learned-lessons-workflow) routes
 each learning to its home. That is where a *fact* goes. It does not make the
 task responsible for keeping derived stores usable:
 
-- `<python> .chaos-engine/tool.py memory save --stdin` (portable wrapper for `memory`) for a durable fact, decision, or gotcha, with the
+- `<python> .chaos-engine/tool.py memory save --stdin` (portable wrapper for `memory save --stdin`) for a durable fact, decision, or gotcha, with the
   evidence (intent-first JSON: `{task, nodes, stale, supersede, delete}`).
   Do **not** hand-edit `.memory/**` JSON or markdown sidecars; if save rejects,
   report the reason and fix the input.

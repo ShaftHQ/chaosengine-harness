@@ -6253,7 +6253,7 @@ def component_escalates_overall(item: dict[str, object]) -> bool:
     if impact == "optional":
         return False
     if status == "degraded":
-        return _component_severity(item) == "error"
+        return impact == "required-when-indexed" and _component_severity(item) == "error"
     if status == "empty" and impact == "advisory":
         return False
     if status in DOCTOR_NON_ESCALATING_STATUSES:
