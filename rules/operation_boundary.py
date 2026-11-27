@@ -19,7 +19,7 @@ from typing import Any
 # The cluster may end at a substitution closer or a redirect, not only at whitespace.
 _FORCE = re.compile(
     r"(--force\b|--force-with-lease\b"
-    r"|(?:^|\s)-[A-Za-z]*f[A-Za-z]*(?=[\s)|`<>]|$)"
+    r"|(?:^|\s|\\_)-[A-Za-z]*f[A-Za-z]*(?=[\s)|`<>]|$|\\_)"
     r"|\s\+\S+)"
 )
 _REMOTE_ADD = re.compile(r"\bgit\s+remote\s+add\b")
@@ -463,9 +463,91 @@ _SHORT_COMMAND = {
 }
 
 
+def _env_split_words(text: str) -> list[str]:
+    """Split one GNU env -S operand. Outside quotes, backslash-underscore separates arguments."""
+    args: list[str] = []
+    buf: list[str] = []
+    quote = ""
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if quote == "'":
+            if char == "\\" and index + 1 < len(text) and text[index + 1] in {"'", "\\"}:
+                buf.append(text[index + 1])
+                index += 2
+                continue
+            if char == "'":
+                quote = ""
+            else:
+                buf.append(char)
+            index += 1
+            continue
+        if quote == '"':
+            if char == "\\" and index + 1 < len(text):
+                nxt = text[index + 1]
+                if nxt == "_":
+                    buf.append(" ")
+                elif nxt in {'"', "\\", "$", "#"}:
+                    buf.append(nxt)
+                elif nxt in {"n", "t", "r", "f", "v"}:
+                    buf.append({"n": "\n", "t": "\t", "r": "\r", "f": "\f", "v": "\v"}[nxt])
+                else:
+                    buf.append(nxt)
+                index += 2
+                continue
+            if char == '"':
+                quote = ""
+            else:
+                buf.append(char)
+            index += 1
+            continue
+        if char == "\\" and index + 1 < len(text):
+            nxt = text[index + 1]
+            if nxt == "c":
+                break
+            if nxt == "_" or nxt in {"n", "t", "r", "f", "v"}:
+                if buf:
+                    args.append("".join(buf))
+                    buf = []
+                index += 2
+                continue
+            if nxt in {"\\", "'", '"', "$", "#"}:
+                buf.append(nxt)
+                index += 2
+                continue
+            buf.append(nxt)
+            index += 2
+            continue
+        if char in {"'", '"'}:
+            quote = char
+            index += 1
+            continue
+        if char in {" ", "\t", "\n", "\r", "\f", "\v"}:
+            if buf:
+                args.append("".join(buf))
+                buf = []
+            index += 1
+            continue
+        if char == "#" and not buf:
+            break
+        buf.append(char)
+        index += 1
+    if buf:
+        args.append("".join(buf))
+    return args
+
+
+def _env_script_is_push(script: str, depth: int) -> bool:
+    """True when an env -S operand runs the push subcommand, including leading env options."""
+    words = _env_split_words(script)
+    return bool(words) and _head_is_git_push(["env", *words], depth + 1)
+
+
 def _short_option(wrapper, word, words, index, depth):
     """Read one single-dash cluster. Long options are not handled here."""
-    if not word.startswith("-") or word.startswith("--") or word == "-":
+    if word == "-":
+        return ("next", index + 1)
+    if not word.startswith("-") or word.startswith("--"):
         return None
     body = word[1:]
     values = _SHORT_VALUE.get(wrapper, "")
@@ -486,7 +568,7 @@ def _short_option(wrapper, word, words, index, depth):
         if char in commands and wrapper == "env":
             rest = " ".join(words[rest_index:])
             script = f"{payload} {rest}".strip()
-            if script and _has_git_push(script, depth + 1):
+            if script and _env_script_is_push(script, depth + 1):
                 return ("push", 0)
             return ("stop", 0)
         if char in commands:
@@ -529,8 +611,17 @@ def _head_is_git_push(
             wrapper = name
             index += 1
             continue
-        if wrapper and word.startswith("-") and not word.startswith("--"):
-            kind, nxt = _short_option(wrapper, word, words, index, depth)
+        if (
+            wrapper
+            and word.startswith("-")
+            and not word.startswith("--")
+            and (word == "-" or wrapper in _SHORT_VALUE or wrapper in _SHORT_COMMAND)
+        ):
+            acted = _short_option(wrapper, word, words, index, depth)
+            if not isinstance(acted, tuple):
+                index += 1
+                continue
+            kind, nxt = acted
             if kind == "push":
                 return True
             if kind == "stop":
@@ -554,7 +645,7 @@ def _head_is_git_push(
                 if wrapper == "env":
                     rest = " ".join(words[rest_index:])
                     script = f"{payload} {rest}".strip()
-                    return bool(script) and _has_git_push(script, depth + 1)
+                    return bool(script) and _env_script_is_push(script, depth + 1)
                 if payload and _has_git_push(payload, depth + 1):
                     return True
                 index = rest_index

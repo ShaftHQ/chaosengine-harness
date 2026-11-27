@@ -432,6 +432,11 @@ class OperationBoundary262Test(unittest.TestCase):
             "/usr/bin/time -ao /tmp/out echo ok",
             "sudo --shell echo ok",
             "setsid -c echo ok",
+            "env - echo ok",
+            "doas -u user echo ok",
+            "env -S'-i echo ok'",
+            "env -S'echo\\_ok'",
+            "flock -u echo ok",
         ):
             with self.subTest(command=command):
                 self.assertIsNone(self.block(command))
@@ -491,6 +496,21 @@ class OperationBoundary262Test(unittest.TestCase):
             "sudo -Eu user git push -f origin main",
             "setsid -c git push -f origin main",
             "setsid -w git push -f origin main",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual("force-push-without-approval", self.block(command))
+
+    def test_review5_env_and_doas_are_refused(self) -> None:
+        for command in (
+            "env - git push -f origin main",
+            "doas -u user git push -f origin main",
+            "doas -C /etc/doas.conf git push -f origin main",
+            "env -S'-i git push -f origin main'",
+            "env -S'-u NAME git push -f origin main'",
+            "env -S'-C /tmp git push -f origin main'",
+            "env -S'-v git push -f origin main'",
+            "env -S'git\\_push\\_-f\\_origin\\_main'",
+            "flock -u git push -f origin main",
         ):
             with self.subTest(command=command):
                 self.assertEqual("force-push-without-approval", self.block(command))
