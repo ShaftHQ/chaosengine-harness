@@ -258,11 +258,19 @@ class ChaosEngineHostsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             home = Path(temporary)
             project = home / "workspace"
-            project.mkdir()
+            launch_dir = project / ".chaos-engine" / "hooks"
+            launch_dir.mkdir(parents=True)
+            shutil.copy(ROOT / "hooks" / "launch.py", launch_dir / "launch.py")
+            bare = home / "bare"
+            bare.mkdir()
             with mock.patch.dict(os.environ, {}, clear=False):
                 os.environ.pop("GROK_HOME", None)
+                missing = module.sync_grok_user_hooks(bare, home=home / "no-launch")
                 created = module.sync_grok_user_hooks(project, home=home)
                 again = module.sync_grok_user_hooks(project, home=home)
+            self.assertEqual("skipped", missing["status"])
+            self.assertEqual("launch-missing", missing["detail"])
+            self.assertFalse((home / "no-launch" / ".grok" / "hooks" / "chaos-engine.json").exists())
             path = home / ".grok" / "hooks" / "chaos-engine.json"
             self.assertEqual("healthy", created["status"])
             self.assertEqual(str(path), created["path"])
@@ -271,8 +279,65 @@ class ChaosEngineHostsTest(unittest.TestCase):
             document = json.loads(path.read_text(encoding="utf-8"))
             self.assertEqual({"PreToolUse"}, set(document["hooks"]))
             command = document["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
-            self.assertIn("launch.py", command)
-            self.assertIn(" grok", command)
+            self.assertIn("--layer", command)
+            self.assertIn("user", command)
+            self.assertIn("PreToolUse", command)
+            self.assertNotIn("exit 2", command)
+            outside = home / "outside"
+            outside.mkdir()
+            env = os.environ.copy()
+            for key in (
+                "CHAOS_ENGINE_USER_PAYLOAD",
+                "GROK_HOOK_EVENT",
+                "CLAUDE_CODE_ENTRYPOINT",
+                "CURSOR_TRACE_ID",
+            ):
+                env.pop(key, None)
+            missed = subprocess.run(
+                ["bash", "-c", command],
+                cwd=outside,
+                input=b"{}",
+                capture_output=True,
+                env=env,
+                check=False,
+            )
+            self.assertEqual(0, missed.returncode, missed.stderr.decode(errors="replace"))
+            self.assertNotIn(b"block", missed.stdout)
+            bound = home / "bound"
+            guard_dir = bound / ".chaos-engine" / "hooks"
+            guard_dir.mkdir(parents=True)
+            (bound / ".chaos-engine" / "install.py").write_text("print('project')\n", encoding="utf-8")
+            marker = bound / "guard-ran"
+            (guard_dir / "guard.py").write_text(
+                "from pathlib import Path\n"
+                f"Path({str(marker)!r}).write_text('ran', encoding='utf-8')\n"
+                "print('{\"decision\": \"allow\"}')\n",
+                encoding="utf-8",
+            )
+            ran = subprocess.run(
+                ["bash", "-c", command],
+                cwd=bound,
+                input=b"{}",
+                capture_output=True,
+                env=env,
+                check=False,
+            )
+            self.assertEqual(0, ran.returncode, ran.stderr.decode(errors="replace"))
+            self.assertTrue(marker.is_file())
+            sessions = bound / ".chaos-engine-state" / "sessions"
+            sessions.mkdir(parents=True)
+            (sessions / "sess-276.layer").write_text("project\n", encoding="utf-8")
+            marker.unlink()
+            deferred = subprocess.run(
+                ["bash", "-c", command],
+                cwd=bound,
+                input=json.dumps({"session_id": "sess-276", "cwd": str(bound)}).encode(),
+                capture_output=True,
+                env=env,
+                check=False,
+            )
+            self.assertEqual(0, deferred.returncode, deferred.stderr.decode(errors="replace"))
+            self.assertFalse(marker.exists())
             foreign = {
                 "hooks": {
                     "SessionStart": [{"hooks": [{"type": "command", "command": "user-hook"}]}],
@@ -288,6 +353,7 @@ class ChaosEngineHostsTest(unittest.TestCase):
                 "user-hook", merged["hooks"]["SessionStart"][0]["hooks"][0]["command"]
             )
             self.assertIn("PreToolUse", merged["hooks"])
+            self.assertEqual(1, len(merged["hooks"]["PreToolUse"]))
             self.assertEqual("healthy", merged_state["status"])
             grok_home = home / "grok-home"
             with mock.patch.dict(os.environ, {"GROK_HOME": str(grok_home)}):

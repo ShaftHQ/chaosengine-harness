@@ -9005,13 +9005,54 @@ def grok_user_home(home: Path | None = None) -> Path:
     configured = os.environ.get("GROK_HOME")
     if configured:
         return Path(configured).expanduser()
-    return (Path.home() if home is None else Path(home)) / ".grok"
+    return (home if home is not None else _host_home()) / ".grok"
 
 
-def grok_user_hooks_document(managed_python: Path | None = None) -> bytes:
-    return lifecycle_hooks_document(
-        "grok", events={"PreToolUse": "PreToolUse"}, managed_python=managed_python
+def grok_user_launch_path(project: Path) -> Path | None:
+    """Absolute launch.py a user hook can run outside the installing repo."""
+    for relative in (
+        Path(".chaos-engine") / "hooks" / "launch.py",
+        Path("hooks") / "launch.py",
+        Path("chaos-engine") / "hooks" / "launch.py",
+    ):
+        candidate = project / relative
+        if candidate.is_file() and not is_link_or_reparse(candidate):
+            return candidate.resolve()
+    return None
+
+
+def grok_user_hook_command(launch: Path, *, windows: bool) -> str:
+    """PreToolUse command that allows when the launcher file is gone.
+
+    The project locator exits 2 when ``.chaos-engine/hooks/launch.py`` is not
+    in a parent. Grok loads ``~/.grok/hooks`` in every workspace, so that miss
+    would deny unrelated directories. ``--layer user`` defers when the project
+    hook already ran.
+    """
+    payload = base64.b64encode(str(launch).encode()).decode("ascii")
+    script = (
+        "import base64,pathlib,subprocess,sys;"
+        "s='.chaos-engine/hooks/launch.py';"
+        f"p=pathlib.Path(base64.b64decode('{payload}').decode());"
+        "sys.exit(0 if not p.is_file() else subprocess.call("
+        "[sys.executable,str(p),'grok','PreToolUse','--layer','user']))"
     )
+    if "$" in script or "\n" in script or '"' in script:
+        raise ValueError("grok user hook command must stay $-free")
+    exe = "py -3" if windows else "python3"
+    return f'{exe} -c "{script}"'
+
+
+def grok_user_hooks_document(launch: Path, managed_python: Path | None = None) -> bytes:
+    del managed_python
+    handler = {
+        "type": "command",
+        "command": grok_user_hook_command(launch, windows=False),
+        "commandWindows": grok_user_hook_command(launch, windows=True),
+        "timeout": 30,
+    }
+    document = {"hooks": {"PreToolUse": [{"matcher": PRE_TOOL_MATCHER, "hooks": [handler]}]}}
+    return (json.dumps(document, indent=2, sort_keys=True) + "\n").encode()
 
 
 def sync_grok_user_hooks(
@@ -9021,12 +9062,14 @@ def sync_grok_user_hooks(
     managed_python: Path | None = None,
 ) -> dict[str, object]:
     """Merge a user-level PreToolUse guard so a non-git Grok still loads it (#276)."""
-    del project
     path = grok_user_home(home) / "hooks" / GROK_USER_HOOK_NAME
+    launch = grok_user_launch_path(project)
+    if launch is None:
+        return {"status": "skipped", "detail": "launch-missing", "path": str(path)}
     if is_link_or_reparse(path):
         return {"status": "skipped", "detail": "user-hook-path-is-link", "path": str(path)}
     before = path.read_bytes() if path.is_file() else None
-    rendered = grok_user_hooks_document(managed_python)
+    rendered = grok_user_hooks_document(launch, managed_python)
     try:
         merged = hook_content(before, rendered, "Grok user")
     except ValueError:
