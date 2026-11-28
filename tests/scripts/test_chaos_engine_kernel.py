@@ -1441,6 +1441,8 @@ class CopilotHookEventsTest(TestCase):
         for name in _COPILOT_OBSERVE_EVENTS:
             self.assertEqual(name, aliases[name])
             self.assertNotIn(name, self.lifecycle.LIFECYCLE_EVENTS)
+        self.assertEqual("notification", aliases["Notification"])
+        self.assertIn("Notification", self.lifecycle.LIFECYCLE_EVENTS)
         self.assertFalse(self.kernel.HOST_CAPABILITIES["copilot"].process_exit2_honored)
         guide = (ROOT / "guides" / "tools" / "copilot.md").read_text(encoding="utf-8")
         for name in _COPILOT_HOOK_EVENTS:
@@ -1558,6 +1560,30 @@ class CopilotHookEventsTest(TestCase):
                     self.assertFalse(_payload_denies(body))
                     if event == "notification":
                         self.assertNotIn("additionalContext", body)
+
+    def test_copilot_notification_observes_the_documented_payload(self):
+        documented = {
+            "hook_event_name": "Notification",
+            "sessionId": "c278-note",
+            "cwd": str(ROOT),
+            "message": "Shell completed",
+            "notification_type": "shell_completion",
+        }
+        self.assertNotIn("cancelled", documented)
+        self.assertNotIn("toolName", documented)
+        self.assertNotIn("toolArgs", documented)
+        code, stdout = self._run(documented)
+        self.assertEqual(0, code)
+        self.assertEqual("{}\n", stdout)
+        body = json.loads(stdout)
+        self.assertFalse(_payload_denies(body))
+        self.assertNotIn("additionalContext", body)
+        cancelled = {**documented, "sessionId": "c278-nc", "cancelled": True}
+        cancel_code, cancel_stdout = self._run(cancelled)
+        self.assertEqual(0, cancel_code)
+        self.assertEqual("{}\n", cancel_stdout)
+        self.assertFalse(_payload_denies(json.loads(cancel_stdout)))
+        self.assertNotIn("additionalContext", json.loads(cancel_stdout))
 
     def test_copilot_cloud_permission_request_blocking_unverified(self):
         """Cloud agent does not fire permissionRequest. blocking: unverifiable.

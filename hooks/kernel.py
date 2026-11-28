@@ -304,6 +304,8 @@ HOST_CAPABILITIES: Mapping[str, HostCapability] = {
             userPromptTransformed="userPromptTransformed",
             errorOccurred="errorOccurred",
             notification="notification",
+            # Vendor input uses PascalCase. That spelling is already a lifecycle event.
+            Notification="notification",
         ),
         COPILOT_EVENTS,
         static_surfaces=("cloud", "ide"),
