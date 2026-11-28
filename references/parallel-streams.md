@@ -79,7 +79,7 @@ public-contract, irreversible, or outbound; [delivery cycle](delivery-cycle.md))
 
 Never force-push a branch under open review. Prefer append-only fix commits. If a
 rebase is required, the orchestrator pauses reviewers, rebases, then requests a
-fresh sign-off on the new SHA. Merge with head-SHA match. Never run `gh pr merge --auto`. If the base ruleset has `merge_queue`, enqueue with `gh pr merge` and no strategy flag; otherwise run `gh pr merge --squash` only after required checks are green and review threads are resolved.
+fresh sign-off on the new SHA. Merge with head-SHA match. Never run `gh pr merge --auto`. If the base ruleset has `merge_queue`, enqueue with `gh pr merge` and no strategy flag; otherwise run `gh pr merge --merge` only after required checks are green and review threads are resolved.
 
 ## Post-merge own cleanup
 

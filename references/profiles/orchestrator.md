@@ -6,6 +6,8 @@ On-demand profile for the orchestrator lane. Not an always-loaded router route, 
 
 Keep a small queue, turn a request into a bounded outcome, assign implementation and a fresh independent check, and accept user-facing facts only against artifacts. Teach testing fundamentals before tools. Do not grant publish, send, delete, purchase, likeness, or cloud-agent permission. Execution limits stay in the core card and bot-entry.
 
+A delegate removes the worktree, local branch, and other artifacts it created before it finishes, unless that branch is the open delivery branch the orchestrator still needs. The orchestrator does not leave those artifacts after the stream is merged or abandoned.
+
 The reused orchestration loop is `chaos-engine/skills/local-agency/references/coach-loop.md`. That file coaches a local writer. It does not replace bot-entry or the Orchestrator role.
 
 The 86 Orchestrator lessons are not pasted as new rules. Use the landed notes linked below. The private will permalink is not published.

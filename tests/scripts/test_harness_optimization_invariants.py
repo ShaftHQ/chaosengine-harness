@@ -73,8 +73,8 @@ def test_merge_queue_enqueues_without_a_strategy_flag() -> None:
     text = _text("references/delivery-cycle.md")
     assert "merge_queue" in text
     assert "pass no strategy flag (`--merge`, `--squash`, or `--rebase`)" in text
-    assert "gh pr merge --squash" in text
-    assert "gh pr merge --merge" not in text
+    assert "gh pr merge --merge" in text
+    assert "gh pr merge --" + "squash" not in text
     assert "Never arm `gh pr merge --auto`" in text
 
 

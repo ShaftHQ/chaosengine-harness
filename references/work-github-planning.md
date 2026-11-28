@@ -81,7 +81,7 @@ compaction. Do not treat a compacted context as a session end.
 
 - After plan approval, stay fully unattended until every in-scope ticket is
   merged or closed, or the owner names a true HALT. Compaction is not stop.
-- Do not run `gh pr merge --squash --auto`. Never arm `gh pr merge --auto`. Watch until required checks pass and review threads are resolved, then enqueue a `merge_queue` ruleset with `gh pr merge` and pass no strategy flag (`--merge`, `--squash`, or `--rebase`), or otherwise merge with `gh pr merge --squash`. This repository allows only squash merges. A skipped or neutral check outside the required set does not block. A failed, cancelled, or pending check blocks when it is required and when no check is marked required. An unmarked skip blocks. An empty check list is not success. A pending check is not success. No unguarded force.
+- Do not run `gh pr merge --merge --auto`. Never arm `gh pr merge --auto`. Watch until required checks pass and review threads are resolved, then enqueue a `merge_queue` ruleset with `gh pr merge` and pass no strategy flag (`--merge`, `--squash`, or `--rebase`), or otherwise merge with `gh pr merge --merge`. This repository allows only merge commits. A skipped or neutral check outside the required set does not block. A failed, cancelled, or pending check blocks when it is required and when no check is marked required. An unmarked skip blocks. An empty check list is not success. A pending check is not success. No unguarded force.
 - Do not weaken or delete tests to reach green.
 - Push the self-accepted head and start review 1 together, on the host
   **most-intelligent** subagent, never the local mechanical model. The
@@ -173,7 +173,7 @@ delivery through **GitHub native sub-issues**, not checkbox prose alone.
   initial scope and confirm every related sub-issue is merged or explicitly
   dropped on the tracker. Never run `gh pr merge --auto`. If the base ruleset
   has `merge_queue`, enqueue with `gh pr merge` and no strategy flag; otherwise
-  run `gh pr merge --squash` only after required checks are green and review
+  run `gh pr merge --merge` only after required checks are green and review
   threads are resolved. One green PR must not close or imply
   the epic is done while in-scope children remain open or unimplemented.
 - Workflow `.github/workflows/epic-autoclose.yml` runs on `issues: closed`. It

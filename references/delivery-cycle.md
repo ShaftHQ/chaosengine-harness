@@ -23,7 +23,7 @@ Merge:
 
 - Never arm `gh pr merge --auto`.
 - When the base branch ruleset includes a `merge_queue` rule, enqueue with `gh pr merge` and pass no strategy flag (`--merge`, `--squash`, or `--rebase`). The merge queue owns the merge method.
-- Otherwise, including this repository, merge with `gh pr merge --squash` only after required checks are green and review threads are resolved.
+- Otherwise, including this repository, merge with `gh pr merge --merge` only after required checks are green and review threads are resolved.
 - A pending check is not success.
 - A skipped required check is not success.
 - A skipped or neutral check outside the required set does not block.
@@ -77,3 +77,8 @@ GitHub closes an issue when a default-branch commit message or a merge message c
 Name the issue without those words beside the number. The safe example is: issue #160 stays open.
 
 An unsafe example puts one of those words immediately before the number, including inside a denial. Keep that example as this prose. Do not write the word next to the number.
+
+
+## Session close
+
+After the delivery commit is on `origin/main`, clean the local checkout, pull `origin/main`, then run `python3 .chaos-engine/tool.py stores refresh --if-stale`. The Graphify stamp is that `origin/main` commit. The next session in this directory starts fresh while `origin/main` is still that commit.

@@ -112,7 +112,7 @@ or adjacent prose with blocker notes, HEAD SHA, and root-learning handoff
 
 ## Independent adversarial review
 
-Follow [delivery cycle](delivery-cycle.md) for review 1 with the self-accept push, the reconcile push that starts review 2, the required-check merge rule, and `gh pr merge --squash` in this repository. Do not start both reviewers in one step. One subject gets at most two adversarial reviews in sequence, and an unchanged head is never reviewed a third time. Never review individual implementation steps. A pull request that changes an existing test contract, or whose CI does not run the changed surface ([UI delivery](ui-delivery.md)), does not skip that pair. Time pressure never skips this pair.
+Follow [delivery cycle](delivery-cycle.md) for review 1 with the self-accept push, the reconcile push that starts review 2, the required-check merge rule, and `gh pr merge --merge` in this repository. Do not start both reviewers in one step. One subject gets at most two adversarial reviews in sequence, and an unchanged head is never reviewed a third time. Never review individual implementation steps. A pull request that changes an existing test contract, or whose CI does not run the changed surface ([UI delivery](ui-delivery.md)), does not skip that pair. Time pressure never skips this pair.
 Independence:
 
 - The reviewer is a **separate agent instance, never the author** of the work.
