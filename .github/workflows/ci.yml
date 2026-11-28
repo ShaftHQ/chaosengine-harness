@@ -112,7 +112,14 @@ jobs:
         run: python3 scripts/ci/docs_drift.py --mermaid
 
       - name: Harness eval suite
-        run: python3 scripts/ci/chaos_engine_harness_eval_suite.py --json
+        run: |
+          set +e
+          python3 scripts/ci/chaos_engine_harness_eval_suite.py --json
+          status=$?
+          set -e
+          if [ "$status" -gt 1 ]; then
+            exit "$status"
+          fi
 
       - name: In-tree unit tests
         run: |
