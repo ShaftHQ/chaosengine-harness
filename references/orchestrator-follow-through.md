@@ -84,3 +84,12 @@ met or a named HALT applies.
 Escalate using portable capability levels: mechanical, default, and most
 intelligent. Host dispatch prompts may map those levels to their own capability
 labels; portable policy never binds them to a vendor.
+
+## Delegate artifacts
+
+A delegate removes the worktree, local branch, and other artifacts it created before it finishes, unless that branch is the open delivery branch the orchestrator still needs. The orchestrator does not leave those artifacts after the stream is merged or abandoned.
+
+
+## Session close
+
+After the delivery commit is on `origin/main`, clean the local checkout, pull `origin/main`, then run `python3 .chaos-engine/tool.py stores refresh --if-stale`. The Graphify stamp is that `origin/main` commit. The next session in this directory starts fresh while `origin/main` is still that commit.

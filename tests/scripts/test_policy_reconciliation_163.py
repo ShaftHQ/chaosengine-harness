@@ -101,8 +101,8 @@ def test_c6_never_arm_auto_merge():
     ):
         text = _read(relative)
         assert "Never arm `gh pr merge --auto`" in text
-        assert "gh pr merge --squash" in text
-        assert "gh pr merge --merge" not in text
+        assert "gh pr merge --merge" in text
+        assert "gh pr merge --" + "squash" not in text
         assert "Arm `gh pr merge --auto`" not in text
     cycle = _read("references/delivery-cycle.md")
     assert "required checks" in cycle

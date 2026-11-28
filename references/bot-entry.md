@@ -18,7 +18,7 @@ Default is a small vertical slice (~90 changed lines or a named `size_waiver`). 
 
 Two failed attempts on one approach: step back and re-plan. At most 3 local PDCA loops before review. Babysit an open pull request until merged or `blocking: unverifiable` (`runtime/owner_gate.py`).
 
-Never arm `gh pr merge --auto`. Merge with `gh pr merge --squash` only after required checks pass and review threads resolve. A `merge_queue` rule enqueues with `gh pr merge`, no strategy flag ([delivery cycle](delivery-cycle.md)).
+Never arm `gh pr merge --auto`. Merge with `gh pr merge --merge` only after required checks pass, and review threads resolve. A `merge_queue` rule enqueues with `gh pr merge`, no strategy flag ([delivery cycle](delivery-cycle.md)).
 
 Learning Session after every final delivery. Then `<python> .chaos-engine/tool.py maintain`.
 

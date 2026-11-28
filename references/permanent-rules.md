@@ -9,7 +9,7 @@ Assistant memory keeps only this pointer: "Follow the ChaosEngine core card
 | Rule | CE home |
 | --- | --- |
 | One portable implementation for every host; a new rule is one parity row | [host-parity-matrix](host-parity-matrix.md) |
-| Learning Session after every final delivery (owner approval, publish done, final PR merged), automatic: lessons diff, one spec issue, ONE PR (`skip-release-notes`) babysat to merged. When the base branch ruleset includes a `merge_queue` rule, enqueue with `gh pr merge` and pass no strategy flag (`--merge`, `--squash`, or `--rebase`). Otherwise merge with `gh pr merge --squash` only after required checks are green and review threads are resolved. Never arm `gh pr merge --auto`. Nothing new = one report line | [router contract](router-contract.md#learning-session) |
+| Learning Session after every final delivery (owner approval, publish done, final PR merged), automatic: lessons diff, one spec issue, ONE PR (`skip-release-notes`) babysat to merged. When the base branch ruleset includes a `merge_queue` rule, enqueue with `gh pr merge` and pass no strategy flag (`--merge`, `--squash`, or `--rebase`). Otherwise merge with `gh pr merge --merge` only after required checks are green and review threads are resolved. Never arm `gh pr merge --auto`. Nothing new = one report line | [router contract](router-contract.md#learning-session) |
 | No traffic proxy of any kind (Headroom-style included); nothing installs one by default | [no-proxy](no-proxy.md) |
 | Token optimization is Kanban eliminate-waste | [eliminate-waste](eliminate-waste.md) |
 | Retrieve before read, once per task area; harness files are exempt | [retrieve-first](retrieve-first.md) |
