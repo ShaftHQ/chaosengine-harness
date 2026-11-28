@@ -52,11 +52,24 @@ class AntigravitySupportTests(unittest.TestCase):
             self.assertIn(event, spec)
             self.assertIn("matcher", spec[event][0])
             self.assertIn("hooks", spec[event][0])
-        for event in ("SessionStart", "PreInvocation", "Stop"):
+        for event in ("SessionStart", "PreInvocation", "PostInvocation", "Stop"):
             self.assertIn(event, spec)
             self.assertNotIn("matcher", spec[event][0])
             self.assertEqual("command", spec[event][0]["type"])
-        self.assertNotIn("PostInvocation", spec)
+            self.assertEqual(1, len(spec[event]))
+        self.assertEqual(set(spec["SessionStart"][0]), set(spec["PostInvocation"][0]))
+        self.assertIn("PostInvocation", spec["PostInvocation"][0]["command"])
+        matrix = (ROOT / "references" / "host-parity-matrix.md").read_text(encoding="utf-8")
+        official = next(
+            line
+            for line in matrix.splitlines()
+            if line.startswith("| Antigravity | https://antigravity.google/docs/hooks.md")
+        )
+        cells = [cell.strip() for cell in official.strip().strip("|").split("|")]
+        self.assertEqual(["PostInvocation"], [part.strip() for part in cells[2].split(",")])
+        self.assertEqual("none", cells[3])
+        gap = next(line for line in matrix.splitlines() if line.startswith("| GAP-ANTIGRAVITY-HOOKS |"))
+        self.assertIn("observes and does not deny", gap)
 
         # Legacy flat top-level ChaosEngine entries are migrated and foreign named hooks stay.
         legacy = {
@@ -617,12 +630,24 @@ class AntigravitySupportTests(unittest.TestCase):
         self.assertEqual("Glob", find_ev.tool_name)
         self.assertEqual("/repo/src", find_ev.tool_input["path"])
 
-        # PostInvocation block & direct native event name
+        # PostInvocation observes. A deny is {} with no decision or terminationBehavior.
         post_inv_deny = self.kernel.adapt_hook_output(
             {"decision": "block", "reason": "stop now"}, "PostInvocation", "antigravity"
         )
-        self.assertEqual("terminate", post_inv_deny["terminationBehavior"])
-        self.assertEqual("stop now", post_inv_deny["injectSteps"][0]["errorMessage"]["userMessage"])
+        self.assertEqual({}, post_inv_deny)
+        self.assertNotIn("terminationBehavior", post_inv_deny)
+        self.assertNotIn("decision", post_inv_deny)
+        native_deny = self.kernel.adapt_hook_output(
+            {"decision": "block", "reason": "stop now"},
+            "PostToolUse",
+            "antigravity",
+            native_event="PostInvocation",
+        )
+        self.assertEqual({}, native_deny)
+        self.assertNotIn("terminationBehavior", native_deny)
+        launch_deny = self.launch._antigravity_deny_payload("stop now", "PostInvocation")
+        self.assertEqual({}, launch_deny)
+        self.assertNotIn("terminationBehavior", launch_deny)
 
         # agy alias in install_config and guard._INSTALL_HOST_IDS
         install_config = _load("ce_agy_install_config", ROOT / "runtime" / "install_config.py")
@@ -1017,7 +1042,12 @@ class AntigravitySupportTests(unittest.TestCase):
         self.assertIn("run_command", preventive)
         self.assertIn("run_workflow", preventive)
         self.assertIn("swarm", preventive)
-        self.assertNotIn("PostInvocation", spec)
+        post = spec["PostInvocation"]
+        self.assertEqual(1, len(post))
+        self.assertNotIn("matcher", post[0])
+        self.assertEqual("command", post[0]["type"])
+        self.assertEqual(set(spec["SessionStart"][0]), set(post[0]))
+        self.assertIn("PostInvocation", post[0]["command"])
         merged = self.surfaces.merge_antigravity_hooks(
             {
                 "chaos-engine": {
@@ -1025,7 +1055,11 @@ class AntigravitySupportTests(unittest.TestCase):
                         {
                             "type": "command",
                             "command": "python3 .chaos-engine/hooks/launch.py antigravity PostInvocation",
-                        }
+                        },
+                        {
+                            "type": "command",
+                            "command": "./foreign-post.sh",
+                        },
                     ],
                     "Stop": [
                         {
@@ -1037,7 +1071,13 @@ class AntigravitySupportTests(unittest.TestCase):
             }
         )
         owned = merged["chaos-engine"]
-        self.assertNotIn("PostInvocation", owned)
+        handlers = owned["PostInvocation"]
+        launch = [item for item in handlers if "hooks/launch.py" in str(item.get("command", ""))]
+        foreign = [item for item in handlers if item.get("command") == "./foreign-post.sh"]
+        self.assertEqual(1, len(launch))
+        self.assertEqual(1, len(foreign))
+        self.assertNotIn("matcher", launch[0])
+        self.assertNotIn("terminationBehavior", launch[0])
         self.assertEqual("./foreign-stop.sh", owned["Stop"][0]["command"])
 
     def test_published_install_sh_one_liner_is_allowed(self):

@@ -116,10 +116,17 @@ class HookParityTests(unittest.TestCase):
         for event in ("PreToolUse", "PostToolUse"):
             self.assertIn("matcher", spec[event][0])
             self.assertIn("hooks", spec[event][0])
-        for event in ("SessionStart", "PreInvocation", "Stop"):
+        for event in ("SessionStart", "PreInvocation", "PostInvocation", "Stop"):
             self.assertNotIn("matcher", spec[event][0])
             self.assertEqual("command", spec[event][0]["type"])
-        self.assertNotIn("PostInvocation", spec)
+            self.assertEqual(1, len(spec[event]))
+        self.assertEqual(set(spec["SessionStart"][0]), set(spec["PostInvocation"][0]))
+        observed = self.kernel.adapt_hook_output(
+            {"decision": "block", "reason": "no"}, "PostInvocation", "antigravity"
+        )
+        self.assertEqual({}, observed)
+        self.assertNotIn("terminationBehavior", observed)
+        self.assertNotIn("decision", observed)
         deny = self.kernel.adapt_hook_output(
             {"decision": "block", "reason": "no"}, "PreToolUse", "antigravity"
         )

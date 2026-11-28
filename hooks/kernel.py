@@ -1092,7 +1092,8 @@ def _adapt_antigravity(
 
     Deny is JSON on exit 0. Context uses `injectSteps` with nested `systemMessage`.
     `PreToolUse` requires `decision`; `PostToolUse` expects `{}`; `Stop` continues
-    with `decision: "continue"` and `reason`.
+    with `decision: "continue"` and `reason`. `PostInvocation` observes: no
+    `decision` and no `terminationBehavior`.
     """
     decision = adapted.get("decision")
     reason = adapted.get("reason")
@@ -1129,13 +1130,9 @@ def _adapt_antigravity(
             adapted["injectSteps"] = [{"systemMessage": {"systemMessage": context}}]
         return
     if event_name == "PostInvocation" or native_event == "PostInvocation":
+        # Observe. A deny is {}. Do not set terminationBehavior or decision.
         adapted.clear()
-        if decision in {"block", "deny"}:
-            adapted["injectSteps"] = [
-                {"errorMessage": {"userMessage": str(reason or "Blocked by ChaosEngine.")}}
-            ]
-            adapted["terminationBehavior"] = "terminate"
-        elif isinstance(context, str) and context:
+        if decision not in {"block", "deny"} and isinstance(context, str) and context:
             adapted["injectSteps"] = [{"systemMessage": {"systemMessage": context}}]
         return
     if event_name == "PostToolUse":
