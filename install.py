@@ -6544,6 +6544,8 @@ def _instruction_only_detail(rows: list[dict[str, object]]) -> str:
     commands = ", ".join(_SELF_ENFORCED_COMMANDS)
     detail = "instruction-only " + " ".join(named) + f"; self-enforced tool.py {commands}"
     hosts = {str(row.get("host") or "") for row in rows}
+    if "openbot" in hosts:
+        detail += "; a healthy doctor does not mean hooks ran"
     if "grok-bot" in hosts:
         detail += (
             "; enforcement instruction-plus-custom-rules"
@@ -6608,6 +6610,83 @@ def _openbot_contract_check(project: Path, target: Path, host_controller: object
     }
 
 
+OPENBOT_INSTRUCTION_CAP = 32000
+
+
+def _grok_probe_denies_openbot_health(grok_probe: object) -> bool:
+    """True when an OpenBot Grok inspect failed or returned hooks []."""
+    if not isinstance(grok_probe, dict):
+        return False
+    if grok_probe.get("hooks") == []:
+        return True
+    if grok_probe.get("hooksLoaded") is True:
+        return False
+    return grok_probe.get("status") == "failed" or grok_probe.get("code") == "CE_GROK_INSPECT_FAILED"
+
+
+def _openbot_instruction_cap_warning(project: Path) -> str | None:
+    """Warn when OpenBot would cut the injected instruction file. Do not raise the cap."""
+    agents = project / "AGENTS.md"
+    claude = project / "CLAUDE.md"
+    path = agents if agents.is_file() else claude if claude.is_file() else None
+    if path is None:
+        return None
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    if len(text) <= OPENBOT_INSTRUCTION_CAP:
+        return None
+    return (
+        f"{path.name} is {len(text)} characters. OpenBot injects at most "
+        f"{OPENBOT_INSTRUCTION_CAP} characters and cuts the rest."
+    )
+
+
+def _stamp_openbot_instruction_cap(
+    project: Path, components: dict[str, dict[str, object]]
+) -> None:
+    hooks = components.get("hooks")
+    if not isinstance(hooks, dict) or "openbot" not in read_completion_targets(project):
+        return
+    warning = _openbot_instruction_cap_warning(project)
+    if not warning:
+        return
+    hooks["instructionCapWarning"] = warning
+    detail = str(hooks.get("detail") or "")
+    if warning not in detail:
+        hooks["detail"] = (detail + " " + warning).strip()
+
+
+def _apply_openbot_grok_hook_denial(
+    result: dict[str, object], components: dict[str, dict[str, object]]
+) -> None:
+    """Failed or empty Grok inspect is not a healthy OpenBot hook result."""
+    hosts = result.get("hosts")
+    if not isinstance(hosts, dict):
+        return
+    denial = hosts.get("openbotHookHealth")
+    if not isinstance(denial, dict):
+        return
+    hooks = components.get("hooks")
+    if not isinstance(hooks, dict):
+        hooks = {}
+        components["hooks"] = hooks
+    prior = str(hooks.get("detail") or "")
+    reason = str(denial.get("detail") or "grok inspect failed or returned hooks []")
+    hooks["status"] = "degraded"
+    hooks["taskImpact"] = "required"
+    hooks["code"] = str(denial.get("code") or "CE_GROK_HOOKS_EMPTY")
+    notice = (
+        "OpenBot Grok provider is not a healthy hook result: "
+        + reason
+        + ". A healthy doctor does not mean hooks ran."
+    )
+    if notice not in prior:
+        hooks["detail"] = (notice + " " + prior).strip()
+    result["status"] = "recovery-required"
+
+
 def _apply_completion_hook_health(
     project: Path,
     target: Path,
@@ -6654,7 +6733,12 @@ def _apply_completion_hook_health(
         hooks["instructionOnly"] = rows
         detail = _instruction_only_detail(rows)
         if "openbot" in targets:
-            detail += "; explicit retrieve receipt; no hook enforcement"
+            detail += (
+                "; explicit retrieve receipt; no hook enforcement"
+                "; a healthy doctor does not mean hooks ran"
+                "; a grok inspect or OpenBot prompt capture that cannot be made"
+                " is blocking: unverifiable, not a pass"
+            )
         hooks["detail"] = detail
         hooks["learningSession"] = {
             "status": "advisory",
@@ -6862,6 +6946,8 @@ def attach_component_status(
     # later checks (and later checks cannot hide hosts) (#2026.10.31.4).
     _promote_hosts_into_components(result, components)
     _apply_completion_hook_health(project, target, components, host_controller=host_controller)
+    _stamp_openbot_instruction_cap(project, components)
+    _apply_openbot_grok_hook_denial(result, components)
     _finalize_doctor_component_rows(result, project, components)
 
 
@@ -6871,7 +6957,7 @@ def _record_grok_doctor_probe(
     host_controller: object,
     completion_targets: tuple[str, ...],
 ) -> None:
-    """Record the Grok probe. A failed or unbound probe does not make OpenBot a Grok hook host."""
+    """Record the Grok probe. OpenBot stays healthy only when inspect did not fail and hooks are not empty."""
     classifier = getattr(host_controller, "classify_instruction_host", None)
     instruction_host = (
         classifier(project, targets=completion_targets) if callable(classifier) else None
@@ -6882,11 +6968,21 @@ def _record_grok_doctor_probe(
     completion_openbot = "openbot" in completion_targets and "grok" not in completion_targets
     classified_openbot = instruction_host == "openbot" and "grok" not in completion_targets
     failed_or_unbound = isinstance(grok_probe, dict) and grok_probe.get("status") == "failed"
+    denies = _grok_probe_denies_openbot_health(grok_probe)
+    if (completion_openbot or classified_openbot) and denies and isinstance(grok_probe, dict):
+        hosts["openbotHookHealth"] = {  # type: ignore[index]
+            "status": "failed",
+            "code": str(grok_probe.get("code") or "CE_GROK_HOOKS_EMPTY"),
+            "detail": str(
+                grok_probe.get("detail") or "grok inspect failed or returned hooks []"
+            ),
+        }
+    # This OpenBot branch kept the rollup healthy. It must not when inspect failed or hooks are [].
     if (
         isinstance(grok_probe, dict)
         and grok_probe.get("status") in {"sync-advisory", "failed"}
-        and not completion_openbot
-        and not (classified_openbot and failed_or_unbound)
+        and not (completion_openbot and not denies)
+        and not (classified_openbot and failed_or_unbound and not denies)
         and hosts.get("status") == "healthy"  # type: ignore[attr-defined]
     ):
         hosts["hostEnvironment"] = {  # type: ignore[index]
@@ -10281,6 +10377,20 @@ def _mempalace_index_finding(target: Path, project: Path) -> dict[str, object] |
     return reader(project) if callable(reader) else None
 
 
+def format_openbot_instruction_cap_warnings(document: dict[str, object]) -> list[str]:
+    """Warn when OpenBot will cut an instruction file longer than 32000 characters."""
+    components = document.get("components")
+    if not isinstance(components, dict):
+        return []
+    hooks = components.get("hooks")
+    if not isinstance(hooks, dict):
+        return []
+    warning = hooks.get("instructionCapWarning")
+    if not isinstance(warning, str) or not warning.strip():
+        return []
+    return [f"[warning] hooks/openbot — {warning.strip()}"]
+
+
 def format_blocking_fidelity_warnings(document: dict[str, object]) -> list[str]:
     """Owner-visible warnings when a host may not honor exit-2 hard blocks (#5579)."""
     lines: list[str] = []
@@ -11019,6 +11129,7 @@ def format_health_report(document: dict[str, object], *, kind: str | None = None
             lines.append(f"issues: {advisory_count} info")
             lines.append("")
             lines.extend(advisories)
+        lines.extend(format_openbot_instruction_cap_warnings(document))
         lines.extend(format_blocking_fidelity_warnings(document))
         note = document.get("reflectionControllerDrift")
         if isinstance(note, str) and note.strip():
@@ -11050,6 +11161,7 @@ def format_health_report(document: dict[str, object], *, kind: str | None = None
             lines.append("  Agent prompt (copy the backtick block):")
             lines.append(f"  `{prompt.strip()}`")
     lines.extend(advisories)
+    lines.extend(format_openbot_instruction_cap_warnings(document))
     lines.extend(format_blocking_fidelity_warnings(document))
     note = document.get("reflectionControllerDrift")
     if isinstance(note, str) and note.strip():

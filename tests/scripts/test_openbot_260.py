@@ -152,6 +152,8 @@ class OpenBotIssue260Tests(unittest.TestCase):
             self.assertIn("GAP-OPENBOT-HOOKS", str(components["hooks"]["detail"]))
             self.assertIn("explicit retrieve receipt", str(components["hooks"]["detail"]))
             self.assertIn("no hook enforcement", str(components["hooks"]["detail"]))
+            self.assertIn("a healthy doctor does not mean hooks ran", str(components["hooks"]["detail"]))
+            self.assertIn("blocking: unverifiable", str(components["hooks"]["detail"]))
 
     def test_d4_doctor_fails_closed_on_error_severity_components(self):
         doc = {
@@ -353,17 +355,41 @@ class OpenBotIssue260Tests(unittest.TestCase):
             for probe in (unbound, failed):
                 recorded = record(project, probe, ())
                 self.assertEqual(probe["code"], recorded["hosts"]["grok"]["code"])
-                self.assertNotIn("hostEnvironment", recorded["hosts"])
+                self.assertEqual("failed", recorded["hosts"]["openbotHookHealth"]["status"])
+                self.assertEqual("grok-hooks-probe", recorded["hosts"]["hostEnvironment"]["detail"])
                 self.assertNotIn("/hooks-trust", json.dumps(recorded))
 
             both = record(project, failed, ("openbot", "grok"))
             self.assertEqual("grok-hooks-probe", both["hosts"]["hostEnvironment"]["detail"])
+            self.assertNotIn("openbotHookHealth", both["hosts"])
 
             trusted_false = record(project, untrusted, ())
             self.assertIn("/hooks-trust", trusted_false["hosts"]["hostEnvironment"]["fixNext"])
+            self.assertNotIn("openbotHookHealth", trusted_false["hosts"])
 
             openbot_only = record(project, failed, ("openbot",))
-            self.assertNotIn("hostEnvironment", openbot_only["hosts"])
+            self.assertEqual("failed", openbot_only["hosts"]["openbotHookHealth"]["status"])
+            self.assertIn("hostEnvironment", openbot_only["hosts"])
+
+            loaded = {
+                "status": "failed",
+                "code": "CE_GROK_PROJECT_UNBOUND",
+                "hooksLoaded": True,
+                "detail": "A ChaosEngine PreToolUse hook is loaded.",
+            }
+            loaded_openbot = record(project, loaded, ("openbot",))
+            self.assertNotIn("hostEnvironment", loaded_openbot["hosts"])
+            self.assertNotIn("openbotHookHealth", loaded_openbot["hosts"])
+
+            empty_hooks = {
+                "status": "sync-advisory",
+                "hooks": [],
+                "detail": "Grok project is trusted. Loaded hooks are missing.",
+            }
+            empty_openbot = record(project, empty_hooks, ("openbot",))
+            self.assertEqual("CE_GROK_HOOKS_EMPTY", empty_openbot["hosts"]["openbotHookHealth"]["code"])
+            self.assertIn("hostEnvironment", empty_openbot["hosts"])
+            self.assertNotIn("/hooks-trust", json.dumps(empty_openbot))
 
             bare = type("BareController", (), {})()
             bare.grok_runtime_status = lambda _project: failed
@@ -410,6 +436,96 @@ class OpenBotIssue260Tests(unittest.TestCase):
             report = self.install.format_health_report(doc)
             self.assertIn("1/2 healthy", report)
             self.assertIn("[warning] mempalace — empty", report)
+
+    def test_openbot_empty_hooks_fail_the_hook_row(self):
+        components = {
+            "hooks": {
+                "status": "sync-advisory",
+                "taskImpact": "advisory",
+                "detail": "instruction-only",
+            }
+        }
+        result = {
+            "status": "healthy",
+            "hosts": {
+                "status": "healthy",
+                "openbotHookHealth": {
+                    "status": "failed",
+                    "code": "CE_GROK_HOOKS_EMPTY",
+                    "detail": "hooks []",
+                },
+            },
+            "components": components,
+        }
+        self.install._apply_openbot_grok_hook_denial(result, components)
+        self.assertEqual("degraded", components["hooks"]["status"])
+        self.assertEqual("required", components["hooks"]["taskImpact"])
+        self.assertEqual("CE_GROK_HOOKS_EMPTY", components["hooks"]["code"])
+        self.assertIn("not a healthy hook result", str(components["hooks"]["detail"]))
+        self.install.reconcile_doctor_overall_status(result)
+        self.assertEqual("recovery-required", result["status"])
+
+    def test_openbot_doctor_warns_above_instruction_cap(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            target = project / ".chaos-engine"
+            (target / "hooks").mkdir(parents=True)
+            for name in ("guard.py", "kernel.py", "launch.js", "launch.py", "lifecycle.py", "reflection.py"):
+                (target / "hooks" / name).write_text("# hook\n", encoding="utf-8")
+            (project / "AGENTS.md").write_text("x" * 32001, encoding="utf-8")
+            self.install.record_completion_targets(project, ("openbot",))
+            components = {"hooks": {"status": "healthy", "taskImpact": "required"}}
+            self.install._apply_completion_hook_health(
+                project, target, components, host_controller=self.hosts
+            )
+            self.install._stamp_openbot_instruction_cap(project, components)
+            warning = str(components["hooks"]["instructionCapWarning"])
+            self.assertIn("32000", warning)
+            self.assertIn("32001", warning)
+            report = self.install.format_health_report(
+                {"status": "healthy", "commit": "c" * 40, "components": components}
+            )
+            self.assertIn("[warning] hooks/openbot —", report)
+            self.assertIn("32000", report)
+
+            (project / "AGENTS.md").unlink()
+            (project / "CLAUDE.md").write_text("y" * 32000, encoding="utf-8")
+            capped = {"hooks": {"status": "healthy", "taskImpact": "required"}}
+            self.install._apply_completion_hook_health(
+                project, target, capped, host_controller=self.hosts
+            )
+            self.install._stamp_openbot_instruction_cap(project, capped)
+            self.assertNotIn("instructionCapWarning", capped["hooks"])
+
+    def test_grok_router_skill_pointer_uses_discovered_path(self):
+        relative = self.hosts.GROK_ROUTER_SKILL
+        self.assertEqual(".grok/skills/chaos-engine/SKILL.md", relative)
+        paths = self.hosts.managed_paths()
+        self.assertIn(relative, paths)
+        self.assertIn(".claude/skills/chaos-engine/SKILL.md", paths)
+        self.assertIn(".agents/skills/chaos-engine/SKILL.md", paths)
+        before = {item: None for item in paths}
+        rendered = self.hosts.desired_content(before, maven_runtime=None)
+        body = rendered[relative].decode("utf-8")
+        self.assertIn("skills/chaos-engine/SKILL.md", body)
+        self.assertNotIn("measure thrice", body.casefold())
+        self.assertLess(len(body), 2000)
+        self.assertIn(".claude/skills/chaos-engine/SKILL.md", rendered)
+        self.assertNotIn("openbot/hooks.json", rendered)
+
+        def result(payload):
+            return subprocess.CompletedProcess([], 0, json.dumps(payload), "")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            state = self.hosts.grok_runtime_status(
+                project,
+                executable="grok",
+                runner=lambda *_a, **_k: result({"projectTrusted": True, "projectRoot": str(project), "hooks": []}),
+            )
+            self.assertEqual([], state["hooks"])
+            self.assertIs(False, state["hooksLoaded"])
+            self.assertNotIn("/hooks-trust", str(state["detail"]))
 
 
 if __name__ == "__main__":
