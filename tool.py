@@ -635,7 +635,7 @@ def upgrade(installed_root: Path, arguments: list[str], *, runner=subprocess.run
 
 def tool_help_text() -> str:
     """One usage text for every host. There is no per-host help."""
-    names = ", ".join(sorted(TOOLS | {"retrieve", "entry", "env-memory", "maintain", "upgrade", "job", "checkpoint", "resume", "delete-check", "backups-watch", "pre-done", "force-push-approve", "output-search", "output-resume", "output-stats", "output-purge", "ethics-check", "supply-chain", "ce-version"}))
+    names = ", ".join(sorted(TOOLS | {"retrieve", "entry", "env-memory", "maintain", "upgrade", "job", "checkpoint", "resume", "delete-check", "backups-watch", "pre-done", "plan", "force-push-approve", "output-search", "output-resume", "output-stats", "output-purge", "ethics-check", "supply-chain", "ce-version"}))
     return (
         "usage: tool.py <tool|retrieve> [args...]\n"
         "       tool.py --help\n"
@@ -682,6 +682,17 @@ def tool_help_text() -> str:
         "  tool.py checkpoint TASK --verify  (exit 7 = pushed HEAD has no checkpoint)\n"
         "  tool.py checkpoint TASK --budget [35]  (exit 3 = wrap up now)\n"
         "  tool.py resume [TASK]  (brief from the handoff receipt: SHA, open step, verification; exit 6 = no ledger)\n"
+        "\n"
+        "plan (visual steps, no network; references/visual-plans.md):\n"
+        "  tool.py plan new TASK (--from plan.json | --from-md checklist.md) [--goal TEXT]\n"
+        "  tool.py plan show TASK [--format term|md|mermaid|html|json] [--out PATH] [--pr-section]\n"
+        "  tool.py plan step TASK STEP --status STATUS [--evidence KIND:REF]... [--note TEXT]\n"
+        "  tool.py plan edit TASK (--add TITLE [--after ID] | --remove ID | --move ID --after ID | --retitle ID TEXT)\n"
+        "  tool.py plan approve TASK [--comment STEP:TEXT]... [--code CODE] [--ref TEXT] | --request-code\n"
+        "  tool.py plan stop TASK\n"
+        "  tool.py plan gate TASK  (exit 0 approved, 4 awaiting, 5 stopped, 6 no plan)\n"
+        "  tool.py plan watch TASK\n"
+        "  tool.py plan walkthrough TASK [--out PATH]\n"
         "\n"
         "pre-done (report parity, and the mechanical done gate):\n"
         "  tool.py pre-done REPORT.md [--json]  (exit 1 = findings, 2 = usage)\n"
@@ -1107,6 +1118,8 @@ SCRIPT_TOOLS = {
     "delete-check": "delete_guard.py",
     "backups-watch": "backups_watch.py",
     "pre-done": "pre_done_review.py",
+    "plan": "plan_cli.py",
+    "state": "state_bundle.py",
     "force-push-approve": "force_push_approve.py",
     "output-search": "tool_output_store.py",
     "output-resume": "tool_output_store.py",

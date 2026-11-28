@@ -1,0 +1,113 @@
+{
+  "approval": {
+    "at": "2026-11-28T00:00:00Z",
+    "by": "owner",
+    "comments": [],
+    "ref": "chat",
+    "required": false,
+    "revision": 1,
+    "state": "approved"
+  },
+  "explanation": "Ship the plan",
+  "goal": "Show every status",
+  "revision": 1,
+  "schema": "ce-plan/v1",
+  "steps": [
+    {
+      "activeText": "",
+      "dependsOn": [],
+      "evidence": [
+        {
+          "exit": 0,
+          "kind": "test",
+          "ref": "evidence/s1.txt",
+          "sha256": "6a90f6ee79ec6b67450f15eb5c8895260dc26c37fc08a47fa9631456ee6bbaed"
+        },
+        {
+          "kind": "screenshot",
+          "ref": "evidence/dot.png",
+          "sha256": "7f1d2fa618732001b0ad5611ae47cd751bc1b1b99360e5ec624273282a5e799a"
+        },
+        {
+          "kind": "pr",
+          "ref": "https://example.com/pull/1"
+        }
+      ],
+      "files": [],
+      "id": "s1",
+      "intent": "",
+      "note": "",
+      "status": "done",
+      "title": "Schema",
+      "tools": [],
+      "verify": []
+    },
+    {
+      "activeText": "Rendering fixtures",
+      "dependsOn": [],
+      "evidence": [],
+      "files": [],
+      "id": "s2",
+      "intent": "",
+      "note": "",
+      "status": "in_progress",
+      "title": "Render",
+      "tools": [],
+      "verify": []
+    },
+    {
+      "activeText": "",
+      "dependsOn": [],
+      "evidence": [],
+      "files": [],
+      "id": "s3",
+      "intent": "",
+      "note": "",
+      "status": "pending",
+      "title": "Gate",
+      "tools": [],
+      "verify": []
+    },
+    {
+      "activeText": "",
+      "dependsOn": [],
+      "evidence": [],
+      "files": [],
+      "id": "s4",
+      "intent": "",
+      "note": "clock",
+      "status": "failed",
+      "title": "Watch",
+      "tools": [],
+      "verify": []
+    },
+    {
+      "activeText": "",
+      "dependsOn": [],
+      "evidence": [],
+      "files": [],
+      "id": "s5",
+      "intent": "",
+      "note": "no-evidence: fixture",
+      "status": "skipped",
+      "title": "Walkthrough",
+      "tools": [],
+      "verify": []
+    },
+    {
+      "activeText": "",
+      "dependsOn": [],
+      "evidence": [],
+      "files": [],
+      "id": "s6",
+      "intent": "",
+      "note": "host not driven",
+      "status": "blocked",
+      "title": "Bridge",
+      "tools": [],
+      "verify": []
+    }
+  ],
+  "task": "visual-plan",
+  "walkthrough": null
+}

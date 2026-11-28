@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "vars": [
+    {
+      "name": "CHAOS_ENGINE_ENFORCE_PLAN_APPROVAL",
+      "default": "0",
+      "purpose": "When 1, true, yes, or on, plan_approval_block denies a stateful write until the current plan revision is approved with a one-use owner code. Default stays off."
+    }
+  ]
+}
