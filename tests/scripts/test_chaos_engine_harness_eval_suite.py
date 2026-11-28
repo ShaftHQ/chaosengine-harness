@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import io
 import json
+import sys
+import tempfile
 import unittest
 import unittest.mock
+from contextlib import redirect_stdout
 from pathlib import Path
 
 import sys as _sys; from pathlib import Path as _Path; _sys.path.insert(0, str(_Path(__file__).resolve().parents[2]))  # noqa: E402,E702 - self-locating under python3 -I (#7197)
@@ -17,7 +21,9 @@ from scripts.ci.chaos_engine_harness_eval_suite import (
     pass_pow_k,
     summarize_usage,
     validate_manifest,
+    _run_command,
     _run_pytest,
+    main,
 )
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -133,6 +139,65 @@ class HarnessEvalSuiteTests(unittest.TestCase):
         self.assertEqual(0.0, row["pass_pow_k"])
         self.assertEqual(0.0, row["flakiness"])
         self.assertFalse(row["passed"])
+
+    def test_timeout_is_a_failed_attempt_and_json_still_prints(self):
+        document = {
+            "schema_version": 1,
+            "package": "chaos-engine",
+            "thresholds": {
+                "pass_at_k": 1.0,  # nosec B105 - suite threshold, not a credential.
+                "default_k": 1,
+                "min_tasks": 1,
+                "min_capability": 0,
+                "min_regression": 1,
+            },
+            "tasks": [
+                {
+                    "id": "reg-timeout",
+                    "set": "regression",
+                    "area": "doctor",
+                    "source_issue": 1,
+                    "k": 1,
+                    "runner": "unittest",
+                    "module": "tests.scripts.does_not_run",
+                }
+            ],
+        }
+
+        def hang(module, *, root, timeout):
+            return _run_command(
+                [sys.executable, "-c", "import time; time.sleep(30)"],
+                root=root,
+                timeout=1,
+            )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            manifest = Path(tmp) / "manifest.json"
+            manifest.write_text(json.dumps(document), encoding="utf-8")
+            stdout = io.StringIO()
+            with unittest.mock.patch(
+                "scripts.ci.chaos_engine_harness_eval_suite._run_unittest",
+                side_effect=hang,
+            ):
+                with redirect_stdout(stdout):
+                    code = main(["--json", "--manifest", str(manifest), "--timeout", "8"])
+        self.assertEqual(1, code)
+        text = stdout.getvalue()
+        self.assertNotIn("Traceback", text)
+        report = json.loads(text)
+        self.assertIn("pass_pow_k", report)
+        self.assertIn("flakiness", report)
+        self.assertEqual(0.0, report["pass_at_k"])
+        self.assertEqual(0.0, report["pass_pow_k"])
+        self.assertEqual(0.0, report["flakiness"])
+        self.assertFalse(report["passed"])
+        self.assertIn("unknown", report["cost"])
+        self.assertNotIn("cost: 0", report["cost"])
+        attempt = report["results"][0]["attempts"][0]
+        self.assertFalse(attempt["passed"])
+        self.assertEqual(1, len(report["results"][0]["attempts"]))
+        self.assertIsNone(attempt["usage"]["cost_usd"])
+        self.assertGreaterEqual(attempt["usage"]["wall_s"], 0.5)
 
     def test_documented_runner_and_gate(self):
         text = DOC.read_text(encoding="utf-8")
