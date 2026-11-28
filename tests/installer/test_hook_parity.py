@@ -77,8 +77,12 @@ def test_fresh_install_and_upgrade_write_guard_surfaces(tmp_path: Path):
         assert "hooks/launch.py" in command
         assert event in command
     assert cursor["hooks"]["preToolUse"][0]["failClosed"] is True
+    assert cursor["hooks"]["beforeShellExecution"][0]["failClosed"] is True
+    assert cursor["hooks"]["beforeReadFile"][0]["failClosed"] is True
     assert "failClosed" not in cursor["hooks"]["sessionStart"][0]
-    assert cursor["hooks"]["afterFileEdit"] == [foreign]
+    assert "failClosed" not in cursor["hooks"]["beforeTabFileRead"][0]
+    assert cursor["hooks"]["afterFileEdit"][0] == foreign
+    assert any("hooks/launch.py" in entry["command"] for entry in cursor["hooks"]["afterFileEdit"])
     plugin = (project / ".opencode/plugins/chaos-engine-receipt.js").read_text(encoding="utf-8")
     assert "ChaosEngine guard bridge" in plugin
     assert "hooks/launch.py" in plugin
@@ -91,7 +95,7 @@ def test_fresh_install_and_upgrade_write_guard_surfaces(tmp_path: Path):
     second = install.wire_receipt_shims(project, which=lambda _name: None)
     assert second == first
     upgraded = json.loads(hooks.read_text(encoding="utf-8"))
-    assert upgraded["hooks"]["afterFileEdit"] == [foreign]
+    assert upgraded["hooks"]["afterFileEdit"][0] == foreign
     assert upgraded["hooks"]["preToolUse"][0]["command"] == cursor["hooks"]["preToolUse"][0]["command"]
 
     previous = {

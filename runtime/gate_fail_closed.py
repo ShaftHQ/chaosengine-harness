@@ -50,6 +50,8 @@ _HOOK_FAIL_CLOSED = frozenset({
     "BeforeTool",
     "tool.execute.before",
     "execute.before",
+    "beforeShellExecution",
+    "beforeReadFile",
 })
 
 

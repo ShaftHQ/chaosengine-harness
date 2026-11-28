@@ -70,13 +70,42 @@ class HookParityTests(unittest.TestCase):
         self.assertEqual("finish", stop["followup_message"])
         self.assertIn("additional_context", stop)
 
-    def test_cursor_document_fail_closed_only_on_pre_tool_use(self):
+    def test_cursor_document_fail_closed_on_three_events(self):
         document = self.surfaces.cursor_hooks_document()
         self.assertEqual(1, document["version"])
+        closed = {"preToolUse", "beforeShellExecution", "beforeReadFile"}
+        self.assertEqual(
+            {
+                "sessionStart",
+                "beforeSubmitPrompt",
+                "preToolUse",
+                "postToolUse",
+                "postToolUseFailure",
+                "subagentStart",
+                "subagentStop",
+                "stop",
+                "preCompact",
+                "sessionEnd",
+                "beforeShellExecution",
+                "afterShellExecution",
+                "beforeMCPExecution",
+                "afterMCPExecution",
+                "beforeReadFile",
+                "afterFileEdit",
+                "beforeTabFileRead",
+                "afterTabFileEdit",
+                "afterAgentResponse",
+                "afterAgentThought",
+                "workspaceOpen",
+            },
+            set(document["hooks"]),
+        )
         for event, entries in document["hooks"].items():
             self.assertIn("hooks/launch.py", entries[0]["command"])
+            self.assertEqual(30, entries[0]["timeout"])
+            self.assertNotEqual("http", entries[0].get("type"))
             self.assertLessEqual(len(entries[0]["command"]), self.hosts.HOOK_COMMAND_MAX_CHARS)
-            if event == "preToolUse":
+            if event in closed:
                 self.assertTrue(entries[0]["failClosed"])
             else:
                 self.assertNotIn("failClosed", entries[0])

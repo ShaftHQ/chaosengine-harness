@@ -571,7 +571,7 @@
       "retrieved": "2026-11-27",
       "casing": "camelCase",
       "fail_default": "fail-open",
-      "blocks": "preToolUse deny is permission deny. beforeSubmitPrompt deny is continue false. stop and subagentStop use followup_message. Exit 2 blocks unless failClosed is unset and the exit is something else, in which case the default is fail-open. failClosed is true only for preToolUse in ChaosEngine.",
+      "blocks": "preToolUse deny is permission deny. beforeSubmitPrompt deny is continue false. stop and subagentStop use followup_message. Exit 2 blocks unless failClosed is unset and the exit is something else, in which case the default is fail-open. failClosed is true for preToolUse, beforeShellExecution, and beforeReadFile in ChaosEngine, and on no other Cursor event.",
       "native_events": [
         "sessionStart",
         "sessionEnd",

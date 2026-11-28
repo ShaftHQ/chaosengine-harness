@@ -329,6 +329,10 @@ HOST_CAPABILITIES: Mapping[str, HostCapability] = {
             stop="Stop",
             preCompact="PreCompact",
             sessionEnd="SessionEnd",
+            beforeShellExecution="PreToolUse",
+            beforeMCPExecution="PreToolUse",
+            beforeReadFile="PreToolUse",
+            beforeTabFileRead="PreToolUse",
         ),
         (
             "SessionStart",
@@ -1033,13 +1037,13 @@ def adapt_hook_output(
                 adapted["permissionDecisionReason"] = reason
     _copy_grok_session_start(adapted, event_name, host)
     if host == "cursor":
-        _adapt_cursor(adapted, event_name)
+        _adapt_cursor(adapted, event_name, native_event)
     elif host == "antigravity":
         _adapt_antigravity(adapted, event_name, native_event)
     return adapted
 
 
-def _adapt_cursor(adapted: dict[str, object], event_name: str) -> None:
+def _adapt_cursor(adapted: dict[str, object], event_name: str, native_event: str = "") -> None:
     """Render Cursor fields. No policy: the decision is already made."""
     context = adapted.pop("additionalContext", None)
     decision = adapted.pop("decision", None)
@@ -1060,6 +1064,16 @@ def _adapt_cursor(adapted: dict[str, object], event_name: str) -> None:
             adapted["followup_message"] = str(reason or "Blocked by ChaosEngine.")
     elif decision == "allow" and event_name == "PreToolUse":
         adapted["permission"] = "allow"
+    # Shell and MCP schemas have no updated_input. Tab output is permission only.
+    if native_event in {"beforeShellExecution", "beforeMCPExecution", "beforeReadFile", "beforeTabFileRead"}:
+        adapted.pop("updated_input", None)
+    if native_event == "beforeReadFile":
+        adapted.pop("agent_message", None)
+    if native_event == "beforeTabFileRead":
+        permission = adapted.get("permission")
+        adapted.clear()
+        if permission in {"allow", "deny"}:
+            adapted["permission"] = permission
 
 
 def _adapt_antigravity(

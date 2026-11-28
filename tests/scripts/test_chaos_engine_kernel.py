@@ -1597,5 +1597,322 @@ class CopilotHookEventsTest(TestCase):
         self.assertFalse(capability.process_exit2_honored)
 
 
+_CURSOR_HOOK_EVENTS = {
+    "sessionStart",
+    "beforeSubmitPrompt",
+    "preToolUse",
+    "postToolUse",
+    "postToolUseFailure",
+    "subagentStart",
+    "subagentStop",
+    "stop",
+    "preCompact",
+    "sessionEnd",
+    "beforeShellExecution",
+    "afterShellExecution",
+    "beforeMCPExecution",
+    "afterMCPExecution",
+    "beforeReadFile",
+    "afterFileEdit",
+    "beforeTabFileRead",
+    "afterTabFileEdit",
+    "afterAgentResponse",
+    "afterAgentThought",
+    "workspaceOpen",
+}
+_CURSOR_OBSERVE_EVENTS = (
+    "afterShellExecution",
+    "afterMCPExecution",
+    "afterFileEdit",
+    "afterTabFileEdit",
+    "afterAgentResponse",
+    "afterAgentThought",
+    "workspaceOpen",
+)
+_CURSOR_FAIL_CLOSED = {"preToolUse", "beforeShellExecution", "beforeReadFile"}
+_CURSOR_DENY_COMMAND = "git reset --hard HEAD"
+
+
+def _cursor_denies(body: object) -> bool:
+    if not isinstance(body, dict):
+        return False
+    if body.get("permission") == "deny" or body.get("continue") is False:
+        return True
+    return _payload_denies(body)
+
+
+class CursorHookEventsTest(TestCase):
+    """Issue 279: register the Cursor shell, file, MCP, Tab, and workspace hooks."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.guard = _load_guard()
+        cls.hosts = _load_hosts()
+        cls.kernel = load_kernel()
+        cls.lifecycle = load_lifecycle()
+        specification = importlib.util.spec_from_file_location(
+            "chaos_engine_cursor_surfaces_279", ROOT / "runtime" / "hook_surfaces.py"
+        )
+        if specification is None or specification.loader is None:
+            raise RuntimeError("hook surfaces are unavailable")
+        module = importlib.util.module_from_spec(specification)
+        sys.modules[specification.name] = module
+        specification.loader.exec_module(module)
+        cls.surfaces = module
+
+    def _run(self, payload: dict) -> tuple[int, str]:
+        stdout = io.StringIO()
+        with mock.patch.dict(os.environ, {"CHAOS_ENGINE_HOST": "cursor"}, clear=False):
+            with redirect_stdout(stdout):
+                with mock.patch("sys.stdin", io.StringIO(json.dumps(payload))):
+                    code = self.guard.main()
+        return code, stdout.getvalue()
+
+    def test_cursor_hooks_register_the_live_events_outside_required_set(self):
+        document = self.surfaces.cursor_hooks_document()
+        hooks = document["hooks"]
+        self.assertEqual(1, document["version"])
+        self.assertEqual(_CURSOR_HOOK_EVENTS, set(hooks))
+        for event, entries in hooks.items():
+            entry = entries[0]
+            self.assertEqual(30, entry["timeout"])
+            self.assertIn("hooks/launch.py", entry["command"])
+            self.assertNotEqual("http", entry.get("type"))
+            self.assertNotIn("prompt", entry)
+            if event in _CURSOR_FAIL_CLOSED:
+                self.assertTrue(entry["failClosed"])
+            else:
+                self.assertNotIn("failClosed", entry)
+        for name in _CURSOR_HOOK_EVENTS - {
+            "sessionStart",
+            "beforeSubmitPrompt",
+            "preToolUse",
+            "postToolUse",
+            "postToolUseFailure",
+            "subagentStart",
+            "subagentStop",
+            "stop",
+            "preCompact",
+            "sessionEnd",
+        }:
+            self.assertNotIn(name, self.hosts.REQUIRED_HOOK_EVENTS)
+        aliases = self.kernel.HOST_CAPABILITIES["cursor"].event_aliases
+        self.assertEqual("PreToolUse", aliases["beforeShellExecution"])
+        self.assertEqual("PreToolUse", aliases["beforeMCPExecution"])
+        self.assertEqual("PreToolUse", aliases["beforeReadFile"])
+        self.assertEqual("PreToolUse", aliases["beforeTabFileRead"])
+        for name in _CURSOR_OBSERVE_EVENTS:
+            self.assertNotIn(name, aliases)
+            observed = self.kernel.normalize_event({"hook_event_name": name}, "cursor")
+            self.assertEqual(name, observed.name)
+            self.assertNotIn(name, self.lifecycle.LIFECYCLE_EVENTS)
+        self.assertFalse(self.kernel.HOST_CAPABILITIES["cursor"].process_exit2_honored)
+        guide = (ROOT / "guides" / "tools" / "cursor.md").read_text(encoding="utf-8")
+        for name in _CURSOR_HOOK_EVENTS:
+            self.assertIn(name, guide)
+        self.assertIn("failClosed", guide)
+        self.assertIn("beforeShellExecution", guide)
+        self.assertIn("beforeReadFile", guide)
+        self.assertIn("observe", guide)
+        self.assertIn("updated_input", guide)
+        matrix = (ROOT / "references" / "host-parity-matrix.md").read_text(encoding="utf-8")
+        row = next(line for line in matrix.splitlines() if line.startswith("| Cursor | https://"))
+        cells = [cell.strip() for cell in row.strip().strip("|").split("|")]
+        for name in _CURSOR_OBSERVE_EVENTS:
+            self.assertIn(name, cells[2])
+        self.assertIn("beforeShellExecution", cells[2])
+        self.assertIn("beforeMCPExecution", cells[2])
+        self.assertIn("beforeReadFile", cells[2])
+        self.assertIn("beforeTabFileRead", cells[2])
+        self.assertEqual("none", cells[3])
+        pin = next(
+            item
+            for item in json.loads(
+                (ROOT / "evals" / "host-doc-conformance.json").read_text(encoding="utf-8")
+            )["hook_events"]
+            if item.get("host") == "cursor"
+        )
+        self.assertEqual("https://cursor.com/docs/hooks", pin["url"])
+        self.assertEqual(
+            "042b405d7559f39f130dc8cb32df7193b9a8e0735c35e0b422cc12ab1eb92d8e",
+            pin["content_sha256"],
+        )
+        for key in aliases:
+            self.assertIn(key, pin["native_events"])
+        self.assertNotIn("only for preToolUse", pin["blocks"])
+        self.assertIn("beforeShellExecution", pin["blocks"])
+        self.assertIn("beforeReadFile", pin["blocks"])
+
+    def test_cursor_shell_denies_the_same_cases_as_pre_tool_use(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            blocked_pre, blocked_shell = self._pair(temporary, _CURSOR_DENY_COMMAND, "c279-pre", "c279-sh")
+            allowed_pre, allowed_shell = self._pair(temporary, "echo ok", "c279-p2", "c279-ok")
+        self.assertEqual(blocked_pre[0], blocked_shell[0])
+        self.assertEqual(2, blocked_shell[0])
+        pre_body = json.loads(blocked_pre[1])
+        shell_body = json.loads(blocked_shell[1])
+        self.assertEqual("deny", pre_body["permission"])
+        self.assertEqual("deny", shell_body["permission"])
+        self.assertNotEqual("ask", shell_body["permission"])
+        self.assertTrue(shell_body["user_message"])
+        self.assertEqual(0, allowed_pre[0])
+        self.assertEqual(0, allowed_shell[0])
+        self.assertFalse(_cursor_denies(json.loads(allowed_pre[1] or "{}")))
+        self.assertFalse(_cursor_denies(json.loads(allowed_shell[1] or "{}")))
+
+    def _pair(self, cwd: str, command: str, pre_id: str, shell_id: str):
+        pre = self._run(
+            {
+                "hook_event_name": "preToolUse",
+                "conversation_id": pre_id,
+                "cwd": cwd,
+                "tool_name": "Shell",
+                "tool_input": {"command": command},
+            }
+        )
+        shell = self._run(
+            {
+                "hook_event_name": "beforeShellExecution",
+                "conversation_id": shell_id,
+                "cwd": cwd,
+                "command": command,
+            }
+        )
+        return pre, shell
+
+    def test_cursor_read_hooks_deny_a_secret_path_and_tab_is_permission_only(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            secret = str(Path(temporary) / "secrets.properties")
+            Path(secret).write_text("k=v\n", encoding="utf-8")
+            plain = str(Path(temporary) / "notes.txt")
+            Path(plain).write_text("ok\n", encoding="utf-8")
+            read_code, read_stdout = self._run(
+                {
+                    "hook_event_name": "beforeReadFile",
+                    "conversation_id": "c279-rd",
+                    "cwd": temporary,
+                    "file_path": secret,
+                }
+            )
+            tab_code, tab_stdout = self._run(
+                {
+                    "hook_event_name": "beforeTabFileRead",
+                    "conversation_id": "c279-tab",
+                    "cwd": temporary,
+                    "file_path": secret,
+                }
+            )
+            plain_code, plain_stdout = self._run(
+                {
+                    "hook_event_name": "beforeReadFile",
+                    "conversation_id": "c279-nt",
+                    "cwd": temporary,
+                    "file_path": plain,
+                }
+            )
+            windows_code, windows_stdout = self._run(
+                {
+                    "hook_event_name": "beforeReadFile",
+                    "conversation_id": "c279-win",
+                    "cwd": temporary,
+                    "file_path": secret.replace("/", "\\"),
+                }
+            )
+        self.assertEqual(2, read_code)
+        self.assertEqual(2, tab_code)
+        read_body = json.loads(read_stdout)
+        tab_body = json.loads(tab_stdout)
+        self.assertEqual("deny", read_body["permission"])
+        self.assertNotEqual("ask", read_body["permission"])
+        self.assertTrue(read_body["user_message"])
+        self.assertNotIn("agent_message", read_body)
+        self.assertEqual({"permission": "deny"}, tab_body)
+        self.assertEqual(2, windows_code)
+        self.assertEqual("deny", json.loads(windows_stdout)["permission"])
+        self.assertEqual(0, plain_code)
+        self.assertFalse(_cursor_denies(json.loads(plain_stdout or "{}")))
+
+    def test_cursor_mcp_can_deny_without_updated_input(self):
+        rendered = self.kernel.adapt_hook_output(
+            {
+                "decision": "block",
+                "reason": "no",
+                "updated_input": {"command": "rewritten"},
+            },
+            "PreToolUse",
+            "cursor",
+            native_event="beforeMCPExecution",
+        )
+        self.assertEqual("deny", rendered["permission"])
+        self.assertNotIn("updated_input", rendered)
+        self.assertNotEqual("ask", rendered["permission"])
+        with tempfile.TemporaryDirectory() as temporary:
+            deny_code, deny_stdout = self._run(
+                {
+                    "hook_event_name": "beforeMCPExecution",
+                    "conversation_id": "c279-mcp",
+                    "cwd": temporary,
+                    "tool_name": "bash",
+                    "tool_input": json.dumps({"command": _CURSOR_DENY_COMMAND}),
+                    "command": "node server.js",
+                }
+            )
+            allow_code, allow_stdout = self._run(
+                {
+                    "hook_event_name": "beforeMCPExecution",
+                    "conversation_id": "c279-ma",
+                    "cwd": temporary,
+                    "tool_name": "search",
+                    "tool_input": json.dumps({"query": "ping"}),
+                    "command": _CURSOR_DENY_COMMAND,
+                }
+            )
+        self.assertEqual(2, deny_code)
+        deny_body = json.loads(deny_stdout)
+        self.assertEqual("deny", deny_body["permission"])
+        self.assertNotIn("updated_input", deny_body)
+        self.assertNotEqual("ask", deny_body["permission"])
+        self.assertEqual(0, allow_code)
+        self.assertNotIn("updated_input", json.loads(allow_stdout or "{}"))
+        self.assertFalse(_cursor_denies(json.loads(allow_stdout or "{}")))
+
+    def test_cursor_observe_events_do_not_deny(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            for event in _CURSOR_OBSERVE_EVENTS:
+                code, stdout = self._run(
+                    {
+                        "hook_event_name": event,
+                        "conversation_id": "c279-ob",
+                        "cwd": temporary,
+                        "cancelled": True,
+                        "command": _CURSOR_DENY_COMMAND,
+                        "file_path": str(Path(temporary) / "secrets.properties"),
+                        "tool_name": "bash",
+                        "tool_input": {"command": _CURSOR_DENY_COMMAND},
+                    }
+                )
+                with self.subTest(event=event):
+                    self.assertEqual(0, code)
+                    self.assertEqual("{}\n", stdout)
+                    self.assertFalse(_cursor_denies(json.loads(stdout)))
+
+    def test_cursor_post_tool_use_does_not_block(self):
+        rendered = self.kernel.adapt_hook_output(
+            {"decision": "block", "reason": "no"},
+            "PostToolUse",
+            "cursor",
+            native_event="postToolUse",
+        )
+        self.assertNotIn("permission", rendered)
+        self.assertNotIn("decision", rendered)
+        self.assertNotEqual("deny", rendered.get("permission"))
+
+    def test_cursor_agent_login_is_blocking_unverified(self):
+        """A missing cursor-agent login is blocking: unverifiable. No live CLI run."""
+        capability = self.kernel.HOST_CAPABILITIES["cursor"]
+        self.assertEqual("cursor-agent", capability.cli)
+        self.assertFalse(capability.process_exit2_honored)
+
+
 if __name__ == "__main__":
     main()
