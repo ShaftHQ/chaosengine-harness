@@ -3317,6 +3317,8 @@ MARKER_POLICY_FILES = (
 # The research-receipt `retrieve:` field substitutes for the read gate on these hosts.
 BOT_ENTRY = "chaos-engine/references/bot-entry.md"
 OPENBOT_SKILL = f"{INSTALLED_TREE}/skills/chaos-engine/SKILL.md"
+# Grok discovers .grok/skills/, not project .agents/skills or .claude/skills.
+GROK_ROUTER_SKILL = ".grok/skills/chaos-engine/SKILL.md"
 INSTRUCTION_ONLY_HOSTS = {
     # #6377: bots that auto-load nothing from the checkout (Grok Bot, GPTs, other
     # independent agents) start from the bot entry instead of AGENTS.md.
@@ -3881,6 +3883,7 @@ def managed_paths() -> tuple[str, ...]:
         ".claude/skills/chaos-engine/SKILL.md",
         ".gemini/skills/chaos-engine/SKILL.md",
         ".github/skills/chaos-engine/SKILL.md",
+        GROK_ROUTER_SKILL,
         ".agents/skills/README.md",
         ".agents/plugins/marketplace.json",
         ".claude-plugin/marketplace.json",
@@ -3982,6 +3985,7 @@ _SKILL_POINTER_PATHS = frozenset({
     ".claude/skills/chaos-engine/SKILL.md",
     ".gemini/skills/chaos-engine/SKILL.md",
     ".github/skills/chaos-engine/SKILL.md",
+    GROK_ROUTER_SKILL,
     "plugins/chaos-engine/skills/chaos-engine/SKILL.md",
 })
 _LEGACY_SKILL_POINTER = re.compile(
@@ -6851,6 +6855,8 @@ def desired_content(
         after[".agents/skills/chaos-engine/SKILL.md"] = skill_adapter_bytes(
             tree, profile=profile
         )
+    # Grok's skill list does not include project .agents/skills or .claude/skills.
+    after[GROK_ROUTER_SKILL] = skill_adapter_bytes(tree, profile=None)
     stub_readme = (
         "# Installed agent harness\n\n"
         "- `chaos-engine/`: canonical skill adapter.\n"
@@ -9278,7 +9284,7 @@ def grok_runtime_status(
     }
     missing = sorted(required - loaded)
     if missing:
-        return {
+        advisory: dict[str, object] = {
             "status": "sync-advisory",
             "detail": (
                 "Grok project is trusted. Loaded hooks are missing: "
@@ -9286,6 +9292,10 @@ def grok_runtime_status(
                 + ". Reinstall the host adapter and reload hooks."
             ),
         }
+        if hooks == []:
+            advisory["hooks"] = []
+            advisory["hooksLoaded"] = False
+        return advisory
     result: dict[str, object] = {"status": "healthy"}
     lean = _load_grok_lean_config()
     if lean is not None:
