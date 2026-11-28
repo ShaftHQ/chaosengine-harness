@@ -1,0 +1,12 @@
+{
+  "schema": "ce-plan-host-ui-probe/v1",
+  "captured": false,
+  "hosts": [
+    {"host": "claude-code", "status": "skipped", "reason": "host UI was not driven"},
+    {"host": "codex", "status": "skipped", "reason": "host UI was not driven"},
+    {"host": "acp", "status": "skipped", "reason": "host UI was not driven"},
+    {"host": "antigravity", "status": "skipped", "reason": "host UI was not driven"},
+    {"host": "openbot", "status": "skipped", "reason": "host UI was not driven"},
+    {"host": "grok-bot", "status": "skipped", "reason": "host UI was not driven"}
+  ]
+}

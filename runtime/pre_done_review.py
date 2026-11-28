@@ -651,6 +651,40 @@ def _memory_cause_problems(note: object) -> list[str]:
     return []
 
 
+def _plan_evidence_findings(obs: dict) -> list[str]:
+    if not isinstance(obs, dict) or not any(key in obs for key in ("plan", "task", "plan_path")):
+        return []
+    directory = str(Path(__file__).resolve().parent)
+    if directory not in sys.path:
+        sys.path.insert(0, directory)
+    import plan_gate
+
+    return plan_gate.evidence_findings(obs)
+
+
+def _docs_drift_findings(obs: dict) -> list[str]:
+    """Call scripts/ci/docs_drift.py when that file exists. Absent means no findings."""
+    module_path = Path(__file__).resolve().parents[1] / "scripts" / "ci" / "docs_drift.py"
+    if not module_path.is_file():
+        return []
+    root_value = obs.get("project_root") or obs.get("root") or module_path.parents[2]
+    changed = obs.get("changed")
+    if changed is None:
+        changed = obs.get("changed_files") or []
+    spec = importlib.util.spec_from_file_location("chaos_engine_docs_drift", module_path)
+    if spec is None or spec.loader is None:
+        return []
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    gate = getattr(module, "gate_findings", None)
+    if not callable(gate):
+        return []
+    found = gate(Path(str(root_value)), changed)
+    if not found:
+        return []
+    return [str(item) for item in found]
+
+
 def mechanical_problems(obs: dict) -> list[str]:
     """Named misses. Empty means the mechanical rules that apply were not skipped.
 
@@ -716,6 +750,8 @@ def mechanical_problems(obs: dict) -> list[str]:
         found.extend(_memory_cause_problems(obs.get("memory_note")))
     if "rules" in obs:
         found.extend(apply_wired_rules(obs.get("rules")))
+    found.extend(_plan_evidence_findings(obs))
+    found.extend(_docs_drift_findings(obs))
     return found
 
 

@@ -1,0 +1,24 @@
+flowchart TD
+  s1["Schema"]
+  s2["Render"]
+  s3["Gate"]
+  s4["Watch"]
+  s5["Walkthrough"]
+  s6["Bridge"]
+  s1 --> s2
+  s2 --> s3
+  s3 --> s4
+  s4 --> s5
+  s5 --> s6
+  classDef pending fill:#eee,stroke:#333
+  classDef in_progress fill:#adf,stroke:#333
+  classDef done fill:#ada,stroke:#333
+  classDef failed fill:#faa,stroke:#333
+  classDef skipped fill:#ddd,stroke:#333
+  classDef blocked fill:#fda,stroke:#333
+  class s1 done
+  class s2 in_progress
+  class s3 pending
+  class s4 failed
+  class s5 skipped
+  class s6 blocked
