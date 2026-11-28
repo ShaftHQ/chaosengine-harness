@@ -1311,6 +1311,39 @@ class GeminiHookEventsTest(TestCase):
         self.assertEqual(0, none_code)
         self.assertNotIn("decision", none_body)
         self.assertEqual("NONE", none_body["hookSpecificOutput"]["toolConfig"]["mode"])
+        host_payload = {
+            "hook_event_name": "BeforeToolSelection",
+            "session_id": "gemini-277-host",
+            "cwd": str(ROOT),
+            "llm_request": {
+                "model": "gemini-test",
+                "messages": [{"role": "user", "content": _GEMINI_DENY_COMMAND}],
+                "config": {"temperature": 0},
+            },
+        }
+        self.assertNotIn("toolConfig", host_payload["llm_request"])
+        host_code, host_stdout = self._run(host_payload)
+        host_body = json.loads(host_stdout)
+        self.assertEqual(0, host_code)
+        self.assertNotIn("decision", host_body)
+        self.assertNotIn("continue", host_body)
+        self.assertNotIn("systemMessage", host_body)
+        host_config = host_body["hookSpecificOutput"]["toolConfig"]
+        if "allowedFunctionNames" in host_config:
+            self.assertNotIn("run_shell_command", host_config["allowedFunctionNames"])
+        else:
+            self.assertEqual("NONE", host_config.get("mode"))
+        hello_code, hello_stdout = self._run(
+            self._request("BeforeToolSelection", "hello")
+        )
+        self.assertEqual(0, hello_code)
+        if hello_stdout.strip():
+            hello_config = (
+                json.loads(hello_stdout)
+                .get("hookSpecificOutput", {})
+                .get("toolConfig", {})
+            )
+            self.assertNotEqual("NONE", hello_config.get("mode"))
 
     def test_gemini_after_model_and_notification_observe(self):
         for event in ("AfterModel", "Notification"):

@@ -5092,7 +5092,11 @@ def _gemini_before_tool_selection(event: dict) -> int:
     """Omit a denied tool. Exit 0. This event ignores decision."""
     offered = _gemini_offered_tools(event)
     blocked = _gemini_blocked_command(event)
-    if not offered or not blocked:
+    if not blocked:
+        return 0
+    if not offered:
+        # Gemini CLI omits toolConfig. A missing list still keeps the shell off.
+        print(json.dumps({"hookSpecificOutput": {"toolConfig": {"mode": "NONE"}}}))
         return 0
     kept = [name for name in offered if not _gemini_shell_tool(name)]
     if not kept:
