@@ -47,7 +47,6 @@ Bool catalog rows and env rows marked opt-in or opt-out. `opt-out` means the def
 | `CHAOS_ENGINE_ENFORCE_RESEARCH_RECEIPT` | opt-in | `unset` |  | `CHAOS_ENGINE_ENFORCE_RESEARCH_RECEIPT` | Set to a truthy value to require a research receipt before mutation. | [owner](../../hooks/guard.py#L3873) |
 | `CHAOS_ENGINE_REVIEW_CAP_LIFT` | opt-in | `unset` |  | `CHAOS_ENGINE_REVIEW_CAP_LIFT` | Owner lift of the two-review cap. | [owner](../../hooks/delegation_gate.py#L23) |
 | `CHAOS_ENGINE_SIGNIFICANCE_CAPTURE` | opt-in | `unset` |  | `CHAOS_ENGINE_SIGNIFICANCE_CAPTURE` | Set to 1 to capture significance. | [owner](../../runtime/significance.py#L241) |
-| `CHAOS_ENGINE_TRACE` | opt-in | `off` |  | `CHAOS_ENGINE_TRACE` | When set to 1, true, yes, or on, record a local session trace. Unset or any other value leaves recording off. The recorder fails open. | [owner](../../runtime/trace_recorder.py#L17) |
 | `CHAOS_ENGINE_WITHOUT` | opt-out | `unset` |  | `CHAOS_ENGINE_WITHOUT` | Comma-separated component names to turn off. | [owner](../../runtime/install_config.py#L348) |
 | `CHAOS_RADIO_SILENCE` | opt-in | `unset` |  | `CHAOS_RADIO_SILENCE` | Blocks owner-visible status when set to 1, true, or full. | [owner](../../runtime/radio_silence.py#L7) |
 
@@ -164,7 +163,6 @@ Names read by code and not declared as a catalog env. Class `user`, then `maint`
 | `CHAOS_ENGINE_REVIEW_CAP_LIFT` | user | str | `unset` |  | opt-in | Owner lift of the two-review cap. | [owner](../../hooks/delegation_gate.py#L23) |
 | `CHAOS_ENGINE_SIGNIFICANCE_CAPTURE` | user | str | `unset` |  | opt-in | Set to 1 to capture significance. | [owner](../../runtime/significance.py#L241) |
 | `CHAOS_ENGINE_TOKEN_BUDGET` | user | choice | `balanced` | ultra-lean, lean, balanced, deep | value | Selects ultra-lean (alias lean), balanced (default), or deep. | [owner](../../hooks/lifecycle.py#L69) |
-| `CHAOS_ENGINE_TRACE` | user | str | `off` | unset, 1, true, yes, on | opt-in | When set to 1, true, yes, or on, record a local session trace. Unset or any other value leaves recording off. The recorder fails open. | [owner](../../runtime/trace_recorder.py#L17) |
 | `CHAOS_ENGINE_UPSTREAM_REPO` | user | str | `unset` |  | value | unknown — see read site | [owner](../../hooks/session_scratch.py#L254) |
 | `CHAOS_ENGINE_VERBOSE` | user | str | `unset` |  | value | unknown — see read site | [owner](../../bootstrap.py#L218) |
 | `CHAOS_ENGINE_WITHOUT` | user | str | `unset` | comma-separated component ids | opt-out | Comma-separated component names to turn off. | [owner](../../runtime/install_config.py#L348) |

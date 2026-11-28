@@ -73,9 +73,20 @@ def load_env_entries(root: Path) -> list[dict]:
     if folder.is_dir():
         for path in sorted(folder.glob("*.json")):
             extra = json.loads(path.read_text(encoding="utf-8"))
-            rows = extra.get("entries", []) if isinstance(extra, dict) else extra
+            rows = []
+            if isinstance(extra, dict) and isinstance(extra.get("entries"), list):
+                rows = extra["entries"]
+            elif isinstance(extra, dict) and isinstance(extra.get("vars"), list):
+                rows = extra["vars"]
+            elif isinstance(extra, list):
+                rows = extra
+            elif isinstance(extra, dict):
+                for name, row in extra.items():
+                    if isinstance(row, dict) and (name.startswith("CHAOS_") or name.startswith("CE_")):
+                        rows.append({"name": name, **row})
             for row in rows:
-                by_name[str(row["name"])] = row
+                if isinstance(row, dict) and row.get("name"):
+                    by_name[str(row["name"])] = row
     return [by_name[name] for name in sorted(by_name)]
 
 

@@ -1,6 +1,6 @@
 # ChaosEngine agent reference
 
-Version 1.20261126.0. Generator `945bf9656287`. Fetch on demand. Not always loaded.
+Version 1.20261126.0. Generator `048c11e1b165`. Fetch on demand. Not always loaded.
 
 One fact per row. The owner link is the normative file.
 
@@ -153,7 +153,7 @@ One fact per row. The owner link is the normative file.
 | `CHAOS_ENGINE_TASKS_DIR` | maint | value | `unset` | unknown — see read site | [owner](../../runtime/task_ledger.py#L116) |
 | `CHAOS_ENGINE_TEST_REPO_GUARD` | internal | value | `unset` | unknown — see read site | [owner](../../runtime/stores.py#L2118) |
 | `CHAOS_ENGINE_TOKEN_BUDGET` | user | value | `balanced` | Selects ultra-lean (alias lean), balanced… | [owner](../../hooks/lifecycle.py#L69) |
-| `CHAOS_ENGINE_TRACE` | user | opt-in | `off` | When set to 1, true, yes, or on, record a… | [owner](../../runtime/trace_recorder.py#L17) |
+| `CHAOS_ENGINE_TRACE` |  |  | `off` |  |  |
 | `CHAOS_ENGINE_UPSTREAM_REPO` | user | value | `unset` | unknown — see read site | [owner](../../hooks/session_scratch.py#L254) |
 | `CHAOS_ENGINE_USER_HOME` | internal | value | `unset` | unknown — see read site | [owner](../../runtime/user_paths.py#L29) |
 | `CHAOS_ENGINE_USER_PATHS` | internal | value | `unset` | unknown — see read site | [owner](../../packs/java/installer.py#L453) |
