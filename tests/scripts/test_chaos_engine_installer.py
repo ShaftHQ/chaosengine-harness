@@ -5413,5 +5413,57 @@ class StaleGraphRefreshOnInstall6234Test(unittest.TestCase):
             )
         )
 
+class GrokBotRulesTest(unittest.TestCase):
+    def test_grok_bot_doctor_row_is_not_hook_health(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            target = project / ".chaos-engine"
+            target.mkdir()
+            MODULE.record_completion_targets(project, ("grok-bot",))
+            components: dict = {"hooks": {"status": "healthy"}}
+            MODULE._apply_completion_hook_health(project, target, components)
+        hooks = components["hooks"]
+        self.assertNotEqual("healthy", hooks["status"])
+        row = hooks["instructionOnly"][0]
+        self.assertEqual("grok-bot", row["host"])
+        self.assertEqual("instruction-plus-custom-rules", row["enforcement"])
+        self.assertEqual("blocking: unverifiable", row["customRules"])
+        self.assertIs(False, row["claimsHookHealth"])
+        self.assertIs(False, row["claimsRulesInstalled"])
+        detail = str(hooks["detail"])
+        self.assertIn("instruction-plus-custom-rules", detail)
+        self.assertIn("blocking: unverifiable", detail)
+        self.assertIn("does not report hook health", detail)
+        self.assertNotIn("rules are installed", detail)
+        self.assertNotIn("hooks are healthy", detail)
+        openbot_rows = MODULE._instruction_only_rows(("openbot",))
+        self.assertNotIn("enforcement", openbot_rows[0])
+
+    def test_grok_bot_private_skill_is_written_once(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            project = home / "project"
+            project.mkdir()
+            env = {"GROK_HOME": str(home / "grok-home")}
+            with mock.patch.dict(os.environ, env, clear=False):
+                self.assertEqual("written", MODULE.write_grok_bot_private_skill())
+                destination = home / "grok-home" / "bot" / "skills" / MODULE.GROK_BOT_PRIVATE_SKILL_NAME / "SKILL.md"
+                body = destination.read_text(encoding="utf-8")
+                self.assertIn("skills/chaos-engine/SKILL.md", body)
+                self.assertIn("references/bot-entry.md", body)
+                self.assertNotIn("Ask first", body)
+                destination.write_text("owner copy\n", encoding="utf-8")
+                self.assertEqual("present", MODULE.write_grok_bot_private_skill())
+                self.assertEqual("owner copy\n", destination.read_text(encoding="utf-8"))
+                other = home / "other"
+                other.mkdir()
+                with mock.patch.dict(os.environ, {"GROK_HOME": str(other)}, clear=False):
+                    MODULE.apply_install_host_completion(project, ("cursor",))
+                    self.assertFalse((other / "bot" / "skills").exists())
+                    MODULE.apply_install_host_completion(project, ("grok-bot",))
+                    written = other / "bot" / "skills" / MODULE.GROK_BOT_PRIVATE_SKILL_NAME / "SKILL.md"
+                    self.assertTrue(written.is_file())
+
+
 if __name__ == "__main__":
     unittest.main()

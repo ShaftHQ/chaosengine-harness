@@ -114,12 +114,12 @@
     {
       "id": "grok-bot",
       "url": "https://docs.x.ai/grok-bot/bots",
-      "retrieved": "2026-11-27",
+      "retrieved": "2026-11-28",
       "hash_basis": "recorded_excerpt",
       "recorded_excerpt": "A Bot is a durable AI teammate with a name, a job, its own conversation, and working context that develops over time.",
       "content_sha256": "a6baa9ba0e185ab29476a52afdb4f6ecc94a1e5776f22978fa4fec47d186a65a",
       "instruction_file": "not stated",
-      "skill_discovery": "not stated"
+      "skill_discovery": "Connect apps, Private skills"
     },
     {
       "id": "openbot",

@@ -29,3 +29,15 @@ Several tasks: `tool.py checkpoint TASK --item ID --group G --status todo`. One 
 ## Entry coverage
 
 `tests/scripts/test_ce_entry_coverage.py`. Host routes: `.agents/skills/README.md`.
+
+## Grok Bot
+
+This section is Grok Bot only. OpenBot keeps the shared steps above and does not use these Custom rules.
+
+Grok Bot has no hook runtime and no repo file for Custom rules. On first run, add the rules in Settings, General, Bot, Custom rules. The labels on that screen are Custom rules, Ask first, and Allow automatically. An Ask first rule always stops a matching action.
+
+Add an Ask first rule for each of these three actions: send, pay, and delete. The how-it-works page also says sending, publishing, and deleting. Approving every payment means not saving the card in Vault.
+
+Enable the private skill for this Bot under Connect apps, Private skills. Do not publish it to a team, and do not call Publish. The skill points at `skills/chaos-engine/SKILL.md` and `references/bot-entry.md`. It does not repeat these rules.
+
+Doctor reports instruction-plus-custom-rules. It does not report hook health. A missing Custom rule is not a healthy enforcement report. A settings screen this session cannot open is `blocking: unverifiable`, not a pass. That check does not record the Custom rules as present.

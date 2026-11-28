@@ -67,6 +67,52 @@ class EntryCoverageTest(unittest.TestCase):
         self.assertIn("tests/scripts/test_ce_entry_coverage.py", bot)
         self.assertIn(".agents/skills/README.md", bot)
 
+    def test_grok_bot_entry_names_ask_first_rules(self) -> None:
+        bot = (ROOT / "references/bot-entry.md").read_text(encoding="utf-8")
+        shared, section = bot.split("## Grok Bot", 1)
+        for needle in (
+            "Settings, General, Bot, Custom rules",
+            "Ask first",
+            "Allow automatically",
+            "An Ask first rule always stops a matching action.",
+            "send, pay, and delete",
+            "sending, publishing, and deleting",
+            "Approving every payment means not saving the card in Vault.",
+            "Connect apps, Private skills",
+            "Do not publish it to a team",
+            "do not call Publish",
+            "instruction-plus-custom-rules",
+            "does not report hook health",
+            "blocking: unverifiable",
+            "OpenBot keeps the shared steps",
+            "skills/chaos-engine/SKILL.md",
+            "references/bot-entry.md",
+        ):
+            self.assertIn(needle, section, needle)
+        for needle in (
+            "Ask first",
+            "send, pay, and delete",
+            "Approving every payment means not saving the card in Vault.",
+            "instruction-plus-custom-rules",
+        ):
+            self.assertNotIn(needle, shared, needle)
+        skill = (ROOT / "runtime/grok_bot_skill/SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("skills/chaos-engine/SKILL.md", skill)
+        self.assertIn("references/bot-entry.md", skill)
+        self.assertIn("Connect apps, Private skills", skill)
+        self.assertNotIn("Ask first", skill)
+        self.assertNotIn("send, pay, and delete", skill)
+        guide = (ROOT / "guides/tools/grok-bot.md").read_text(encoding="utf-8")
+        self.assertIn("instruction-plus-custom-rules", guide)
+        self.assertIn("does not report hook health", guide)
+        self.assertIn("blocking: unverifiable", guide)
+        matrix = (ROOT / "references/host-parity-matrix.md").read_text(encoding="utf-8")
+        row = next(line for line in matrix.splitlines() if line.startswith("| GAP-GROKBOT-HOOKS"))
+        self.assertIn("instruction-plus-custom-rules", row)
+        self.assertIn("core card", row)
+        self.assertIn("blocking: unverifiable", row)
+        self.assertNotIn("reads `AGENTS.md`", row)
+
 
 if __name__ == "__main__":
     unittest.main()
