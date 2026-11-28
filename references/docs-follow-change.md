@@ -28,6 +28,13 @@ documentation edit.
    tree does not spell the product name; the origin README does.
 3. A second page that repeats the command gets a pointer to the canonical
    section, or the same facts. It does not keep an older contract.
+4. Settings, keywords, and status codes: add the registry row in
+   `runtime/env_registry.json`, `runtime/install_options.py`,
+   `references/keywords.json`, or `runtime/status_codes.json`, then regenerate
+   [settings](../docs/reference/settings.md), [keywords](../docs/reference/keywords.md),
+   and [the agent reference](../docs/agents/reference.md) with
+   `python3 scripts/docs/gen_reference.py`. `scripts/ci/docs_drift.py` fails
+   the change when a scanned read has no row.
 
 ## Proof
 

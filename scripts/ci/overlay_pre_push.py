@@ -102,7 +102,21 @@ def overlay_pre_push_failures(root: Path, paths: list[str] | None = None) -> lis
         failures.extend(ce_ui_sync_failures(root))
     if any(item in _RETRIEVE_PATHS for item in normalized):
         failures.extend(retrieve_router_sync_failures(root))
+    failures.extend(_docs_drift_failures(root, normalized))
     return failures
+
+
+def _docs_drift_failures(root: Path, paths: list[str]) -> list[str]:
+    """Run the docs-drift gate when the diff touches a scanned file."""
+    path = root / "scripts" / "ci" / "docs_drift.py"
+    if not path.is_file():
+        return []
+    spec = importlib.util.spec_from_file_location("ce_docs_drift_pre_push", path)
+    if spec is None or spec.loader is None:
+        return []
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.gate_findings(root, paths)
 
 
 def main(argv: list[str] | None = None) -> int:

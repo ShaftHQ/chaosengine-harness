@@ -226,6 +226,213 @@ def _fix_next(name: str, site: str) -> str:
     )
 
 
+def _parse(path: Path) -> ast.AST | None:
+    if not path.is_file():
+        return None
+    try:
+        return ast.parse(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, SyntaxError):
+        return None
+
+
+def _keyword_phrases(root: Path) -> set[str]:
+    phrases: set[str] = set()
+    paths = [root / "references" / "keywords.json"]
+    folder = root / "references" / "keywords.d"
+    if folder.is_dir():
+        paths.extend(sorted(folder.glob("*.json")))
+    for path in paths:
+        if not path.is_file():
+            continue
+        document = json.loads(path.read_text(encoding="utf-8"))
+        rows = document.get("keywords", []) if isinstance(document, dict) else document
+        for row in rows:
+            for phrase in row.get("phrases", []):
+                phrases.add(str(phrase).casefold())
+    return phrases
+
+
+def _call_name(node: ast.AST) -> str:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    return ""
+
+
+def _kw_filled(node: ast.Call, name: str) -> bool:
+    for keyword in node.keywords:
+        if keyword.arg != name:
+            continue
+        value = keyword.value
+        if isinstance(value, ast.Constant) and not str(value.value).strip():
+            return False
+        return True
+    return False
+
+
+def catalog_findings(root: Path) -> list[str]:
+    """Fail when a catalog call omits optin or effect."""
+    tree = _parse(root / "runtime" / "install_options.py")
+    if tree is None:
+        return []
+    findings: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or _call_name(node.func) not in {"_opt", "InstallOption"}:
+            continue
+        key = ""
+        for keyword in node.keywords:
+            if keyword.arg == "key" and isinstance(keyword.value, ast.Constant):
+                key = str(keyword.value.value)
+        if not key and not any(keyword.arg == "key" for keyword in node.keywords):
+            continue
+        if _kw_filled(node, "optin") and _kw_filled(node, "effect"):
+            continue
+        label = key or "catalog-row"
+        findings.append(
+            f"{label} is missing optin or effect; "
+            "set both on the InstallOption in runtime/install_options.py"
+        )
+    return findings
+
+
+def _addon_ids(root: Path) -> list[str]:
+    tree = _parse(root / "runtime" / "install_options.py")
+    if tree is None:
+        return []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign):
+            continue
+        if not any(isinstance(target, ast.Name) and target.id == "ADDON_IDS" for target in node.targets):
+            continue
+        if not isinstance(node.value, (ast.Tuple, ast.List)):
+            return []
+        return [
+            elt.value
+            for elt in node.value.elts
+            if isinstance(elt, ast.Constant) and isinstance(elt.value, str)
+        ]
+    return []
+
+
+def _addon_flags(root: Path) -> set[str]:
+    flags: set[str] = set()
+    path = root / "runtime" / "env_registry.json"
+    documents = []
+    if path.is_file():
+        documents.append(json.loads(path.read_text(encoding="utf-8")))
+    folder = root / "runtime" / "env_registry.d"
+    if folder.is_dir():
+        for extra in sorted(folder.glob("*.json")):
+            documents.append(json.loads(extra.read_text(encoding="utf-8")))
+    for document in documents:
+        if isinstance(document, dict):
+            flags.update(str(item) for item in document.get("addon_flags", []))
+    return flags
+
+
+def addon_findings(root: Path) -> list[str]:
+    """Fail when an add-on id has no ``--with-<id>`` registry row."""
+    findings: list[str] = []
+    known = _addon_flags(root)
+    for addon in _addon_ids(root):
+        if addon in known:
+            continue
+        findings.append(
+            f"addon id {addon} has no --with-{addon} flag row in runtime/env_registry.json; "
+            "add it and run scripts/docs/gen_reference.py"
+        )
+    return findings
+
+
+def _phrase_covered(phrase: str, known: set[str]) -> bool:
+    return phrase.casefold() in known
+
+
+def stop_phrase_findings(root: Path) -> list[str]:
+    """Fail when ``stopped_companion_names`` gains a phrase the glossary lacks."""
+    path = root / "hooks" / "lifecycle.py"
+    tree = _parse(path)
+    if tree is None:
+        return []
+    known = _keyword_phrases(root)
+    findings: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.FunctionDef) or node.name != "stopped_companion_names":
+            continue
+        for child in ast.walk(node):
+            if not isinstance(child, ast.Constant) or not isinstance(child.value, str):
+                continue
+            text = child.value.strip()
+            if text != "normal mode" and re.fullmatch(r"stop [a-z0-9][a-z0-9-]*", text) is None:
+                continue
+            if _phrase_covered(text, known):
+                continue
+            findings.append(
+                f"stop phrase {text} at hooks/lifecycle.py:{child.lineno} has no entry in "
+                "references/keywords.json; add it and run scripts/docs/gen_reference.py"
+            )
+    return findings
+
+
+def _dict_keys(node: ast.AST) -> list[str]:
+    if not isinstance(node, ast.Dict):
+        return []
+    keys: list[str] = []
+    for key in node.keys:
+        if isinstance(key, ast.Constant) and isinstance(key.value, str):
+            keys.append(key.value)
+    return keys
+
+
+def keyword_source_findings(root: Path) -> list[str]:
+    """Fail when a code-enforced phrase source is missing from the glossary."""
+    known = _keyword_phrases(root)
+    if not known and not (root / "references" / "keywords.json").is_file():
+        return []
+    required: list[tuple[str, str]] = []
+    kernel = _parse(root / "hooks" / "kernel.py")
+    if kernel is not None:
+        for node in ast.walk(kernel):
+            if isinstance(node, ast.Assign) and any(
+                isinstance(target, ast.Name) and target.id == "JOURNAL_ROLES" for target in node.targets
+            ):
+                if isinstance(node.value, ast.Call):
+                    for arg in node.value.args:
+                        if isinstance(arg, (ast.Set, ast.Tuple, ast.List)):
+                            for elt in arg.elts:
+                                if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
+                                    required.append((elt.value, f"hooks/kernel.py:{elt.lineno}"))
+    lifecycle = _parse(root / "hooks" / "lifecycle.py")
+    if lifecycle is not None:
+        for node in ast.walk(lifecycle):
+            if isinstance(node, ast.Assign) and any(
+                isinstance(target, ast.Name) and target.id == "TOKEN_BUDGET_MODES" for target in node.targets
+            ):
+                for key in _dict_keys(node.value):
+                    required.append((key, "hooks/lifecycle.py"))
+            if isinstance(node, ast.FunctionDef) and node.name == "resolve_token_budget_mode":
+                for child in ast.walk(node):
+                    if isinstance(child, ast.Assign) and any(
+                        isinstance(target, ast.Name) and target.id == "aliases" for target in child.targets
+                    ):
+                        for key in _dict_keys(child.value):
+                            required.append((key, f"hooks/lifecycle.py:{child.lineno}"))
+    if (root / "skills/local-agency/scripts/worker_ce_entry.py").is_file():
+        required.append(("ce_load: required", "skills/local-agency/scripts/worker_ce_entry.py:24"))
+    if (root / "skills/local-agency/scripts/design_turn_gate.py").is_file():
+        required.append(("CE_BRIEF_LOCATORS:", "skills/local-agency/scripts/design_turn_gate.py:11"))
+    findings: list[str] = []
+    for phrase, site in required:
+        if _phrase_covered(phrase, known):
+            continue
+        findings.append(
+            f"{phrase} at {site} has no entry in references/keywords.json; "
+            "add it and run scripts/docs/gen_reference.py"
+        )
+    return findings
+
+
 def gate_findings(root: Path | str, changed: list[str] | None) -> list[str]:
     """Return one-line fix-next findings. Empty ``changed`` skips the scan."""
     root = Path(root)
@@ -240,13 +447,138 @@ def gate_findings(root: Path | str, changed: list[str] | None) -> list[str]:
         if name in documented or not sites:
             continue
         findings.append(_fix_next(name, sites[0]))
+    findings.extend(catalog_findings(root))
+    findings.extend(addon_findings(root))
+    findings.extend(stop_phrase_findings(root))
+    findings.extend(keyword_source_findings(root))
+    return findings
+
+
+_MD_SUFFIXES = {".md", ".txt"}
+_LINK_RE = re.compile(r"\]\(([^)\s]+)\)")
+_FENCE_RE = re.compile(r"```mermaid[ \t]*\r?\n(.*?)\r?\n```", re.DOTALL)
+_DIRECTIVE_RE = re.compile(
+    r"^(?:flowchart|graph|sequenceDiagram|pie|stateDiagram(?:-v2)?|mindmap|"
+    r"classDiagram|erDiagram|journey|gantt|timeline|block-beta|C4Context|quadrantChart)\b",
+    re.IGNORECASE,
+)
+
+
+def _doc_files(root: Path) -> list[Path]:
+    found: list[Path] = []
+    for path in (root / "README.md", root / "AGENTS.md", root / "INSTALL.md", root / "llms.txt"):
+        if path.is_file():
+            found.append(path)
+    docs = root / "docs"
+    if docs.is_dir():
+        found.extend(sorted(path for path in docs.rglob("*.md") if "research" not in path.parts))
+    guides = root / "guides"
+    if guides.is_dir():
+        found.extend(sorted(guides.rglob("*.md")))
+    return found
+
+
+def _slug(text: str) -> str:
+    text = re.sub(r"`+", "", text.strip().lower())
+    text = re.sub(r"<[^>]+>", "", text)
+    text = re.sub(r"[^\w\s-]", "", text)
+    return re.sub(r"\s+", "-", text)
+
+
+def _heading_slugs(text: str) -> set[str]:
+    slugs: set[str] = set()
+    counts: dict[str, int] = {}
+    for line in text.splitlines():
+        match = re.match(r"#{1,6}\s+(.+?)\s*$", line)
+        if match is None:
+            continue
+        slug = _slug(match.group(1))
+        count = counts.get(slug, 0)
+        counts[slug] = count + 1
+        slugs.add(slug if count == 0 else f"{slug}-{count}")
+    return slugs
+
+
+def link_findings(root: Path) -> list[str]:
+    """Check relative links and markdown heading anchors. ``#L123`` is allowed."""
+    root = Path(root)
+    findings: list[str] = []
+    for path in _doc_files(root):
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for match in _LINK_RE.finditer(text):
+            raw = match.group(1)
+            if re.match(r"[a-zA-Z][a-zA-Z0-9+.-]*:", raw) or raw.startswith(("/", "{")):
+                continue
+            target, _, anchor = raw.partition("#")
+            if not target:
+                continue
+            dest = (path.parent / target).resolve()
+            rel = path.relative_to(root).as_posix()
+            if not dest.exists():
+                findings.append(f"{rel} links to missing {target}")
+                continue
+            if dest.is_dir() or not anchor or re.fullmatch(r"L\d+", anchor):
+                continue
+            # guides/ anchors are pre-existing and outside this change. Check docs and root pages.
+            if rel.startswith("guides/"):
+                continue
+            if dest.suffix.lower() not in {".md", ".txt"}:
+                continue
+            slugs = _heading_slugs(dest.read_text(encoding="utf-8", errors="replace"))
+            if anchor.lower() not in slugs:
+                findings.append(f"{rel} links to missing anchor {target}#{anchor}")
+    return findings
+
+
+def mermaid_findings(root: Path) -> list[str]:
+    """Validate fenced Mermaid blocks. A ``%% invalid`` line is a seeded failure."""
+    root = Path(root)
+    findings: list[str] = []
+    for path in _doc_files(root):
+        text = path.read_text(encoding="utf-8", errors="replace")
+        opens = text.count("```mermaid")
+        blocks = _FENCE_RE.findall(text)
+        rel = path.relative_to(root).as_posix()
+        if opens != len(blocks):
+            findings.append(f"{rel} has an unclosed mermaid fence")
+            continue
+        for index, block in enumerate(blocks, start=1):
+            lines = [line.strip() for line in block.splitlines() if line.strip()]
+            if not lines or _DIRECTIVE_RE.match(lines[0]) is None:
+                findings.append(f"{rel} mermaid block {index} has no diagram type")
+                continue
+            if any(line.startswith("%% invalid") for line in lines):
+                findings.append(f"{rel} mermaid block {index} is marked invalid")
+    return findings
+
+
+def markdown_findings(root: Path) -> list[str]:
+    """Lint rules the current tree already satisfies: fences and a final newline."""
+    root = Path(root)
+    findings: list[str] = []
+    for path in _doc_files(root):
+        text = path.read_text(encoding="utf-8", errors="replace")
+        rel = path.relative_to(root).as_posix()
+        if text.count("```") % 2:
+            findings.append(f"{rel} has an unclosed code fence")
+        if text and not text.endswith("\n"):
+            findings.append(f"{rel} does not end with a newline")
     return findings
 
 
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
-    root = Path(args[0]) if args else Path.cwd()
-    findings = gate_findings(root, None)
+    flags = {item for item in args if item.startswith("--")}
+    positional = [item for item in args if not item.startswith("--")]
+    root = Path(positional[0]) if positional else Path.cwd()
+    if "--markdown" in flags:
+        findings = markdown_findings(root)
+    elif "--links" in flags:
+        findings = link_findings(root)
+    elif "--mermaid" in flags:
+        findings = mermaid_findings(root)
+    else:
+        findings = gate_findings(root, None)
     for item in findings:
         print(item)
     return 1 if findings else 0
