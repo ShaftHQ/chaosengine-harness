@@ -6332,6 +6332,16 @@ def lifecycle_hooks_document(host: str, events: dict[str, str] | None = None, ma
             command["commandWindows"] = chaos_guard_locator_command(
                 windows=True, host=host, managed_python=managed_python, event="Stop",
             )
+        elif native == "SessionStart" and host == "grok":
+            # The user hook defers only after SessionStart records the session
+            # layer file. A command with no event never records it, so a
+            # trusted repo runs PreToolUse twice.
+            command["command"] = chaos_guard_locator_command(
+                windows=False, host=host, managed_python=managed_python, event="SessionStart",
+            )
+            command["commandWindows"] = chaos_guard_locator_command(
+                windows=True, host=host, managed_python=managed_python, event="SessionStart",
+            )
         if (native == "SessionEnd" and host in {"codex", "grok"}) or (
             native == "Interrupt" and host == "codex"
         ):

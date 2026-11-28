@@ -306,11 +306,17 @@ class ChaosEngineHostsTest(unittest.TestCase):
             bound = home / "bound"
             guard_dir = bound / ".chaos-engine" / "hooks"
             guard_dir.mkdir(parents=True)
+            shutil.copy(ROOT / "hooks" / "launch.py", guard_dir / "launch.py")
             (bound / ".chaos-engine" / "install.py").write_text("print('project')\n", encoding="utf-8")
-            marker = bound / "guard-ran"
+            log = bound / "guard-log"
             (guard_dir / "guard.py").write_text(
+                "import json, sys\n"
                 "from pathlib import Path\n"
-                f"Path({str(marker)!r}).write_text('ran', encoding='utf-8')\n"
+                "try:\n"
+                "    event = json.loads(sys.stdin.read() or '{}').get('hook_event_name') or ''\n"
+                "except ValueError:\n"
+                "    event = ''\n"
+                f"Path({str(log)!r}).open('a', encoding='utf-8').write(event + '\\n')\n"
                 "print('{\"decision\": \"allow\"}')\n",
                 encoding="utf-8",
             )
@@ -323,21 +329,49 @@ class ChaosEngineHostsTest(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(0, ran.returncode, ran.stderr.decode(errors="replace"))
-            self.assertTrue(marker.is_file())
-            sessions = bound / ".chaos-engine-state" / "sessions"
-            sessions.mkdir(parents=True)
-            (sessions / "sess-276.layer").write_text("project\n", encoding="utf-8")
-            marker.unlink()
+            self.assertTrue(log.is_file())
+            project_doc = json.loads(module.lifecycle_hooks_document("grok").decode())
+            start_command = project_doc["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+            pre_command = project_doc["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+            self.assertIn(" SessionStart", start_command)
+            self.assertNotIn(" SessionStart", pre_command)
+            payload = json.dumps({"session_id": "sess-276", "cwd": str(bound)}).encode()
+            log.unlink()
+            started = subprocess.run(
+                ["bash", "-c", start_command],
+                cwd=bound,
+                input=payload,
+                capture_output=True,
+                env=env,
+                check=False,
+            )
+            layer = bound / ".chaos-engine-state" / "sessions" / "sess-276.layer"
+            self.assertEqual(0, started.returncode, started.stderr.decode(errors="replace"))
+            self.assertTrue(layer.is_file())
+            self.assertEqual("project\n", layer.read_text(encoding="utf-8"))
+            log.write_text("", encoding="utf-8")
+            project_pre = subprocess.run(
+                ["bash", "-c", pre_command],
+                cwd=bound,
+                input=json.dumps(
+                    {"session_id": "sess-276", "hook_event_name": "PreToolUse", "cwd": str(bound)}
+                ).encode(),
+                capture_output=True,
+                env=env,
+                check=False,
+            )
+            self.assertEqual(0, project_pre.returncode, project_pre.stderr.decode(errors="replace"))
+            self.assertEqual(["PreToolUse"], log.read_text(encoding="utf-8").splitlines())
             deferred = subprocess.run(
                 ["bash", "-c", command],
                 cwd=bound,
-                input=json.dumps({"session_id": "sess-276", "cwd": str(bound)}).encode(),
+                input=payload,
                 capture_output=True,
                 env=env,
                 check=False,
             )
             self.assertEqual(0, deferred.returncode, deferred.stderr.decode(errors="replace"))
-            self.assertFalse(marker.exists())
+            self.assertEqual(["PreToolUse"], log.read_text(encoding="utf-8").splitlines())
             foreign = {
                 "hooks": {
                     "SessionStart": [{"hooks": [{"type": "command", "command": "user-hook"}]}],
