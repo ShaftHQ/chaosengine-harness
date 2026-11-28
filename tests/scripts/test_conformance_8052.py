@@ -443,6 +443,18 @@ class ConformanceTests(unittest.TestCase):
             errors = self.conformance.check_host_guide_events(registry, guides)
             self.assertTrue(any("antigravity" in item and removed in item for item in errors), errors)
 
+    def test_grok_bot_pin_retrieved_and_skill_discovery(self):
+        fixture = self.conformance.load_fixture()
+        pin = next(item for item in fixture["pins"] if item["id"] == "grok-bot")
+        self.assertLess(len(pin["id"]), 16)
+        self.assertEqual("2026-11-28", pin["retrieved"])
+        self.assertEqual("Connect apps, Private skills", pin["skill_discovery"])
+        self.assertEqual(
+            "a6baa9ba0e185ab29476a52afdb4f6ecc94a1e5776f22978fa4fec47d186a65a",
+            pin["content_sha256"],
+        )
+        self.assertEqual("not stated", pin["instruction_file"])
+
     def test_nine_host_parity_score_keeps_grok_bot_out_of_hook_pins(self):
         self.assertEqual((10, 10), self.conformance.host_parity_score())
         registry = self.conformance.production_hook_registry()

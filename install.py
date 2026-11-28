@@ -5220,6 +5220,8 @@ def apply_install_host_completion(
     else:
         record_completion_targets(project, targets)
         wired = wire_selected_receipt_shims(project, targets)
+        if "grok-bot" in targets:
+            write_grok_bot_private_skill()
     # Completion unwire removes receipt-owned shim paths such as .agents/hooks.json.
     _restore_receipt_owned_shim_files(project)
     return wired
@@ -6420,6 +6422,8 @@ _INSTRUCTION_ONLY_GAPS = {
     "independent-bot": "GAP-BOT-ENTRY",
     "openbot": "GAP-OPENBOT-HOOKS",
 }
+GROK_BOT_PRIVATE_SKILL_NAME = "ce-bot-router"
+GROK_BOT_PRIVATE_SKILL_RELATIVE = "runtime/grok_bot_skill/SKILL.md"
 _SELF_ENFORCED_COMMANDS = (
     "entry --full",
     "retrieve",
@@ -6431,6 +6435,34 @@ _SELF_ENFORCED_COMMANDS = (
     "resume",
     "maintain",
 )
+
+
+def _grok_bot_user_skill_root(home: Path | None = None) -> Path:
+    """Use the existing grok-bot user skill root. Do not add another home path."""
+    path = runtime_module(Path(__file__).resolve().parent, "mcp_policy.py")
+    spec = importlib.util.spec_from_file_location("ce_install_grok_bot_skill_root", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("mcp_policy.py is required")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    for host, root in module.user_skill_roots(home):
+        if host == "grok-bot":
+            return root
+    raise RuntimeError("grok-bot user skill root is missing")
+
+
+def write_grok_bot_private_skill(home: Path | None = None) -> str:
+    """Write the private skill once. An existing file stays. Do not publish it."""
+    destination = _grok_bot_user_skill_root(home) / GROK_BOT_PRIVATE_SKILL_NAME / "SKILL.md"
+    if is_link_or_reparse(destination) or is_link_or_reparse(destination.parent):
+        return "refused"
+    if destination.is_file():
+        return "present"
+    template = Path(__file__).resolve().parent / GROK_BOT_PRIVATE_SKILL_RELATIVE
+    body = template.read_text(encoding="utf-8")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(body, encoding="utf-8")
+    return "written"
 
 
 def _hook_surfaces():
@@ -6487,14 +6519,18 @@ def _instruction_only_rows(targets: tuple[str, ...]) -> list[dict[str, object]]:
         gap = _INSTRUCTION_ONLY_GAPS.get(host)
         if gap is None:
             continue
-        rows.append(
-            {
-                "host": host,
-                "gap": gap,
-                "residualRisk": "GAP-BOT-ENTRY",
-                "selfEnforced": list(_SELF_ENFORCED_COMMANDS),
-            }
-        )
+        row: dict[str, object] = {
+            "host": host,
+            "gap": gap,
+            "residualRisk": "GAP-BOT-ENTRY",
+            "selfEnforced": list(_SELF_ENFORCED_COMMANDS),
+        }
+        if host == "grok-bot":
+            row["enforcement"] = "instruction-plus-custom-rules"
+            row["customRules"] = "blocking: unverifiable"
+            row["claimsHookHealth"] = False
+            row["claimsRulesInstalled"] = False
+        rows.append(row)
     return rows
 
 
@@ -6506,7 +6542,16 @@ def _instruction_only_detail(rows: list[dict[str, object]]) -> str:
             if value and value not in named:
                 named.append(value)
     commands = ", ".join(_SELF_ENFORCED_COMMANDS)
-    return "instruction-only " + " ".join(named) + f"; self-enforced tool.py {commands}"
+    detail = "instruction-only " + " ".join(named) + f"; self-enforced tool.py {commands}"
+    hosts = {str(row.get("host") or "") for row in rows}
+    if "grok-bot" in hosts:
+        detail += (
+            "; enforcement instruction-plus-custom-rules"
+            "; custom rules blocking: unverifiable"
+            "; a missing Custom rule is not a healthy enforcement report"
+            "; does not report hook health"
+        )
+    return detail
 
 
 def _core_hook_scripts_present(target: Path) -> bool:
@@ -10889,7 +10934,14 @@ def _hooks_instruction_advisory(document: dict[str, object]) -> str | None:
     if not gaps:
         gaps = ["GAP-GROKBOT-HOOKS"]
     commands = ", ".join(_SELF_ENFORCED_COMMANDS)
-    return f"hooks: {' '.join(gaps)} GAP-BOT-ENTRY self-enforced tool.py {commands}"
+    text = f"hooks: {' '.join(gaps)} GAP-BOT-ENTRY self-enforced tool.py {commands}"
+    if any(isinstance(row, dict) and row.get("host") == "grok-bot" for row in rows):
+        text += (
+            " enforcement instruction-plus-custom-rules"
+            " custom-rules blocking: unverifiable"
+            " does not report hook health"
+        )
+    return text
 
 
 def _release_commit_advisory(commit: str, note: str = "") -> tuple[str, ...]:
