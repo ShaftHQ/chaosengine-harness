@@ -79,7 +79,7 @@ would start without ChaosEngine.
 5. After the final scope commit, follow [delivery cycle](delivery-cycle.md).
    Ordinary reversible changes get one fresh-context adversarial review.
    Public-contract or hard-to-reverse changes get two independent adversarial reviews before orchestrator sign-off, one after another. Do not start both reviewers in one step. Neither reviewer is the author.
-   Never arm `gh pr merge --auto`. Merge with `gh pr merge --squash` only after
+   Never arm `gh pr merge --auto`. Merge with `gh pr merge --merge` only after
    required checks are green and review threads are resolved. A `merge_queue`
    ruleset enqueues with `gh pr merge` and no strategy flag, as that file states.
 6. Report outcome, exact checks, failures, and every finding as fixed or filed.

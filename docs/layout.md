@@ -20,6 +20,7 @@ One map of this checkout. The installer copies the tree into `.chaos-engine/` an
 | `vendor/` | Vendored upstream skill bodies. |
 | `assets/` | Brand and other static assets. `assets/brand/` is not installed. |
 | `bin/` | The optional npm wrapper `bin/chaosengine-harness.js`. |
+| `schemas/` | JSON schemas for host-neutral contracts such as `ce-plan/v1`. |
 | `scripts/` | Repository CI helpers. |
 | `tests/` | Pytest suite. Not installed. |
 | `evals/` | Evaluation fixtures. |

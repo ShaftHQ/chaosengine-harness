@@ -1,0 +1,18 @@
+{
+  "schema": "ce-env/v1",
+  "entries": [
+    {
+      "name": "CHAOS_ENGINE_ENFORCE_PLAN_APPROVAL",
+      "class": "user",
+      "type": "str",
+      "default": "0",
+      "values": "0, 1, true, yes, on",
+      "optin": "opt-in",
+      "effect": "When 1, true, yes, or on, a stateful write is denied until the current plan revision is approved with a one-use owner code. Default stays off.",
+      "read_at": [
+        "runtime/plan_gate.py:21"
+      ],
+      "since": "unknown"
+    }
+  ]
+}

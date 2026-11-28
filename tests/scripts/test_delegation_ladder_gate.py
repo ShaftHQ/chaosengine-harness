@@ -166,6 +166,66 @@ class DelegationReceiptTest(unittest.TestCase):
                     reason = GATE.writer_block("Task", {"prompt": prompt}, (), root, now=1_000.0)
                     self.assertIn("record a receipt", reason or "")
 
+    def test_reviewer_title_and_noun_are_review(self) -> None:
+        read_only = "This is an adversarial review. Read only. Do not edit."
+        described = {
+            "subagent_type": "chaos-engine-reviewer",
+            "description": "Review Claude hook deny fix",
+            "prompt": read_only,
+        }
+        named = {
+            "subagent_type": "chaos-engine-reviewer",
+            "description": "Adversarial review of PR 290",
+            "prompt": read_only + " Judge the impact edit.",
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for payload in (described, named):
+                with self.subTest(prompt=payload["prompt"]):
+                    self.assertEqual("review", GATE.classify("spawn_subagent", payload, ()))
+                    reason = GATE.writer_block("spawn_subagent", payload, (), root, now=1_000.0)
+                    self.assertNotIn("record a receipt", reason or "")
+
+    def test_a_second_imperative_stays_a_writer(self) -> None:
+        payload = {
+            "subagent_type": "chaos-engine-reviewer",
+            "description": "Adversarial review of PR 290",
+            "prompt": "This is an adversarial review. Read only. Do not edit. edit the gate",
+        }
+        self.assertEqual("host-writer", GATE.classify("spawn_subagent", payload, ()))
+        instructed = {
+            "subagent_type": "chaos-engine-reviewer",
+            "prompt": "This is an adversarial review. Implement the parser fix. Do not edit unrelated files.",
+        }
+        self.assertEqual("host-writer", GATE.classify("spawn_subagent", instructed, ()))
+
+    def test_an_adverb_or_bare_object_is_still_an_instruction(self) -> None:
+        payloads = (
+            {
+                "subagent_type": "chaos-engine-reviewer",
+                "prompt": "This is an adversarial review. Carefully edit something.",
+            },
+            {
+                "subagent_type": "chaos-engine-reviewer",
+                "prompt": "This is an adversarial review. Read only, edit files",
+            },
+            {
+                "subagent_type": "chaos-engine-reviewer",
+                "description": "Fix the hook",
+                "prompt": "This is an adversarial review. Read only. Do not edit.",
+            },
+        )
+        expected = ("host-writer", "host-writer", "review")
+        for payload, kind in zip(payloads, expected):
+            with self.subTest(prompt=payload["prompt"], description=payload.get("description")):
+                self.assertEqual(kind, GATE.classify("spawn_subagent", payload, ()))
+
+    def test_an_edit_verb_without_review_markers_stays_a_writer(self) -> None:
+        payload = {"subagent_type": "general-purpose", "prompt": "Apply the impact edit."}
+        self.assertEqual("host-writer", GATE.classify("spawn_subagent", payload, ()))
+        plain = {"prompt": "Implement the parser fix. Do not edit unrelated files."}
+        self.assertEqual("host-writer", GATE.classify("Task", plain, ()))
+
     def test_the_last_variant_is_the_effort_that_counts(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

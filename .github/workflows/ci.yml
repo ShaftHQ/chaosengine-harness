@@ -96,6 +96,31 @@ jobs:
           sys.exit(1 if bad else 0)
           PY
 
+      - name: Generated reference check
+        run: python3 scripts/docs/gen_reference.py --check
+
+      - name: Docs drift
+        run: python3 scripts/ci/docs_drift.py
+
+      - name: Markdown lint
+        run: python3 scripts/ci/docs_drift.py --markdown
+
+      - name: Link and anchor check
+        run: python3 scripts/ci/docs_drift.py --links
+
+      - name: Mermaid validation
+        run: python3 scripts/ci/docs_drift.py --mermaid
+
+      - name: Harness eval suite
+        run: |
+          set +e
+          python3 scripts/ci/chaos_engine_harness_eval_suite.py --json
+          status=$?
+          set -e
+          if [ "$status" -gt 1 ]; then
+            exit "$status"
+          fi
+
       - name: In-tree unit tests
         run: |
           python -m pip install --quiet pytest

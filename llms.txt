@@ -1,0 +1,23 @@
+# ChaosEngine
+
+> Portable, provider-neutral working contract for coding agents. Version 1.20261126.0.
+
+## Docs
+
+- [Docs home](docs/README.md): human documentation entry
+- [How ChaosEngine thinks](docs/explanation/how-chaosengine-thinks.md): triage and the ethics floor
+
+## Reference
+
+- [Settings](docs/reference/settings.md): installer options, flags, and environment variables
+- [Keywords](docs/reference/keywords.md): owner phrases, roles, workflows, and tokens
+
+## Agents
+
+- [AGENTS.md](AGENTS.md): always-loaded entry
+- [Agent reference](docs/agents/reference.md): dense settings, keywords, status codes, and routes
+
+## Optional
+
+- [Install](INSTALL.md): install, upgrade, and uninstall
+- [Overview](guides/overview.md): operating loop

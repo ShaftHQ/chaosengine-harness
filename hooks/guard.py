@@ -3499,7 +3499,7 @@ def _open_pull_request_reason(session_id: str, event: dict) -> str:
     return (
         "Delivery is not complete while the pull request is open. "
         "Babysit it until merged: classify the release note, then merge with "
-        "gh pr merge --squash only after the reviews are done and their comments "
+        "gh pr merge --merge only after the reviews are done and their comments "
         "are applied. A skipped or neutral check outside the required set does not block. "
         "A failed, cancelled, or pending check blocks when it is required and when no check is marked required. "
         "An unmarked skip blocks. An empty check list is not success. "

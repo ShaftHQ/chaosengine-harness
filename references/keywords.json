@@ -1,0 +1,771 @@
+{
+  "schema": "ce-keywords/v1",
+  "keywords": [
+    {
+      "id": "stop-caveman",
+      "phrases": [
+        "stop caveman"
+      ],
+      "kind": "owner-phrase",
+      "scope": "owner",
+      "effect": "Turns off the Caveman card for this session.",
+      "enforced_by": "code",
+      "code_refs": [
+        "hooks/lifecycle.py:232"
+      ],
+      "prose_refs": [
+        "companions/caveman-ultra.md#L1"
+      ],
+      "opposite": "",
+      "example": "stop caveman",
+      "since": "unknown"
+    },
+    {
+      "id": "stop-ponytail",
+      "phrases": [
+        "stop ponytail"
+      ],
+      "kind": "owner-phrase",
+      "scope": "owner",
+      "effect": "Turns off the Ponytail card for this session.",
+      "enforced_by": "code",
+      "code_refs": [
+        "hooks/lifecycle.py:234"
+      ],
+      "prose_refs": [
+        "companions/ponytail-ultra.md#L1"
+      ],
+      "opposite": "",
+      "example": "stop ponytail",
+      "since": "unknown"
+    },
+    {
+      "id": "normal-mode",
+      "phrases": [
+        "normal mode"
+      ],
+      "kind": "owner-phrase",
+      "scope": "owner",
+      "effect": "Turns off both companion cards for this session.",
+      "enforced_by": "code",
+      "code_refs": [
+        "hooks/lifecycle.py:229"
+      ],
+      "prose_refs": [
+        "companions/caveman-ultra.md#L4"
+      ],
+      "opposite": "",
+      "example": "normal mode",
+      "since": "unknown"
+    },
+    {
+      "id": "tool-entry-stop",
+      "phrases": [
+        "tool.py entry"
+      ],
+      "kind": "owner-phrase",
+      "scope": "owner",
+      "effect": "Hookless bots pass a stop phrase to entry to drop companions.",
+      "enforced_by": "code",
+      "code_refs": [
+        "tool.py:646"
+      ],
+      "prose_refs": [
+        "companions/caveman-ultra.md#L4"
+      ],
+      "opposite": "",
+      "example": "tool.py entry stop caveman",
+      "since": "unknown"
+    },
+    {
+      "id": "out-of-scope",
+      "phrases": [
+        "out of scope",
+        "do not watch",
+        "do not babysit",
+        "don't watch"
+      ],
+      "kind": "owner-phrase",
+      "scope": "owner",
+      "effect": "Marks a named pull request out of scope for babysit.",
+      "enforced_by": "code",
+      "code_refs": [
+        "hooks/guard.py:207"
+      ],
+      "prose_refs": [
+        "hooks/guard.py:201"
+      ],
+      "opposite": "",
+      "example": "out of scope",
+      "since": "unknown"
+    },
+    {
+      "id": "do-not-merge",
+      "phrases": [
+        "do not merge"
+      ],
+      "kind": "owner-phrase",
+      "scope": "owner",
+      "effect": "Counts as out of scope from the owner, not inside a delegated brief.",
+      "enforced_by": "code",
+      "code_refs": [
+        "hooks/guard.py:209"
+      ],
+      "prose_refs": [
+        "hooks/guard.py:209"
+      ],
+      "opposite": "",
+      "example": "do not merge",
+      "since": "unknown"
+    },
+    {
+      "id": "deliver",
+      "phrases": [
+        "deliver",
+        "babysit",
+        "keep the work going"
+      ],
+      "kind": "owner-phrase",
+      "scope": "owner",
+      "effect": "Keep going until the in-scope work is merged or a named HALT.",
+      "enforced_by": "prose",
+      "code_refs": [],
+      "prose_refs": [
+        "references/orchestrator-follow-through.md#L1"
+      ],
+      "opposite": "",
+      "example": "deliver",
+      "since": "unknown"
+    },
+    {
+      "id": "babysit-when-green",
+      "phrases": [
+        "babysit and merge it when green"
+      ],
+      "kind": "owner-phrase",
+      "scope": "owner",
+      "effect": "Selects the watch, fix, and confirm pull-request workflow.",
+      "enforced_by": "prose",
+      "code_refs": [],
+      "prose_refs": [
+        "references/work-github-playbook.md#L1"
+      ],
+      "opposite": "",
+      "example": "babysit and merge it when green",
+      "since": "unknown"
+    },
+    {
+      "id": "proceed-unattended",
+      "phrases": [
+        "proceed unattended",
+        "follow up every"
+      ],
+      "kind": "owner-phrase",
+      "scope": "owner",
+      "effect": "Enables adaptive follow-up by the process owner.",
+      "enforced_by": "prose",
+      "code_refs": [],
+      "prose_refs": [
+        "references/process-owner-scrum-master.md#L1"
+      ],
+      "opposite": "",
+      "example": "proceed unattended",
+      "since": "unknown"
+    },
+    {
+      "id": "work-as-orchestrator",
+      "phrases": [
+        "work as orchestrator",
+        "parallelize"
+      ],
+      "kind": "owner-phrase",
+      "scope": "owner",
+      "effect": "Selects orchestrated mode. With parallelize, selects parallel implementers.",
+      "enforced_by": "prose",
+      "code_refs": [],
+      "prose_refs": [
+        "references/execution-workflows.md#L1"
+      ],
+      "opposite": "",
+      "example": "work as orchestrator",
+      "since": "unknown"
+    },
+    {
+      "id": "solo",
+      "phrases": [
+        "SOLO"
+      ],
+      "kind": "workflow",
+      "scope": "owner",
+      "effect": "One tightly coupled change. Record rung=direct.",
+      "enforced_by": "prose",
+      "code_refs": [],
+      "prose_refs": [
+        "references/execution-workflows.md#L1"
+      ],
+      "opposite": "",
+      "example": "SOLO",
+      "since": "unknown"
+    },
+    {
+      "id": "orch-single",
+      "phrases": [
+        "ORCHESTRATOR + SINGLE IMPLEMENTER"
+      ],
+      "kind": "workflow",
+      "scope": "owner",
+      "effect": "Default orchestrated mode. The orchestrator does not implement.",
+      "enforced_by": "prose",
+      "code_refs": [],
+      "prose_refs": [
+        "references/execution-workflows.md#L1"
+      ],
+      "opposite": "",
+      "example": "ORCHESTRATOR + SINGLE IMPLEMENTER",
+      "since": "unknown"
+    },
+    {
+      "id": "orch-parallel",
+      "phrases": [
+        "ORCHESTRATOR + PARALLEL IMPLEMENTERS"
+      ],
+      "kind": "workflow",
+      "scope": "owner",
+      "effect": "Owner opt-in for file-disjoint units in isolated worktrees.",
+      "enforced_by": "prose",
+      "code_refs": [],
+      "prose_refs": [
+        "references/execution-workflows.md#L1"
+      ],
+      "opposite": "",
+      "example": "ORCHESTRATOR + PARALLEL IMPLEMENTERS",
+      "since": "unknown"
+    },
+    {
+      "id": "role-orchestrator",
+      "phrases": [
+        "orchestrator"
+      ],
+      "kind": "role",
+      "scope": "owner",
+      "effect": "Plans, synthesizes, and verifies. Does not implement the spec.",
+      "enforced_by": "code",
+      "code_refs": [
+        "hooks/kernel.py:24"
+      ],
+      "prose_refs": [
+        "references/roles.md#orchestrator"
+      ],
+      "opposite": "",
+      "example": "work as orchestrator",
+      "since": "unknown"
+    },
+    {
+      "id": "role-implementer",
+      "phrases": [
+        "implementer"
+      ],
+      "kind": "role",
+      "scope": "owner",
+      "effect": "Implements one bounded specification before consolidated validation.",
+      "enforced_by": "code",
+      "code_refs": [
+        "hooks/kernel.py:25"
+      ],
+      "prose_refs": [
+        "references/roles.md#implementer"
+      ],
+      "opposite": "",
+      "example": "implementer",
+      "since": "unknown"
+    },
+    {
+      "id": "role-reviewer",
+      "phrases": [
+        "reviewer"
+      ],
+      "kind": "role",
+      "scope": "owner",
+      "effect": "Independent read-only adversarial review. Never edits.",
+      "enforced_by": "code",
+      "code_refs": [
+        "hooks/kernel.py:26"
+      ],
+      "prose_refs": [
+        "references/roles.md#reviewer"
+      ],
+      "opposite": "",
+      "example": "reviewer",
+      "since": "unknown"
+    },
+    {
+      "id": "role-tester",
+      "phrases": [
+        "tester"
+      ],
+      "kind": "role",
+      "scope": "owner",
+      "effect": "Reproduces behavior and records regression evidence.",
+      "enforced_by": "code",
+      "code_refs": [
+        "hooks/kernel.py:27"
+      ],
+      "prose_refs": [
+        "references/roles.md#tester"
+      ],
+      "opposite": "",
+      "example": "tester",
+      "since": "unknown"
+    },
+    {
+      "id": "role-mechanical",
+      "phrases": [
+        "mechanical-helper"
+      ],
+      "kind": "role",
+      "scope": "owner",
+      "effect": "Deterministic reversible spec-exact work. Stops on ambiguity.",
+      "enforced_by": "code",
+      "code_refs": [
+        "hooks/kernel.py:28"
+      ],
+      "prose_refs": [
+        "references/roles.md#mechanical-helper"
+      ],
+      "opposite": "",
+      "example": "mechanical-helper",
+      "since": "unknown"
+    },
+    {
+      "id": "process-owner",
+      "phrases": [
+        "process-owner",
+        "Scrum-master",
+        "product owner"
+      ],
+      "kind": "role",
+      "scope": "owner",
+      "effect": "Scrum-master only when asked. Product owner maps to process-owner.",
+      "enforced_by": "prose",
+      "code_refs": [],
+      "prose_refs": [
+        "references/roles.md#L1"
+      ],
+      "opposite": "",
+      "example": "process-owner",
+      "since": "unknown"
+    },
+    {
+      "id": "delegate",
+      "phrases": [
+        "delegate"
+      ],
+      "kind": "owner-phrase",
+      "scope": "owner",
+      "effect": "Selects a writer. The receipt is required before the writer call. See the router.",
+      "enforced_by": "code",
+      "code_refs": [
+        "hooks/delegation_gate.py:1"
+      ],
+      "prose_refs": [
+        "skills/chaos-engine/SKILL.md#delegation-ladder"
+      ],
+      "opposite": "",
+      "example": "delegate",
+      "since": "unknown"
+    },
+    {
+      "id": "receipt-tokens",
+      "phrases": [
+        "rung=free",
+        "rung=ask",
+        "rung=paid",
+        "rung=direct",
+        "free=unreachable-declined",
+        "free=too-complex",
+        "effort="
+      ],
+      "kind": "receipt-token",
+      "scope": "receipt",
+      "effect": "Delegation receipt fields checked by the gate.",
+      "enforced_by": "code",
+      "code_refs": [
+        "hooks/delegation_gate.py:1"
+      ],
+      "prose_refs": [
+        "skills/chaos-engine/SKILL.md#delegation-ladder"
+      ],
+      "opposite": "",
+      "example": "rung=direct",
+      "since": "unknown"
+    },
+    {
+      "id": "delegate-card",
+      "phrases": [
+        "delegate card"
+      ],
+      "kind": "brief-marker",
+      "scope": "brief",
+      "effect": "Short card a dispatched worker loads instead of the router.",
+      "enforced_by": "prose",
+      "code_refs": [],
+      "prose_refs": [
+        "references/delegate-card.md#L1"
+      ],
+      "opposite": "",
+      "example": "delegate card",
+      "since": "unknown"
+    },
+    {
+      "id": "review-cap",
+      "phrases": [
+        "review_cap",
+        "review cap"
+      ],
+      "kind": "receipt-token",
+      "scope": "receipt",
+      "effect": "Two adversarial reviews per subject unless an owner lifts the cap.",
+      "enforced_by": "code",
+      "code_refs": [
+        "hooks/delegation_gate.py:23"
+      ],
+      "prose_refs": [
+        "skills/chaos-engine/SKILL.md#delegation-ladder"
+      ],
+      "opposite": "",
+      "example": "review cap",
+      "since": "unknown"
+    },
+    {
+      "id": "ce-load",
+      "phrases": [
+        "ce_load: required"
+      ],
+      "kind": "brief-marker",
+      "scope": "brief",
+      "effect": "A local worker brief must carry this line so the worker loads ChaosEngine.",
+      "enforced_by": "code",
+      "code_refs": [
+        "skills/local-agency/scripts/worker_ce_entry.py:24"
+      ],
+      "prose_refs": [],
+      "opposite": "",
+      "example": "ce_load: required",
+      "since": "unknown"
+    },
+    {
+      "id": "brief-locators",
+      "phrases": [
+        "CE_BRIEF_LOCATORS:"
+      ],
+      "kind": "brief-marker",
+      "scope": "brief",
+      "effect": "Closing line that lists verbatim brief paths for a local design turn.",
+      "enforced_by": "code",
+      "code_refs": [
+        "skills/local-agency/scripts/design_turn_gate.py:11"
+      ],
+      "prose_refs": [],
+      "opposite": "",
+      "example": "CE_BRIEF_LOCATORS:",
+      "since": "unknown"
+    },
+    {
+      "id": "allow-cloud",
+      "phrases": [
+        "--allow-cloud"
+      ],
+      "kind": "owner-phrase",
+      "scope": "owner",
+      "effect": "Allows the OmniRoute cloud transport when the owner says so.",
+      "enforced_by": "prose",
+      "code_refs": [],
+      "prose_refs": [
+        "references/execution-workflows.md#L1"
+      ],
+      "opposite": "",
+      "example": "--allow-cloud",
+      "since": "unknown"
+    },
+    {
+      "id": "triage-depth",
+      "phrases": [
+        "one file",
+        "one module",
+        "public contract",
+        "ultra-lean",
+        "lean",
+        "ultra_lean",
+        "balanced",
+        "default",
+        "deep"
+      ],
+      "kind": "mode",
+      "scope": "owner",
+      "effect": "Triage depth selects a plan size and a token-budget mode.",
+      "enforced_by": "code",
+      "code_refs": [
+        "hooks/lifecycle.py:38"
+      ],
+      "prose_refs": [
+        "skills/chaos-engine/SKILL.md#triage"
+      ],
+      "opposite": "",
+      "example": "one file",
+      "since": "unknown"
+    },
+    {
+      "id": "radio-silence",
+      "phrases": [
+        "radio silence",
+        "CHAOS_RADIO_SILENCE"
+      ],
+      "kind": "mode",
+      "scope": "owner",
+      "effect": "Blocks owner-visible status and routes status to the orchestrator.",
+      "enforced_by": "code",
+      "code_refs": [
+        "runtime/radio_silence.py:7"
+      ],
+      "prose_refs": [
+        "references/radio-silence.md#L1"
+      ],
+      "opposite": "",
+      "example": "radio silence",
+      "since": "unknown"
+    },
+    {
+      "id": "retrieve-receipt",
+      "phrases": [
+        "retrieve: used",
+        "retrieve: skipped",
+        "retrieve: exempt(harness)"
+      ],
+      "kind": "receipt-token",
+      "scope": "receipt",
+      "effect": "Required record of the retrieve-first step.",
+      "enforced_by": "code",
+      "code_refs": [
+        "hooks/guard.py:1"
+      ],
+      "prose_refs": [
+        "skills/chaos-engine/SKILL.md#triage"
+      ],
+      "opposite": "",
+      "example": "retrieve: exempt(harness)",
+      "since": "unknown"
+    },
+    {
+      "id": "pr-marker",
+      "phrases": [
+        "chaos-engine:agentic",
+        "## Plan"
+      ],
+      "kind": "pr-marker",
+      "scope": "pr",
+      "effect": "Marks an agentic pull request. Gates require a plan and a retrieve line.",
+      "enforced_by": "code",
+      "code_refs": [
+        "hooks/guard.py:661"
+      ],
+      "prose_refs": [
+        "references/pr-scope-check.md#L1"
+      ],
+      "opposite": "",
+      "example": "chaos-engine:agentic",
+      "since": "unknown"
+    },
+    {
+      "id": "blocking-unverified",
+      "phrases": [
+        "blocking: unverifiable"
+      ],
+      "kind": "status-token",
+      "scope": "status",
+      "effect": "The only allowed stop while a required check is still pending.",
+      "enforced_by": "prose",
+      "code_refs": [],
+      "prose_refs": [
+        "skills/chaos-engine/SKILL.md#check-and-deliver"
+      ],
+      "opposite": "",
+      "example": "blocking: unverifiable",
+      "since": "unknown"
+    },
+    {
+      "id": "needs-human",
+      "phrases": [
+        "NEEDS-HUMAN"
+      ],
+      "kind": "status-token",
+      "scope": "status",
+      "effect": "Human-only blocker routed to the orchestrator contact.",
+      "enforced_by": "prose",
+      "code_refs": [],
+      "prose_refs": [
+        "references/sequential-wip.md#L1"
+      ],
+      "opposite": "",
+      "example": "NEEDS-HUMAN",
+      "since": "unknown"
+    },
+    {
+      "id": "halt",
+      "phrases": [
+        "HALT"
+      ],
+      "kind": "status-token",
+      "scope": "status",
+      "effect": "Named stop that ends deliver or babysit.",
+      "enforced_by": "prose",
+      "code_refs": [],
+      "prose_refs": [
+        "references/orchestrator-follow-through.md#L1"
+      ],
+      "opposite": "",
+      "example": "HALT",
+      "since": "unknown"
+    },
+    {
+      "id": "done",
+      "phrases": [
+        "Done"
+      ],
+      "kind": "status-token",
+      "scope": "status",
+      "effect": "Say Done only after the pre-done self-review sign-off.",
+      "enforced_by": "prose",
+      "code_refs": [],
+      "prose_refs": [
+        "skills/pre-done-self-review/SKILL.md#L1"
+      ],
+      "opposite": "",
+      "example": "Done",
+      "since": "unknown"
+    },
+    {
+      "id": "learning-session",
+      "phrases": [
+        "Learning Session",
+        "learning session"
+      ],
+      "kind": "ritual",
+      "scope": "status",
+      "effect": "Required after every final delivery.",
+      "enforced_by": "code",
+      "code_refs": [
+        "hooks/guard.py:187"
+      ],
+      "prose_refs": [
+        "skills/chaos-engine/SKILL.md#check-and-deliver"
+      ],
+      "opposite": "",
+      "example": "Learning Session",
+      "since": "unknown"
+    },
+    {
+      "id": "pdca-cap",
+      "phrases": [
+        "PDCA cap",
+        "self-accept push"
+      ],
+      "kind": "ritual",
+      "scope": "status",
+      "effect": "At most three Plan-Do-Check-Act iterations. Review 1 starts with the self-accept push.",
+      "enforced_by": "prose",
+      "code_refs": [],
+      "prose_refs": [
+        "references/delivery-cycle.md#L1"
+      ],
+      "opposite": "",
+      "example": "PDCA cap",
+      "since": "unknown"
+    },
+    {
+      "id": "step-back",
+      "phrases": [
+        "step back",
+        "push back"
+      ],
+      "kind": "principle",
+      "scope": "owner",
+      "effect": "After two failed attempts, re-plan. Push back on a risky pick.",
+      "enforced_by": "prose",
+      "code_refs": [],
+      "prose_refs": [
+        "identity.md#principles"
+      ],
+      "opposite": "",
+      "example": "step back",
+      "since": "unknown"
+    },
+    {
+      "id": "person-only",
+      "phrases": [
+        "person-only attestation"
+      ],
+      "kind": "principle",
+      "scope": "owner",
+      "effect": "The agent will not sit an exam or feed live answers.",
+      "enforced_by": "prose",
+      "code_refs": [],
+      "prose_refs": [
+        "companions/ethics-card.md#L1"
+      ],
+      "opposite": "",
+      "example": "person-only attestation",
+      "since": "unknown"
+    },
+    {
+      "id": "supersede",
+      "phrases": [
+        "supersede"
+      ],
+      "kind": "owner-phrase",
+      "scope": "owner",
+      "effect": "Open one replacing pull request per the kanban rule.",
+      "enforced_by": "prose",
+      "code_refs": [],
+      "prose_refs": [
+        "skills/kanban/SKILL.md#L1"
+      ],
+      "opposite": "",
+      "example": "supersede",
+      "since": "unknown"
+    },
+    {
+      "id": "status-request",
+      "phrases": [
+        "explicit status request"
+      ],
+      "kind": "owner-phrase",
+      "scope": "owner",
+      "effect": "Forces a fresh poll of every registered agent.",
+      "enforced_by": "prose",
+      "code_refs": [],
+      "prose_refs": [
+        "references/delegation-cycle.md#L1"
+      ],
+      "opposite": "",
+      "example": "explicit status request",
+      "since": "unknown"
+    },
+    {
+      "id": "icm-this",
+      "phrases": [
+        "ICM this"
+      ],
+      "kind": "owner-phrase",
+      "scope": "owner",
+      "effect": "Routes to the advisory ICM workspace architect.",
+      "enforced_by": "prose",
+      "code_refs": [],
+      "prose_refs": [
+        "runtime/harness_index.py:161"
+      ],
+      "opposite": "",
+      "example": "ICM this",
+      "since": "unknown"
+    }
+  ]
+}

@@ -41,6 +41,8 @@ inspect and adapt live work on that policy's scope-selected cadence, including
 when the owner asks for unattended babysitting or dynamic follow-ups. Status
 reports use the [status report format](process-owner-scrum-master.md#status-report-format).
 
+A delegate removes the worktree, local branch, and other artifacts it created before it finishes, unless that branch is the open delivery branch the orchestrator still needs. The orchestrator does not leave those artifacts after the stream is merged or abandoned.
+
 In orchestrated mode the orchestrator **never implements media
 generation** (video, talking-avatar / lip-sync, stills, voice renders,
 or their QC pipelines) and never drives that generation through its

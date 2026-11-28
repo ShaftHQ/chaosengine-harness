@@ -23,10 +23,15 @@ change under `chaos-engine/` runs the suite through the PR Gate before merge.
 - **regression** — closed CE failures pinned by issue number. These prove a
   fixed bug stays fixed.
 
-Tasks grade **outcomes** (unittest exit status), not process traces. Each task
-declares `k` (attempts). The runner reports per-task `pass@k` and the suite
-mean `pass_at_k`. The PR gate threshold is `pass_at_k == 1.0` with `default_k
-== 1` until nondeterministic tasks exist.
+Tasks grade **outcomes** (unittest or pytest exit status), not process traces.
+Each task declares `k` (attempts). The runner reports per-task and suite-mean
+`pass@k` (any attempt passed), `pass^k` (every attempt passed), and flakiness
+(pass@k minus pass^k). The PR gate threshold stays `pass_at_k == 1.0` with
+`default_k == 1`. A task may opt in to a larger `k`. Usage fields are
+`input_tokens`, `output_tokens`, `cost_usd`, and `wall_s`. A field that was
+not measured is null. If any trial cost is null, the summary is
+`cost: unknown (n of m trials unmeasured)` and nulls are not added as zero.
+Offline tests report `wall_s` only.
 
 ## Failure ratchet
 

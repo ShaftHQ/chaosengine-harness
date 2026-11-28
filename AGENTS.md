@@ -2,7 +2,7 @@
 
 Portable, provider-neutral working contract: research, plan, implement, verify with evidence, adversarial review, and a learning record. Detail: [guides/overview.md](guides/overview.md).
 
-Install into the project you want to manage. Python is not required first.
+Install into the project you want to manage.
 
 ```bash
 curl -fsSL "https://raw.githubusercontent.com/ShaftHQ/chaosengine-harness/main/install.sh" | bash -s -- "https://raw.githubusercontent.com/ShaftHQ/chaosengine-harness/main/install.sh"
@@ -12,7 +12,9 @@ curl -fsSL "https://raw.githubusercontent.com/ShaftHQ/chaosengine-harness/main/i
 irm "https://raw.githubusercontent.com/ShaftHQ/chaosengine-harness/main/install.ps1" | iex
 ```
 
-The contract in this checkout is [skills/chaos-engine/SKILL.md](skills/chaos-engine/SKILL.md). After install, hosts load `.chaos-engine/skills/chaos-engine/SKILL.md`. Read one of those, not both. Do not open `references/` until that skill routes you there. In this source checkout, `.chaos-engine/` stays synced via `tool.py maintain`. Readers compare `coreCommit`, not only VERSION.
+The contract in this checkout is [skills/chaos-engine/SKILL.md](skills/chaos-engine/SKILL.md). After install, hosts load `.chaos-engine/skills/chaos-engine/SKILL.md`. Read one of those, not both. Compare `coreCommit`. Do not open `references/` until that skill routes you there. In this source checkout, `.chaos-engine/` stays synced via `tool.py maintain`.
+
+Settings, keywords and codes: `docs/agents/reference.md` (fetch on demand ).
 
 Directory map: [docs/layout.md](docs/layout.md). Do not open [docs/source-inventory.md](docs/source-inventory.md) unless the task is the inventory.
 

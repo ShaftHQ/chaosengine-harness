@@ -51,6 +51,35 @@ _EDIT_VERB = re.compile(
     r"\b(?:implement|edit|fix|change|write|update|add|modify|refactor|create)\b",
     re.IGNORECASE,
 )
+_CLAUSE_END = frozenset(".!?\n;:")
+_CLAUSE_QUOTE = frozenset("\"`")
+_INTRODUCER = frozenset(
+    {
+        "and",
+        "or",
+        "then",
+        "please",
+        "just",
+        "also",
+        "now",
+        "instead",
+        "still",
+        "must",
+        "should",
+        "shall",
+    }
+)
+_OBJECT_AFTER = re.compile(
+    r"\s+(?:the|a|an|this|that|these|those|unrelated|all|every|some|my|our|your|its|their|it|them)\b"
+    r"|\s+\S*(?:/|\\)\S*"
+    r"|\s+\S+\.\w+\b",
+    re.IGNORECASE,
+)
+_FOLLOW_OBJECT = re.compile(
+    r"\s+(?!is\b|are\b|was\b|were\b|be\b|of\b)[A-Za-z0-9_./\\-]+",
+    re.IGNORECASE,
+)
+_PREV_WORD = re.compile(r"([A-Za-z]+)\W*$")
 _DIRECT_TOOL = re.compile(
     r"^(?:write|edit|strreplace|multiedit|apply_?patch|notebookedit|search_replace|"
     r"write_file|writefile|write_to_file|writetofile|create_file|createfile|"
@@ -194,6 +223,41 @@ def _editing(text: str) -> bool:
     return _EDIT_VERB.search(_NEGATED_EDIT.sub(" ", text)) is not None
 
 
+def _verb_is_instruction(text: str, match: re.Match[str]) -> bool:
+    """True when the verb tells the spawn to change something, not a title or noun."""
+    before = text[: match.start()].rstrip()
+    if not before or before[-1] in _CLAUSE_END or before[-1] in _CLAUSE_QUOTE:
+        return True
+    previous = _PREV_WORD.search(before)
+    if previous is not None and previous.group(1).casefold() in _INTRODUCER:
+        return True
+    if previous is not None and previous.group(1).casefold().endswith("ly"):
+        return True
+    after = text[match.end() :]
+    if _OBJECT_AFTER.match(after) is not None:
+        return True
+    return _FOLLOW_OBJECT.match(after) is not None
+
+
+def _prompt_only(tool_input: object, text: str) -> str:
+    """Reviewer titles live in description. Instructions are the other fields."""
+    if not isinstance(tool_input, dict):
+        return text
+    parts: list[str] = []
+    for key, value in tool_input.items():
+        if key in {"description", "title"}:
+            continue
+        if isinstance(value, str):
+            parts.append(value)
+    return "\n".join(parts)
+
+
+def _review_instruction(text: str) -> bool:
+    """True when a reviewer prompt still contains a change instruction."""
+    cleaned = _NEGATED_EDIT.sub(" ", text)
+    return any(_verb_is_instruction(cleaned, match) for match in _EDIT_VERB.finditer(cleaned))
+
+
 def _split_statements(text: str) -> list[str]:
     """Split shell command text on unquoted ``&&``, ``||``, ``;``, ``|``, and newlines."""
     parts: list[str] = []
@@ -301,9 +365,15 @@ def classify(tool_name: str, tool_input: object, commands: tuple[str, ...]) -> s
     if _WRITER_TOOL.match(tool_name or ""):
         kind = _subagent_type(tool_input)
         text = _blob(tool_input)
-        if _REVIEW_TYPE.search(kind) and not _editing(text):
+        reviewer = _REVIEW_TYPE.search(kind) is not None
+        adversarial = _REVIEW_TEXT.search(text) is not None
+        # A title or a noun keeps an edit verb. Ignore that only for a reviewer
+        # whose prompt is an adversarial review, and only when no instruction remains.
+        if reviewer and adversarial and not _review_instruction(_prompt_only(tool_input, text)):
             return "review"
-        if _REVIEW_TEXT.search(text) and not _editing(text):
+        if reviewer and not _editing(text):
+            return "review"
+        if adversarial and not _editing(text):
             return "review"
         if not _editing(text):
             return None

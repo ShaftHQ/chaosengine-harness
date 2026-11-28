@@ -146,8 +146,8 @@ present. Bundled `pr-babysit` forbids merge; do not copy that rule into ChaosEng
 
 When the base branch ruleset includes a `merge_queue` rule, enqueue with
 `gh pr merge` and pass no strategy flag (`--merge`, `--squash`, or `--rebase`);
-the merge queue owns the method. Otherwise merge with `gh pr merge --squash`
-(this repository allows only squash merges; merge commits and rebase merges are
+the merge queue owns the method. Otherwise merge with `gh pr merge --merge`
+(this repository allows only merge commits; squash merges and rebase merges are
 disabled).
 
 After **you** merge a PR that changes `chaos-engine/`, rebuild the
@@ -185,7 +185,7 @@ Owner-authorized history correction and non-protected gate waivers:
    open, any FR/SC is unimplemented, or this PR would close an epic that still
    has dropped scope. Never run `gh pr merge --auto`. If the base ruleset has
    `merge_queue`, enqueue with `gh pr merge` and no strategy flag; otherwise
-   run `gh pr merge --squash` only after required checks are green and review
+   run `gh pr merge --merge` only after required checks are green and review
    threads are resolved, and only once scope is complete. Owner-reduced scope counts only when the tracker body
    itself records the drop. Remaining work becomes new sub-issues before merge;
    it does not silently vanish. This is the final assurance action before
@@ -202,7 +202,7 @@ re-verify before merging. If the later merged first and the earlier is `DIRTY`,
 merge `origin/<default>` into the earlier and re-verify — never a second `Fixes`
 PR. Non-overlapping paths may merge in parallel once each is green and reviewed.
 
-4. **Merge** only after that acceptance remains current, the reviews are done, their comments are applied, and the required checks have passed. A skipped or neutral check outside the required set does not block. A failed, cancelled, or pending check blocks when it is required and when no check is marked required. An unmarked skip blocks. An empty check list is not success. A pending check is not success. `gh pr merge <n> --squash --match-head-commit <sha>` (or `gh pr merge <n>` with no strategy flag when the base branch ruleset includes `merge_queue`) is refused while a required check has not finished, a required check is not success, no check is marked required and a failed, cancelled, or pending check remains, or a review thread is unresolved. `--auto` does not bypass that refusal. Never force.
+4. **Merge** only after that acceptance remains current, the reviews are done, their comments are applied, and the required checks have passed. A skipped or neutral check outside the required set does not block. A failed, cancelled, or pending check blocks when it is required and when no check is marked required. An unmarked skip blocks. An empty check list is not success. A pending check is not success. `gh pr merge <n> --merge --match-head-commit <sha>` (or `gh pr merge <n>` with no strategy flag when the base branch ruleset includes `merge_queue`) is refused while a required check has not finished, a required check is not success, no check is marked required and a failed, cancelled, or pending check remains, or a review thread is unresolved. `--auto` does not bypass that refusal. Never force.
 5. **Watch** with `python3 scripts/agents/watch_pr_checks.py --pr <n> --until-merged --digest` (repo-only)
    until merged or a red fix is pushed. One line on GREEN, RED, or MERGED.
    No second poll. Reject a `gh run view` loop and a second watch while one task is pending.

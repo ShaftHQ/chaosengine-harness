@@ -198,12 +198,12 @@ class MergeGateTests(unittest.TestCase):
         snapshot = ready(checks=[{"name": "installer", "status": "IN_PROGRESS", "conclusion": "SUCCESS"}])
         self.assertIn("has not finished", self.reason("gh pr merge 86 --merge --auto", snapshot))
 
-    def test_guard_merge_instruction_uses_squash_and_the_required_set(self):
+    def test_guard_merge_instruction_uses_merge_and_the_required_set(self):
         text = (ROOT / "hooks" / "guard.py").read_text(encoding="utf-8")
         self.assertNotIn("every CI check", text)
-        self.assertNotIn("gh pr merge --merge only", text)
+        self.assertIn("gh pr merge --merge only", text)
         self.assertNotIn("Never squash", text)
-        self.assertIn("gh pr merge --squash", text)
+        self.assertNotIn("gh pr merge --" + "squash", text)
         self.assertIn("outside the required set does not block", text)
         self.assertIn("when no check is marked required", text)
         self.assertIn("An unmarked skip blocks", text)
@@ -224,9 +224,9 @@ class MergeGateTests(unittest.TestCase):
         self.assertIn("review 1 with the self-accept push", skill)
         self.assertIn("Do not start both reviewers in one step", skill)
         self.assertIn("A pending check is not success", skill)
-        self.assertIn("gh pr merge --squash --auto", planning)
-        self.assertIn("Do not run `gh pr merge --squash --auto`", planning)
-        self.assertNotIn("gh pr merge --merge", planning)
+        self.assertIn("gh pr merge --merge --auto", planning)
+        self.assertIn("Do not run `gh pr merge --merge --auto`", planning)
+        self.assertNotIn("gh pr merge --" + "squash", planning)
         self.assertNotIn("No squash", planning)
         self.assertNotIn("Merge with `gh pr merge --merge --auto` only", planning)
 
