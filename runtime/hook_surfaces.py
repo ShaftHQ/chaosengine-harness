@@ -55,6 +55,17 @@ CURSOR_EVENTS = (
     "stop",
     "preCompact",
     "sessionEnd",
+    "beforeShellExecution",
+    "afterShellExecution",
+    "beforeMCPExecution",
+    "afterMCPExecution",
+    "beforeReadFile",
+    "afterFileEdit",
+    "beforeTabFileRead",
+    "afterTabFileEdit",
+    "afterAgentResponse",
+    "afterAgentThought",
+    "workspaceOpen",
 )
 
 # Native names the OpenCode bridge registers. Canonical mapping lives in the kernel.
@@ -100,7 +111,7 @@ def generated_platform() -> str:
 
 
 def cursor_hooks_document() -> dict[str, object]:
-    """Version-1 Cursor hooks. failClosed only on the preventive gate."""
+    """Version-1 Cursor hooks. failClosed on preToolUse, beforeShellExecution, and beforeReadFile."""
     hooks: dict[str, list[dict[str, object]]] = {}
     for event in CURSOR_EVENTS:
         entry: dict[str, object] = {

@@ -5111,11 +5111,62 @@ def _gemini_before_tool_selection(event: dict) -> int:
     return 0
 
 
+def _cursor_project_vendor_fields(event: dict) -> None:
+    """Copy a bare Cursor command or file_path into the existing tool input.
+
+    beforeMCPExecution always names tool_name. Its command is the server
+    launch line, so it must not replace the tool params.
+    """
+    tool_input = event.get("tool_input")
+    if not isinstance(tool_input, dict):
+        tool_input = {}
+    else:
+        tool_input = dict(tool_input)
+    if tool_input or str(event.get("tool_name") or "").strip():
+        return
+    file_path = event.get("file_path")
+    if isinstance(file_path, str) and file_path.strip():
+        event["tool_input"] = {"file_path": file_path}
+        event["tool_name"] = "Read"
+        return
+    command = event.get("command")
+    if isinstance(command, str) and command.strip():
+        event["tool_input"] = {"command": command}
+        event["tool_name"] = "Shell"
+
+
+def _cursor_secret_path_reason(event: dict) -> str:
+    """Deny a read path the secret guard already names. No new path list."""
+    path = event.get("file_path")
+    if not isinstance(path, str) or not path.strip():
+        return ""
+    if str(event.get("tool_name") or "") != "Read":
+        return ""
+    guard = _secret_guard()
+    if guard is None or not hasattr(guard, "findings"):
+        return ""
+    root = Path(str(event.get("cwd") or Path.cwd()))
+    try:
+        blocked = guard.blocked_paths(root)
+        allow = guard.allowed_globs(root) if hasattr(guard, "allowed_globs") else []
+        found = guard.findings(path, b"", set(), allow, blocked)
+    except (OSError, re.error, TypeError, ValueError):
+        return ""
+    if not found:
+        return ""
+    return str(found[0])
+
+
 def _guarded_event(event: dict, host: str) -> int:
     """#7251: the delete guard runs first on PreToolUse, session-independent like R8."""
     event_name = ""
     if isinstance(event, dict):
         event_name = str(event.get("hook_event_name") or event.get("hookEventName") or "")
+    if host == "cursor" and isinstance(event, dict):
+        _cursor_project_vendor_fields(event)
+        secret_reason = _cursor_secret_path_reason(event)
+        if secret_reason:
+            return _deny(event, event_name or "PreToolUse", str(event.get("tool_name") or ""), secret_reason)
     if host == "gemini" and isinstance(event, dict):
         native = _gemini_native(event)
         # AfterModel is not a lifecycle event. Notification cannot block.
