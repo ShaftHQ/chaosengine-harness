@@ -1,0 +1,14 @@
+# canary: c0ffee00-0206-4000-8000-000000000002
+
+[task]
+
+[metadata]
+difficulty = "easy"
+category = "regression"
+
+[agent]
+timeout_sec = 60
+max_steps = 4
+
+[verifier]
+timeout_sec = 15

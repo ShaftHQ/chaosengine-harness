@@ -1,7 +1,6 @@
 # Port quarantine for tests copied from SHAFT_ENGINE (#8065).
 # Whole files: depend on SHAFT_ENGINE-only modules (scripts/ci, scripts/agents) or fixtures.
 tests/scripts/test_chaos_engine_eval_parity_fixtures.py
-tests/scripts/test_chaos_engine_harness_eval_suite.py
 tests/scripts/test_chaos_engine_hook.py
 tests/scripts/test_chaos_engine_install_resilience_7314.py
 tests/scripts/test_chaos_engine_live_installer_acceptance.py
