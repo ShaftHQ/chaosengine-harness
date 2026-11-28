@@ -108,7 +108,7 @@ Pins in `evals/host-doc-conformance.json` follow the pages below. A missing offi
 | Codex | https://learn.chatgpt.com/docs/hooks | PreCompact, PostCompact, PermissionRequest, PreModelRequest, PostModelRequest, Interrupt | none. PostToolUseFailure is not on the page. |
 | Grok | https://docs.x.ai/build/features/hooks | PreCompact, PostCompact, PermissionDenied, StopFailure, Notification | none |
 | Gemini CLI | https://geminicli.com/docs/hooks/ | BeforeModel, AfterModel, BeforeToolSelection, Notification | none |
-| Copilot | https://docs.github.com/en/copilot/reference/hooks-reference | none | userPromptTransformed, permissionRequest, subagentStart, errorOccurred, notification |
+| Copilot | https://docs.github.com/copilot/reference/hooks-reference | permissionRequest, subagentStart, userPromptTransformed, errorOccurred, notification | none |
 | Cursor | https://cursor.com/docs/hooks | none | beforeShellExecution, afterShellExecution, beforeMCPExecution, afterMCPExecution, beforeReadFile, afterFileEdit, beforeTabFileRead, afterTabFileEdit, afterAgentResponse, afterAgentThought, workspaceOpen |
 | OpenCode | https://opencode.ai/docs/build/plugins/server | none | prompt, context, compaction, generate, title, experimental.model.resolve, model.request, http.request, http.response, experimental.ws.handshake, experimental.ws.send, experimental.ws.receive, retry, fork, evaluate, create.before |
 | Antigravity | https://antigravity.google/docs/hooks.md | none | none |

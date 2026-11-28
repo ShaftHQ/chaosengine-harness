@@ -1358,5 +1358,244 @@ class GeminiHookEventsTest(TestCase):
                 self.assertEqual("{}\n", stdout)
 
 
+_COPILOT_HOOK_EVENTS = {
+    "sessionStart",
+    "sessionEnd",
+    "userPromptSubmitted",
+    "userPromptTransformed",
+    "preToolUse",
+    "postToolUse",
+    "postToolUseFailure",
+    "permissionRequest",
+    "agentStop",
+    "subagentStart",
+    "subagentStop",
+    "preCompact",
+    "errorOccurred",
+    "notification",
+}
+_COPILOT_OBSERVE_EVENTS = ("userPromptTransformed", "errorOccurred", "notification")
+_COPILOT_DENY_COMMAND = "git reset --hard HEAD"
+_DENY_DECISIONS = {"deny", "block"}
+
+
+def _context_without_token(text: str) -> str:
+    return "\n".join(
+        line for line in text.splitlines() if not line.startswith("Token (never track it):")
+    )
+
+
+def _payload_denies(body: object) -> bool:
+    if not isinstance(body, dict):
+        return False
+    for key in ("decision", "permissionDecision", "behavior"):
+        value = body.get(key)
+        if isinstance(value, str) and value.casefold() in _DENY_DECISIONS:
+            return True
+        if isinstance(value, dict) and _payload_denies(value):
+            return True
+    nested = body.get("hookSpecificOutput")
+    return isinstance(nested, dict) and _payload_denies(nested)
+
+
+class CopilotHookEventsTest(TestCase):
+    """Issue 278: register the five Copilot events and their decisions."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.guard = _load_guard()
+        cls.hosts = _load_hosts()
+        cls.kernel = load_kernel()
+        cls.lifecycle = load_lifecycle()
+
+    def _run(self, payload: dict) -> tuple[int, str]:
+        stdout = io.StringIO()
+        with mock.patch.dict(os.environ, {"CHAOS_ENGINE_HOST": "copilot"}, clear=False):
+            with redirect_stdout(stdout):
+                with mock.patch("sys.stdin", io.StringIO(json.dumps(payload))):
+                    code = self.guard.main()
+        return code, stdout.getvalue()
+
+    def test_copilot_hooks_register_fourteen_events_outside_required_set(self):
+        hooks = json.loads(self.hosts.copilot_hooks_document())["hooks"]
+        self.assertEqual(_COPILOT_HOOK_EVENTS, set(hooks))
+        for event, handlers in hooks.items():
+            handler = handlers[0]
+            self.assertEqual(30, handler["timeoutSec"])
+            self.assertEqual(".", handler["cwd"])
+            self.assertIn("bash", handler)
+            self.assertIn("powershell", handler)
+            self.assertNotIn("matcher", handler)
+            self.assertNotEqual("http", handler.get("type"))
+        for name in (
+            "permissionRequest",
+            "subagentStart",
+            "userPromptTransformed",
+            "errorOccurred",
+            "notification",
+        ):
+            self.assertNotIn(name, self.hosts.REQUIRED_HOOK_EVENTS)
+        aliases = self.kernel.HOST_CAPABILITIES["copilot"].event_aliases
+        self.assertEqual("PreToolUse", aliases["permissionRequest"])
+        self.assertEqual("SessionStart", aliases["subagentStart"])
+        for name in _COPILOT_OBSERVE_EVENTS:
+            self.assertEqual(name, aliases[name])
+            self.assertNotIn(name, self.lifecycle.LIFECYCLE_EVENTS)
+        self.assertNotIn("Notification", aliases)
+        self.assertEqual("notification", self.kernel._event_name("Notification", "copilot"))
+        self.assertIn("Notification", self.lifecycle.LIFECYCLE_EVENTS)
+        self.assertFalse(self.kernel.HOST_CAPABILITIES["copilot"].process_exit2_honored)
+        guide = (ROOT / "guides" / "tools" / "copilot.md").read_text(encoding="utf-8")
+        for name in _COPILOT_HOOK_EVENTS:
+            self.assertIn(name, guide)
+        self.assertIn("additionalContext", guide)
+        self.assertIn("observe", guide)
+        matrix = (ROOT / "references" / "host-parity-matrix.md").read_text(encoding="utf-8")
+        row = next(line for line in matrix.splitlines() if line.startswith("| Copilot |"))
+        cells = [cell.strip() for cell in row.strip().strip("|").split("|")]
+        for name in (
+            "permissionRequest",
+            "subagentStart",
+            "userPromptTransformed",
+            "errorOccurred",
+            "notification",
+        ):
+            self.assertIn(name, cells[2])
+        self.assertEqual("none", cells[3])
+        pin = next(
+            item
+            for item in json.loads(
+                (ROOT / "evals" / "host-doc-conformance.json").read_text(encoding="utf-8")
+            )["hook_events"]
+            if item.get("host") == "copilot"
+        )
+        self.assertEqual("https://docs.github.com/copilot/reference/hooks-reference", pin["url"])
+        self.assertEqual(
+            "878c60659283b26d2dd7899132ec20345887ab9ce0445e8a2b9fe977f0f57a5e",
+            pin["content_sha256"],
+        )
+
+    def test_copilot_permission_request_deny_includes_behavior_and_decision(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            denied = {
+                "sessionId": "c278-deny",
+                "cwd": temporary,
+                "toolName": "bash",
+                "toolArgs": {"command": _COPILOT_DENY_COMMAND},
+            }
+            pre_code, pre_stdout = self._run({**denied, "hook_event_name": "preToolUse"})
+            perm_code, perm_stdout = self._run(
+                {**denied, "hook_event_name": "permissionRequest", "sessionId": "c278-perm"}
+            )
+            allowed = {
+                "sessionId": "c278-allow",
+                "cwd": temporary,
+                "toolName": "read",
+                "toolArgs": {"path": "README.md"},
+            }
+            pre_ok, pre_ok_stdout = self._run({**allowed, "hook_event_name": "preToolUse"})
+            perm_ok, perm_ok_stdout = self._run(
+                {**allowed, "hook_event_name": "permissionRequest"}
+            )
+        self.assertEqual(2, pre_code)
+        self.assertEqual(2, perm_code)
+        pre_body = json.loads(pre_stdout)
+        body = json.loads(perm_stdout)
+        self.assertEqual("deny", pre_body["permissionDecision"])
+        self.assertEqual("deny", body["permissionDecision"])
+        self.assertTrue(body["permissionDecisionReason"])
+        self.assertEqual("deny", body["behavior"])
+        self.assertEqual(body["permissionDecisionReason"], body["message"])
+        self.assertEqual(0, pre_ok)
+        self.assertEqual(0, perm_ok)
+        self.assertFalse(_payload_denies(json.loads(pre_ok_stdout)))
+        self.assertFalse(_payload_denies(json.loads(perm_ok_stdout)))
+
+    def test_copilot_subagent_start_prepends_session_context_and_does_not_deny(self):
+        """Vendor general-purpose agents omit subagentStart. That absence is not a failure."""
+        with tempfile.TemporaryDirectory() as started, tempfile.TemporaryDirectory() as spawned:
+            start_code, start_stdout = self._run(
+                {
+                    "hook_event_name": "sessionStart",
+                    "sessionId": "c278-start",
+                    "cwd": started,
+                }
+            )
+            sub_code, sub_stdout = self._run(
+                {
+                    "hook_event_name": "subagentStart",
+                    "sessionId": "c278-sub",
+                    "cwd": spawned,
+                }
+            )
+        self.assertEqual(0, start_code)
+        self.assertEqual(0, sub_code)
+        start_body = json.loads(start_stdout)
+        sub_body = json.loads(sub_stdout)
+        self.assertTrue(start_body["additionalContext"])
+        self.assertTrue(sub_body["additionalContext"])
+        self.assertEqual(
+            _context_without_token(start_body["additionalContext"]),
+            _context_without_token(sub_body["additionalContext"]),
+        )
+        self.assertFalse(_payload_denies(sub_body))
+        self.assertNotIn("permissionDecision", sub_body)
+        self.assertNotIn("behavior", sub_body)
+
+    def test_copilot_observe_events_do_not_deny(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            for event in _COPILOT_OBSERVE_EVENTS:
+                payload = {
+                    "hook_event_name": event,
+                    "sessionId": f"c278-{event}",
+                    "cwd": temporary,
+                    "cancelled": True,
+                    "toolName": "bash",
+                    "toolArgs": {"command": _COPILOT_DENY_COMMAND},
+                }
+                code, stdout = self._run(payload)
+                with self.subTest(event=event):
+                    self.assertEqual(0, code)
+                    self.assertEqual("{}\n", stdout)
+                    body = json.loads(stdout)
+                    self.assertFalse(_payload_denies(body))
+                    if event == "notification":
+                        self.assertNotIn("additionalContext", body)
+
+    def test_copilot_notification_observes_the_documented_payload(self):
+        documented = {
+            "hook_event_name": "Notification",
+            "sessionId": "c278-note",
+            "cwd": str(ROOT),
+            "message": "Shell completed",
+            "notification_type": "shell_completion",
+        }
+        self.assertNotIn("cancelled", documented)
+        self.assertNotIn("toolName", documented)
+        self.assertNotIn("toolArgs", documented)
+        code, stdout = self._run(documented)
+        self.assertEqual(0, code)
+        self.assertEqual("{}\n", stdout)
+        body = json.loads(stdout)
+        self.assertFalse(_payload_denies(body))
+        self.assertNotIn("additionalContext", body)
+        cancelled = {**documented, "sessionId": "c278-nc", "cancelled": True}
+        cancel_code, cancel_stdout = self._run(cancelled)
+        self.assertEqual(0, cancel_code)
+        self.assertEqual("{}\n", cancel_stdout)
+        self.assertFalse(_payload_denies(json.loads(cancel_stdout)))
+        self.assertNotIn("additionalContext", json.loads(cancel_stdout))
+
+    def test_copilot_cloud_permission_request_blocking_unverified(self):
+        """Cloud agent does not fire permissionRequest. blocking: unverifiable.
+
+        No cloud fixture executes the tool-does-not-run claim. This test does
+        not record a live cloud or live CLI run.
+        """
+        capability = self.kernel.HOST_CAPABILITIES["copilot"]
+        self.assertIn("cloud", capability.static_surfaces)
+        self.assertFalse(capability.process_exit2_honored)
+
+
 if __name__ == "__main__":
     main()

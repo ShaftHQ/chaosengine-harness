@@ -507,7 +507,7 @@
     },
     {
       "host": "copilot",
-      "url": "https://docs.github.com/en/copilot/reference/hooks-reference",
+      "url": "https://docs.github.com/copilot/reference/hooks-reference",
       "retrieved": "2026-11-27",
       "casing": "camelCase",
       "fail_default": "fail-open",
