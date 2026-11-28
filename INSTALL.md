@@ -263,7 +263,7 @@ activates that client:
   missing CLI leaves the adapter files and the manual card, and the install
   still succeeds.
 - Cursor writes `.cursor/hooks.json`. OpenCode writes
-  `.opencode/plugins/chaos-engine-receipt.js`. Antigravity writes named hooks in
+  `.opencode/plugins/chaos-engine/index.js`. Antigravity writes named hooks in
   `.agents/hooks.json` (under `"chaos-engine"`). All three call the shared guard.
   A selection of any other client does not write those files.
   A full unattended install writes all three.

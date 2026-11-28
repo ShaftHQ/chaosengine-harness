@@ -38,7 +38,7 @@ STATIC_PATTERNS = (
     ".chaos-engine-owned-directory",
     # Guard surfaces wired for Cursor, OpenCode, and Antigravity.
     "/.cursor/hooks.json",
-    "/.opencode/plugins/chaos-engine-receipt.js",
+    "/.opencode/plugins/chaos-engine/index.js",
     "/.agents/hooks.json",
 )
 _FALSE = {"", "0", "false", "no", "off"}

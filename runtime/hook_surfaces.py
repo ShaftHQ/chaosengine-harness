@@ -12,7 +12,8 @@ import platform
 from pathlib import Path
 
 CURSOR_HOOKS = ".cursor/hooks.json"
-OPENCODE_PLUGIN = ".opencode/plugins/chaos-engine-receipt.js"
+OPENCODE_PLUGIN = ".opencode/plugins/chaos-engine/index.js"
+_OPENCODE_LEGACY_PLUGIN = ".opencode/plugins/chaos-engine-receipt.js"
 ANTIGRAVITY_HOOKS = ".agents/hooks.json"
 CLAUDE_HOOKS = ".claude/settings.json"
 CODEX_HOOKS = ".codex/hooks.json"
@@ -68,14 +69,29 @@ CURSOR_EVENTS = (
     "workspaceOpen",
 )
 
-# Native names the OpenCode bridge registers. Canonical mapping lives in the kernel.
+# Current server hook names. V1 keys are not in this tuple. Order matches the pin.
+_OPENCODE_SESSION_OBSERVE = (
+    "context",
+    "compaction",
+    "generate",
+    "title",
+    "experimental.model.resolve",
+    "model.request",
+    "http.request",
+    "http.response",
+    "experimental.ws.handshake",
+    "experimental.ws.send",
+    "experimental.ws.receive",
+    "retry",
+    "fork",
+)
 OPENCODE_NATIVE_EVENTS = (
-    "tool.execute.before",
+    "prompt",
+    *_OPENCODE_SESSION_OBSERVE,
+    "evaluate",
+    "create.before",
     "execute.before",
-    "tool.execute.after",
     "execute.after",
-    "session.created",
-    "session.idle",
 )
 
 ANTIGRAVITY_HOOK_NAME = "chaos-engine"
@@ -178,186 +194,202 @@ def cursor_platform_finding(document: dict[str, object], machine: str | None = N
 
 
 def opencode_plugin_source() -> str:
-    """Plain JS guard bridge. No build and no npm. V1 and V2 from one file."""
+    """Plain JS directory plugin. No build and no npm. Current server hooks only."""
     fail_closed = "true" if _fail_closed("PreToolUse") else "false"
-    return f"""// ChaosEngine guard bridge. Generated; rerun the installer instead of editing.
-// PreToolUse timeout follows runtime/gate_fail_closed.py. Stop on session.idle is observe-only.
-import {{ spawn }} from 'node:child_process';
+    session_observe = ", ".join(json.dumps(name) for name in _OPENCODE_SESSION_OBSERVE)
+    template = """// ChaosEngine guard bridge. Generated; rerun the installer instead of editing.
+// execute.before throws when the guard denies. The prompt hook can change admitted text.
+// Other current hooks only observe. No npm build.
+import { Plugin } from '@opencode/plugin';
+import { spawn } from 'node:child_process';
 
-const FAIL_CLOSED_PRE_TOOL = {fail_closed};
+const FAIL_CLOSED_PRE_TOOL = @@FAIL@@;
 const DEFAULT_TIMEOUT_MS = 30000;
+const SESSION_OBSERVE = [@@OBSERVE@@];
 
-function timeoutMs() {{
+function timeoutMs() {
   const raw = Number(process.env.CE_OPENCODE_GUARD_TIMEOUT_MS || DEFAULT_TIMEOUT_MS);
   if (!Number.isFinite(raw) || raw < 1) return DEFAULT_TIMEOUT_MS;
   return Math.min(raw, DEFAULT_TIMEOUT_MS);
-}}
+}
 
-function pythonCandidates() {{
+function pythonCandidates() {
   const forced = process.env.CE_OPENCODE_PYTHON;
   if (forced) return [forced];
   return process.platform === 'win32' ? ['py', 'python'] : ['python3', 'python'];
-}}
+}
 
-function runGuard(directory, payload) {{
+function runGuard(directory, payload) {
   const candidates = pythonCandidates();
   const failClosed = FAIL_CLOSED_PRE_TOOL && payload.hook_event_name === 'PreToolUse';
-  return new Promise((resolve, reject) => {{
+  return new Promise((resolve, reject) => {
     let index = 0;
-    const attempt = () => {{
-      if (index >= candidates.length) {{
+    const attempt = () => {
+      if (index >= candidates.length) {
         const error = new Error('ChaosEngine guard unavailable: Python 3.11+ is missing');
         if (failClosed) reject(error);
-        else resolve({{ decision: 'allow' }});
+        else resolve({ decision: 'allow' });
         return;
-      }}
+      }
       const command = candidates[index++];
       const args = command === 'py'
         ? ['-3', '.chaos-engine/hooks/launch.py', 'opencode']
         : ['.chaos-engine/hooks/launch.py', 'opencode'];
       let child;
-      try {{
-        child = spawn(command, args, {{ cwd: directory, stdio: ['pipe', 'pipe', 'pipe'] }});
-      }} catch (error) {{
+      try {
+        child = spawn(command, args, { cwd: directory, stdio: ['pipe', 'pipe', 'pipe'] });
+      } catch (error) {
         attempt();
         return;
-      }}
+      }
       let out = '';
       let settled = false;
-      const timer = setTimeout(() => {{
+      const timer = setTimeout(() => {
         if (settled) return;
         settled = true;
         child.kill();
         if (failClosed) reject(new Error('ChaosEngine guard timed out'));
-        else resolve({{ decision: 'allow' }});
-      }}, timeoutMs());
-      child.stdout.on('data', (chunk) => {{ out += chunk; }});
-      child.on('error', () => {{
+        else resolve({ decision: 'allow' });
+      }, timeoutMs());
+      child.stdout.on('data', (chunk) => { out += chunk; });
+      child.on('error', () => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
         attempt();
-      }});
-      child.on('close', (code, signal) => {{
+      });
+      child.on('close', (code, signal) => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
         const text = String(out || '').trim();
         let parsed = null;
-        if (text) {{
-          try {{
+        if (text) {
+          try {
             parsed = JSON.parse(text);
-          }} catch (error) {{
+          } catch (error) {
             parsed = null;
-          }}
-        }}
+          }
+        }
         const denied = Boolean(parsed && typeof parsed === 'object' && (
           parsed.decision === 'block' || parsed.decision === 'deny' || parsed.permission === 'deny'
         ));
         const crashed = code !== 0 || Boolean(signal) || !text || !parsed || typeof parsed !== 'object';
-        if (failClosed && crashed && !denied) {{
+        if (failClosed && crashed && !denied) {
           reject(new Error(
             !text || !parsed || typeof parsed !== 'object'
               ? 'ChaosEngine guard returned invalid JSON'
               : 'ChaosEngine guard exited ' + String(code == null ? signal : code)
           ));
           return;
-        }}
-        if (!parsed || typeof parsed !== 'object') {{
-          resolve({{ decision: 'allow' }});
+        }
+        if (!parsed || typeof parsed !== 'object') {
+          resolve({ decision: 'allow' });
           return;
-        }}
+        }
         resolve(parsed);
-      }});
-      child.stdin.on('error', () => {{}});
-      try {{
+      });
+      child.stdin.on('error', () => {});
+      try {
         child.stdin.write(JSON.stringify(payload));
         child.stdin.end();
-      }} catch (error) {{
+      } catch (error) {
         // The error event retries the next interpreter.
-      }}
-    }};
+      }
+    };
     attempt();
-  }});
-}}
+  });
+}
 
-function payloadFor(event, input, output) {{
-  const source = input || {{}};
-  const extra = output || {{}};
-  // OpenCode 1.18 calls tool.execute.before(meta, {{args}}). The command is on
-  // the second object. tool.execute.after puts args on the first object.
-  const toolInput = source.args || source.input || source.tool_input
-    || extra.args || extra.input || extra.tool_input
-    || {{}};
-  const payload = {{
-    hook_event_name: event,
+function payloadFor(eventName, event) {
+  const source = event || {};
+  const promptValue = source.prompt;
+  const promptText = promptValue && typeof promptValue === 'object'
+    ? String(promptValue.text || '')
+    : (typeof promptValue === 'string' ? promptValue : '');
+  const toolInput = source.input || source.args || source.tool_input || {};
+  const payload = {
+    hook_event_name: eventName,
     tool_name: source.tool || source.name || '',
     tool_input: toolInput,
-    session_id: source.sessionID || source.sessionId || source.session_id || extra.sessionID || '',
-    tool_use_id: source.callID || source.tool_use_id || source.id || extra.callID || '',
-  }};
-  if (event === 'PostToolUse' || event === 'PostToolUseFailure') {{
-    const carried = extra.tool_response || extra.toolResponse;
-    if (carried && typeof carried === 'object') {{
-      payload.tool_response = carried;
-    }} else if (extra.stdout != null || extra.stderr != null || extra.output != null) {{
+    session_id: source.sessionID || source.sessionId || source.session_id || '',
+    tool_use_id: source.callID || source.tool_use_id || source.id || '',
+  };
+  if (promptText) payload.prompt = promptText;
+  if (eventName === 'PostToolUse' || eventName === 'PostToolUseFailure') {
+    let carried = null;
+    if (source.result && typeof source.result === 'object') carried = source.result;
+    else if (source.output && typeof source.output === 'object') carried = source.output;
+    else if (source.stdout != null || source.stderr != null) {
       const asText = (value) => (
         value == null ? '' : (typeof value === 'string' ? value : JSON.stringify(value))
       );
-      payload.tool_response = {{
-        stdout: asText(extra.stdout),
-        stderr: asText(extra.stderr),
-        output: asText(extra.output),
-      }};
-    }} else if (typeof extra === 'string' && extra) {{
-      payload.tool_response = {{ stdout: extra, output: extra }};
-    }}
-  }}
+      carried = {
+        stdout: asText(source.stdout),
+        stderr: asText(source.stderr),
+        output: asText(source.output),
+      };
+    }
+    if (carried) payload.tool_response = carried;
+  }
   return payload;
-}}
+}
 
-async function guard(directory, event, input, output) {{
-  const result = await runGuard(directory, payloadFor(event, input, output));
-  const denied = result && (
+function denied(result) {
+  return Boolean(result && (
     result.decision === 'block' || result.decision === 'deny' || result.permission === 'deny'
-  );
-  if (denied) {{
+  ));
+}
+
+async function guard(directory, event) {
+  const result = await runGuard(directory, payloadFor('PreToolUse', event));
+  if (denied(result)) {
     throw new Error(result.reason || result.user_message || 'Blocked by ChaosEngine.');
-  }}
-}}
+  }
+}
 
-function afterEvent(input, output) {{
-  const bag = output && (output.status === 'error' || output.error) ? output : input;
-  if (bag && (bag.status === 'error' || bag.error)) return 'PostToolUseFailure';
+function afterEvent(event) {
+  if (event && (event.status === 'error' || event.error)) return 'PostToolUseFailure';
   return 'PostToolUse';
-}}
+}
 
-export function chaosEnginePlugin(input) {{
-  const directory = (input && (input.directory || input.worktree || input.cwd)) || process.cwd();
-  if (input && input.tool && typeof input.tool.hook === 'function') {{
-    input.tool.hook('execute.before', async (call, output) => guard(directory, 'PreToolUse', call, output));
-    input.tool.hook('execute.after', async (call, output) => guard(directory, afterEvent(call, output), call, output));
-    if (input.event && typeof input.event.hook === 'function') {{
-      input.event.hook('session.created', async (call) => guard(directory, 'SessionStart', call));
-      input.event.hook('session.idle', async (call) => {{
-        try {{ await guard(directory, 'Stop', call); }} catch (error) {{ /* observe-only Stop */ }}
-      }});
-    }}
-    return {{}};
-  }}
-  return {{
-    'tool.execute.before': async (call, output) => guard(directory, 'PreToolUse', call, output),
-    'tool.execute.after': async (call, output) => guard(directory, afterEvent(call, output), call, output),
-    'session.created': async (call) => guard(directory, 'SessionStart', call),
-    'session.idle': async (call) => {{
-      try {{ await guard(directory, 'Stop', call); }} catch (error) {{ /* observe-only Stop */ }}
-    }},
-  }};
-}}
+async function observe(directory, eventName, event) {
+  try {
+    await runGuard(directory, payloadFor(eventName, event));
+  } catch (error) {
+    // Observe hooks do not deny.
+  }
+}
 
-export default chaosEnginePlugin;
-export const ChaosEngineGuard = chaosEnginePlugin;
+async function onPrompt(directory, event) {
+  let result = null;
+  try {
+    result = await runGuard(directory, payloadFor('UserPromptSubmit', event));
+  } catch (error) {
+    return;
+  }
+  const extra = result && typeof result.additionalContext === 'string' ? result.additionalContext : '';
+  if (!extra || !event || !event.prompt || typeof event.prompt !== 'object') return;
+  const current = typeof event.prompt.text === 'string' ? event.prompt.text : '';
+  event.prompt.text = current ? current + '\\n' + extra : extra;
+}
+
+export default Plugin.define({
+  id: 'chaos-engine',
+  async setup(ctx) {
+    const directory = (ctx && ctx.location && ctx.location.directory) || process.cwd();
+    await ctx.tool.hook("execute.before", (event) => guard(directory, event));
+    await ctx.tool.hook("execute.after", (event) => observe(directory, afterEvent(event), event));
+    await ctx.session.hook("prompt", (event) => onPrompt(directory, event));
+    for (const name of SESSION_OBSERVE) {
+      await ctx.session.hook(name, (event) => observe(directory, name, event));
+    }
+    await ctx.permission.hook("evaluate", (event) => observe(directory, "evaluate", event));
+    await ctx.shell.hook("create.before", (event) => observe(directory, "create.before", event));
+  },
+});
 """
+    return template.replace("@@FAIL@@", fail_closed).replace("@@OBSERVE@@", session_observe)
 
 
 def _joined_matchers() -> tuple[str, str]:
@@ -523,12 +555,26 @@ def install_cursor(project: Path) -> Path:
     return target
 
 
+def _drop_owned_js(path: Path) -> bool:
+    if not path.is_file() or path.is_symlink():
+        return False
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    if not text.startswith(_OPENCODE_MARKERS):
+        return False
+    path.unlink()
+    return True
+
+
 def install_opencode(project: Path) -> Path:
     target = project / OPENCODE_PLUGIN
     target.parent.mkdir(parents=True, exist_ok=True)
     temporary = target.with_name(f"{target.name}.tmp-{os.getpid()}")
     temporary.write_text(opencode_plugin_source(), encoding="utf-8")
     temporary.replace(target)
+    _drop_owned_js(project / _OPENCODE_LEGACY_PLUGIN)
     return target
 
 
@@ -575,14 +621,14 @@ def uninstall_cursor(project: Path) -> bool:
 
 
 def uninstall_opencode(project: Path) -> bool:
-    target = project / OPENCODE_PLUGIN
-    if not target.is_file() or target.is_symlink():
-        return False
-    text = target.read_text(encoding="utf-8")
-    if text.startswith(_OPENCODE_MARKERS):
-        target.unlink()
-        return True
-    return False
+    removed = _drop_owned_js(project / OPENCODE_PLUGIN)
+    removed = _drop_owned_js(project / _OPENCODE_LEGACY_PLUGIN) or removed
+    directory = (project / OPENCODE_PLUGIN).parent
+    try:
+        directory.rmdir()
+    except OSError:
+        pass
+    return removed
 
 
 def uninstall_antigravity(project: Path) -> bool:

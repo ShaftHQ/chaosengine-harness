@@ -72,7 +72,7 @@ HOST_FILES = {
     "copilot": (".github/hooks/chaos-engine.json", ".github/skills/chaos-engine/SKILL.md"),
     "gemini": (".gemini/settings.json", ".gemini/skills/chaos-engine/SKILL.md", "GEMINI.md"),
     "grok": (".grok/hooks",),
-    "opencode": ("AGENTS.md", ".opencode/plugins/chaos-engine-receipt.js"),
+    "opencode": ("AGENTS.md", ".opencode/plugins/chaos-engine/index.js"),
     "cursor": ("AGENTS.md", ".cursor/hooks.json"),
     "grok-bot": (BOT_ENTRY,),
     "openbot": ("AGENTS.md", ROUTER),

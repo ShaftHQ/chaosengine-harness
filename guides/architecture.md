@@ -71,7 +71,7 @@ Portable host files are still written for every client. Claude and Codex
 register a marketplace when that CLI is on `PATH` and the client is in the
 resolved host set. Cursor writes
 `.cursor/hooks.json` and OpenCode writes
-`.opencode/plugins/chaos-engine-receipt.js` only when that host is in the
+`.opencode/plugins/chaos-engine/index.js` only when that host is in the
 resolved host set; shims for hosts outside the set are removed. The resolved
 set comes from `--hosts`, `CHAOS_ENGINE_HOST`, the wizard, or a single
 inferred host. When no host is resolved, the unattended path registers a

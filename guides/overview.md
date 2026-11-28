@@ -120,7 +120,7 @@ gaps, including exit-2 fidelity, are in the
 | `gemini` | Gemini CLI | Lifecycle hooks. The hook launcher is Node.js ([hooks/launch.js](../hooks/launch.js)). |
 | `grok` | Grok | Lifecycle hooks. A live PreToolUse probe showed exit 2 denies and the tool did not run. Stop cannot block. |
 | `copilot` | GitHub Copilot | Lifecycle hooks for the CLI. Cloud and IDE surfaces are checked statically. This host can ignore an exit-2 deny (GAP-EXIT2). |
-| `opencode` | OpenCode | Guard bridge in `.opencode/plugins/chaos-engine-receipt.js`. A throw from the before-hook denies the tool. `session.idle` does not block. |
+| `opencode` | OpenCode | Directory plugin `.opencode/plugins/chaos-engine/` uses `Plugin.define`. `execute.before` throws when the guard denies. The prompt hook can change admitted text. Other current hooks only observe. |
 | `cursor` | Cursor | `.cursor/hooks.json` calls `hooks/launch.py`. `preToolUse` can deny. Exit 2 is not yet a proven process block. |
 | `antigravity` | Antigravity (`agy`) | Named hook `"chaos-engine"` in `.agents/hooks.json` calling `hooks/launch.py`. Matcher groups wrap `PreToolUse` and `PostToolUse`; the other four events are flat arrays. Deny and continuation are exit-0 JSON. |
 | `grok-bot` | Grok Bot | Instruction-only. Reads the [bot entry](../references/bot-entry.md) at task start. The installer writes no receipt shim. |

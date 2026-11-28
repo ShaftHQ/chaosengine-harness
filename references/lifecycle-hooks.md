@@ -96,7 +96,7 @@ exit code `2` with a host-adapted deny payload from `hooks/guard.py` via
 | Grok | `decision=block` | **yes** — live PreToolUse probe; Stop cannot block |
 | Copilot | `permissionDecision=deny` | **no** — GAP-EXIT2 (`process_exit2_honored=False`, cloud/ide); doctor warns |
 | Cursor | `permissionDecision=deny` (`failClosed` on PreToolUse) | **no** — GAP-EXIT2 (`process_exit2_honored=False`) |
-| OpenCode | plugin `throw` on `tool.execute.before` | **no** — GAP-EXIT2 (`process_exit2_honored=False`) |
+| OpenCode | plugin `throw` on `execute.before` | **no** — GAP-EXIT2 (`process_exit2_honored=False`) |
 | Antigravity | `decision=deny` JSON (`deny_exit_code=0`) | **no** — GAP-EXIT2 (`process_exit2_honored=False`) |
 
 See [Host Parity Matrix](host-parity-matrix.md) and `HostCapability` in
@@ -108,7 +108,7 @@ See [Host Parity Matrix](host-parity-matrix.md) and `HostCapability` in
 the source-controlled, project-local hook document for each host with a hook
 primitive: Codex `hooks.json`, Claude settings, Gemini settings, Grok project
 hooks, GitHub Copilot generated hooks, Cursor `.cursor/hooks.json`, OpenCode
-`.opencode/plugins/chaos-engine-receipt.js`, and Antigravity
+`.opencode/plugins/chaos-engine/index.js`, and Antigravity
 `.agents/hooks.json` (`process_exit2_honored=False` for Grok, Copilot, Cursor,
 OpenCode, and Antigravity; Antigravity `deny_exit_code=0`). Those direct
 provider documents are lifecycle owners.

@@ -649,10 +649,10 @@
     {
       "host": "opencode",
       "url": "https://opencode.ai/docs/build/plugins/server",
-      "retrieved": "2026-11-27",
+      "retrieved": "2026-11-28",
       "casing": "dotted",
       "fail_default": "fail-open",
-      "blocks": "tool.execute.before and execute.before throw to deny. After hooks observe. session.idle does not block. session.created has no documented context channel.",
+      "blocks": "ctx.tool.hook(\"execute.before\") throws when the guard denies. ctx.session.hook(\"prompt\") can change the admitted text. Other current hooks only observe and do not deny. Prompt hooks do not run for synthetic messages or compaction. session.created does not inject text. Exit 2 is not a proven process block.",
       "native_events": [
         "prompt",
         "context",

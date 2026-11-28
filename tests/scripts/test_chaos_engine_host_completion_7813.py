@@ -181,7 +181,7 @@ class ResolverTests(unittest.TestCase):
             self.assertEqual([], opened)
             self.assertFalse((project / ".chaos-engine-state/host-completion.json").exists())
             self.assertFalse((project / ".cursor/hooks.json").exists())
-            self.assertFalse((project / ".opencode/plugins/chaos-engine-receipt.js").exists())
+            self.assertFalse((project / ".opencode/plugins/chaos-engine/index.js").exists())
 
 
 class InteractiveSelectionTests(unittest.TestCase):
@@ -372,10 +372,12 @@ class ActivationTests(unittest.TestCase):
             opencode = Path(temporary) / "opencode"
             opencode.mkdir()
             self.install.apply_install_host_completion(opencode, ("opencode",))
-            plugin = (opencode / ".opencode/plugins/chaos-engine-receipt.js").read_text(encoding="utf-8")
+            plugin = (opencode / ".opencode/plugins/chaos-engine/index.js").read_text(encoding="utf-8")
             self.assertIn("hooks/launch.py", plugin)
             self.assertIn("ChaosEngine guard bridge", plugin)
+            self.assertIn("Plugin.define", plugin)
             self.assertIn("opencode", plugin)
+            self.assertFalse((opencode / ".opencode/plugins/chaos-engine-receipt.js").exists())
             self.assertFalse((opencode / ".cursor/hooks.json").exists())
 
     def test_grok_bot_install_returns_2_and_writes_no_shim(self):
@@ -398,7 +400,7 @@ class ActivationTests(unittest.TestCase):
             with mock.patch.object(self.install.shutil, "which", side_effect=which):
                 self.install.apply_install_host_completion(selected, ("grok-bot",))
             self.assertFalse((selected / ".cursor/hooks.json").exists())
-            self.assertFalse((selected / ".opencode/plugins/chaos-engine-receipt.js").exists())
+            self.assertFalse((selected / ".opencode/plugins/chaos-engine/index.js").exists())
             self.assertEqual(("grok-bot",), self.install.read_completion_targets(selected))
             card = self.bootstrap.format_host_onboarding_cards(targets=("grok-bot",))
             self.assertIn("chaos-engine/references/bot-entry.md", card)
@@ -411,14 +413,14 @@ class ActivationTests(unittest.TestCase):
             project.mkdir()
             self._drive_core_install(project, None)
             self.assertTrue((project / ".cursor/hooks.json").is_file())
-            self.assertTrue((project / ".opencode/plugins/chaos-engine-receipt.js").is_file())
+            self.assertTrue((project / ".opencode/plugins/chaos-engine/index.js").is_file())
             self.assertFalse((project / ".chaos-engine-state/host-completion.json").exists())
             self.assertEqual((), self.install.read_completion_targets(project))
             chosen = Path(temporary) / "chosen"
             chosen.mkdir()
             self._drive_core_install(chosen, ("grok",))
             self.assertFalse((chosen / ".cursor/hooks.json").exists())
-            self.assertFalse((chosen / ".opencode/plugins/chaos-engine-receipt.js").exists())
+            self.assertFalse((chosen / ".opencode/plugins/chaos-engine/index.js").exists())
             self.assertEqual(("grok",), self.install.read_completion_targets(chosen))
 
     def _drive_core_install(self, project: Path, targets) -> None:
@@ -475,13 +477,13 @@ class ActivationTests(unittest.TestCase):
             project.mkdir()
             self._run_locked_install(project, hosts=None)
             self.assertTrue((project / ".cursor/hooks.json").is_file())
-            self.assertTrue((project / ".opencode/plugins/chaos-engine-receipt.js").is_file())
+            self.assertTrue((project / ".opencode/plugins/chaos-engine/index.js").is_file())
             self.assertFalse((project / ".chaos-engine-state/host-completion.json").exists())
             chosen = Path(temporary) / "grok-bot"
             chosen.mkdir()
             self._run_locked_install(chosen, hosts=("grok-bot",))
             self.assertFalse((chosen / ".cursor/hooks.json").exists())
-            self.assertFalse((chosen / ".opencode/plugins/chaos-engine-receipt.js").exists())
+            self.assertFalse((chosen / ".opencode/plugins/chaos-engine/index.js").exists())
             self.assertEqual(("grok-bot",), self.install.read_completion_targets(chosen))
 
     def test_skip_tools_apply_wires_only_the_selected_shims(self):
@@ -490,13 +492,13 @@ class ActivationTests(unittest.TestCase):
             both.mkdir()
             self._run_locked_install(both, hosts=("opencode", "cursor"), skip_tools=True)
             self.assertTrue((both / ".cursor/hooks.json").is_file())
-            self.assertTrue((both / ".opencode/plugins/chaos-engine-receipt.js").is_file())
+            self.assertTrue((both / ".opencode/plugins/chaos-engine/index.js").is_file())
             self.assertEqual(("opencode", "cursor"), self.install.read_completion_targets(both))
             bot = Path(temporary) / "bot"
             bot.mkdir()
             self._run_locked_install(bot, hosts=("grok-bot",), skip_tools=True)
             self.assertFalse((bot / ".cursor/hooks.json").exists())
-            self.assertFalse((bot / ".opencode/plugins/chaos-engine-receipt.js").exists())
+            self.assertFalse((bot / ".opencode/plugins/chaos-engine/index.js").exists())
             self.assertEqual(("grok-bot",), self.install.read_completion_targets(bot))
 
     def _run_locked_install(
@@ -697,7 +699,7 @@ class ActivationTests(unittest.TestCase):
             for relative in ("AGENTS.md", "CLAUDE.md", "GEMINI.md", ".github/copilot-instructions.md"):
                 self.assertTrue((project / relative).is_file(), relative)
             self.assertFalse((project / ".cursor/hooks.json").exists())
-            self.assertFalse((project / ".opencode/plugins/chaos-engine-receipt.js").exists())
+            self.assertFalse((project / ".opencode/plugins/chaos-engine/index.js").exists())
             self.assertEqual(("grok",), self.install.read_completion_targets(project))
 
 
@@ -966,7 +968,7 @@ class InstallCommandDocsTests(unittest.TestCase):
         "--interactive",
         "Which clients should this install complete?",
         ".cursor/hooks.json",
-        ".opencode/plugins/chaos-engine-receipt.js",
+        ".opencode/plugins/chaos-engine/index.js",
     )
 
     def _section(self, relative: str) -> str:

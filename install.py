@@ -4646,7 +4646,7 @@ RECEIPT_SHIM_COMMANDS = {
 }
 RECEIPT_SHIM_TARGETS = {
     "cursor": ".cursor/hooks.json",
-    "opencode": ".opencode/plugins/chaos-engine-receipt.js",
+    "opencode": ".opencode/plugins/chaos-engine/index.js",
     "antigravity": ".agents/hooks.json",
 }
 

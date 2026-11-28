@@ -114,7 +114,7 @@ class ConsumerModeInstallTest(ConsumerFixture):
         self.host_commands = {"cursor", "opencode"}
         self.install()
         self.assertTrue((self.project / ".cursor/hooks.json").is_file())
-        self.assertTrue((self.project / ".opencode/plugins/chaos-engine-receipt.js").is_file())
+        self.assertTrue((self.project / ".opencode/plugins/chaos-engine/index.js").is_file())
         self.assertEqual("", self.status())
 
     def test_consumer_install_never_rewrites_a_tracked_cursor_hooks_file(self):
