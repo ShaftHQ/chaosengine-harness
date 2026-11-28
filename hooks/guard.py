@@ -5149,7 +5149,8 @@ def _cursor_secret_path_reason(event: dict) -> str:
     try:
         blocked = guard.blocked_paths(root)
         allow = guard.allowed_globs(root) if hasattr(guard, "allowed_globs") else []
-        found = guard.findings(path, b"", set(), allow, blocked)
+        # The path regex matches slash separators. A Windows path uses backslashes.
+        found = guard.findings(path.replace("\\", "/"), b"", set(), allow, blocked)
     except (OSError, re.error, TypeError, ValueError):
         return ""
     if not found:

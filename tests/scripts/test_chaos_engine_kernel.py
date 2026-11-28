@@ -1810,6 +1810,14 @@ class CursorHookEventsTest(TestCase):
                     "file_path": plain,
                 }
             )
+            windows_code, windows_stdout = self._run(
+                {
+                    "hook_event_name": "beforeReadFile",
+                    "conversation_id": "c279-win",
+                    "cwd": temporary,
+                    "file_path": secret.replace("/", "\\"),
+                }
+            )
         self.assertEqual(2, read_code)
         self.assertEqual(2, tab_code)
         read_body = json.loads(read_stdout)
@@ -1819,6 +1827,8 @@ class CursorHookEventsTest(TestCase):
         self.assertTrue(read_body["user_message"])
         self.assertNotIn("agent_message", read_body)
         self.assertEqual({"permission": "deny"}, tab_body)
+        self.assertEqual(2, windows_code)
+        self.assertEqual("deny", json.loads(windows_stdout)["permission"])
         self.assertEqual(0, plain_code)
         self.assertFalse(_cursor_denies(json.loads(plain_stdout or "{}")))
 
