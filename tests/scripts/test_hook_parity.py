@@ -199,94 +199,186 @@ class HookParityTests(unittest.TestCase):
             self.assertTrue(pid.isdigit())
 
     def test_opencode_plugin_denies_allows_and_does_not_hang(self):
+        source = self.surfaces.opencode_plugin_source()
+        for name in self.surfaces.OPENCODE_NATIVE_EVENTS:
+            self.assertIn(name, source)
+            self.assertNotIn(name, self.hosts.REQUIRED_HOOK_EVENTS)
+        for banned in (
+            "tool.execute.before",
+            "tool.execute.after",
+            "session.created",
+            "session.idle",
+            '"execute.before":',
+            '"execute.after":',
+            "chaos-engine-receipt.js",
+            "plugin-adapters",
+        ):
+            self.assertNotIn(banned, source)
+        self.assertIn('ctx.tool.hook("execute.before"', source)
+        self.assertIn('ctx.tool.hook("execute.after"', source)
+        self.assertIn('ctx.session.hook("prompt"', source)
+        self.assertIn("Plugin.define", source)
+        capability = self.kernel.HOST_CAPABILITIES["opencode"]
+        self.assertFalse(capability.process_exit2_honored)
+        self.assertEqual(
+            {
+                "execute.before": "PreToolUse",
+                "prompt": "UserPromptSubmit",
+                "execute.after": "PostToolUse",
+            },
+            dict(capability.event_aliases),
+        )
         node = shutil.which("node")
         if node is None:
             self.skipTest("node is not installed")
-        source = self.surfaces.opencode_plugin_source()
-        self.assertIn("tool.execute.before", source)
-        self.assertIn("execute.before", source)
-        self.assertNotIn("plugin-adapters", source)
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            (root / "package.json").write_text('{"type":"module"}\n', encoding="utf-8")
-            plugin = root / "plugin.js"
-            plugin.write_text(source, encoding="utf-8")
-            fake = root / "fake-python.py"
-            fake.write_text(
-                textwrap.dedent(
-                    """\
-                    import json, os, sys, time
-                    mode = os.environ.get("FAKE_GUARD", "allow")
-                    raw = sys.stdin.read()
-                    open(os.environ["FAKE_STDIN"], "w", encoding="utf-8").write(raw)
-                    if mode == "sleep":
-                        time.sleep(5)
-                    if mode == "crash":
-                        sys.exit(2)
-                    if mode == "empty":
-                        sys.exit(0)
-                    if mode == "deny" or mode == "split-deny":
-                        print(json.dumps({"decision": "block", "reason": "nope"}), flush=True)
-                        sys.exit(2)
-                    elif mode == "bad":
-                        print("not-json", flush=True)
-                        sys.exit(2)
-                    else:
-                        print(json.dumps({"decision": "allow"}))
-                    """
-                ),
-                encoding="utf-8",
+            fake = textwrap.dedent(
+                """\
+                import json, os, sys, time
+                mode = os.environ.get("FAKE_GUARD", "allow")
+                raw = sys.stdin.read()
+                open(os.environ["FAKE_STDIN"], "w", encoding="utf-8").write(raw)
+                if mode == "sleep":
+                    time.sleep(5)
+                if mode == "crash":
+                    sys.exit(2)
+                if mode == "empty":
+                    sys.exit(0)
+                if mode in {"deny", "split-deny", "prompt-deny", "after-deny"}:
+                    print(json.dumps({"decision": "block", "reason": "nope"}), flush=True)
+                    sys.exit(2)
+                if mode == "bad":
+                    print("not-json", flush=True)
+                    sys.exit(2)
+                if mode == "prompt-extra":
+                    print(json.dumps({"decision": "allow", "additionalContext": "note"}))
+                else:
+                    print(json.dumps({"decision": "allow"}))
+                """
             )
-            driver = root / "driver.mjs"
-            driver.write_text(
-                textwrap.dedent(
-                    """\
-                    import { chaosEnginePlugin } from "./plugin.js";
-                    const mode = process.argv[2];
-                    const plugin = chaosEnginePlugin({ directory: process.cwd() });
-                    const v2hooks = {};
-                    const v2 = chaosEnginePlugin({
-                      directory: process.cwd(),
-                      tool: { hook(name, fn) { v2hooks[name] = fn; } },
-                      event: { hook(name, fn) { v2hooks[name] = fn; } },
+            driver = textwrap.dedent(
+                """\
+                import plugin from "./plugin.js";
+
+                function domain() {
+                  const hooks = {};
+                  return {
+                    hooks,
+                    async hook(name, fn) {
+                      hooks[name] = fn;
+                    },
+                  };
+                }
+
+                const session = domain();
+                const tool = domain();
+                const permission = domain();
+                const shell = domain();
+                await plugin.setup({
+                  location: { directory: process.cwd() },
+                  session,
+                  tool,
+                  permission,
+                  shell,
+                });
+                const mode = process.argv[2];
+                const expected = {
+                  session: [
+                    "prompt", "context", "compaction", "generate", "title",
+                    "experimental.model.resolve", "model.request", "http.request",
+                    "http.response", "experimental.ws.handshake", "experimental.ws.send",
+                    "experimental.ws.receive", "retry", "fork",
+                  ],
+                  tool: ["execute.before", "execute.after"],
+                  permission: ["evaluate"],
+                  shell: ["create.before"],
+                };
+                const domains = { session, tool, permission, shell };
+                for (const [bucket, names] of Object.entries(expected)) {
+                  for (const name of names) {
+                    if (typeof domains[bucket].hooks[name] !== "function") {
+                      throw new Error("missing " + bucket + " " + name);
+                    }
+                  }
+                }
+                for (const banned of ["tool.execute.before", "tool.execute.after", "session.created", "session.idle"]) {
+                  if (session.hooks[banned] || tool.hooks[banned] || permission.hooks[banned] || shell.hooks[banned]) {
+                    throw new Error("v1 registered " + banned);
+                  }
+                }
+                if (mode === "register") {
+                  console.log("registered-ok");
+                  process.exit(0);
+                }
+                try {
+                  if (mode === "split" || mode === "split-deny") {
+                    await tool.hooks["execute.before"]({
+                      tool: "bash",
+                      sessionID: "ses-split",
+                      callID: "call-split",
+                      input: { command: "printf hi" },
                     });
-                    if (mode === "v2") {
-                      if (!v2hooks["execute.before"] || !v2hooks["execute.after"] || !v2hooks["session.idle"]) {
-                        throw new Error("v2 hooks missing");
-                      }
-                      console.log("v2-ok");
-                      process.exit(0);
-                    }
-                    try {
-                      if (mode === "split" || mode === "split-deny") {
-                        await plugin["tool.execute.before"](
-                          { tool: "bash", sessionID: "ses-split", callID: "call-split" },
-                          { args: { command: "printf hi" } },
-                        );
-                      } else {
-                        await plugin["tool.execute.before"]({ tool: "bash", args: { command: "true" } });
-                      }
-                      console.log("allowed");
-                    } catch (error) {
-                      console.log("threw:" + error.message);
-                    }
-                    """
-                ),
-                encoding="utf-8",
+                    console.log("allowed");
+                  } else if (mode === "args") {
+                    await tool.hooks["execute.before"]({
+                      tool: "bash",
+                      sessionID: "ses-args",
+                      callID: "call-args",
+                      args: { command: "printf args" },
+                    });
+                    console.log("allowed");
+                  } else if (mode === "prompt-extra" || mode === "prompt-deny") {
+                    const event = { prompt: { text: "hello" }, sessionID: "ses-p" };
+                    await session.hooks.prompt(event);
+                    console.log("prompt:" + JSON.stringify(event.prompt.text));
+                  } else if (mode === "after" || mode === "after-deny") {
+                    await tool.hooks["execute.after"]({
+                      tool: "bash",
+                      sessionID: "ses-a",
+                      callID: "call-a",
+                      input: { command: "printf hidden" },
+                      result: { stdout: "AKIAIOSFODNN7EXAMPLE", stderr: "" },
+                    });
+                    console.log("after-ok");
+                  } else {
+                    await tool.hooks["execute.before"]({ tool: "bash", input: { command: "true" } });
+                    console.log("allowed");
+                  }
+                } catch (error) {
+                  console.log("threw:" + error.message);
+                }
+                """
             )
+
+            def prepare(directory: Path) -> None:
+                (directory / "package.json").write_text('{"type":"module"}\n', encoding="utf-8")
+                (directory / "plugin.js").write_text(source, encoding="utf-8")
+                stub = directory / "node_modules" / "@opencode" / "plugin"
+                stub.mkdir(parents=True, exist_ok=True)
+                (stub / "package.json").write_text(
+                    '{"type":"module","main":"index.js"}\n', encoding="utf-8"
+                )
+                (stub / "index.js").write_text(
+                    "export const Plugin = { define(definition) { return definition; } };\n",
+                    encoding="utf-8",
+                )
+                (directory / "driver.mjs").write_text(driver, encoding="utf-8")
+
+            prepare(root)
+
             def run(mode: str, timeout_ms: str | None = None) -> subprocess.CompletedProcess[str]:
                 hooks = root / ".chaos-engine" / "hooks"
                 hooks.mkdir(parents=True, exist_ok=True)
-                (hooks / "launch.py").write_text(fake.read_text(encoding="utf-8"), encoding="utf-8")
+                (hooks / "launch.py").write_text(fake, encoding="utf-8")
                 env = os.environ.copy()
                 env["FAKE_GUARD"] = mode
                 env["FAKE_STDIN"] = str(root / "stdin.txt")
-                # Real interpreter. The plugin's argv is .chaos-engine/hooks/launch.py.
                 env["CE_OPENCODE_PYTHON"] = sys.executable
                 if timeout_ms:
                     env["CE_OPENCODE_GUARD_TIMEOUT_MS"] = timeout_ms
                 return subprocess.run(
-                    [node, str(driver), mode],
+                    [node, str(root / "driver.mjs"), mode],
                     cwd=root,
                     capture_output=True,
                     text=True,
@@ -295,6 +387,8 @@ class HookParityTests(unittest.TestCase):
                     timeout=10,
                 )
 
+            registered = run("register")
+            self.assertIn("registered-ok", registered.stdout, registered.stderr)
             allowed = run("allow")
             self.assertIn("allowed", allowed.stdout, allowed.stderr)
             recorded = json.loads((root / "stdin.txt").read_text(encoding="utf-8"))
@@ -305,6 +399,14 @@ class HookParityTests(unittest.TestCase):
             self.assertEqual({"command": "printf hi"}, split_recorded["tool_input"])
             self.assertEqual("ses-split", split_recorded["session_id"])
             self.assertEqual("call-split", split_recorded["tool_use_id"])
+            self.assertLess(len("ses-split"), 16)
+            self.assertLess(len("call-split"), 16)
+            args_mode = run("args")
+            self.assertIn("allowed", args_mode.stdout, args_mode.stderr)
+            args_recorded = json.loads((root / "stdin.txt").read_text(encoding="utf-8"))
+            self.assertEqual({"command": "printf args"}, args_recorded["tool_input"])
+            self.assertEqual("ses-args", args_recorded["session_id"])
+            self.assertEqual("call-args", args_recorded["tool_use_id"])
             split_deny = run("split-deny")
             self.assertIn("threw:nope", split_deny.stdout, split_deny.stderr)
             denied = run("deny")
@@ -321,14 +423,28 @@ class HookParityTests(unittest.TestCase):
             self.assertIn("threw:", garbage.stdout, garbage.stderr)
             self.assertNotIn("allowed", garbage.stdout)
             self.assertIn("invalid JSON", garbage.stdout)
-            v2 = run("v2")
-            self.assertIn("v2-ok", v2.stdout, v2.stderr)
-            missing = run("allow")
+            prompt_extra = run("prompt-extra")
+            self.assertIn('prompt:"hello\\nnote"', prompt_extra.stdout, prompt_extra.stderr)
+            self.assertNotIn("threw:", prompt_extra.stdout)
+            prompt_recorded = json.loads((root / "stdin.txt").read_text(encoding="utf-8"))
+            self.assertEqual("UserPromptSubmit", prompt_recorded["hook_event_name"])
+            self.assertEqual("hello", prompt_recorded["prompt"])
+            self.assertEqual("ses-p", prompt_recorded["session_id"])
+            prompt_deny = run("prompt-deny")
+            self.assertIn('prompt:"hello"', prompt_deny.stdout, prompt_deny.stderr)
+            self.assertNotIn("threw:", prompt_deny.stdout)
+            after_deny = run("after-deny")
+            self.assertIn("after-ok", after_deny.stdout, after_deny.stderr)
+            self.assertNotIn("threw:", after_deny.stdout)
+            after_recorded = json.loads((root / "stdin.txt").read_text(encoding="utf-8"))
+            self.assertEqual("PostToolUse", after_recorded["hook_event_name"])
+            self.assertIn("AKIAIOSFODNN7EXAMPLE", str(after_recorded["tool_response"]))
             env_missing = os.environ.copy()
             env_missing["CE_OPENCODE_PYTHON"] = str(root / "missing-python")
             env_missing["CE_OPENCODE_GUARD_TIMEOUT_MS"] = "200"
+            env_missing["FAKE_STDIN"] = str(root / "stdin.txt")
             quick = subprocess.run(
-                [node, str(driver), "allow"],
+                [node, str(root / "driver.mjs"), "allow"],
                 cwd=root,
                 capture_output=True,
                 text=True,
@@ -342,12 +458,9 @@ class HookParityTests(unittest.TestCase):
             self.assertIn("threw:", timed.stdout, timed.stderr)
             self.assertIn("timed out", timed.stdout)
 
-            # Present Python, launch.py absent: exit 2 and empty stdout must deny.
             bare = root / "bare"
             bare.mkdir()
-            (bare / "package.json").write_text('{"type":"module"}\n', encoding="utf-8")
-            (bare / "plugin.js").write_text(source, encoding="utf-8")
-            (bare / "driver.mjs").write_text((root / "driver.mjs").read_text(encoding="utf-8"), encoding="utf-8")
+            prepare(bare)
             bare_env = os.environ.copy()
             bare_env["CE_OPENCODE_PYTHON"] = sys.executable
             bare_env.pop("FAKE_GUARD", None)

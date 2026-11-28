@@ -30,7 +30,7 @@ SURFACE_PATHS = {
     "copilot": ".github/hooks/chaos-engine.json",
     "gemini": ".gemini/settings.json",
     "grok": ".grok/hooks/lifecycle.json",
-    "opencode": ".opencode/plugins/chaos-engine-receipt.js",
+    "opencode": ".opencode/plugins/chaos-engine/index.js",
     "cursor": ".cursor/hooks.json",
     "antigravity": ".agents/hooks.json",
 }

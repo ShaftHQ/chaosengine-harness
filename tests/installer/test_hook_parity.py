@@ -83,10 +83,13 @@ def test_fresh_install_and_upgrade_write_guard_surfaces(tmp_path: Path):
     assert "failClosed" not in cursor["hooks"]["beforeTabFileRead"][0]
     assert cursor["hooks"]["afterFileEdit"][0] == foreign
     assert any("hooks/launch.py" in entry["command"] for entry in cursor["hooks"]["afterFileEdit"])
-    plugin = (project / ".opencode/plugins/chaos-engine-receipt.js").read_text(encoding="utf-8")
+    plugin = (project / ".opencode/plugins/chaos-engine/index.js").read_text(encoding="utf-8")
     assert "ChaosEngine guard bridge" in plugin
+    assert "Plugin.define" in plugin
     assert "hooks/launch.py" in plugin
     assert "plugin-adapters" not in plugin
+    assert "tool.execute.before" not in plugin
+    assert not (project / ".opencode/plugins/chaos-engine-receipt.js").exists()
     antigravity = json.loads((project / ".agents/hooks.json").read_text(encoding="utf-8"))
     assert "chaos-engine" in antigravity
     assert "matcher" in antigravity["chaos-engine"]["PreToolUse"][0]
@@ -133,5 +136,5 @@ def test_fresh_install_and_upgrade_write_guard_surfaces(tmp_path: Path):
     remaining = json.loads(hooks.read_text(encoding="utf-8"))
     assert remaining["hooks"] == {"afterFileEdit": [foreign]}
     assert "chaosEngineGeneratedOn" not in remaining
-    assert not (project / ".opencode/plugins/chaos-engine-receipt.js").exists()
+    assert not (project / ".opencode/plugins/chaos-engine/index.js").exists()
     assert not (project / ".agents/hooks.json").exists()

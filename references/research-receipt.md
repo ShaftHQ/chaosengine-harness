@@ -93,7 +93,7 @@ project read, never blocks, never overwrites, and never fills `retrieve:`.
 
 | Host | Native surface | Verdict |
 | --- | --- | --- |
-| OpenCode | `.opencode/plugins/` `tool.execute.before` | Shipped: plugin runs the shim before read tools. |
+| OpenCode | `.opencode/plugins/chaos-engine/` `execute.before` | Shipped: the directory plugin calls the guard before tools. The prompt hook can change admitted text. Other hooks observe. |
 | Cursor | `.cursor/hooks.json` `beforeReadFile`, `beforeShellExecution` | Shipped: hook runs the shim and allows. |
 | Grok Bot | cloud box session, no project hook runtime | Receipt sink only. |
 | Copilot cloud | `copilot-setup-steps` job on a fresh clone | Shipped: the job runs `receipt_shim.py ensure --host copilot-cloud` before the agent starts; the overlay stays absent (`missing-overlay`). |

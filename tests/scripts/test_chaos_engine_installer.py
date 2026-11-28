@@ -5200,8 +5200,12 @@ class ReceiptShimWiring6230Test(unittest.TestCase):
             config = json.loads(hooks.read_text(encoding="utf-8"))
             self.assertIn("hooks/launch.py", config["hooks"]["preToolUse"][0]["command"])
             self.assertIn("afterFileEdit", config["hooks"])
-            plugin = project / ".opencode/plugins/chaos-engine-receipt.js"
-            self.assertIn("tool.execute.before", plugin.read_text(encoding="utf-8"))
+            plugin = project / ".opencode/plugins/chaos-engine/index.js"
+            plugin_text = plugin.read_text(encoding="utf-8")
+            self.assertIn("Plugin.define", plugin_text)
+            self.assertIn('ctx.tool.hook("execute.before"', plugin_text)
+            self.assertNotIn("tool.execute.before", plugin_text)
+            self.assertFalse((project / ".opencode/plugins/chaos-engine-receipt.js").exists())
             MODULE.unwire_receipt_shims(project)
             self.assertEqual(
                 {"version": 1, "hooks": {"afterFileEdit": [foreign]}},
@@ -5246,7 +5250,8 @@ class ReceiptShimWiring6230Test(unittest.TestCase):
                 MODULE.install_with_dependencies(project, SOURCE, TEST_COMMIT, with_maven_tools=False)
             config = json.loads((project / ".cursor/hooks.json").read_text(encoding="utf-8"))
             self.assertIn("hooks/launch.py", config["hooks"]["preToolUse"][0]["command"])
-            self.assertTrue((project / ".opencode/plugins/chaos-engine-receipt.js").is_file())
+            self.assertTrue((project / ".opencode/plugins/chaos-engine/index.js").is_file())
+            self.assertFalse((project / ".opencode/plugins/chaos-engine-receipt.js").exists())
             self.assertTrue((project / ".agents/hooks.json").is_file())
             MODULE.unwire_receipt_shims(project)
             self.assertFalse((project / ".cursor/hooks.json").exists())
@@ -5287,7 +5292,7 @@ class ReceiptShimWiring6230Test(unittest.TestCase):
 
     def test_origin_overlay_ignores_the_generated_shim_files(self):
         hosts = MODULE.load_source_controller("hosts")
-        for pattern in (".cursor/hooks.json", ".opencode/plugins/chaos-engine-receipt.js"):
+        for pattern in (".cursor/hooks.json", ".opencode/plugins/chaos-engine/index.js"):
             self.assertIn(pattern, hosts.ORIGIN_OVERLAY_PATTERNS)
 
     def test_checked_in_ignore_files_match_the_generators(self):

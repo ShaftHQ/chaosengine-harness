@@ -28,7 +28,6 @@ SETUP_STEP_HOSTS = ("copilot-cloud",)
 INSTRUCTION_ONLY = ("grok-bot",)
 CURSOR_HOOKS = ".cursor/hooks.json"
 CURSOR_EVENTS = ("beforeReadFile", "beforeShellExecution")
-OPENCODE_PLUGIN = ".opencode/plugins/chaos-engine-receipt.js"
 SHIM_RELATIVE = ".chaos-engine/hooks/receipt_shim.py"
 STEPS = (
     "Read live files and current instructions.",
@@ -97,32 +96,6 @@ def cursor_hooks(existing: dict[str, object]) -> dict[str, object]:
         hooks[event] = entries
     document["hooks"] = hooks
     return document
-
-
-def opencode_plugin() -> str:
-    python = "['py', '-3']" if os.name == "nt" else "['python3']"
-    return (
-        "// ChaosEngine research-receipt shim (#6218). Generated; rerun\n"
-        "// `receipt_shim.py install --host opencode` instead of editing.\n"
-        "import { execFileSync } from 'node:child_process';\n"
-        "import { existsSync } from 'node:fs';\n"
-        "import { join } from 'node:path';\n\n"
-        "const READ_TOOLS = new Set(['read', 'grep', 'glob', 'list', 'bash']);\n"
-        f"const PYTHON = {python};\n\n"
-        "export const ChaosEngineReceipt = async ({ directory }) => ({\n"
-        "  'tool.execute.before': async (input) => {\n"
-        "    if (!READ_TOOLS.has(input.tool)) return;\n"
-        f"    if (existsSync(join(directory, '{SINK}'))) return;\n"
-        "    try {\n"
-        "      execFileSync(PYTHON[0], [...PYTHON.slice(1),\n"
-        f"        '{SHIM_RELATIVE}', 'ensure', '--host', 'opencode', '--project', directory],\n"
-        "        { cwd: directory, stdio: 'ignore', timeout: 10000 });\n"
-        "    } catch {\n"
-        "      // The receipt shim never blocks a tool call.\n"
-        "    }\n"
-        "  },\n"
-        "});\n"
-    )
 
 
 def _load_surfaces():

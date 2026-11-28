@@ -46,6 +46,15 @@ class OpenCodeToolResponseTests(unittest.TestCase):
             root = Path(temporary)
             (root / "package.json").write_text('{"type":"module"}\n', encoding="utf-8")
             (root / "plugin.js").write_text(source, encoding="utf-8")
+            stub = root / "node_modules" / "@opencode" / "plugin"
+            stub.mkdir(parents=True)
+            (stub / "package.json").write_text(
+                '{"type":"module","main":"index.js"}\n', encoding="utf-8"
+            )
+            (stub / "index.js").write_text(
+                "export const Plugin = { define(definition) { return definition; } };\n",
+                encoding="utf-8",
+            )
             fake = root / "fake-python.py"
             fake.write_text(
                 textwrap.dedent(
@@ -62,17 +71,22 @@ class OpenCodeToolResponseTests(unittest.TestCase):
             driver.write_text(
                 textwrap.dedent(
                     """\
-                    import { chaosEnginePlugin } from "./plugin.js";
-                    const plugin = chaosEnginePlugin({ directory: process.cwd() });
-                    const output = {
-                      stdout: "AKIAIOSFODNN7EXAMPLE",
-                      stderr: "",
-                      exit_code: 0,
-                    };
-                    await plugin["tool.execute.after"](
-                      { tool: "bash", args: { command: "printf hidden" }, sessionID: "ses", callID: "call" },
-                      output,
-                    );
+                    import plugin from "./plugin.js";
+                    const hooks = {};
+                    await plugin.setup({
+                      location: { directory: process.cwd() },
+                      session: { async hook() {} },
+                      tool: { async hook(name, fn) { hooks[name] = fn; } },
+                      permission: { async hook() {} },
+                      shell: { async hook() {} },
+                    });
+                    await hooks["execute.after"]({
+                      tool: "bash",
+                      input: { command: "printf hidden" },
+                      sessionID: "ses",
+                      callID: "call",
+                      result: { stdout: "AKIAIOSFODNN7EXAMPLE", stderr: "", exit_code: 0 },
+                    });
                     console.log("after-ok");
                     """
                 ),

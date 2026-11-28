@@ -353,18 +353,18 @@ HOST_CAPABILITIES: Mapping[str, HostCapability] = {
     ),
     "opencode": HostCapability(
         ("AGENTS.md",),
+        # Current server names only. V1 keys are not aliases. These names are
+        # not REQUIRED_HOOK_EVENTS. Observe names stay out of this map so they
+        # cannot deny. session.created is not an alias and does not inject text.
         _aliases(
             (),
             **{
-                "tool.execute.before": "PreToolUse",
                 "execute.before": "PreToolUse",
-                "tool.execute.after": "PostToolUse",
+                "prompt": "UserPromptSubmit",
                 "execute.after": "PostToolUse",
-                "session.created": "SessionStart",
-                "session.idle": "Stop",
             },
         ),
-        ("SessionStart", "PreToolUse", "PostToolUse", "PostToolUseFailure", "Stop"),
+        ("UserPromptSubmit", "PreToolUse", "PostToolUse", "PostToolUseFailure", "Stop"),
         hard_block_mechanism="throw",
         deny_exit_code=2,
         process_exit2_honored=False,
@@ -724,8 +724,17 @@ def normalize_event(raw: Mapping[str, object], host: str | None = None) -> HookE
     if selected == "opencode":
         if not normalized.get("tool_name"):
             normalized["tool_name"] = raw.get("tool") or raw.get("name") or ""
-        if "tool_input" not in normalized and isinstance(raw.get("args"), Mapping):
-            normalized["tool_input"] = raw.get("args")
+        if "tool_input" not in normalized:
+            if isinstance(raw.get("input"), Mapping):
+                normalized["tool_input"] = raw.get("input")
+            elif isinstance(raw.get("args"), Mapping):
+                normalized["tool_input"] = raw.get("args")
+        if "prompt" not in normalized:
+            prompt = raw.get("prompt")
+            if isinstance(prompt, Mapping) and isinstance(prompt.get("text"), str):
+                normalized["prompt"] = prompt.get("text")
+            elif isinstance(prompt, str):
+                normalized["prompt"] = prompt
     tool_call = raw.get("toolCall")
     if isinstance(tool_call, Mapping):
         if not normalized.get("tool_name") and tool_call.get("name"):
