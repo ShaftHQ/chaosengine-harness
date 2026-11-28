@@ -150,6 +150,11 @@ COPILOT_EVENTS = (
     "SubagentStop",
     "PreCompact",
     "SessionEnd",
+    # Observe-only native names. Not REQUIRED_HOOK_EVENTS or LIFECYCLE_EVENTS.
+    # The protocol answers {} and exits 0. notification must not inject context.
+    "userPromptTransformed",
+    "errorOccurred",
+    "notification",
 )
 
 
@@ -294,6 +299,11 @@ HOST_CAPABILITIES: Mapping[str, HostCapability] = {
             subagentStop="SubagentStop",
             preCompact="PreCompact",
             sessionEnd="SessionEnd",
+            permissionRequest="PreToolUse",
+            subagentStart="SessionStart",
+            userPromptTransformed="userPromptTransformed",
+            errorOccurred="errorOccurred",
+            notification="notification",
         ),
         COPILOT_EVENTS,
         static_surfaces=("cloud", "ide"),
@@ -986,13 +996,21 @@ def adapt_hook_output(
     if host == "gemini" and "additionalContext" in adapted:
         context = adapted.pop("additionalContext")
         adapted["hookSpecificOutput"] = {"additionalContext": context}
-    if host == "copilot" and event_name == "PreToolUse":
+    if host == "copilot" and (
+        event_name == "PreToolUse" or native_event == "permissionRequest"
+    ):
         decision = adapted.pop("decision", None)
         reason = adapted.pop("reason", None)
         if decision in {"block", "deny"}:
+            text = str(reason or "Blocked by ChaosEngine.")
             adapted["permissionDecision"] = "deny"
-            adapted["permissionDecisionReason"] = str(reason or "Blocked by ChaosEngine.")
-        elif decision == "allow":
+            adapted["permissionDecisionReason"] = text
+            # CLI permission service short-circuits on behavior. permissionDecision
+            # stays because exit 2 is not a proven process block.
+            if native_event == "permissionRequest":
+                adapted["behavior"] = "deny"
+                adapted["message"] = text
+        elif decision == "allow" and native_event != "permissionRequest":
             adapted["permissionDecision"] = "allow"
     # GAP-EXIT2 hosts ignore exit 2. The continuation channel is the text
     # they still surface after a Stop that returned decision=block.

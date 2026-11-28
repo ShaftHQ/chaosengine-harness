@@ -6376,14 +6376,19 @@ def copilot_hooks_document(managed_node: Path | None = None) -> bytes:
     hooks = {}
     for event in (
             "sessionStart",
+            "sessionEnd",
             "userPromptSubmitted",
+            "userPromptTransformed",
             "preToolUse",
             "postToolUse",
             "postToolUseFailure",
+            "permissionRequest",
             "agentStop",
+            "subagentStart",
             "subagentStop",
             "preCompact",
-            "sessionEnd",
+            "errorOccurred",
+            "notification",
     ):
         hooks[event] = [{
             "type": "command",

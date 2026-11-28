@@ -27,6 +27,22 @@ from tests.scripts.overlay_in_temp import session_overlay  # noqa: E402
 OVERLAY = session_overlay(ROOT)
 HOSTS = ROOT / "runtime" / "hosts.py"
 TOOL = ROOT / "tool.py"
+_COPILOT_HOOK_EVENTS = {
+    "sessionStart",
+    "sessionEnd",
+    "userPromptSubmitted",
+    "userPromptTransformed",
+    "preToolUse",
+    "postToolUse",
+    "postToolUseFailure",
+    "permissionRequest",
+    "agentStop",
+    "subagentStart",
+    "subagentStop",
+    "preCompact",
+    "errorOccurred",
+    "notification",
+}
 
 
 def load(path: Path, name: str):
@@ -1569,20 +1585,7 @@ class ChaosEngineHostsTest(unittest.TestCase):
                 project.joinpath(".github/hooks/chaos-engine.json").read_text()
             )
             self.assertEqual(1, copilot_lifecycle["version"])
-            self.assertEqual(
-                {
-                    "sessionStart",
-                    "userPromptSubmitted",
-                    "preToolUse",
-                    "postToolUse",
-                    "postToolUseFailure",
-                    "agentStop",
-                    "subagentStop",
-                    "preCompact",
-                    "sessionEnd",
-                },
-                set(copilot_lifecycle["hooks"]),
-            )
+            self.assertEqual(_COPILOT_HOOK_EVENTS, set(copilot_lifecycle["hooks"]))
             installed_hook = project / "plugins/chaos-engine/hooks/guard.py"
             hook_environment = {**os.environ, "TMPDIR": temporary, "TEMP": temporary}
             failure = {
@@ -2186,20 +2189,8 @@ class ChaosEngineHostsTest(unittest.TestCase):
         document = json.loads(
             (OVERLAY / ".github/hooks/chaos-engine.json").read_text(encoding="utf-8")
         )
-        expected = {
-            "sessionStart",
-            "userPromptSubmitted",
-            "preToolUse",
-            "postToolUse",
-            "postToolUseFailure",
-            "agentStop",
-            "subagentStop",
-            "preCompact",
-            "sessionEnd",
-        }
-
         self.assertEqual(1, document["version"])
-        self.assertEqual(expected, set(document["hooks"]))
+        self.assertEqual(_COPILOT_HOOK_EVENTS, set(document["hooks"]))
         for event, handlers in document["hooks"].items():
             self.assertEqual(1, len(handlers))
             # #6632: shared Python launcher with the event, run from the repo root.
@@ -2211,6 +2202,10 @@ class ChaosEngineHostsTest(unittest.TestCase):
                 handlers[0]["powershell"],
             )
             self.assertEqual(".", handlers[0]["cwd"])
+            self.assertEqual(30, handlers[0]["timeoutSec"])
+            self.assertEqual("command", handlers[0]["type"])
+            self.assertNotIn("matcher", handlers[0])
+            self.assertNotIn("http", str(handlers[0].get("type")))
             self.assertNotIn("node ", handlers[0]["bash"])
 
     def test_grok_hooks_preserve_unrelated_events(self):
