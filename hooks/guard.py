@@ -4988,11 +4988,143 @@ def _run_event(event: dict, _host: str) -> int:
     return 0
 
 
+def _gemini_native(event: dict) -> str:
+    native = event.get("native_hook_event_name")
+    if isinstance(native, str) and native.strip():
+        return native.strip()
+    return str(event.get("hook_event_name") or event.get("hookEventName") or "")
+
+
+def _gemini_message_texts(event: dict) -> tuple[str, ...]:
+    request = event.get("llm_request")
+    if not isinstance(request, dict):
+        return ()
+    messages = request.get("messages")
+    if not isinstance(messages, list):
+        return ()
+    found: list[str] = []
+    for message in messages:
+        if isinstance(message, str) and message.strip():
+            found.append(message.strip())
+        elif isinstance(message, dict):
+            content = message.get("content")
+            if isinstance(content, str) and content.strip():
+                found.append(content.strip())
+    return tuple(found)
+
+
+def _gemini_command_candidates(event: dict) -> tuple[str, ...]:
+    found: list[str] = []
+    tool_input = event.get("tool_input")
+    if isinstance(tool_input, dict):
+        command = tool_input.get("command") or tool_input.get("cmd")
+        if isinstance(command, str) and command.strip():
+            found.append(command.strip())
+    found.extend(_gemini_message_texts(event))
+    return tuple(found)
+
+
+def _gemini_command_blocked(command: str, cwd: Path) -> bool:
+    if not command or command == _UNINSPECTED_PROCESS:
+        return False
+    commands = (command,)
+    if delete_guard_reason(commands, cwd):
+        return True
+    if linked_worktree_stash_reason(commands, cwd):
+        return True
+    if pre_rebase_guard_reason(commands, cwd):
+        return True
+    return _command_is_destructive(command)
+
+
+def _gemini_blocked_command(event: dict) -> str:
+    cwd = Path(str(event.get("cwd") or Path.cwd()))
+    for command in _gemini_command_candidates(event):
+        if _gemini_command_blocked(command, cwd):
+            return command
+    return ""
+
+
+def _gemini_offered_tools(event: dict) -> list[str]:
+    request = event.get("llm_request")
+    if not isinstance(request, dict):
+        return []
+    config = request.get("toolConfig")
+    if not isinstance(config, dict):
+        config = request.get("tool_config")
+    if not isinstance(config, dict):
+        return []
+    raw = config.get("allowedFunctionNames")
+    if not isinstance(raw, list):
+        raw = config.get("allowed_function_names")
+    if not isinstance(raw, list):
+        return []
+    names: list[str] = []
+    for item in raw:
+        if isinstance(item, str) and item and item not in names:
+            names.append(item)
+    return names
+
+
+def _gemini_shell_tool(name: str) -> bool:
+    try:
+        return _kernel._tool_name(name) == "PowerShell"
+    except Exception:
+        return False
+
+
+def _gemini_prepare_before_model(event: dict) -> None:
+    """Project a denied model-request command into the PreToolUse deny path."""
+    cwd = Path(str(event.get("cwd") or Path.cwd()))
+    existing = _event_commands(str(event.get("tool_name") or ""), event.get("tool_input"))
+    if any(_gemini_command_blocked(command, cwd) for command in existing):
+        if not event.get("tool_name"):
+            event["tool_name"] = "run_shell_command"
+        return
+    blocked = _gemini_blocked_command(event)
+    if not blocked:
+        return
+    event["tool_name"] = "run_shell_command"
+    event["tool_input"] = {"command": blocked}
+
+
+def _gemini_before_tool_selection(event: dict) -> int:
+    """Omit a denied tool. Exit 0. This event ignores decision."""
+    offered = _gemini_offered_tools(event)
+    blocked = _gemini_blocked_command(event)
+    if not blocked:
+        return 0
+    if not offered:
+        # Gemini CLI omits toolConfig. A missing list still keeps the shell off.
+        print(json.dumps({"hookSpecificOutput": {"toolConfig": {"mode": "NONE"}}}))
+        return 0
+    kept = [name for name in offered if not _gemini_shell_tool(name)]
+    if not kept:
+        payload: dict = {"hookSpecificOutput": {"toolConfig": {"mode": "NONE"}}}
+    elif len(kept) != len(offered):
+        payload = {
+            "hookSpecificOutput": {"toolConfig": {"allowedFunctionNames": kept}}
+        }
+    else:
+        return 0
+    print(json.dumps(payload))
+    return 0
+
+
 def _guarded_event(event: dict, host: str) -> int:
     """#7251: the delete guard runs first on PreToolUse, session-independent like R8."""
     event_name = ""
     if isinstance(event, dict):
         event_name = str(event.get("hook_event_name") or event.get("hookEventName") or "")
+    if host == "gemini" and isinstance(event, dict):
+        native = _gemini_native(event)
+        # AfterModel is not a lifecycle event. Notification cannot block.
+        if native in {"AfterModel", "Notification"}:
+            return 0
+        if native == "BeforeToolSelection":
+            return _gemini_before_tool_selection(event)
+        if native == "BeforeModel":
+            _gemini_prepare_before_model(event)
     if host == "codex" and event_name in _CODEX_OBSERVE_EVENTS:
         # Interrupt, PreModelRequest, and PostModelRequest record by returning.
         # Output would start another model turn or change model context.

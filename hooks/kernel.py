@@ -132,6 +132,13 @@ GEMINI_EVENTS = (
     "Stop",
     "PreCompact",
     "SessionEnd",
+    # Native names. They are not REQUIRED_HOOK_EVENTS or LIFECYCLE_EVENTS.
+    # BeforeModel and BeforeToolSelection alias to PreToolUse. AfterModel is
+    # not a lifecycle event, so the protocol answers {}. Notification already is.
+    "BeforeModel",
+    "AfterModel",
+    "BeforeToolSelection",
+    "Notification",
 )
 COPILOT_EVENTS = (
     "SessionStart",
@@ -255,6 +262,10 @@ HOST_CAPABILITIES: Mapping[str, HostCapability] = {
             BeforeAgent="UserPromptSubmit",
             AfterAgent="Stop",
             PreCompress="PreCompact",
+            BeforeModel="PreToolUse",
+            BeforeToolSelection="PreToolUse",
+            AfterModel="AfterModel",
+            Notification="Notification",
         ),
         GEMINI_EVENTS,
         hard_block_mechanism="decision_json",
@@ -754,6 +765,13 @@ def normalize_hook_input(raw: Mapping[str, object]) -> dict[str, object]:
     """Compatibility projection for existing source callbacks."""
     event = normalize_event(raw)
     normalized = dict(raw)
+    native = ""
+    for key in ("hook_event_name", "hookEventName"):
+        value = raw.get(key)
+        if isinstance(value, str) and value.strip():
+            native = value.strip()
+            break
+    normalized.pop("native_hook_event_name", None)
     normalized.update(
         {
             "hook_event_name": event.name,
@@ -764,6 +782,8 @@ def normalize_hook_input(raw: Mapping[str, object]) -> dict[str, object]:
             "stop_hook_active": event.stop_hook_active,
         }
     )
+    if event.host == "gemini" and native and native != event.name:
+        normalized["native_hook_event_name"] = native
     if event.tool_call_id and not normalized.get("tool_use_id"):
         normalized["tool_use_id"] = event.tool_call_id
     if "prompt" not in normalized and isinstance(raw.get("lastUserInput"), str):
