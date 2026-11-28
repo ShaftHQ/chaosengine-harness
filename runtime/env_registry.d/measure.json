@@ -1,7 +1,18 @@
 {
-  "CHAOS_ENGINE_TRACE": {
-    "default": "off",
-    "read_by": "runtime/trace_recorder.py",
-    "purpose": "Opt-in local session trace. Unset, empty, or any value other than 1, true, yes, or on leaves recording off. The recorder fails open."
-  }
+  "schema": "ce-env/v1",
+  "entries": [
+    {
+      "name": "CHAOS_ENGINE_TRACE",
+      "class": "user",
+      "type": "str",
+      "default": "off",
+      "values": "unset, 1, true, yes, on",
+      "optin": "opt-in",
+      "effect": "When set to 1, true, yes, or on, record a local session trace. Unset or any other value leaves recording off. The recorder fails open.",
+      "read_at": [
+        "runtime/trace_recorder.py:17"
+      ],
+      "since": "unknown"
+    }
+  ]
 }

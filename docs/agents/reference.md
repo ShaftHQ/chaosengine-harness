@@ -109,6 +109,7 @@ One fact per row. The owner link is the normative file.
 | `CHAOS_ENGINE_DERIVED_VERSION` | internal | value | `unset` | unknown — see read site | [owner](../../bootstrap.py#L1672) |
 | `CHAOS_ENGINE_DRAFT_SKILL_PRS` | user | opt-in | `unset` | Set to 1, with the CLI opt-in, to allow a… | [owner](../../runtime/draft_skill_pr.py#L28) |
 | `CHAOS_ENGINE_DRY_RUN` | maint | value | `unset` | unknown — see read site | [owner](../../bootstrap.py#L5405) |
+| `CHAOS_ENGINE_ENFORCE_PLAN_APPROVAL` | user | opt-in | `0` | When 1, true, yes, or on, a stateful writ… | [owner](../../runtime/plan_gate.py#L21) |
 | `CHAOS_ENGINE_ENFORCE_RESEARCH_RECEIPT` | user | opt-in | `unset` | Set to a truthy value to require a resear… | [owner](../../hooks/guard.py#L3873) |
 | `CHAOS_ENGINE_EVIDENCE_BRANCH` | maint | value | `unset` | unknown — see read site | [owner](../../runtime/mobile_retro.py#L65) |
 | `CHAOS_ENGINE_EVIDENCE_BUILD_ID` | maint | value | `unset` | unknown — see read site | [owner](../../runtime/mobile_retro.py#L59) |
@@ -152,6 +153,7 @@ One fact per row. The owner link is the normative file.
 | `CHAOS_ENGINE_TASKS_DIR` | maint | value | `unset` | unknown — see read site | [owner](../../runtime/task_ledger.py#L116) |
 | `CHAOS_ENGINE_TEST_REPO_GUARD` | internal | value | `unset` | unknown — see read site | [owner](../../runtime/stores.py#L2118) |
 | `CHAOS_ENGINE_TOKEN_BUDGET` | user | value | `balanced` | Selects ultra-lean (alias lean), balanced… | [owner](../../hooks/lifecycle.py#L69) |
+| `CHAOS_ENGINE_TRACE` | user | opt-in | `off` | When set to 1, true, yes, or on, record a… | [owner](../../runtime/trace_recorder.py#L17) |
 | `CHAOS_ENGINE_UPSTREAM_REPO` | user | value | `unset` | unknown — see read site | [owner](../../hooks/session_scratch.py#L254) |
 | `CHAOS_ENGINE_USER_HOME` | internal | value | `unset` | unknown — see read site | [owner](../../runtime/user_paths.py#L29) |
 | `CHAOS_ENGINE_USER_PATHS` | internal | value | `unset` | unknown — see read site | [owner](../../packs/java/installer.py#L453) |

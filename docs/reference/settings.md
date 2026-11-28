@@ -43,9 +43,11 @@ Bool catalog rows and env rows marked opt-in or opt-out. `opt-out` means the def
 | `CE_ALLOW_BOX_LOCAL_AGENCY` | opt-in | `unset` |  | `CE_ALLOW_BOX_LOCAL_AGENCY` | Set to 1 to allow the local-agency box path. | [owner](../../skills/local-agency/scripts/require_rog_freetoken.py#L24) |
 | `CHAOS_ENGINE_ALLOW_MISSING_EVAL` | opt-out | `unset` |  | `CHAOS_ENGINE_ALLOW_MISSING_EVAL` | Set to 1 to skip the eval-parity check. | [owner](../../runtime/silent_verify.py#L126) |
 | `CHAOS_ENGINE_DRAFT_SKILL_PRS` | opt-in | `unset` |  | `CHAOS_ENGINE_DRAFT_SKILL_PRS` | Set to 1, with the CLI opt-in, to allow a draft skill pull request. | [owner](../../runtime/draft_skill_pr.py#L28) |
+| `CHAOS_ENGINE_ENFORCE_PLAN_APPROVAL` | opt-in | `0` |  | `CHAOS_ENGINE_ENFORCE_PLAN_APPROVAL` | When 1, true, yes, or on, a stateful write is denied until the current plan revision is approved with a one-use owner code. Default stays off. | [owner](../../runtime/plan_gate.py#L21) |
 | `CHAOS_ENGINE_ENFORCE_RESEARCH_RECEIPT` | opt-in | `unset` |  | `CHAOS_ENGINE_ENFORCE_RESEARCH_RECEIPT` | Set to a truthy value to require a research receipt before mutation. | [owner](../../hooks/guard.py#L3873) |
 | `CHAOS_ENGINE_REVIEW_CAP_LIFT` | opt-in | `unset` |  | `CHAOS_ENGINE_REVIEW_CAP_LIFT` | Owner lift of the two-review cap. | [owner](../../hooks/delegation_gate.py#L23) |
 | `CHAOS_ENGINE_SIGNIFICANCE_CAPTURE` | opt-in | `unset` |  | `CHAOS_ENGINE_SIGNIFICANCE_CAPTURE` | Set to 1 to capture significance. | [owner](../../runtime/significance.py#L241) |
+| `CHAOS_ENGINE_TRACE` | opt-in | `off` |  | `CHAOS_ENGINE_TRACE` | When set to 1, true, yes, or on, record a local session trace. Unset or any other value leaves recording off. The recorder fails open. | [owner](../../runtime/trace_recorder.py#L17) |
 | `CHAOS_ENGINE_WITHOUT` | opt-out | `unset` |  | `CHAOS_ENGINE_WITHOUT` | Comma-separated component names to turn off. | [owner](../../runtime/install_config.py#L348) |
 | `CHAOS_RADIO_SILENCE` | opt-in | `unset` |  | `CHAOS_RADIO_SILENCE` | Blocks owner-visible status when set to 1, true, or full. | [owner](../../runtime/radio_silence.py#L7) |
 
@@ -149,6 +151,7 @@ Names read by code and not declared as a catalog env. Class `user`, then `maint`
 | `CHAOS_ENGINE_CLIENT_NAME_DENYLIST` | user | str | `unset` |  | value | unknown — see read site | [owner](../../bootstrap.py#L1058) |
 | `CHAOS_ENGINE_DEBUG` | user | str | `unset` |  | value | unknown — see read site | [owner](../../bootstrap.py#L7669) |
 | `CHAOS_ENGINE_DRAFT_SKILL_PRS` | user | str | `unset` |  | opt-in | Set to 1, with the CLI opt-in, to allow a draft skill pull request. | [owner](../../runtime/draft_skill_pr.py#L28) |
+| `CHAOS_ENGINE_ENFORCE_PLAN_APPROVAL` | user | str | `0` | 0, 1, true, yes, on | opt-in | When 1, true, yes, or on, a stateful write is denied until the current plan revision is approved with a one-use owner code. Default stays off. | [owner](../../runtime/plan_gate.py#L21) |
 | `CHAOS_ENGINE_ENFORCE_RESEARCH_RECEIPT` | user | str | `unset` |  | opt-in | Set to a truthy value to require a research receipt before mutation. | [owner](../../hooks/guard.py#L3873) |
 | `CHAOS_ENGINE_FILE_ISSUE` | user | str | `unset` |  | value | unknown — see read site | [owner](../../bootstrap.py#L1174) |
 | `CHAOS_ENGINE_HYPERLINKS` | user | str | `unset` |  | value | unknown — see read site | [owner](../../bootstrap.py#L845) |
@@ -161,6 +164,7 @@ Names read by code and not declared as a catalog env. Class `user`, then `maint`
 | `CHAOS_ENGINE_REVIEW_CAP_LIFT` | user | str | `unset` |  | opt-in | Owner lift of the two-review cap. | [owner](../../hooks/delegation_gate.py#L23) |
 | `CHAOS_ENGINE_SIGNIFICANCE_CAPTURE` | user | str | `unset` |  | opt-in | Set to 1 to capture significance. | [owner](../../runtime/significance.py#L241) |
 | `CHAOS_ENGINE_TOKEN_BUDGET` | user | choice | `balanced` | ultra-lean, lean, balanced, deep | value | Selects ultra-lean (alias lean), balanced (default), or deep. | [owner](../../hooks/lifecycle.py#L69) |
+| `CHAOS_ENGINE_TRACE` | user | str | `off` | unset, 1, true, yes, on | opt-in | When set to 1, true, yes, or on, record a local session trace. Unset or any other value leaves recording off. The recorder fails open. | [owner](../../runtime/trace_recorder.py#L17) |
 | `CHAOS_ENGINE_UPSTREAM_REPO` | user | str | `unset` |  | value | unknown — see read site | [owner](../../hooks/session_scratch.py#L254) |
 | `CHAOS_ENGINE_VERBOSE` | user | str | `unset` |  | value | unknown — see read site | [owner](../../bootstrap.py#L218) |
 | `CHAOS_ENGINE_WITHOUT` | user | str | `unset` | comma-separated component ids | opt-out | Comma-separated component names to turn off. | [owner](../../runtime/install_config.py#L348) |
