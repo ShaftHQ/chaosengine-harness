@@ -199,6 +199,27 @@ class DelegationReceiptTest(unittest.TestCase):
         }
         self.assertEqual("host-writer", GATE.classify("spawn_subagent", instructed, ()))
 
+    def test_an_adverb_or_bare_object_is_still_an_instruction(self) -> None:
+        payloads = (
+            {
+                "subagent_type": "chaos-engine-reviewer",
+                "prompt": "This is an adversarial review. Carefully edit something.",
+            },
+            {
+                "subagent_type": "chaos-engine-reviewer",
+                "prompt": "This is an adversarial review. Read only, edit files",
+            },
+            {
+                "subagent_type": "chaos-engine-reviewer",
+                "description": "Fix the hook",
+                "prompt": "This is an adversarial review. Read only. Do not edit.",
+            },
+        )
+        expected = ("host-writer", "host-writer", "review")
+        for payload, kind in zip(payloads, expected):
+            with self.subTest(prompt=payload["prompt"], description=payload.get("description")):
+                self.assertEqual(kind, GATE.classify("spawn_subagent", payload, ()))
+
     def test_an_edit_verb_without_review_markers_stays_a_writer(self) -> None:
         payload = {"subagent_type": "general-purpose", "prompt": "Apply the impact edit."}
         self.assertEqual("host-writer", GATE.classify("spawn_subagent", payload, ()))

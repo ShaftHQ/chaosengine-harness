@@ -75,6 +75,10 @@ _OBJECT_AFTER = re.compile(
     r"|\s+\S+\.\w+\b",
     re.IGNORECASE,
 )
+_FOLLOW_OBJECT = re.compile(
+    r"\s+(?!is\b|are\b|was\b|were\b|be\b|of\b)[A-Za-z0-9_./\\-]+",
+    re.IGNORECASE,
+)
 _PREV_WORD = re.compile(r"([A-Za-z]+)\W*$")
 _DIRECT_TOOL = re.compile(
     r"^(?:write|edit|strreplace|multiedit|apply_?patch|notebookedit|search_replace|"
@@ -227,7 +231,25 @@ def _verb_is_instruction(text: str, match: re.Match[str]) -> bool:
     previous = _PREV_WORD.search(before)
     if previous is not None and previous.group(1).casefold() in _INTRODUCER:
         return True
-    return _OBJECT_AFTER.match(text[match.end() :]) is not None
+    if previous is not None and previous.group(1).casefold().endswith("ly"):
+        return True
+    after = text[match.end() :]
+    if _OBJECT_AFTER.match(after) is not None:
+        return True
+    return _FOLLOW_OBJECT.match(after) is not None
+
+
+def _prompt_only(tool_input: object, text: str) -> str:
+    """Reviewer titles live in description. Instructions are the other fields."""
+    if not isinstance(tool_input, dict):
+        return text
+    parts: list[str] = []
+    for key, value in tool_input.items():
+        if key in {"description", "title"}:
+            continue
+        if isinstance(value, str):
+            parts.append(value)
+    return "\n".join(parts)
 
 
 def _review_instruction(text: str) -> bool:
@@ -347,7 +369,7 @@ def classify(tool_name: str, tool_input: object, commands: tuple[str, ...]) -> s
         adversarial = _REVIEW_TEXT.search(text) is not None
         # A title or a noun keeps an edit verb. Ignore that only for a reviewer
         # whose prompt is an adversarial review, and only when no instruction remains.
-        if reviewer and adversarial and not _review_instruction(text):
+        if reviewer and adversarial and not _review_instruction(_prompt_only(tool_input, text)):
             return "review"
         if reviewer and not _editing(text):
             return "review"
