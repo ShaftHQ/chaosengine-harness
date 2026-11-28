@@ -1,0 +1,293 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-28",
+  "note": "No host was driven. skipped and unknown are not pass.",
+  "tasks": [
+    "001-refusal-offline",
+    "002-stray-cr",
+    "003-plain-rename",
+    "guarded-operation"
+  ],
+  "hosts": [
+    {
+      "host": "claude",
+      "client_version": null,
+      "model": null,
+      "date": "2026-11-28",
+      "results": [
+        {
+          "task": "001-refusal-offline",
+          "status": "skipped",
+          "reason": "host CLI was not driven; skipped is not a pass"
+        },
+        {
+          "task": "002-stray-cr",
+          "status": "skipped",
+          "reason": "host CLI was not driven; skipped is not a pass"
+        },
+        {
+          "task": "003-plain-rename",
+          "status": "skipped",
+          "reason": "host CLI was not driven; skipped is not a pass"
+        },
+        {
+          "task": "guarded-operation",
+          "status": "skipped",
+          "reason": "host CLI was not driven; skipped is not a pass"
+        }
+      ]
+    },
+    {
+      "host": "codex",
+      "client_version": null,
+      "model": null,
+      "date": "2026-11-28",
+      "results": [
+        {
+          "task": "001-refusal-offline",
+          "status": "skipped",
+          "reason": "host CLI was not driven; skipped is not a pass"
+        },
+        {
+          "task": "002-stray-cr",
+          "status": "skipped",
+          "reason": "host CLI was not driven; skipped is not a pass"
+        },
+        {
+          "task": "003-plain-rename",
+          "status": "skipped",
+          "reason": "host CLI was not driven; skipped is not a pass"
+        },
+        {
+          "task": "guarded-operation",
+          "status": "skipped",
+          "reason": "host CLI was not driven; skipped is not a pass"
+        }
+      ]
+    },
+    {
+      "host": "copilot",
+      "client_version": null,
+      "model": null,
+      "date": "2026-11-28",
+      "results": [
+        {
+          "task": "001-refusal-offline",
+          "status": "skipped",
+          "reason": "host CLI was not driven; skipped is not a pass"
+        },
+        {
+          "task": "002-stray-cr",
+          "status": "skipped",
+          "reason": "host CLI was not driven; skipped is not a pass"
+        },
+        {
+          "task": "003-plain-rename",
+          "status": "skipped",
+          "reason": "host CLI was not driven; skipped is not a pass"
+        },
+        {
+          "task": "guarded-operation",
+          "status": "skipped",
+          "reason": "host CLI was not driven; skipped is not a pass"
+        }
+      ]
+    },
+    {
+      "host": "gemini",
+      "client_version": null,
+      "model": null,
+      "date": "2026-11-28",
+      "results": [
+        {
+          "task": "001-refusal-offline",
+          "status": "skipped",
+          "reason": "host CLI was not driven; skipped is not a pass"
+        },
+        {
+          "task": "002-stray-cr",
+          "status": "skipped",
+          "reason": "host CLI was not driven; skipped is not a pass"
+        },
+        {
+          "task": "003-plain-rename",
+          "status": "skipped",
+          "reason": "host CLI was not driven; skipped is not a pass"
+        },
+        {
+          "task": "guarded-operation",
+          "status": "skipped",
+          "reason": "host CLI was not driven; skipped is not a pass"
+        }
+      ]
+    },
+    {
+      "host": "grok",
+      "client_version": null,
+      "model": null,
+      "date": "2026-11-28",
+      "results": [
+        {
+          "task": "001-refusal-offline",
+          "status": "skipped",
+          "reason": "host CLI was not driven; skipped is not a pass"
+        },
+        {
+          "task": "002-stray-cr",
+          "status": "skipped",
+          "reason": "host CLI was not driven; skipped is not a pass"
+        },
+        {
+          "task": "003-plain-rename",
+          "status": "skipped",
+          "reason": "host CLI was not driven; skipped is not a pass"
+        },
+        {
+          "task": "guarded-operation",
+          "status": "skipped",
+          "reason": "host CLI was not driven; skipped is not a pass"
+        }
+      ]
+    },
+    {
+      "host": "opencode",
+      "client_version": null,
+      "model": null,
+      "date": "2026-11-28",
+      "results": [
+        {
+          "task": "001-refusal-offline",
+          "status": "skipped",
+          "reason": "host CLI was not driven; skipped is not a pass"
+        },
+        {
+          "task": "002-stray-cr",
+          "status": "skipped",
+          "reason": "host CLI was not driven; skipped is not a pass"
+        },
+        {
+          "task": "003-plain-rename",
+          "status": "skipped",
+          "reason": "host CLI was not driven; skipped is not a pass"
+        },
+        {
+          "task": "guarded-operation",
+          "status": "skipped",
+          "reason": "host CLI was not driven; skipped is not a pass"
+        }
+      ]
+    },
+    {
+      "host": "cursor",
+      "client_version": null,
+      "model": null,
+      "date": "2026-11-28",
+      "results": [
+        {
+          "task": "001-refusal-offline",
+          "status": "skipped",
+          "reason": "host CLI was not driven; skipped is not a pass"
+        },
+        {
+          "task": "002-stray-cr",
+          "status": "skipped",
+          "reason": "host CLI was not driven; skipped is not a pass"
+        },
+        {
+          "task": "003-plain-rename",
+          "status": "skipped",
+          "reason": "host CLI was not driven; skipped is not a pass"
+        },
+        {
+          "task": "guarded-operation",
+          "status": "skipped",
+          "reason": "host CLI was not driven; skipped is not a pass"
+        }
+      ]
+    },
+    {
+      "host": "grok-bot",
+      "client_version": null,
+      "model": null,
+      "date": "2026-11-28",
+      "results": [
+        {
+          "task": "001-refusal-offline",
+          "status": "skipped",
+          "reason": "host CLI was not driven; skipped is not a pass"
+        },
+        {
+          "task": "002-stray-cr",
+          "status": "skipped",
+          "reason": "host CLI was not driven; skipped is not a pass"
+        },
+        {
+          "task": "003-plain-rename",
+          "status": "skipped",
+          "reason": "host CLI was not driven; skipped is not a pass"
+        },
+        {
+          "task": "guarded-operation",
+          "status": "skipped",
+          "reason": "host CLI was not driven; skipped is not a pass"
+        }
+      ]
+    },
+    {
+      "host": "openbot",
+      "client_version": null,
+      "model": null,
+      "date": "2026-11-28",
+      "results": [
+        {
+          "task": "001-refusal-offline",
+          "status": "skipped",
+          "reason": "host CLI was not driven; skipped is not a pass"
+        },
+        {
+          "task": "002-stray-cr",
+          "status": "skipped",
+          "reason": "host CLI was not driven; skipped is not a pass"
+        },
+        {
+          "task": "003-plain-rename",
+          "status": "skipped",
+          "reason": "host CLI was not driven; skipped is not a pass"
+        },
+        {
+          "task": "guarded-operation",
+          "status": "skipped",
+          "reason": "host CLI was not driven; skipped is not a pass"
+        }
+      ]
+    },
+    {
+      "host": "antigravity",
+      "client_version": null,
+      "model": null,
+      "date": "2026-11-28",
+      "results": [
+        {
+          "task": "001-refusal-offline",
+          "status": "skipped",
+          "reason": "host CLI was not driven; skipped is not a pass"
+        },
+        {
+          "task": "002-stray-cr",
+          "status": "skipped",
+          "reason": "host CLI was not driven; skipped is not a pass"
+        },
+        {
+          "task": "003-plain-rename",
+          "status": "skipped",
+          "reason": "host CLI was not driven; skipped is not a pass"
+        },
+        {
+          "task": "guarded-operation",
+          "status": "skipped",
+          "reason": "host CLI was not driven; skipped is not a pass"
+        }
+      ]
+    }
+  ]
+}

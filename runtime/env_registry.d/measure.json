@@ -1,0 +1,7 @@
+{
+  "CHAOS_ENGINE_TRACE": {
+    "default": "off",
+    "read_by": "runtime/trace_recorder.py",
+    "purpose": "Opt-in local session trace. Unset, empty, or any value other than 1, true, yes, or on leaves recording off. The recorder fails open."
+  }
+}

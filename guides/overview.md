@@ -112,6 +112,8 @@ All eight hook-capable hosts have lifecycle hook adapters in
 [hooks/kernel.py](../hooks/kernel.py). Grok Bot stays instruction-only. Measured
 gaps, including exit-2 fidelity, are in the
 [host parity matrix](../references/host-parity-matrix.md).
+Dated host outcome rows, where skipped and unknown are not pass, are in the
+[conformance matrix](../evals/conformance-matrix.json) (2026-11-28).
 
 | Id | Host | What this tree implements |
 | --- | --- | --- |
