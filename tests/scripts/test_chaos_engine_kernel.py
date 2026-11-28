@@ -1441,7 +1441,8 @@ class CopilotHookEventsTest(TestCase):
         for name in _COPILOT_OBSERVE_EVENTS:
             self.assertEqual(name, aliases[name])
             self.assertNotIn(name, self.lifecycle.LIFECYCLE_EVENTS)
-        self.assertEqual("notification", aliases["Notification"])
+        self.assertNotIn("Notification", aliases)
+        self.assertEqual("notification", self.kernel._event_name("Notification", "copilot"))
         self.assertIn("Notification", self.lifecycle.LIFECYCLE_EVENTS)
         self.assertFalse(self.kernel.HOST_CAPABILITIES["copilot"].process_exit2_honored)
         guide = (ROOT / "guides" / "tools" / "copilot.md").read_text(encoding="utf-8")

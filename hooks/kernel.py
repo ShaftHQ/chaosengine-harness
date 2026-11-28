@@ -304,8 +304,6 @@ HOST_CAPABILITIES: Mapping[str, HostCapability] = {
             userPromptTransformed="userPromptTransformed",
             errorOccurred="errorOccurred",
             notification="notification",
-            # Vendor input uses PascalCase. That spelling is already a lifecycle event.
-            Notification="notification",
         ),
         COPILOT_EVENTS,
         static_surfaces=("cloud", "ide"),
@@ -516,6 +514,10 @@ def _event_name(value: object, host: str) -> str:
     capability = HOST_CAPABILITIES.get(host)
     if capability is not None and rendered in capability.event_aliases:
         return capability.event_aliases[rendered]
+    # Copilot's input spells the lifecycle name. The registered key stays notification,
+    # so this spelling is not an alias the pin check would publish.
+    if host == "copilot" and rendered == "Notification":
+        return "notification"
     if rendered in INPUT_SYNONYMS:
         return INPUT_SYNONYMS[rendered]
     return rendered
