@@ -37,6 +37,14 @@ def _preventive_event(event_name: str) -> bool:
     return event_name in _PREVENTIVE_EVENTS
 
 
+# Codex observe events. Not preventive: they must not deny or inject a follow-up.
+_CODEX_OBSERVE_EVENTS = frozenset({
+    "Interrupt",
+    "PreModelRequest",
+    "PostModelRequest",
+})
+
+
 def _overlay_module(name: str) -> Path:
     """Prefer runtime/<name> at the tree root; fall back to a flat file."""
     tree = Path(__file__).resolve().parents[1]
@@ -4976,7 +4984,15 @@ def _run_event(event: dict, _host: str) -> int:
 
 def _guarded_event(event: dict, host: str) -> int:
     """#7251: the delete guard runs first on PreToolUse, session-independent like R8."""
-    if isinstance(event, dict) and _preventive_event(str(event.get("hook_event_name") or event.get("hookEventName") or "")):
+    event_name = ""
+    if isinstance(event, dict):
+        event_name = str(event.get("hook_event_name") or event.get("hookEventName") or "")
+    if host == "codex" and event_name in _CODEX_OBSERVE_EVENTS:
+        # Interrupt, PreModelRequest, and PostModelRequest record by returning.
+        # Output would start another model turn or change model context.
+        return 0
+    codex_permission = host == "codex" and event_name == "PermissionRequest"
+    if isinstance(event, dict) and (_preventive_event(event_name) or codex_permission):
         tool_input = event.get("tool_input", {})
         cwd = Path(str(event.get("cwd") or Path.cwd()))
         commands = tuple(

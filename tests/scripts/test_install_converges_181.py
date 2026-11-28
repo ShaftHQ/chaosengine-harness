@@ -285,6 +285,17 @@ class InstallConverges181Tests(unittest.TestCase):
                 check=True,
                 capture_output=True,
             )
+            stamped = subprocess.run(
+                ["git", "-C", str(ROOT), "show", "-s", "--format=%cI", "HEAD"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            # The seed commit shares HEAD's UTC day. A stamp of "now" makes the
+            # intended version newer than the installed commit-date after midnight.
+            seed_env = os.environ.copy()
+            seed_env["GIT_AUTHOR_DATE"] = stamped.stdout.strip()
+            seed_env["GIT_COMMITTER_DATE"] = stamped.stdout.strip()
             subprocess.run(
                 [
                     "git", "-C", str(project),
@@ -294,6 +305,7 @@ class InstallConverges181Tests(unittest.TestCase):
                 ],
                 check=True,
                 capture_output=True,
+                env=seed_env,
             )
             home = Path(temporary) / "home"
             data = Path(temporary) / "data"

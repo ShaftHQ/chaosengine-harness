@@ -104,6 +104,10 @@ CODEX_EVENTS = (
     "PreCompact",
     "PostCompact",
     "SessionEnd",
+    "PermissionRequest",
+    "PreModelRequest",
+    "PostModelRequest",
+    "Interrupt",
 )
 GROK_EVENTS = (
     "SessionStart",
@@ -878,6 +882,37 @@ def _nest_claude_additional_context(
     adapted["hookSpecificOutput"] = specific
 
 
+def _codex_permission_request(adapted: dict[str, object]) -> dict[str, object]:
+    """Deny a Codex PermissionRequest. Allow is already stripped."""
+    decision = adapted.pop("decision", None)
+    reason = adapted.pop("reason", None)
+    permission = adapted.pop("permissionDecision", None)
+    adapted.pop("permissionDecisionReason", None)
+    behavior = decision if isinstance(decision, str) else ""
+    message = ""
+    if isinstance(decision, dict):
+        behavior = str(decision.get("behavior") or "")
+        message = str(decision.get("message") or "")
+    if isinstance(permission, str) and permission.casefold() in {"deny", "block"}:
+        behavior = permission
+    if behavior.casefold() not in {"deny", "block"}:
+        return adapted
+    text = str(reason or message or "Blocked by ChaosEngine.")
+    specific_raw = adapted.pop("hookSpecificOutput", None)
+    specific = dict(specific_raw) if isinstance(specific_raw, dict) else {}
+    context = adapted.pop("additionalContext", None)
+    if context is None and "additionalContext" in specific:
+        context = specific.pop("additionalContext")
+    specific["hookEventName"] = "PermissionRequest"
+    specific["permissionDecision"] = "deny"
+    specific["permissionDecisionReason"] = text
+    specific["decision"] = {"behavior": "deny", "message": text}
+    if context is not None:
+        specific["additionalContext"] = context
+    adapted["hookSpecificOutput"] = specific
+    return adapted
+
+
 def adapt_hook_output(
     output: Mapping[str, object],
     event_name: str,
@@ -891,6 +926,9 @@ def adapt_hook_output(
             adapted = {}
         if host == "claude":
             _nest_claude_additional_context(adapted, event_name, native_event)
+            return adapted
+        if host == "codex":
+            return _codex_permission_request(adapted)
         return adapted
     if event_name in _NO_DECISION_EVENTS:
         return _drop_permission_decision(dict(output))

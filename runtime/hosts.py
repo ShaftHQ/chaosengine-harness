@@ -5373,6 +5373,13 @@ CLAUDE_HOOK_EVENTS = (
     *CLAUDE_DENY_EVENTS,
     *CLAUDE_OBSERVE_EVENTS,
 )
+# Codex-only. Do not fold these into REQUIRED_HOOK_EVENTS.
+CODEX_EXTRA_EVENTS = (
+    "PermissionRequest",
+    "PreModelRequest",
+    "PostModelRequest",
+    "Interrupt",
+)
 
 
 def lifecycle_event_names(host: str) -> tuple[str, ...]:
@@ -5381,12 +5388,14 @@ def lifecycle_event_names(host: str) -> tuple[str, ...]:
     Codex has no official PostToolUseFailure. Failure stays on PostToolUse.
     Codex and Grok also register PreCompact and PostCompact: both pages list
     them, and the guard already emits the compact locator.
+    Codex also registers PermissionRequest, the model pair, and Interrupt.
     """
     if host == "claude":
         return CLAUDE_HOOK_EVENTS
     compact = ("PreCompact", "PostCompact")
     if host == "codex":
-        return tuple(event for event in REQUIRED_HOOK_EVENTS if event != "PostToolUseFailure") + compact
+        base = tuple(event for event in REQUIRED_HOOK_EVENTS if event != "PostToolUseFailure")
+        return base + compact + CODEX_EXTRA_EVENTS
     if host == "grok":
         return REQUIRED_HOOK_EVENTS + compact
     return REQUIRED_HOOK_EVENTS
@@ -6322,7 +6331,10 @@ def lifecycle_hooks_document(host: str, events: dict[str, str] | None = None, ma
             command["commandWindows"] = chaos_guard_locator_command(
                 windows=True, host=host, managed_python=managed_python, event="Stop",
             )
-        if native == "SessionEnd" and host in {"codex", "grok"}:
+        if (native == "SessionEnd" and host in {"codex", "grok"}) or (
+            native == "Interrupt" and host == "codex"
+        ):
+            # SessionEnd and Interrupt accept at most 3 seconds.
             command["timeout"] = 3
         group = {"hooks": [command]}
         if native == "PreToolUse":
@@ -9106,7 +9118,7 @@ def grok_runtime_status(
     return result  # type: ignore[return-value]
 
 
-_CODEX_HOOKS_DOC = "https://developers.openai.com/codex/hooks"
+_CODEX_HOOKS_DOC = "https://learn.chatgpt.com/docs/hooks"
 
 
 def _codex_features_hooks_disabled(text: str) -> bool:

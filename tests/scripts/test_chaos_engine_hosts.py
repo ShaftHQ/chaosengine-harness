@@ -252,6 +252,33 @@ class ChaosEngineHostsTest(unittest.TestCase):
             absent = module.codex_hook_status(Path(temporary) / "empty")
             self.assertEqual("absent", absent["status"])
 
+    def test_codex_registers_permission_model_and_interrupt(self):
+        """#275: one Codex hook file gains the four official events."""
+        module = load(HOSTS, "chaos_engine_codex_events_275")
+        hooks = json.loads(module.lifecycle_hooks_document("codex"))["hooks"]
+        expected = {
+            "SessionStart",
+            "SubagentStart",
+            "UserPromptSubmit",
+            "PreToolUse",
+            "PostToolUse",
+            "Stop",
+            "SubagentStop",
+            "PreCompact",
+            "PostCompact",
+            "SessionEnd",
+            "PermissionRequest",
+            "PreModelRequest",
+            "PostModelRequest",
+            "Interrupt",
+        }
+        self.assertEqual(expected, set(hooks))
+        self.assertNotIn("PostToolUseFailure", hooks)
+        self.assertEqual(3, hooks["Interrupt"][0]["hooks"][0]["timeout"])
+        self.assertNotIn("matcher", hooks["PermissionRequest"][0])
+        self.assertNotIn("matcher", hooks["Interrupt"][0])
+        self.assertEqual("https://learn.chatgpt.com/docs/hooks", module._CODEX_HOOKS_DOC)
+
     def test_detected_client_plugins_are_registered_installed_and_verified(self):
         module = load(HOSTS, "chaos_engine_plugin_activation")
         with tempfile.TemporaryDirectory() as temporary:
@@ -1280,7 +1307,12 @@ class ChaosEngineHostsTest(unittest.TestCase):
                 project.joinpath(".claude/settings.json").read_text()
             )["hooks"]
             compact = {"PreCompact", "PostCompact"}
-            codex_events = (required_events - {"PostToolUseFailure"}) | compact
+            codex_events = (required_events - {"PostToolUseFailure"}) | compact | {
+                "PermissionRequest",
+                "PreModelRequest",
+                "PostModelRequest",
+                "Interrupt",
+            }
             grok_events = required_events | compact
             self.assertEqual(codex_events, set(lifecycle))
             self.assertEqual(grok_events, set(grok_lifecycle))

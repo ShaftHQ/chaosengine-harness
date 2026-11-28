@@ -247,6 +247,9 @@ usable without Mermaid; unknown source entries fail the inventory validator.
 | PostModelSwitch | Normalize native input and evaluate one provider-neutral lifecycle event. | hooks/lifecycle.py; hooks/kernel.py | declared | capability-mapped hosts | generated host adapter | lifecycle kernel | missing mapping fails host parity validation |
 | Elicitation | Normalize native input and evaluate one provider-neutral lifecycle event. | hooks/lifecycle.py; hooks/kernel.py | declared | capability-mapped hosts | generated host adapter | lifecycle kernel | missing mapping fails host parity validation |
 | ElicitationResult | Normalize native input and evaluate one provider-neutral lifecycle event. | hooks/lifecycle.py; hooks/kernel.py | declared | capability-mapped hosts | generated host adapter | lifecycle kernel | missing mapping fails host parity validation |
+| Interrupt | Normalize native input and evaluate one provider-neutral lifecycle event. | hooks/lifecycle.py; hooks/kernel.py | declared | capability-mapped hosts | generated host adapter | lifecycle kernel | missing mapping fails host parity validation |
+| PreModelRequest | Normalize native input and evaluate one provider-neutral lifecycle event. | hooks/lifecycle.py; hooks/kernel.py | declared | capability-mapped hosts | generated host adapter | lifecycle kernel | missing mapping fails host parity validation |
+| PostModelRequest | Normalize native input and evaluate one provider-neutral lifecycle event. | hooks/lifecycle.py; hooks/kernel.py | declared | capability-mapped hosts | generated host adapter | lifecycle kernel | missing mapping fails host parity validation |
 <!-- inventory:lifecycle-events:end -->
 
 ### External Services

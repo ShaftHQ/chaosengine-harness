@@ -147,6 +147,9 @@ LIFECYCLE_EVENTS = (
     "PostModelSwitch",
     "Elicitation",
     "ElicitationResult",
+    "Interrupt",
+    "PreModelRequest",
+    "PostModelRequest",
 )
 _CLAUDE_DENY_EXIT = frozenset({
     "PreToolUse",

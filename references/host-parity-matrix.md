@@ -105,7 +105,7 @@ Pins in `evals/host-doc-conformance.json` follow the pages below. A missing offi
 | Host | Doc read 2026-11-27 | Registered this pass | Recorded, not registered |
 | --- | --- | --- | --- |
 | Claude Code | https://code.claude.com/docs/en/hooks | PreSkillShellCommand, UserPromptExpansion, PermissionRequest, Setup, InstructionsLoaded, MessageDisplay, PostToolBatch, PermissionDenied, Notification, TaskCreated, TaskCompleted, StopFailure, TeammateIdle, ConfigChange, CwdChanged, DirectoryAdded, FileChanged, WorktreeCreate, WorktreeRemove, PreModelSwitch, PostModelSwitch, Elicitation, ElicitationResult | none |
-| Codex | https://learn.chatgpt.com/docs/hooks | PreCompact, PostCompact | PermissionRequest, PreModelRequest, PostModelRequest, Interrupt. PostToolUseFailure is not on the page. |
+| Codex | https://learn.chatgpt.com/docs/hooks | PreCompact, PostCompact, PermissionRequest, PreModelRequest, PostModelRequest, Interrupt | none. PostToolUseFailure is not on the page. |
 | Grok | https://docs.x.ai/build/features/hooks | PreCompact, PostCompact | PermissionDenied, StopFailure, Notification |
 | Gemini CLI | https://geminicli.com/docs/hooks/ | none | BeforeModel, AfterModel, BeforeToolSelection, Notification |
 | Copilot | https://docs.github.com/en/copilot/reference/hooks-reference | none | userPromptTransformed, permissionRequest, subagentStart, errorOccurred, notification |

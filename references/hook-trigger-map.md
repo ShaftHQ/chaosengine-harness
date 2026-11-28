@@ -18,7 +18,10 @@ next decision. SessionStart is guide-only context (Grok ignores SessionStart std
 | `SubagentStop` | Claude, Codex, Grok, Copilot, Cursor | enforce | Delegate-owned completion duties only. Never start the root Learning Session. |
 | `PreCompact` | Claude, Codex, Gemini, Grok, Copilot, Cursor | guide | Gemini and Copilot re-inject compact locators that compaction would drop. Claude PreCompact stdout is the compaction-summary channel, not JSON additionalContext. Claude and Codex re-inject on SessionStart with source `compact`. Codex, Grok, and Cursor list this event; the guard already emits the compact locator and no new deny policy is added. |
 | `PostCompact` | Claude, Codex, Grok | guide | No Claude context channel (side effects only). The handler still emits the PreCompact payload; Claude ignores it. Claude re-injects on SessionStart with source `compact`. Codex runs PostCompact after compaction, and plain text on stdout is ignored; the identity re-injection is SessionStart with `source: "compact"` ([Codex hooks](https://developers.openai.com/codex/hooks)). Grok lists PostCompact and ignores passive stdout. Gemini and Copilot do not have this event. |
-| `PermissionRequest` | Claude | gap | Guide-only. No ChaosEngine hook returns allow or deny. The owner decides. |
+| `PermissionRequest` | Claude, Codex | enforce | Claude strips allow and can deny. Codex denies with `permissionDecision: deny` and `decision.behavior: deny`, and does not approve. |
+| `PreModelRequest` | Codex | observe | Log only. Output cannot change the model context or block the request. |
+| `PostModelRequest` | Codex | observe | Log only. Output cannot change the model context or block the request. |
+| `Interrupt` | Codex | observe | Exit 0 with no output. Does not start a follow-up prompt. |
 | `Elicitation` | Claude | gap | Guide-only MCP elicitation. Do not auto-approve. |
 | `ElicitationResult` | Claude | gap | Guide-only result of an elicitation. Do not auto-approve. |
 | `SessionEnd` | Claude, Codex, Gemini, Grok, Copilot, Cursor | enforce | Remove this session's worktree after merge is recorded and the tree is clean. |

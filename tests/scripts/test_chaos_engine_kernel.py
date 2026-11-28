@@ -195,6 +195,30 @@ class ChaosEngineKernelTest(TestCase):
                     ),
                 )
 
+    def test_codex_permission_request_denies_and_does_not_approve(self):
+        denied = self.kernel.adapt_hook_output(
+            {"decision": "block", "reason": "unsafe", "permissionDecision": "allow"},
+            "PermissionRequest",
+            "codex",
+        )
+        specific = denied["hookSpecificOutput"]
+        self.assertEqual("PermissionRequest", specific["hookEventName"])
+        self.assertEqual("deny", specific["permissionDecision"])
+        self.assertEqual("unsafe", specific["permissionDecisionReason"])
+        self.assertEqual({"behavior": "deny", "message": "unsafe"}, specific["decision"])
+        rendered = json.dumps(denied)
+        self.assertNotIn("allow", rendered)
+        self.assertNotIn("approve", rendered)
+        self.assertNotIn("decision", denied)
+        observed = self.kernel.adapt_hook_output(
+            {"decision": "allow", "permissionDecision": "approve"},
+            "PermissionRequest",
+            "codex",
+        )
+        self.assertNotIn("allow", json.dumps(observed))
+        self.assertNotIn("approve", json.dumps(observed))
+        self.assertNotIn("permissionDecision", observed.get("hookSpecificOutput", {}))
+
     def test_grok_session_start_copies_additional_context_into_system_message(self):
         payload = {"additionalContext": "locator"}
         grok = self.kernel.adapt_hook_output(payload, "SessionStart", "grok")

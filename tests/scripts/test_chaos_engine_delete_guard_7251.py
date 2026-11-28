@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import importlib.util
 import io
@@ -643,6 +644,23 @@ class DeleteGuardTest(unittest.TestCase):
             self.assertEqual(2, guard._guarded_event(event, "claude"))
             self.assertEqual(2, guard._guarded_event(skill, "claude"))
             rest.assert_not_called()
+        permission = {"hook_event_name": "PermissionRequest", "tool_name": "Bash", "tool_input": {"command": f"rm -rf {self.repo}"}, "cwd": str(self.base)}
+        with unittest.mock.patch.object(guard, "_delete_guard", return_value=GUARD), unittest.mock.patch.object(guard, "_record_denial_with_significance"), unittest.mock.patch.object(guard, "_run_event", return_value=0) as rest:
+            self.assertEqual(2, guard._guarded_event(permission, "codex"))
+            rest.assert_not_called()
+            self.assertEqual(0, guard._guarded_event(permission, "claude"))
+            rest.assert_called_once()
+        for name in ("Interrupt", "PreModelRequest", "PostModelRequest"):
+            observed = {"hook_event_name": name, "cwd": str(self.base)}
+            with unittest.mock.patch.object(guard, "_run_event", return_value=7) as rest:
+                stdout = io.StringIO()
+                with contextlib.redirect_stdout(stdout):
+                    self.assertEqual(0, guard._guarded_event(observed, "codex"))
+                rest.assert_not_called()
+                text = stdout.getvalue()
+                self.assertNotIn("followup", text)
+                self.assertNotIn("additionalContext", text)
+                self.assertNotIn("systemMessage", text)
         self.assertIn("_guarded_event", (CORE / "hooks" / "guard.py").read_text(encoding="utf-8").split("def main()")[1])
         self.assertEqual(("pass", ""), GUARD.doctor_check(CORE))
         install = load("chaos_engine_install_7251", CORE / "install.py")
