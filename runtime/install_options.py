@@ -80,6 +80,8 @@ class InstallOption:
     cli_only: bool = False
     merge: bool = False
     metavar: str = ""
+    optin: str = ""
+    effect: str = ""
 
 
 def _opt(**kwargs: object) -> InstallOption:
@@ -103,6 +105,8 @@ def _components() -> list[InstallOption]:
                 flag_value=False,
                 enable_flags=(f"--with-{name}",),
                 enable_dest=f"with_{dest}",
+                optin="opt-out",
+                effect=f"Set false to disable default-on {name}.",
             )
         )
     return rows
@@ -119,6 +123,8 @@ def build_catalog() -> tuple[InstallOption, ...]:
             help="GitHub repository owner/name. Also CHAOS_ENGINE_REPOSITORY.",
             env=("CHAOS_ENGINE_REPOSITORY",),
             env_kind="str",
+            optin='value',
+            effect='GitHub repository owner/name. Also CHAOS_ENGINE_REPOSITORY.',
         ),
         _opt(
             key="source.ref",
@@ -130,6 +136,8 @@ def build_catalog() -> tuple[InstallOption, ...]:
             env_kind="str",
             flags=("--branch",),
             dest="branch",
+            optin='value',
+            effect='Git ref to install. Also CHAOS_ENGINE_BRANCH.',
         ),
         _opt(
             key="source.version",
@@ -141,6 +149,8 @@ def build_catalog() -> tuple[InstallOption, ...]:
             env_kind="str",
             flags=("--version",),
             dest="version_pin",
+            optin='value',
+            effect='Release 0.4.YYYYMMDD.N or a 40-hex commit. Also CHAOS_ENGINE_VERSION.',
         ),
         _opt(
             key="source.channel",
@@ -153,6 +163,8 @@ def build_catalog() -> tuple[InstallOption, ...]:
             flags=("--channel",),
             dest="channel",
             choices=("main", "release"),
+            optin='value',
+            effect='Update channel: main or release.',
         ),
         _opt(
             key="network.offline",
@@ -166,6 +178,8 @@ def build_catalog() -> tuple[InstallOption, ...]:
             dest="offline",
             action="store_true",
             flag_value=True,
+            optin='opt-in',
+            effect='Use only the cache or --from-bundle. Also CHAOS_ENGINE_OFFLINE.',
         ),
         _opt(
             key="network.bundle",
@@ -178,6 +192,8 @@ def build_catalog() -> tuple[InstallOption, ...]:
             flags=("--from-bundle",),
             dest="from_bundle",
             metavar="ZIP",
+            optin='value',
+            effect='Offline bundle zip. Also CHAOS_ENGINE_FROM_BUNDLE.',
         ),
         _opt(
             key="network.ca_bundle",
@@ -190,6 +206,8 @@ def build_catalog() -> tuple[InstallOption, ...]:
             flags=("--ca-bundle",),
             dest="ca_bundle",
             metavar="PEM",
+            optin='value',
+            effect='PEM bundle for TLS interception. Also CHAOS_ENGINE_CA_BUNDLE. Exported as SSL_CERT_FILE.',
         ),
         _opt(
             key="network.use_gh_token",
@@ -199,6 +217,8 @@ def build_catalog() -> tuple[InstallOption, ...]:
             help="Read gh auth token for downloads. CHAOS_ENGINE_GH_AUTH=0 turns it off.",
             env=("CHAOS_ENGINE_GH_AUTH",),
             env_kind="bool-default-true",
+            optin='opt-out',
+            effect='Read gh auth token for downloads. CHAOS_ENGINE_GH_AUTH=0 turns it off.',
         ),
         _opt(
             key="install.scope",
@@ -214,6 +234,8 @@ def build_catalog() -> tuple[InstallOption, ...]:
             flags=("--scope",),
             dest="scope",
             choices=("project", "user", "both"),
+            optin='value',
+            effect='Where to install. project: this folder (default, shared through git). user: every folder on this machine, no repo files. both: project and user.',
         ),
         _opt(
             key="install.distribution",
@@ -225,6 +247,8 @@ def build_catalog() -> tuple[InstallOption, ...]:
             env_kind="str",
             flags=("--distribution",),
             dest="distribution",
+            optin='value',
+            effect='Distribution id. Also CHAOS_ENGINE_DISTRIBUTION.',
         ),
         _opt(
             key="install.git_visibility",
@@ -241,6 +265,8 @@ def build_catalog() -> tuple[InstallOption, ...]:
             enable_flags=("--tracked",),
             enable_dest="tracked",
             choices=("tracked", "excluded"),
+            optin='value',
+            effect='tracked, or excluded (consumer mode, CHAOS_ENGINE_CONSUMER=1).',
         ),
         _opt(
             key="instructions.mode",
@@ -257,6 +283,8 @@ def build_catalog() -> tuple[InstallOption, ...]:
             flags=("--mode",),
             dest="instructions_mode",
             choices=("merge", "replace"),
+            optin='value',
+            effect="How to treat existing agent instructions. merge (default): keep them and make ChaosEngine the primary driver. replace: back up, then delete them and install ChaosEngine's set (needs --yes when not interactive).",
         ),
         _opt(
             key="instructions.placement",
@@ -269,6 +297,8 @@ def build_catalog() -> tuple[InstallOption, ...]:
             flags=("--instructions-placement",),
             dest="instructions_placement",
             choices=("top", "bottom"),
+            optin='value',
+            effect='Where the instruction block sits. Also CHAOS_ENGINE_INSTRUCTIONS_PLACEMENT.',
         ),
         _opt(
             key="hosts.enabled",
@@ -282,6 +312,8 @@ def build_catalog() -> tuple[InstallOption, ...]:
             dest="hosts",
             action="append",
             choices=HOST_IDS,
+            optin='value',
+            effect='Client ids to complete (comma-separated). Empty infers. Also CHAOS_ENGINE_HOST.',
         ),
         _opt(
             key="hosts.infer",
@@ -295,6 +327,8 @@ def build_catalog() -> tuple[InstallOption, ...]:
             dest="no_infer_hosts",
             action="store_true",
             flag_value=False,
+            optin='opt-out',
+            effect='Infer the host from the environment. --no-infer-hosts turns it off.',
         ),
         _opt(
             key="hosts.portable_files",
@@ -307,6 +341,8 @@ def build_catalog() -> tuple[InstallOption, ...]:
             flags=("--portable-hosts",),
             dest="portable_hosts",
             choices=("all", "enabled"),
+            optin='value',
+            effect='Write portable files for all hosts, or only enabled ones.',
         ),
         _opt(
             key="hosts.grok.lean_skills",
@@ -320,6 +356,8 @@ def build_catalog() -> tuple[InstallOption, ...]:
             dest="lean_grok_skills",
             action="store_true",
             flag_value=True,
+            optin='opt-in',
+            effect='Disable Grok bundled game-* and imagine skills. Also CHAOS_ENGINE_LEAN_GROK_SKILLS=1.',
         ),
         _opt(
             key="hosts.register_plugins",
@@ -333,6 +371,8 @@ def build_catalog() -> tuple[InstallOption, ...]:
             dest="no_register_plugins",
             action="store_true",
             flag_value=False,
+            optin='opt-out',
+            effect='Register Codex and Claude plugins. --no-register-plugins turns it off.',
         ),
         *_components(),
         _opt(
@@ -345,6 +385,8 @@ def build_catalog() -> tuple[InstallOption, ...]:
             env_kind="csv",
             merge=True,
             choices=ADDON_IDS,
+            optin='value',
+            effect='Optional add-on ids. Lists merge across levels. Also CHAOS_ENGINE_ADDONS.',
         ),
         _opt(
             key="addons.auto_detect",
@@ -358,6 +400,8 @@ def build_catalog() -> tuple[InstallOption, ...]:
             dest="no_auto_addons",
             action="store_true",
             flag_value=False,
+            optin='opt-out',
+            effect='Detect a project pack. --no-auto-addons turns it off.',
         ),
         _opt(
             key="packs.shaft_skills_version",
@@ -369,6 +413,8 @@ def build_catalog() -> tuple[InstallOption, ...]:
             env_kind="str",
             flags=("--shaft-skills-version",),
             dest="shaft_skills_version",
+            optin='value',
+            effect='SHAFT skills tag. Also CHAOS_ENGINE_SHAFT_SKILLS_VERSION.',
         ),
         _opt(
             key="packs.post_install",
@@ -382,6 +428,8 @@ def build_catalog() -> tuple[InstallOption, ...]:
             dest="skip_pack_post_install",
             action="store_true",
             flag_value=False,
+            optin='opt-out',
+            effect='Run the project pack postInstall. --skip-pack-post-install turns it off.',
         ),
         _opt(
             key="mcp.publish",
@@ -397,6 +445,8 @@ def build_catalog() -> tuple[InstallOption, ...]:
             flag_value=True,
             enable_flags=("--without-mcp",),
             enable_dest="without_mcp",
+            optin='opt-in',
+            effect='Publish CLI-equivalent MCP servers. Also CHAOS_ENGINE_WITH_MCP.',
         ),
         _opt(
             key="mcp.servers",
@@ -410,6 +460,8 @@ def build_catalog() -> tuple[InstallOption, ...]:
             dest="mcp_servers",
             metavar="IDS",
             choices=MCP_SERVER_IDS,
+            optin='value',
+            effect='MCP server ids when publish is on. Also CHAOS_ENGINE_MCP_SERVERS.',
         ),
         _opt(
             key="mcp.maven_tools.enabled",
@@ -423,6 +475,8 @@ def build_catalog() -> tuple[InstallOption, ...]:
             dest="with_maven_tools",
             action="store_true",
             flag_value=True,
+            optin='opt-in',
+            effect='Install Maven Tools MCP. Also CHAOS_ENGINE_WITH_MAVEN_TOOLS.',
         ),
         _opt(
             key="mcp.maven_tools.mode",
@@ -435,6 +489,8 @@ def build_catalog() -> tuple[InstallOption, ...]:
             flags=("--maven-tools-mode",),
             dest="maven_tools_mode",
             choices=("native", "docker"),
+            optin='value',
+            effect='Maven Tools runtime. Also CHAOS_ENGINE_MAVEN_TOOLS_MODE.',
         ),
         _opt(
             key="provision.tools",
@@ -448,6 +504,8 @@ def build_catalog() -> tuple[InstallOption, ...]:
             dest="skip_tools",
             action="store_true",
             flag_value=False,
+            optin='opt-out',
+            effect='Provision uv, Python, Node, and the stores. --skip-tools turns it off.',
         ),
         _opt(
             key="provision.prerequisites",
@@ -462,6 +520,8 @@ def build_catalog() -> tuple[InstallOption, ...]:
             action="store_true",
             flag_value="skip",
             choices=("auto", "report", "skip", "provision"),
+            optin='value',
+            effect='Prerequisites: auto, report, skip, or provision. --skip-prerequisites selects skip.',
         ),
         _opt(
             key="paths.modify_user_path",
@@ -475,6 +535,8 @@ def build_catalog() -> tuple[InstallOption, ...]:
             dest="no_modify_path",
             action="store_true",
             flag_value=False,
+            optin='opt-out',
+            effect='Change the user PATH on Windows. --no-modify-path turns it off.',
         ),
         _opt(
             key="paths.bin_dir",
@@ -487,6 +549,8 @@ def build_catalog() -> tuple[InstallOption, ...]:
             flags=("--bin-dir",),
             dest="bin_dir",
             metavar="DIR",
+            optin='value',
+            effect='Shim directory. Also CHAOS_ENGINE_SHIM_DIR. Empty uses the platform default.',
         ),
         _opt(
             key="paths.cache_dir",
@@ -496,6 +560,8 @@ def build_catalog() -> tuple[InstallOption, ...]:
             help="Download cache directory. Also CHAOS_ENGINE_CACHE_DIR.",
             env=("CHAOS_ENGINE_CACHE_DIR",),
             env_kind="str",
+            optin='value',
+            effect='Download cache directory. Also CHAOS_ENGINE_CACHE_DIR.',
         ),
         _opt(
             key="paths.data_dir",
@@ -505,6 +571,8 @@ def build_catalog() -> tuple[InstallOption, ...]:
             help="User data directory. Also CHAOS_ENGINE_USER_DIR.",
             env=("CHAOS_ENGINE_USER_DIR",),
             env_kind="str",
+            optin='value',
+            effect='User data directory. Also CHAOS_ENGINE_USER_DIR.',
         ),
         _opt(
             key="cache.max_mb",
@@ -514,6 +582,8 @@ def build_catalog() -> tuple[InstallOption, ...]:
             help="Download cache cap in MiB. 0 is unlimited. Eviction is not active.",
             env=("CHAOS_ENGINE_CACHE_MAX_MB",),
             env_kind="int",
+            optin='value',
+            effect='Download cache cap in MiB. 0 is unlimited. Eviction is not active.',
         ),
         _opt(
             key="edits.policy",
@@ -528,6 +598,8 @@ def build_catalog() -> tuple[InstallOption, ...]:
             action="store_true",
             flag_value="refuse",
             choices=("copy-aside", "refuse"),
+            optin='value',
+            effect='copy-aside keeps edited owned files. refuse exits before replacing them (--keep-edits).',
         ),
         _opt(
             key="backups.keep",
@@ -540,6 +612,8 @@ def build_catalog() -> tuple[InstallOption, ...]:
             flags=("--backup-keep",),
             dest="backup_keep",
             metavar="N",
+            optin='value',
+            effect='How many backup stamps to keep. 0 is unlimited.',
         ),
         _opt(
             key="git_hooks.secret_guard",
@@ -553,6 +627,8 @@ def build_catalog() -> tuple[InstallOption, ...]:
             dest="no_secret_guard",
             action="secret_guard_off",
             flag_value=False,
+            optin='opt-out',
+            effect='Wire the secret guard into git hooks. --no-secret-guard turns it off.',
         ),
         _opt(
             key="locks.project_wait_seconds",
@@ -562,6 +638,8 @@ def build_catalog() -> tuple[InstallOption, ...]:
             help="Seconds to wait for the project lock (1-600). Also CHAOS_ENGINE_LOCK_WAIT_SECONDS.",
             env=("CHAOS_ENGINE_LOCK_WAIT_SECONDS",),
             env_kind="int",
+            optin='value',
+            effect='Seconds to wait for the project lock (1-600). Also CHAOS_ENGINE_LOCK_WAIT_SECONDS.',
         ),
         _opt(
             key="hooks.guard_wait_ms",
@@ -571,6 +649,8 @@ def build_catalog() -> tuple[InstallOption, ...]:
             help="Guard wait in milliseconds (0-600000). Also CHAOS_ENGINE_GUARD_WAIT_MS.",
             env=("CHAOS_ENGINE_GUARD_WAIT_MS",),
             env_kind="int",
+            optin='value',
+            effect='Guard wait in milliseconds (0-600000). Also CHAOS_ENGINE_GUARD_WAIT_MS.',
         ),
         _opt(
             key="stores.schedule",
@@ -584,6 +664,8 @@ def build_catalog() -> tuple[InstallOption, ...]:
             dest="no_store_schedule",
             action="store_true",
             flag_value=False,
+            optin='opt-out',
+            effect='Install the daily store-refresh timer. --no-store-schedule turns it off.',
         ),
         _opt(
             key="stores.schedule_at",
@@ -593,6 +675,8 @@ def build_catalog() -> tuple[InstallOption, ...]:
             help="Daily refresh clock time HH:MM. Also CHAOS_ENGINE_STORE_SCHEDULE_AT.",
             env=("CHAOS_ENGINE_STORE_SCHEDULE_AT",),
             env_kind="str",
+            optin='value',
+            effect='Daily refresh clock time HH:MM. Also CHAOS_ENGINE_STORE_SCHEDULE_AT.',
         ),
         _opt(
             key="stores.refresh_on_session",
@@ -602,6 +686,8 @@ def build_catalog() -> tuple[InstallOption, ...]:
             help="Refresh a stale store when a session starts. CHAOS_ENGINE_STORE_REFRESH=0 turns it off.",
             env=("CHAOS_ENGINE_STORE_REFRESH",),
             env_kind="bool-default-true",
+            optin='opt-out',
+            effect='Refresh a stale store when a session starts. CHAOS_ENGINE_STORE_REFRESH=0 turns it off.',
         ),
         _opt(
             key="stores.stall_seconds",
@@ -611,6 +697,8 @@ def build_catalog() -> tuple[InstallOption, ...]:
             help="Store-stall timeout in seconds. Also CHAOS_ENGINE_STALL_SECONDS.",
             env=("CHAOS_ENGINE_STALL_SECONDS",),
             env_kind="int",
+            optin='value',
+            effect='Store-stall timeout in seconds. Also CHAOS_ENGINE_STALL_SECONDS.',
         ),
         _opt(
             key="stores.graphify.extra_ignore",
@@ -619,6 +707,8 @@ def build_catalog() -> tuple[InstallOption, ...]:
             levels="P",
             help="Extra Graphify ignore patterns. Merged with the harness ignores; it cannot remove them.",
             merge=True,
+            optin='value',
+            effect='Extra Graphify ignore patterns. Merged with the harness ignores; it cannot remove them.',
         ),
         _opt(
             key="stores.mempalace.mine",
@@ -628,6 +718,8 @@ def build_catalog() -> tuple[InstallOption, ...]:
             help="MemPalace mine mode. Also CHAOS_ENGINE_MEMPALACE_MINE.",
             env=("CHAOS_ENGINE_MEMPALACE_MINE",),
             env_kind="str",
+            optin='value',
+            effect='MemPalace mine mode. Also CHAOS_ENGINE_MEMPALACE_MINE.',
         ),
         _opt(
             key="stores.mempalace.full",
@@ -637,6 +729,8 @@ def build_catalog() -> tuple[InstallOption, ...]:
             help="MemPalace full mine. Also CHAOS_ENGINE_MEMPALACE_FULL.",
             env=("CHAOS_ENGINE_MEMPALACE_FULL",),
             env_kind="str",
+            optin='value',
+            effect='MemPalace full mine. Also CHAOS_ENGINE_MEMPALACE_FULL.',
         ),
         _opt(
             key="stores.mempalace.collection",
@@ -646,6 +740,8 @@ def build_catalog() -> tuple[InstallOption, ...]:
             help="MemPalace collection. Also CHAOS_ENGINE_MEMPALACE_COLLECTION.",
             env=("CHAOS_ENGINE_MEMPALACE_COLLECTION",),
             env_kind="str",
+            optin='value',
+            effect='MemPalace collection. Also CHAOS_ENGINE_MEMPALACE_COLLECTION.',
         ),
         _opt(
             key="session.resume_stale_days",
@@ -655,6 +751,8 @@ def build_catalog() -> tuple[InstallOption, ...]:
             help="Days before a session resume is stale. Also CHAOS_ENGINE_RESUME_STALE_DAYS.",
             env=("CHAOS_ENGINE_RESUME_STALE_DAYS",),
             env_kind="int",
+            optin='value',
+            effect='Days before a session resume is stale. Also CHAOS_ENGINE_RESUME_STALE_DAYS.',
         ),
         _opt(
             key="ui.interactive",
@@ -666,6 +764,8 @@ def build_catalog() -> tuple[InstallOption, ...]:
             dest="interactive",
             action="store_true",
             flag_value=True,
+            optin='opt-in',
+            effect='Ask before each install operation.',
         ),
         _opt(
             key="ui.verbosity",
@@ -680,6 +780,8 @@ def build_catalog() -> tuple[InstallOption, ...]:
             flag_value="quiet",
             enable_flags=("--verbose",),
             enable_dest="verbose",
+            optin='value',
+            effect='quiet, normal, or verbose.',
         ),
         _opt(
             key="ui.color",
@@ -692,6 +794,8 @@ def build_catalog() -> tuple[InstallOption, ...]:
             flags=("--color",),
             dest="color",
             choices=("auto", "always", "never"),
+            optin='value',
+            effect='Colour mode. NO_COLOR and --no-color win over always. Also CHAOS_ENGINE_COLOR.',
         ),
         _opt(
             key="ui.ascii",
@@ -705,17 +809,19 @@ def build_catalog() -> tuple[InstallOption, ...]:
             dest="ascii",
             action="store_true",
             flag_value=True,
+            optin='opt-in',
+            effect='Force ASCII glyphs. Also CHAOS_ENGINE_ASCII=1.',
         ),
-        _opt(key="dry_run", default=False, kind="bool", levels="", help="Print the plan and write nothing.", flags=("-n", "--dry-run"), dest="dry_run", action="store_true", flag_value=True, cli_only=True),
-        _opt(key="yes", default=False, kind="bool", levels="", help="Do not prompt. CI=1 and a non-interactive stdin imply this.", flags=("--yes", "--no-input"), dest="no_input", action="store_true", flag_value=True, cli_only=True),
-        _opt(key="json", default=False, kind="bool", levels="", help="One JSON document on stdout.", flags=("--json",), dest="json", action="store_true", flag_value=True, cli_only=True),
-        _opt(key="if_changed", default=False, kind="bool", levels="", help="No-op when the installed overlay already matches the source.", flags=("--if-changed",), dest="if_changed", action="store_true", flag_value=True, cli_only=True),
-        _opt(key="force", default=False, kind="bool", levels="", help="Replace edited CE-owned files without copying them. This is not --mode replace.", flags=("--force",), dest="force", action="store_true", flag_value=True, cli_only=True),
-        _opt(key="include_local", default=False, kind="bool", levels="", help="With --mode replace, also remove personal *.local files.", flags=("--include-local",), dest="include_local", action="store_true", flag_value=True, cli_only=True),
-        _opt(key="allow_dirty", default=False, kind="bool", levels="", help="With --mode replace, allow uncommitted changes to instruction files.", flags=("--allow-dirty",), dest="allow_dirty", action="store_true", flag_value=True, cli_only=True),
-        _opt(key="force_replace_source_tree", default=False, kind="bool", levels="", help="Allow --mode replace in the ChaosEngine or SHAFT_ENGINE source tree.", flags=("--force-replace-source-tree",), dest="force_replace_source_tree", action="store_true", flag_value=True, cli_only=True),
-        _opt(key="no_user_hooks", default=False, kind="bool", levels="", help="Install user-level instructions and the skill, but no guard hooks.", flags=("--no-user-hooks",), dest="no_user_hooks", action="store_true", flag_value=True, cli_only=True),
-        _opt(key="user_layer.hosts", default=(), kind="list", levels="U", help="Hosts to wire at user level. Also CHAOS_ENGINE_USER_HOSTS.", env=("CHAOS_ENGINE_USER_HOSTS",), env_kind="csv", flags=("--user-hosts",), dest="user_hosts", action="append", choices=HOST_IDS),
+        _opt(key="dry_run", default=False, kind="bool", levels="", help="Print the plan and write nothing.", flags=("-n", "--dry-run"), dest="dry_run", action="store_true", flag_value=True, cli_only=True, optin='opt-in', effect='Print the plan and write nothing.'),
+        _opt(key="yes", default=False, kind="bool", levels="", help="Do not prompt. CI=1 and a non-interactive stdin imply this.", flags=("--yes", "--no-input"), dest="no_input", action="store_true", flag_value=True, cli_only=True, optin='opt-in', effect='Do not prompt. CI=1 and a non-interactive stdin imply this.'),
+        _opt(key="json", default=False, kind="bool", levels="", help="One JSON document on stdout.", flags=("--json",), dest="json", action="store_true", flag_value=True, cli_only=True, optin='opt-in', effect='One JSON document on stdout.'),
+        _opt(key="if_changed", default=False, kind="bool", levels="", help="No-op when the installed overlay already matches the source.", flags=("--if-changed",), dest="if_changed", action="store_true", flag_value=True, cli_only=True, optin='opt-in', effect='No-op when the installed overlay already matches the source.'),
+        _opt(key="force", default=False, kind="bool", levels="", help="Replace edited CE-owned files without copying them. This is not --mode replace.", flags=("--force",), dest="force", action="store_true", flag_value=True, cli_only=True, optin='opt-in', effect='Replace edited CE-owned files without copying them. This is not --mode replace.'),
+        _opt(key="include_local", default=False, kind="bool", levels="", help="With --mode replace, also remove personal *.local files.", flags=("--include-local",), dest="include_local", action="store_true", flag_value=True, cli_only=True, optin='opt-in', effect='With --mode replace, also remove personal *.local files.'),
+        _opt(key="allow_dirty", default=False, kind="bool", levels="", help="With --mode replace, allow uncommitted changes to instruction files.", flags=("--allow-dirty",), dest="allow_dirty", action="store_true", flag_value=True, cli_only=True, optin='opt-in', effect='With --mode replace, allow uncommitted changes to instruction files.'),
+        _opt(key="force_replace_source_tree", default=False, kind="bool", levels="", help="Allow --mode replace in the ChaosEngine or SHAFT_ENGINE source tree.", flags=("--force-replace-source-tree",), dest="force_replace_source_tree", action="store_true", flag_value=True, cli_only=True, optin='opt-in', effect='Allow --mode replace in the ChaosEngine or SHAFT_ENGINE source tree.'),
+        _opt(key="no_user_hooks", default=False, kind="bool", levels="", help="Install user-level instructions and the skill, but no guard hooks.", flags=("--no-user-hooks",), dest="no_user_hooks", action="store_true", flag_value=True, cli_only=True, optin='opt-in', effect='Install user-level instructions and the skill, but no guard hooks.'),
+        _opt(key="user_layer.hosts", default=(), kind="list", levels="U", help="Hosts to wire at user level. Also CHAOS_ENGINE_USER_HOSTS.", env=("CHAOS_ENGINE_USER_HOSTS",), env_kind="csv", flags=("--user-hosts",), dest="user_hosts", action="append", choices=HOST_IDS, optin='value', effect='Hosts to wire at user level. Also CHAOS_ENGINE_USER_HOSTS.'),
     ]
     return tuple(rows)
 

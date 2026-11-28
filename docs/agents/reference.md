@@ -8,73 +8,73 @@ One fact per row. The owner link is the normative file.
 
 | Key | Opt | Default | Flag or env | Source |
 | --- | --- | --- | --- | --- |
-| `source.repository` | value | `ShaftHQ/chaosengine-harness` | CHAOS_ENGINE_REPOSITORY | [owner](../../runtime/install_options.py#L115) |
-| `source.ref` | value | `main` | --branch | [owner](../../runtime/install_options.py#L124) |
-| `source.version` | value | `latest` | --version | [owner](../../runtime/install_options.py#L135) |
-| `source.channel` | value | `main` | --channel | [owner](../../runtime/install_options.py#L146) |
-| `network.offline` | opt-in | `false` | --offline | [owner](../../runtime/install_options.py#L158) |
-| `network.bundle` | value | `` | --from-bundle | [owner](../../runtime/install_options.py#L171) |
-| `network.ca_bundle` | value | `` | --ca-bundle | [owner](../../runtime/install_options.py#L183) |
-| `network.use_gh_token` | opt-out | `true` | CHAOS_ENGINE_GH_AUTH | [owner](../../runtime/install_options.py#L195) |
-| `install.scope` | value | `project` | --scope | [owner](../../runtime/install_options.py#L204) |
-| `install.distribution` | value | `portable` | --distribution | [owner](../../runtime/install_options.py#L219) |
-| `install.git_visibility` | value | `tracked` | --consumer, --tracked | [owner](../../runtime/install_options.py#L230) |
-| `instructions.mode` | value | `merge` | --mode | [owner](../../runtime/install_options.py#L246) |
-| `instructions.placement` | value | `top` | --instructions-placement | [owner](../../runtime/install_options.py#L262) |
-| `hosts.enabled` | value | `[]` | --hosts | [owner](../../runtime/install_options.py#L274) |
-| `hosts.infer` | opt-out | `true` | --no-infer-hosts | [owner](../../runtime/install_options.py#L287) |
-| `hosts.portable_files` | value | `all` | --portable-hosts | [owner](../../runtime/install_options.py#L300) |
-| `hosts.grok.lean_skills` | opt-in | `false` | --lean-grok-skills | [owner](../../runtime/install_options.py#L312) |
-| `hosts.register_plugins` | opt-out | `true` | --no-register-plugins | [owner](../../runtime/install_options.py#L325) |
+| `source.repository` | value | `ShaftHQ/chaosengine-harness` | CHAOS_ENGINE_REPOSITORY | [owner](../../runtime/install_options.py#L119) |
+| `source.ref` | value | `main` | --branch | [owner](../../runtime/install_options.py#L130) |
+| `source.version` | value | `latest` | --version | [owner](../../runtime/install_options.py#L143) |
+| `source.channel` | value | `main` | --channel | [owner](../../runtime/install_options.py#L156) |
+| `network.offline` | opt-in | `false` | --offline | [owner](../../runtime/install_options.py#L170) |
+| `network.bundle` | value | `` | --from-bundle | [owner](../../runtime/install_options.py#L185) |
+| `network.ca_bundle` | value | `` | --ca-bundle | [owner](../../runtime/install_options.py#L199) |
+| `network.use_gh_token` | opt-out | `true` | CHAOS_ENGINE_GH_AUTH | [owner](../../runtime/install_options.py#L213) |
+| `install.scope` | value | `project` | --scope | [owner](../../runtime/install_options.py#L224) |
+| `install.distribution` | value | `portable` | --distribution | [owner](../../runtime/install_options.py#L241) |
+| `install.git_visibility` | value | `tracked` | --consumer, --tracked | [owner](../../runtime/install_options.py#L254) |
+| `instructions.mode` | value | `merge` | --mode | [owner](../../runtime/install_options.py#L272) |
+| `instructions.placement` | value | `top` | --instructions-placement | [owner](../../runtime/install_options.py#L290) |
+| `hosts.enabled` | value | `[]` | --hosts | [owner](../../runtime/install_options.py#L304) |
+| `hosts.infer` | opt-out | `true` | --no-infer-hosts | [owner](../../runtime/install_options.py#L319) |
+| `hosts.portable_files` | value | `all` | --portable-hosts | [owner](../../runtime/install_options.py#L334) |
+| `hosts.grok.lean_skills` | opt-in | `false` | --lean-grok-skills | [owner](../../runtime/install_options.py#L348) |
+| `hosts.register_plugins` | opt-out | `true` | --no-register-plugins | [owner](../../runtime/install_options.py#L363) |
 | `components.memory` | opt-out | `true` | --without-memory, --with-memory | [owner](../../runtime/install_options.py#L1) |
 | `components.mempalace` | opt-out | `true` | --without-mempalace, --with-mempalace | [owner](../../runtime/install_options.py#L1) |
 | `components.graphify` | opt-out | `true` | --without-graphify, --with-graphify | [owner](../../runtime/install_options.py#L1) |
 | `components.ponytail` | opt-out | `true` | --without-ponytail, --with-ponytail | [owner](../../runtime/install_options.py#L1) |
 | `components.caveman` | opt-out | `true` | --without-caveman, --with-caveman | [owner](../../runtime/install_options.py#L1) |
 | `components.icm-architect` | opt-out | `true` | --without-icm-architect, --with-icm-architect | [owner](../../runtime/install_options.py#L1) |
-| `addons.enabled` | value | `[]` | CHAOS_ENGINE_ADDONS | [owner](../../runtime/install_options.py#L339) |
-| `addons.auto_detect` | opt-out | `true` | --no-auto-addons | [owner](../../runtime/install_options.py#L350) |
-| `packs.shaft_skills_version` | value | `auto` | --shaft-skills-version | [owner](../../runtime/install_options.py#L363) |
-| `packs.post_install` | opt-out | `true` | --skip-pack-post-install | [owner](../../runtime/install_options.py#L374) |
-| `mcp.publish` | opt-in | `false` | --with-mcp, --without-mcp | [owner](../../runtime/install_options.py#L387) |
-| `mcp.servers` | value | `[]` | --mcp-servers | [owner](../../runtime/install_options.py#L402) |
-| `mcp.maven_tools.enabled` | opt-in | `false` | --with-maven-tools | [owner](../../runtime/install_options.py#L415) |
-| `mcp.maven_tools.mode` | value | `native` | --maven-tools-mode | [owner](../../runtime/install_options.py#L428) |
-| `provision.tools` | opt-out | `true` | --skip-tools | [owner](../../runtime/install_options.py#L440) |
-| `provision.prerequisites` | value | `auto` | --skip-prerequisites | [owner](../../runtime/install_options.py#L453) |
-| `paths.modify_user_path` | opt-out | `true` | --no-modify-path | [owner](../../runtime/install_options.py#L467) |
-| `paths.bin_dir` | value | `` | --bin-dir | [owner](../../runtime/install_options.py#L480) |
-| `paths.cache_dir` | value | `` | CHAOS_ENGINE_CACHE_DIR | [owner](../../runtime/install_options.py#L492) |
-| `paths.data_dir` | value | `` | CHAOS_ENGINE_USER_DIR | [owner](../../runtime/install_options.py#L501) |
-| `cache.max_mb` | value | `0` | CHAOS_ENGINE_CACHE_MAX_MB | [owner](../../runtime/install_options.py#L510) |
-| `edits.policy` | value | `copy-aside` | --keep-edits | [owner](../../runtime/install_options.py#L519) |
-| `backups.keep` | value | `20` | --backup-keep | [owner](../../runtime/install_options.py#L533) |
-| `git_hooks.secret_guard` | opt-out | `true` | --no-secret-guard | [owner](../../runtime/install_options.py#L545) |
-| `locks.project_wait_seconds` | value | `30` | CHAOS_ENGINE_LOCK_WAIT_SECONDS | [owner](../../runtime/install_options.py#L558) |
-| `hooks.guard_wait_ms` | value | `60000` | CHAOS_ENGINE_GUARD_WAIT_MS | [owner](../../runtime/install_options.py#L567) |
-| `stores.schedule` | opt-out | `true` | --no-store-schedule | [owner](../../runtime/install_options.py#L576) |
-| `stores.schedule_at` | value | `03:15` | CHAOS_ENGINE_STORE_SCHEDULE_AT | [owner](../../runtime/install_options.py#L589) |
-| `stores.refresh_on_session` | opt-out | `true` | CHAOS_ENGINE_STORE_REFRESH | [owner](../../runtime/install_options.py#L598) |
-| `stores.stall_seconds` | value | `120` | CHAOS_ENGINE_STALL_SECONDS | [owner](../../runtime/install_options.py#L607) |
-| `stores.graphify.extra_ignore` | value | `[]` |  | [owner](../../runtime/install_options.py#L616) |
-| `stores.mempalace.mine` | value | `` | CHAOS_ENGINE_MEMPALACE_MINE | [owner](../../runtime/install_options.py#L624) |
-| `stores.mempalace.full` | value | `` | CHAOS_ENGINE_MEMPALACE_FULL | [owner](../../runtime/install_options.py#L633) |
-| `stores.mempalace.collection` | value | `` | CHAOS_ENGINE_MEMPALACE_COLLECTION | [owner](../../runtime/install_options.py#L642) |
-| `session.resume_stale_days` | value | `7` | CHAOS_ENGINE_RESUME_STALE_DAYS | [owner](../../runtime/install_options.py#L651) |
-| `ui.interactive` | opt-in | `false` | --interactive | [owner](../../runtime/install_options.py#L660) |
-| `ui.verbosity` | value | `normal` | -q, --quiet, --verbose | [owner](../../runtime/install_options.py#L671) |
-| `ui.color` | value | `auto` | --color | [owner](../../runtime/install_options.py#L685) |
-| `ui.ascii` | opt-in | `false` | --ascii | [owner](../../runtime/install_options.py#L697) |
-| `dry_run` | opt-in | `false` | -n, --dry-run | [owner](../../runtime/install_options.py#L709) |
-| `yes` | opt-in | `false` | --yes, --no-input | [owner](../../runtime/install_options.py#L710) |
-| `json` | opt-in | `false` | --json | [owner](../../runtime/install_options.py#L711) |
-| `if_changed` | opt-in | `false` | --if-changed | [owner](../../runtime/install_options.py#L712) |
-| `force` | opt-in | `false` | --force | [owner](../../runtime/install_options.py#L713) |
-| `include_local` | opt-in | `false` | --include-local | [owner](../../runtime/install_options.py#L714) |
-| `allow_dirty` | opt-in | `false` | --allow-dirty | [owner](../../runtime/install_options.py#L715) |
-| `force_replace_source_tree` | opt-in | `false` | --force-replace-source-tree | [owner](../../runtime/install_options.py#L716) |
-| `no_user_hooks` | opt-in | `false` | --no-user-hooks | [owner](../../runtime/install_options.py#L717) |
-| `user_layer.hosts` | value | `[]` | --user-hosts | [owner](../../runtime/install_options.py#L718) |
+| `addons.enabled` | value | `[]` | CHAOS_ENGINE_ADDONS | [owner](../../runtime/install_options.py#L379) |
+| `addons.auto_detect` | opt-out | `true` | --no-auto-addons | [owner](../../runtime/install_options.py#L392) |
+| `packs.shaft_skills_version` | value | `auto` | --shaft-skills-version | [owner](../../runtime/install_options.py#L407) |
+| `packs.post_install` | opt-out | `true` | --skip-pack-post-install | [owner](../../runtime/install_options.py#L420) |
+| `mcp.publish` | opt-in | `false` | --with-mcp, --without-mcp | [owner](../../runtime/install_options.py#L435) |
+| `mcp.servers` | value | `[]` | --mcp-servers | [owner](../../runtime/install_options.py#L452) |
+| `mcp.maven_tools.enabled` | opt-in | `false` | --with-maven-tools | [owner](../../runtime/install_options.py#L467) |
+| `mcp.maven_tools.mode` | value | `native` | --maven-tools-mode | [owner](../../runtime/install_options.py#L482) |
+| `provision.tools` | opt-out | `true` | --skip-tools | [owner](../../runtime/install_options.py#L496) |
+| `provision.prerequisites` | value | `auto` | --skip-prerequisites | [owner](../../runtime/install_options.py#L511) |
+| `paths.modify_user_path` | opt-out | `true` | --no-modify-path | [owner](../../runtime/install_options.py#L527) |
+| `paths.bin_dir` | value | `` | --bin-dir | [owner](../../runtime/install_options.py#L542) |
+| `paths.cache_dir` | value | `` | CHAOS_ENGINE_CACHE_DIR | [owner](../../runtime/install_options.py#L556) |
+| `paths.data_dir` | value | `` | CHAOS_ENGINE_USER_DIR | [owner](../../runtime/install_options.py#L567) |
+| `cache.max_mb` | value | `0` | CHAOS_ENGINE_CACHE_MAX_MB | [owner](../../runtime/install_options.py#L578) |
+| `edits.policy` | value | `copy-aside` | --keep-edits | [owner](../../runtime/install_options.py#L589) |
+| `backups.keep` | value | `20` | --backup-keep | [owner](../../runtime/install_options.py#L605) |
+| `git_hooks.secret_guard` | opt-out | `true` | --no-secret-guard | [owner](../../runtime/install_options.py#L619) |
+| `locks.project_wait_seconds` | value | `30` | CHAOS_ENGINE_LOCK_WAIT_SECONDS | [owner](../../runtime/install_options.py#L634) |
+| `hooks.guard_wait_ms` | value | `60000` | CHAOS_ENGINE_GUARD_WAIT_MS | [owner](../../runtime/install_options.py#L645) |
+| `stores.schedule` | opt-out | `true` | --no-store-schedule | [owner](../../runtime/install_options.py#L656) |
+| `stores.schedule_at` | value | `03:15` | CHAOS_ENGINE_STORE_SCHEDULE_AT | [owner](../../runtime/install_options.py#L671) |
+| `stores.refresh_on_session` | opt-out | `true` | CHAOS_ENGINE_STORE_REFRESH | [owner](../../runtime/install_options.py#L682) |
+| `stores.stall_seconds` | value | `120` | CHAOS_ENGINE_STALL_SECONDS | [owner](../../runtime/install_options.py#L693) |
+| `stores.graphify.extra_ignore` | value | `[]` |  | [owner](../../runtime/install_options.py#L704) |
+| `stores.mempalace.mine` | value | `` | CHAOS_ENGINE_MEMPALACE_MINE | [owner](../../runtime/install_options.py#L714) |
+| `stores.mempalace.full` | value | `` | CHAOS_ENGINE_MEMPALACE_FULL | [owner](../../runtime/install_options.py#L725) |
+| `stores.mempalace.collection` | value | `` | CHAOS_ENGINE_MEMPALACE_COLLECTION | [owner](../../runtime/install_options.py#L736) |
+| `session.resume_stale_days` | value | `7` | CHAOS_ENGINE_RESUME_STALE_DAYS | [owner](../../runtime/install_options.py#L747) |
+| `ui.interactive` | opt-in | `false` | --interactive | [owner](../../runtime/install_options.py#L758) |
+| `ui.verbosity` | value | `normal` | -q, --quiet, --verbose | [owner](../../runtime/install_options.py#L771) |
+| `ui.color` | value | `auto` | --color | [owner](../../runtime/install_options.py#L787) |
+| `ui.ascii` | opt-in | `false` | --ascii | [owner](../../runtime/install_options.py#L801) |
+| `dry_run` | opt-in | `false` | -n, --dry-run | [owner](../../runtime/install_options.py#L815) |
+| `yes` | opt-in | `false` | --yes, --no-input | [owner](../../runtime/install_options.py#L816) |
+| `json` | opt-in | `false` | --json | [owner](../../runtime/install_options.py#L817) |
+| `if_changed` | opt-in | `false` | --if-changed | [owner](../../runtime/install_options.py#L818) |
+| `force` | opt-in | `false` | --force | [owner](../../runtime/install_options.py#L819) |
+| `include_local` | opt-in | `false` | --include-local | [owner](../../runtime/install_options.py#L820) |
+| `allow_dirty` | opt-in | `false` | --allow-dirty | [owner](../../runtime/install_options.py#L821) |
+| `force_replace_source_tree` | opt-in | `false` | --force-replace-source-tree | [owner](../../runtime/install_options.py#L822) |
+| `no_user_hooks` | opt-in | `false` | --no-user-hooks | [owner](../../runtime/install_options.py#L823) |
+| `user_layer.hosts` | value | `[]` | --user-hosts | [owner](../../runtime/install_options.py#L824) |
 
 ## Environment
 

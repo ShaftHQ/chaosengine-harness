@@ -26,3 +26,4 @@ Request one independent adversarial review. Request two for a public contract, a
 ## No secrets
 
 - [ ] This pull request has no secrets, tokens, credentials, or private paths.
+- [ ] New setting, keyword, or status code: registry entry added and docs regenerated

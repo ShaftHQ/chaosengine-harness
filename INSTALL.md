@@ -9,7 +9,7 @@
 # Install or upgrade ChaosEngine
 
 ChaosEngine is a portable, provider-neutral working contract for software
-agents. This page is the installation reference. See [the overview](guides/overview.md) for purpose and operating loop, and [`skills/chaos-engine/SKILL.md`](skills/chaos-engine/SKILL.md) for the always-loaded contract.
+agents. This page is the installation reference. See [the overview](guides/overview.md) for purpose and operating loop, [`skills/chaos-engine/SKILL.md`](skills/chaos-engine/SKILL.md) for the always-loaded contract, and the [settings reference](docs/reference/settings.md) for every option.
 
 On a terminal at least 84 columns wide, the installer draws the Quantum Mandate symbol beside the project header. From 60 to 83 columns the symbol sits above the header. Narrower terminals, ASCII mode, and `TERM=dumb` print one line: `[ChaosEngine <version>] <repo>@<ref> (<sha>)`. The symbol's core is Cybernetic Red (`#FF3B4D`) on a truecolor terminal and ANSI red on a 16-color terminal. The rest of the symbol uses the terminal's own foreground.
 

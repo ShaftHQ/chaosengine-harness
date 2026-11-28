@@ -308,14 +308,23 @@ class PrecedenceTests(unittest.TestCase):
 
     def test_every_catalog_key_is_documented_and_layered(self):
         text = (ROOT / "docs" / "configuration.md").read_text(encoding="utf-8")
+        settings = (ROOT / "docs" / "reference" / "settings.md").read_text(encoding="utf-8")
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         self.assertIn("ChaosEngine sends no usage data.", text)
         self.assertIn("ChaosEngine sends no usage data.", readme)
+        self.assertIn("reference/settings.md", text)
         for row in CONFIG.CATALOG:
             if row.cli_only:
                 continue
             with self.subTest(key=row.key):
-                self.assertIn(f"`{row.key}`", text)
+                line = next(item for item in settings.splitlines() if f"`{row.key}`" in item)
+                self.assertIn(f"`{row.key}`", line)
+                shown = "true" if row.default is True else "false" if row.default is False else str(row.default)
+                if row.default in ((), [], ""):
+                    shown = "[]" if row.default != "" else ""
+                self.assertIn(f"`{shown}`", line)
+                for name in row.env:
+                    self.assertIn(name, line)
                 self._assert_layers(row)
 
     def _env_raw(self, row) -> str:
