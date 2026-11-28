@@ -1,0 +1,357 @@
+{
+  "schema": "ce-status/v1",
+  "codes": [
+    {
+      "code": "CE_CANCELLED",
+      "meaning": "unknown — see read site",
+      "emitted_by": [
+        "hooks/kernel.py:1421"
+      ],
+      "fix_next": "unknown — see read site"
+    },
+    {
+      "code": "CE_CONFIG_INVALID",
+      "meaning": "unknown — see read site",
+      "emitted_by": [
+        "docs/configuration.md:15"
+      ],
+      "fix_next": "unknown — see read site"
+    },
+    {
+      "code": "CE_CONFIG_REPLACE_FROM_FILE",
+      "meaning": "unknown — see read site",
+      "emitted_by": [
+        "docs/configuration.md:5"
+      ],
+      "fix_next": "unknown — see read site"
+    },
+    {
+      "code": "CE_CONFIG_SECRET",
+      "meaning": "unknown — see read site",
+      "emitted_by": [
+        "docs/configuration.md:5"
+      ],
+      "fix_next": "unknown — see read site"
+    },
+    {
+      "code": "CE_CORE_MISSING",
+      "meaning": "unknown — see read site",
+      "emitted_by": [
+        "INSTALL.md:1"
+      ],
+      "fix_next": "unknown — see read site"
+    },
+    {
+      "code": "CE_DELETE_GUARD",
+      "meaning": "unknown — see read site",
+      "emitted_by": [
+        "runtime/instruction_mode.py:1"
+      ],
+      "fix_next": "unknown — see read site"
+    },
+    {
+      "code": "CE_DEPENDENCY_RECEIPT_MISSING",
+      "meaning": "unknown — see read site",
+      "emitted_by": [
+        "install.py:9583"
+      ],
+      "fix_next": "unknown — see read site"
+    },
+    {
+      "code": "CE_DIAGNOSTIC_UNAVAILABLE",
+      "meaning": "unknown — see read site",
+      "emitted_by": [
+        "docs/configuration.md:1"
+      ],
+      "fix_next": "unknown — see read site"
+    },
+    {
+      "code": "CE_DUAL_GROK_HOOKS",
+      "meaning": "unknown — see read site",
+      "emitted_by": [
+        "install.py:1"
+      ],
+      "fix_next": "unknown — see read site"
+    },
+    {
+      "code": "CE_GROK_INSPECT_FAILED",
+      "meaning": "unknown — see read site",
+      "emitted_by": [
+        "runtime/hosts.py:1"
+      ],
+      "fix_next": "unknown — see read site"
+    },
+    {
+      "code": "CE_GROK_PROJECT_UNBOUND",
+      "meaning": "unknown — see read site",
+      "emitted_by": [
+        "runtime/hosts.py:1"
+      ],
+      "fix_next": "unknown — see read site"
+    },
+    {
+      "code": "CE_HOOKS_PROBE_FAILED",
+      "meaning": "unknown — see read site",
+      "emitted_by": [
+        "install.py:1"
+      ],
+      "fix_next": "unknown — see read site"
+    },
+    {
+      "code": "CE_HOSTS_RECEIPT_MISSING",
+      "meaning": "unknown — see read site",
+      "emitted_by": [
+        "install.py:1"
+      ],
+      "fix_next": "unknown — see read site"
+    },
+    {
+      "code": "CE_HOST_ADAPTER_DRIFT",
+      "meaning": "unknown — see read site",
+      "emitted_by": [
+        "install.py:1"
+      ],
+      "fix_next": "unknown — see read site"
+    },
+    {
+      "code": "CE_INVALID_RULESET",
+      "meaning": "unknown — see read site",
+      "emitted_by": [
+        "hooks/kernel.py:1"
+      ],
+      "fix_next": "unknown — see read site"
+    },
+    {
+      "code": "CE_INVALID_TRANSITION",
+      "meaning": "unknown — see read site",
+      "emitted_by": [
+        "hooks/kernel.py:1"
+      ],
+      "fix_next": "unknown — see read site"
+    },
+    {
+      "code": "CE_LIFECYCLE_STATE",
+      "meaning": "unknown — see read site",
+      "emitted_by": [
+        "hooks/kernel.py:1"
+      ],
+      "fix_next": "unknown — see read site"
+    },
+    {
+      "code": "CE_LIVESEO_WRITEOUT",
+      "meaning": "unknown — see read site",
+      "emitted_by": [
+        "addons/design-skills/scripts/liveseo_gates.py:1"
+      ],
+      "fix_next": "unknown — see read site"
+    },
+    {
+      "code": "CE_MANAGED_PYTHON_MISSING",
+      "meaning": "unknown — see read site",
+      "emitted_by": [
+        "install.py:1"
+      ],
+      "fix_next": "unknown — see read site"
+    },
+    {
+      "code": "CE_MEMORY_ORIGIN_MAIN_DESYNC",
+      "meaning": "unknown — see read site",
+      "emitted_by": [
+        "runtime/hosts.py:1"
+      ],
+      "fix_next": "unknown — see read site"
+    },
+    {
+      "code": "CE_MEMPALACE_UNINITIALIZED",
+      "meaning": "unknown — see read site",
+      "emitted_by": [
+        "runtime/hosts.py:1"
+      ],
+      "fix_next": "unknown — see read site"
+    },
+    {
+      "code": "CE_MODE_CONSUMER_CONFLICT",
+      "meaning": "unknown — see read site",
+      "emitted_by": [
+        "runtime/instruction_mode.py:1"
+      ],
+      "fix_next": "unknown — see read site"
+    },
+    {
+      "code": "CE_MODE_REPLACE_BACKUP",
+      "meaning": "unknown — see read site",
+      "emitted_by": [
+        "runtime/instruction_mode.py:1"
+      ],
+      "fix_next": "unknown — see read site"
+    },
+    {
+      "code": "CE_MODE_REPLACE_DIRTY",
+      "meaning": "unknown — see read site",
+      "emitted_by": [
+        "runtime/instruction_mode.py:1"
+      ],
+      "fix_next": "unknown — see read site"
+    },
+    {
+      "code": "CE_MODE_REPLACE_NEEDS_YES",
+      "meaning": "unknown — see read site",
+      "emitted_by": [
+        "runtime/instruction_mode.py:1"
+      ],
+      "fix_next": "unknown — see read site"
+    },
+    {
+      "code": "CE_MODE_REPLACE_SOURCE_TREE",
+      "meaning": "unknown — see read site",
+      "emitted_by": [
+        "runtime/instruction_mode.py:1"
+      ],
+      "fix_next": "unknown — see read site"
+    },
+    {
+      "code": "CE_MODE_REPLACE_UNSUPPORTED",
+      "meaning": "unknown — see read site",
+      "emitted_by": [
+        "bootstrap.py:1"
+      ],
+      "fix_next": "unknown — see read site"
+    },
+    {
+      "code": "CE_MODE_RESTORE_STAMP",
+      "meaning": "unknown — see read site",
+      "emitted_by": [
+        "install.py:1"
+      ],
+      "fix_next": "unknown — see read site"
+    },
+    {
+      "code": "CE_MODE_SCOPE_CONFLICT",
+      "meaning": "unknown — see read site",
+      "emitted_by": [
+        "runtime/instruction_mode.py:1"
+      ],
+      "fix_next": "unknown — see read site"
+    },
+    {
+      "code": "CE_OK",
+      "meaning": "unknown — see read site",
+      "emitted_by": [
+        "hooks/kernel.py:1"
+      ],
+      "fix_next": "unknown — see read site"
+    },
+    {
+      "code": "CE_OPENBOT_SKILL_MISSING",
+      "meaning": "unknown — see read site",
+      "emitted_by": [
+        "install.py:1"
+      ],
+      "fix_next": "unknown — see read site"
+    },
+    {
+      "code": "CE_RETRIEVE_DEGRADED",
+      "meaning": "unknown — see read site",
+      "emitted_by": [
+        "runtime/overlay_match.py:1"
+      ],
+      "fix_next": "unknown — see read site"
+    },
+    {
+      "code": "CE_SCOPE_USER_UNSUPPORTED",
+      "meaning": "unknown — see read site",
+      "emitted_by": [
+        "bootstrap.py:1"
+      ],
+      "fix_next": "unknown — see read site"
+    },
+    {
+      "code": "CE_SCOPE_USER_WROTE_PROJECT",
+      "meaning": "unknown — see read site",
+      "emitted_by": [
+        "install.py:1"
+      ],
+      "fix_next": "unknown — see read site"
+    },
+    {
+      "code": "CE_SESSION_MISSING_STOP",
+      "meaning": "unknown — see read site",
+      "emitted_by": [
+        "hooks/kernel.py:1658"
+      ],
+      "fix_next": "unknown — see read site"
+    },
+    {
+      "code": "CE_SESSION_REQUIRED",
+      "meaning": "unknown — see read site",
+      "emitted_by": [
+        "hooks/kernel.py:1"
+      ],
+      "fix_next": "unknown — see read site"
+    },
+    {
+      "code": "CE_STOP_COMPLETE",
+      "meaning": "unknown — see read site",
+      "emitted_by": [
+        "hooks/kernel.py:1658"
+      ],
+      "fix_next": "unknown — see read site"
+    },
+    {
+      "code": "CE_STOP_INCOMPLETE",
+      "meaning": "unknown — see read site",
+      "emitted_by": [
+        "hooks/kernel.py:1663"
+      ],
+      "fix_next": "unknown — see read site"
+    },
+    {
+      "code": "CE_TERMINAL_REPLAY",
+      "meaning": "unknown — see read site",
+      "emitted_by": [
+        "hooks/kernel.py:1"
+      ],
+      "fix_next": "unknown — see read site"
+    },
+    {
+      "code": "CE_TIMEOUT",
+      "meaning": "unknown — see read site",
+      "emitted_by": [
+        "hooks/kernel.py:1"
+      ],
+      "fix_next": "unknown — see read site"
+    },
+    {
+      "code": "CE_UNKNOWN_EVENT",
+      "meaning": "unknown — see read site",
+      "emitted_by": [
+        "hooks/kernel.py:1"
+      ],
+      "fix_next": "unknown — see read site"
+    },
+    {
+      "code": "CE_UNKNOWN_PHASE",
+      "meaning": "unknown — see read site",
+      "emitted_by": [
+        "hooks/kernel.py:1"
+      ],
+      "fix_next": "unknown — see read site"
+    },
+    {
+      "code": "CE_USER_CODEX_OVERRIDE",
+      "meaning": "unknown — see read site",
+      "emitted_by": [
+        "runtime/user_layer.py:1"
+      ],
+      "fix_next": "unknown — see read site"
+    },
+    {
+      "code": "CE_WIPED_RUNTIME",
+      "meaning": "unknown — see read site",
+      "emitted_by": [
+        "install.py:9583"
+      ],
+      "fix_next": "unknown — see read site"
+    }
+  ]
+}

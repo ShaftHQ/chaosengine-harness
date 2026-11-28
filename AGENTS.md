@@ -14,6 +14,8 @@ irm "https://raw.githubusercontent.com/ShaftHQ/chaosengine-harness/main/install.
 
 The contract in this checkout is [skills/chaos-engine/SKILL.md](skills/chaos-engine/SKILL.md). After install, hosts load `.chaos-engine/skills/chaos-engine/SKILL.md`. Read one of those, not both. Do not open `references/` until that skill routes you there. In this source checkout, `.chaos-engine/` stays synced via `tool.py maintain`. Readers compare `coreCommit`, not only VERSION.
 
+Settings, keywords and codes: `docs/agents/reference.md` (fetch on demand).
+
 Directory map: [docs/layout.md](docs/layout.md). Do not open [docs/source-inventory.md](docs/source-inventory.md) unless the task is the inventory.
 
 Tests: [CONTRIBUTING.md](CONTRIBUTING.md). Host hook launchers and tests run on Python 3.11+. The installer managed runtime pin stays 3.14.0. `python3 -m pytest -q -n auto tests`.
