@@ -1,0 +1,1182 @@
+{
+  "schema": "ce-env/v1",
+  "addon_flags": [
+    "design-skills",
+    "shaft-engine-users",
+    "shaft-core-developers"
+  ],
+  "entries": [
+    {
+      "name": "CE_ALLOW_BOX_LOCAL_AGENCY",
+      "class": "user",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "opt-in",
+      "effect": "Set to 1 to allow the local-agency box path.",
+      "read_at": [
+        "skills/local-agency/scripts/require_rog_freetoken.py:24"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CE_HOOK_TRACE",
+      "class": "user",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "hooks/launch.py:396"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CE_NEUTRAL_TERMS_FILE",
+      "class": "maint",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "skills/job-apply/scripts/check_abstraction.py:35",
+        "skills/job-search/scripts/check_abstraction.py:36"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CE_OPENCODE_GUARD_TIMEOUT_MS",
+      "class": "user",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "runtime/hook_surfaces.py:210"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CE_OPENCODE_PYTHON",
+      "class": "user",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "runtime/hook_surfaces.py:216"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CE_OWNER_EMAIL",
+      "class": "user",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "runtime/commit_identity.py:188"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CE_OWNER_IDENTITY",
+      "class": "user",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "runtime/commit_identity.py:184"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CE_OWNER_NAME",
+      "class": "user",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "runtime/commit_identity.py:187"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CE_ROG_CHECKOUT",
+      "class": "maint",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "skills/local-agency/scripts/require_rog_freetoken.py:23"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_AGENT_ID",
+      "class": "internal",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "runtime/backups_watch.py:33"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_BACKUPS_WATCH_PATH",
+      "class": "maint",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "runtime/backups_watch.py:242"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_BACKUP_WORKSPACES",
+      "class": "maint",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "runtime/delete_guard.py:5556"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_CHECKPOINTS_DIR",
+      "class": "maint",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "runtime/progress_log.py:25"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_DELETE_ACK",
+      "class": "maint",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "runtime/delete_guard.py:94"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_ADDON_PATHS",
+      "class": "user",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "runtime/addon_catalog.py:34"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_ALLOW_LINKED_WORKTREE",
+      "class": "user",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "install.py:8905"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_ALLOW_MISSING_EVAL",
+      "class": "user",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "opt-out",
+      "effect": "Set to 1 to skip the eval-parity check.",
+      "read_at": [
+        "runtime/silent_verify.py:126"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_APPLY_UPDATE",
+      "class": "user",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "hooks/lifecycle.py:471"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_ARGV_ONLY",
+      "class": "internal",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "bootstrap.py:8060",
+        "install.ps1:548",
+        "install.sh:378"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_BOOT_TIME",
+      "class": "internal",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "runtime/task_ledger.py:109"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_BRAND_SHOWN",
+      "class": "internal",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "bootstrap.py:2692"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_CLIENT_NAME_DENYLIST",
+      "class": "user",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "bootstrap.py:1058",
+        "runtime/ce_ui.py:492",
+        "runtime/client_name_scrub.py:21"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_CONFIG_HOME",
+      "class": "internal",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "runtime/install_config.py:95",
+        "runtime/user_paths.py:37"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_CONSENT_PATH",
+      "class": "maint",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "runtime/learning_session.py:237"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_COPY_PROMPT",
+      "class": "internal",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "bootstrap.py:7520",
+        "bootstrap.py:7984",
+        "install.py:12004",
+        "install.py:12005"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_DEBUG",
+      "class": "user",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "bootstrap.py:7669",
+        "bootstrap.py:7748"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_DERIVED_VERSION",
+      "class": "internal",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "bootstrap.py:1672",
+        "install.py:10874"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_DRAFT_SKILL_PRS",
+      "class": "user",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "opt-in",
+      "effect": "Set to 1, with the CLI opt-in, to allow a draft skill pull request.",
+      "read_at": [
+        "runtime/draft_skill_pr.py:28"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_DRY_RUN",
+      "class": "maint",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "bootstrap.py:5405",
+        "bootstrap.py:6553",
+        "packs/shaft/sync.py:432"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_ENFORCE_RESEARCH_RECEIPT",
+      "class": "user",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "opt-in",
+      "effect": "Set to a truthy value to require a research receipt before mutation.",
+      "read_at": [
+        "hooks/guard.py:3873"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_EVIDENCE_BRANCH",
+      "class": "maint",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "runtime/mobile_retro.py:65"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_EVIDENCE_BUILD_ID",
+      "class": "maint",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "runtime/mobile_retro.py:59"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_FILE_ISSUE",
+      "class": "user",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "bootstrap.py:1174"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_FIXTURE_ORIGIN",
+      "class": "internal",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "bootstrap.py:5134",
+        "install.ps1:447",
+        "install.sh:320",
+        "install.sh:337"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_FORCE",
+      "class": "maint",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "bootstrap.py:5404",
+        "packs/shaft/sync.py:515"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_GRAPHIFY_OUT",
+      "class": "maint",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "hooks/retrieve_justification.py:229",
+        "runtime/stores.py:216"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_HOOK_EVENT",
+      "class": "internal",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "hooks/launch.py:66",
+        "hooks/launch.py:541"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_HOOK_PAYLOAD",
+      "class": "internal",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "hooks/launch.py:23",
+        "runtime/hosts.py:5527"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_HOOK_SOURCE",
+      "class": "internal",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "runtime/hosts.py:5526"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_HYPERLINKS",
+      "class": "user",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "bootstrap.py:845",
+        "install.py:12003",
+        "runtime/ce_ui.py:279"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_INSTALL_URL",
+      "class": "maint",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "install.sh:105",
+        "install.sh:106"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_JOB",
+      "class": "internal",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "runtime/jobs.py:44"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_JOBS_DIR",
+      "class": "maint",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "runtime/jobs.py:45"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_JOB_RUN",
+      "class": "internal",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "runtime/jobs.py:43"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_JSON",
+      "class": "user",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "bootstrap.py:790",
+        "bootstrap.py:8201",
+        "install.py:12007",
+        "runtime/ce_ui.py:224"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_LOCAL_CLONE",
+      "class": "maint",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "bootstrap.py:169"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_MEMPALACE",
+      "class": "maint",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "runtime/hosts.py:1043",
+        "runtime/stores.py:134"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_NO_INPUT",
+      "class": "user",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "bootstrap.py:3535",
+        "bootstrap.py:8145"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_OWNER_FINISH_GOAL",
+      "class": "user",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "runtime/task_ledger.py:101"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_PREREQ_DISK_PATH",
+      "class": "maint",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "runtime/task_ledger.py:692"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_PRIMARY",
+      "class": "maint",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "runtime/delete_guard.py:4617"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_PROTECTED_GROK_HOME",
+      "class": "internal",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "runtime/grok_lean_config.py:459"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_PROTECTED_GROK_HOME_LOG",
+      "class": "internal",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "runtime/grok_lean_config.py:472"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_PYTHON_PROBE_ONLY",
+      "class": "internal",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "install.sh:387"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_QUIET",
+      "class": "user",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "bootstrap.py:172",
+        "bootstrap.py:792",
+        "bootstrap.py:2350",
+        "bootstrap.py:2362",
+        "bootstrap.py:2449",
+        "bootstrap.py:2479",
+        "bootstrap.py:2511",
+        "bootstrap.py:2536",
+        "bootstrap.py:2644",
+        "bootstrap.py:2657",
+        "bootstrap.py:2809",
+        "bootstrap.py:2976",
+        "bootstrap.py:5267",
+        "bootstrap.py:5365",
+        "bootstrap.py:6988",
+        "bootstrap.py:8202",
+        "install.py:12009",
+        "packs/shaft/sync.py:406",
+        "runtime/ce_ui.py:226"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_RELEASE_FEED",
+      "class": "user",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "hooks/lifecycle.py:434"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_RELEASE_VERSION",
+      "class": "user",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "hooks/lifecycle.py:435"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_RESOLVE_ONLY",
+      "class": "internal",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "install.ps1:540",
+        "install.sh:374"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_RETRIEVE",
+      "class": "internal",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "tool.py:868",
+        "tool.py:1230"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_REVIEW_CAP_LIFT",
+      "class": "user",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "opt-in",
+      "effect": "Owner lift of the two-review cap.",
+      "read_at": [
+        "hooks/delegation_gate.py:23"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_RUN_RECEIPT",
+      "class": "internal",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "runtime/session_token_usage.py:260"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_SESSION_ID",
+      "class": "internal",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "hooks/retrieve_justification.py:483"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_SESSION_WORKTREE",
+      "class": "internal",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "runtime/session_logs.py:19"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_SHAFT_FIXTURE_ORIGIN",
+      "class": "maint",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "packs/shaft/sync.py:55",
+        "packs/shaft/sync.py:76"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_SHIM_INTERPRETER",
+      "class": "maint",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "install.ps1:508"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_SIGNIFICANCE_CAPTURE",
+      "class": "user",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "opt-in",
+      "effect": "Set to 1 to capture significance.",
+      "read_at": [
+        "runtime/significance.py:241"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_SPEC_DIR",
+      "class": "maint",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "runtime/task_ledger.py:847"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_STATE_DIR",
+      "class": "internal",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "runtime/user_paths.py:69"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_STORE_REGISTRY",
+      "class": "maint",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "runtime/stores.py:238"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_TASKS_DIR",
+      "class": "maint",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "runtime/task_ledger.py:116"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_TEST_REPO_GUARD",
+      "class": "internal",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "runtime/stores.py:2118"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_TOKEN_BUDGET",
+      "class": "user",
+      "type": "choice",
+      "default": "balanced",
+      "values": "ultra-lean, lean, balanced, deep",
+      "optin": "value",
+      "effect": "Selects ultra-lean (alias lean), balanced (default), or deep.",
+      "read_at": [
+        "hooks/lifecycle.py:69",
+        "runtime/retrieve.py:1640",
+        "tool.py:1231"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_UPSTREAM_REPO",
+      "class": "user",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "hooks/session_scratch.py:254",
+        "runtime/learning_session.py:350"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_USER_HOME",
+      "class": "internal",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "runtime/user_paths.py:29"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_USER_PATHS",
+      "class": "internal",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "packs/java/installer.py:453",
+        "runtime/dependencies.py:475"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_USER_PAYLOAD",
+      "class": "internal",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "hooks/launch.py:527"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_VERBOSE",
+      "class": "user",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "bootstrap.py:218"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_ENGINE_WITHOUT",
+      "class": "user",
+      "type": "str",
+      "default": "unset",
+      "values": "comma-separated component ids",
+      "optin": "opt-out",
+      "effect": "Comma-separated component names to turn off.",
+      "read_at": [
+        "runtime/install_config.py:348"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_PROGRESS_LOG",
+      "class": "maint",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "runtime/progress_log.py:8"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_RADIO_SILENCE",
+      "class": "user",
+      "type": "str",
+      "default": "unset",
+      "values": "1, true, full",
+      "optin": "opt-in",
+      "effect": "Blocks owner-visible status when set to 1, true, or full.",
+      "read_at": [
+        "runtime/radio_silence.py:7"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_SESSION_CONTAINMENT_ROOTS",
+      "class": "internal",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "runtime/delete_guard.py:66"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_SESSION_CREATED_MANIFEST",
+      "class": "internal",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "runtime/delete_guard.py:63"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_SESSION_MANIFEST_HMAC",
+      "class": "internal",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "runtime/delete_guard.py:65"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_SESSION_WORKTREE",
+      "class": "internal",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "hooks/retrieve_justification.py:1701",
+        "runtime/delete_guard.py:67"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_YT_EXPECTED_AUTHORS",
+      "class": "maint",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "runtime/delete_guard.py:121"
+      ],
+      "since": "unknown"
+    },
+    {
+      "name": "CHAOS_YT_VERIFIED_DELETE",
+      "class": "maint",
+      "type": "str",
+      "default": "unset",
+      "values": "",
+      "optin": "value",
+      "effect": "unknown — see read site",
+      "read_at": [
+        "runtime/delete_guard.py:114"
+      ],
+      "since": "unknown"
+    }
+  ]
+}
