@@ -1552,12 +1552,16 @@ class ChaosEngineHostsTest(unittest.TestCase):
             self.assertEqual(
                 {
                     "SessionStart",
+                    "SessionEnd",
                     "BeforeAgent",
+                    "AfterAgent",
+                    "BeforeModel",
+                    "AfterModel",
+                    "BeforeToolSelection",
                     "BeforeTool",
                     "AfterTool",
-                    "AfterAgent",
                     "PreCompress",
-                    "SessionEnd",
+                    "Notification",
                 },
                 set(gemini_lifecycle),
             )

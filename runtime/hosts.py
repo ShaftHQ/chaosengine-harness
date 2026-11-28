@@ -6407,12 +6407,16 @@ def gemini_hooks_document(managed_node: Path | None = None) -> bytes:
     hooks = {}
     for event in (
             "SessionStart",
+            "SessionEnd",
             "BeforeAgent",
+            "AfterAgent",
+            "BeforeModel",
+            "AfterModel",
+            "BeforeToolSelection",
             "BeforeTool",
             "AfterTool",
-            "AfterAgent",
             "PreCompress",
-            "SessionEnd",
+            "Notification",
     ):
         group = {"hooks": [handler]}
         if event == "BeforeTool":
