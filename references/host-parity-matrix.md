@@ -50,7 +50,7 @@ Legend: P = parity (outcome available), A = adapter-shaped equivalent, G = gap (
 | Host onboarding / activation path | A marketplace/plugin | A marketplace/plugin | A file/hook | A file/hook | A file/hook | A AGENTS.md | A AGENTS.md | A file/hook | A bot entry | A AGENTS.md |
 | Router skill (`chaos-engine`) | P | P | P | P | P | P | P | P | P | P |
 | Lifecycle hooks | A | A | A | A | A | A | A | A | G | G |
-| Exit-2 / blocking denial fidelity | A | A | G | A | G | G | G | G | G | G |
+| Exit-2 / blocking denial fidelity | A | A | A | A | G | G | G | G | G | G |
 | SessionStart identity and locators / progressive disclosure | A | A | A | A | A | G | A | A | G | G |
 | Skills discovery | A | A | A | A | A | A | A | A | A | A |
 | Companions (Caveman + Ponytail) | P | P | P | P | P | P | P | P | P | P |
@@ -77,7 +77,7 @@ The nine named hosts are not the whole set. Any other AI client uses the same ou
 
 | ID | Host(s) | Severity | Gap | Evidence / next |
 | --- | --- | --- | --- | --- |
-| GAP-EXIT2 | Grok, Copilot, Cursor, OpenCode | high | `HostCapability.process_exit2_honored=False` for Grok and Copilot; Cursor and OpenCode also ignore exit 2. ChaosEngine still returns deny exit 2 + native deny payload (`decision`/`permissionDecision`). Owner doctor surfaces `blockingGap`. Antigravity denies with `decision=deny`, and Stop uses `decision=continue` on exit 0. | Proven by `tests/scripts/test_chaos_engine_exit2_fidelity.py`; fields on HOST_CAPABILITIES. |
+| GAP-EXIT2 | Copilot, Cursor, OpenCode | high | `HostCapability.process_exit2_honored=False` for Copilot; Cursor and OpenCode also ignore exit 2. ChaosEngine still returns deny exit 2 + native deny payload (`decision`/`permissionDecision`). Owner doctor surfaces `blockingGap`. Antigravity denies with `decision=deny`, and Stop uses `decision=continue` on exit 0. | Proven by `tests/scripts/test_chaos_engine_exit2_fidelity.py`; fields on HOST_CAPABILITIES. |
 | GAP-SESSIONSTART | — (cleared) | info | ChaosEngine emits the same SessionStart context on all seven SessionStart hosts (Claude, Codex, Gemini, Grok, Copilot, Cursor, and Antigravity), including the identity Truth and Principles bullets, under `SESSION_START_MAX_BYTES`=4096. Grok copies that context into `systemMessage` and, when drift or unfinished-task lines would exceed the budget, falls back to the identity path line. A host that ignores SessionStart output still loads companions via the entrypoint. Codex post-compaction: after a root session compacts, Codex runs SessionStart with `source: "compact"` before the next model request and adds `hookSpecificOutput.additionalContext` to that continuation ([Codex hooks](https://developers.openai.com/codex/hooks)). | Proven by `tests/scripts/test_chaos_engine_sessionstart_locator_parity.py`. |
 | GAP-HOOK-TRUST | Grok | medium | Project hook trust (`/hooks-trust`, projectTrusted) is host-gated. `/hooks-trust` is the advisory only for a bound project whose `grok inspect --json` says `projectTrusted` is false. Inspect failure is `CE_GROK_INSPECT_FAILED`. Unbound `projectRoot` is `CE_GROK_PROJECT_UNBOUND`. Those two do not mention `/hooks-trust`. A trusted project with `launch.py` hooks loaded is healthy. A trusted project missing an event names that event and does not ask for `/hooks-trust`. Doctor stays healthy and reports sync-advisory. Never flip overall doctor to recovery-required for Grok trust alone when hosts verify is healthy. | Host onboarding card + grok_runtime_status (advisory). |
 | GAP-GROK-LEAN | Grok | medium | Dual Claude-compat + native `.grok` hooks double CE context; installer merges lean `[compat.*]` into user `~/.grok/config.toml`; optional `--lean-grok-skills`; skill adapters stay pointers. | [`grok_lean_config.py`](../runtime/grok_lean_config.py) + doctor sync-advisory. |
@@ -106,14 +106,14 @@ Pins in `evals/host-doc-conformance.json` follow the pages below. A missing offi
 | --- | --- | --- | --- |
 | Claude Code | https://code.claude.com/docs/en/hooks | PreSkillShellCommand, UserPromptExpansion, PermissionRequest, Setup, InstructionsLoaded, MessageDisplay, PostToolBatch, PermissionDenied, Notification, TaskCreated, TaskCompleted, StopFailure, TeammateIdle, ConfigChange, CwdChanged, DirectoryAdded, FileChanged, WorktreeCreate, WorktreeRemove, PreModelSwitch, PostModelSwitch, Elicitation, ElicitationResult | none |
 | Codex | https://learn.chatgpt.com/docs/hooks | PreCompact, PostCompact, PermissionRequest, PreModelRequest, PostModelRequest, Interrupt | none. PostToolUseFailure is not on the page. |
-| Grok | https://docs.x.ai/build/features/hooks | PreCompact, PostCompact | PermissionDenied, StopFailure, Notification |
+| Grok | https://docs.x.ai/build/features/hooks | PreCompact, PostCompact, PermissionDenied, StopFailure, Notification | none |
 | Gemini CLI | https://geminicli.com/docs/hooks/ | none | BeforeModel, AfterModel, BeforeToolSelection, Notification |
 | Copilot | https://docs.github.com/en/copilot/reference/hooks-reference | none | userPromptTransformed, permissionRequest, subagentStart, errorOccurred, notification |
 | Cursor | https://cursor.com/docs/hooks | none | beforeShellExecution, afterShellExecution, beforeMCPExecution, afterMCPExecution, beforeReadFile, afterFileEdit, beforeTabFileRead, afterTabFileEdit, afterAgentResponse, afterAgentThought, workspaceOpen |
 | OpenCode | https://opencode.ai/docs/build/plugins/server | none | prompt, context, compaction, generate, title, experimental.model.resolve, model.request, http.request, http.response, experimental.ws.handshake, experimental.ws.send, experimental.ws.receive, retry, fork, evaluate, create.before |
 | Antigravity | https://antigravity.google/docs/hooks.md | none | none |
 
-The previous Grok URL `https://docs.x.ai/docs/guides/grok-build/hooks` returned HTTP 404. The live page lists PascalCase only. Snake_case `GROK_HOOK_EVENT` values stay convenience spellings, not a second command. That page says exit code 2 denies and every other failure is fail-open. `HostCapability.process_exit2_honored` stays false until a live probe.
+The previous Grok URL `https://docs.x.ai/docs/guides/grok-build/hooks` returned HTTP 404. The live page lists PascalCase only. Snake_case `GROK_HOOK_EVENT` values stay convenience spellings, not a second command. That page says exit code 2 denies and every other failure is fail-open. A live PreToolUse probe passed, so Grok `process_exit2_honored` is true. Stop cannot block.
 
 Codex says the same command in two files for one event can run twice. This tree writes Codex hooks only in `.codex/hooks.json`. `plugins/chaos-engine/hooks/hooks.json` stays an empty `hooks` object, and `.codex/config.toml` has no `[hooks]` table. No second ChaosEngine command was registered for one host event, so none was removed. Grok also reads `.claude/settings.json` and `.cursor/hooks.json`. That fan-out is the host, not a second copy of the Grok command.
 
@@ -170,7 +170,7 @@ It does not claim the original bytes left the model window.
 | Grok Bot | not proven |
 | OpenBot | not proven |
 
-## GAP-EXIT2 compensating UX checklist (Grok / Copilot)
+## GAP-EXIT2 compensating UX checklist (Copilot, Cursor, OpenCode)
 
 GAP-EXIT2-SENTENCE: GAP-EXIT2: ChaosEngine still emits decision=block or permissionDecision=deny and exit 2; verify host trust.
 
@@ -178,7 +178,7 @@ Do **not** pretend a hard process exit-2 block on these hosts. ChaosEngine still
 emits `decision=block` / `permissionDecision=deny` and exit 2; owners must
 verify trust and static surfaces.
 
-- [x] Doctor human output shows `blockingGap` / GAP-EXIT2 warning for Grok and Copilot (`format_blocking_fidelity_warnings`)
+- [x] Doctor human output shows `blockingGap` / GAP-EXIT2 warning for Copilot, Cursor, and OpenCode (`format_blocking_fidelity_warnings`). Grok is not in that warning.
 - [x] Host parity row `GAP-EXIT2` stays documented with severity and proof test
 - [x] After a deny, tell the owner to check project trust / hooks trust (Grok: `grok inspect --json`, `/hooks-trust`) and IDE Copilot trust — not “the tool was hard-blocked by exit code”
 - [x] SessionStart / Heal locators remain available when marketplace plugins are absent

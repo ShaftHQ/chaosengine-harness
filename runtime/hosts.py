@@ -5339,6 +5339,7 @@ REQUIRED_HOOK_EVENTS = (
     "SubagentStop",
     "SessionEnd",
 )
+GROK_OBSERVE_EVENTS = ("PermissionDenied", "StopFailure", "Notification")
 CLAUDE_DENY_EVENTS = (
     "PreSkillShellCommand",
     "UserPromptExpansion",
@@ -5397,7 +5398,7 @@ def lifecycle_event_names(host: str) -> tuple[str, ...]:
         base = tuple(event for event in REQUIRED_HOOK_EVENTS if event != "PostToolUseFailure")
         return base + compact + CODEX_EXTRA_EVENTS
     if host == "grok":
-        return REQUIRED_HOOK_EVENTS + compact
+        return REQUIRED_HOOK_EVENTS + compact + GROK_OBSERVE_EVENTS
     return REQUIRED_HOOK_EVENTS
 
 
@@ -6330,6 +6331,16 @@ def lifecycle_hooks_document(host: str, events: dict[str, str] | None = None, ma
             )
             command["commandWindows"] = chaos_guard_locator_command(
                 windows=True, host=host, managed_python=managed_python, event="Stop",
+            )
+        elif native == "SessionStart" and host == "grok":
+            # The user hook defers only after SessionStart records the session
+            # layer file. A command with no event never records it, so a
+            # trusted repo runs PreToolUse twice.
+            command["command"] = chaos_guard_locator_command(
+                windows=False, host=host, managed_python=managed_python, event="SessionStart",
+            )
+            command["commandWindows"] = chaos_guard_locator_command(
+                windows=True, host=host, managed_python=managed_python, event="SessionStart",
             )
         if (native == "SessionEnd" and host in {"codex", "grok"}) or (
             native == "Interrupt" and host == "codex"
@@ -8961,10 +8972,18 @@ def _load_grok_lean_config():
     return mod
 
 
-def _record_grok_and_identity(receipt: dict, project: Path) -> None:
+def _record_grok_and_identity(
+    receipt: dict, project: Path, managed_python: Path | None = None
+) -> None:
     """A raised Grok sync must not skip project identity."""
     with contextlib.suppress(Exception):
         receipt["grokLeanConfig"] = sync_grok_user_lean_config(project)
+    with contextlib.suppress(Exception):
+        receipt["grokUserHooks"] = sync_grok_user_hooks(
+            project, managed_python=managed_python
+        )
+    with contextlib.suppress(Exception):
+        receipt["grokUserPlugin"] = sync_grok_user_plugin(project)
     with contextlib.suppress(Exception):
         receipt["identity"] = ensure_project_identity(project)
 
@@ -8986,6 +9005,162 @@ def sync_grok_user_lean_config(
         lean_skills=lean_skills,
         uninstall=uninstall,
     )
+
+
+GROK_USER_HOOK_NAME = "chaos-engine.json"
+GROK_USER_PLUGIN_NAME = "chaos-engine"
+
+
+def grok_user_home(home: Path | None = None) -> Path:
+    configured = os.environ.get("GROK_HOME")
+    if configured:
+        return Path(configured).expanduser()
+    return (home if home is not None else _host_home()) / ".grok"
+
+
+def grok_user_launch_path(project: Path) -> Path | None:
+    """Absolute launch.py a user hook can run outside the installing repo."""
+    for relative in (
+        Path(".chaos-engine") / "hooks" / "launch.py",
+        Path("hooks") / "launch.py",
+        Path("chaos-engine") / "hooks" / "launch.py",
+    ):
+        candidate = project / relative
+        if candidate.is_file() and not is_link_or_reparse(candidate):
+            return candidate.resolve()
+    return None
+
+
+def grok_user_hook_command(launch: Path, *, windows: bool) -> str:
+    """PreToolUse command that allows when the launcher file is gone.
+
+    The project locator exits 2 when ``.chaos-engine/hooks/launch.py`` is not
+    in a parent. Grok loads ``~/.grok/hooks`` in every workspace, so that miss
+    would deny unrelated directories. ``--layer user`` defers when the project
+    hook already ran.
+    """
+    payload = base64.b64encode(str(launch).encode()).decode("ascii")
+    script = (
+        "import base64,pathlib,subprocess,sys;"
+        "s='.chaos-engine/hooks/launch.py';"
+        f"p=pathlib.Path(base64.b64decode('{payload}').decode());"
+        "sys.exit(0 if not p.is_file() else subprocess.call("
+        "[sys.executable,str(p),'grok','PreToolUse','--layer','user']))"
+    )
+    if "$" in script or "\n" in script or '"' in script:
+        raise ValueError("grok user hook command must stay $-free")
+    exe = "py -3" if windows else "python3"
+    return f'{exe} -c "{script}"'
+
+
+def grok_user_hooks_document(launch: Path, managed_python: Path | None = None) -> bytes:
+    del managed_python
+    handler = {
+        "type": "command",
+        "command": grok_user_hook_command(launch, windows=False),
+        "commandWindows": grok_user_hook_command(launch, windows=True),
+        "timeout": 30,
+    }
+    document = {"hooks": {"PreToolUse": [{"matcher": PRE_TOOL_MATCHER, "hooks": [handler]}]}}
+    return (json.dumps(document, indent=2, sort_keys=True) + "\n").encode()
+
+
+def sync_grok_user_hooks(
+    project: Path,
+    *,
+    home: Path | None = None,
+    managed_python: Path | None = None,
+) -> dict[str, object]:
+    """Merge a user-level PreToolUse guard so a non-git Grok still loads it (#276)."""
+    path = grok_user_home(home) / "hooks" / GROK_USER_HOOK_NAME
+    launch = grok_user_launch_path(project)
+    if launch is None:
+        return {"status": "skipped", "detail": "launch-missing", "path": str(path)}
+    if is_link_or_reparse(path):
+        return {"status": "skipped", "detail": "user-hook-path-is-link", "path": str(path)}
+    before = path.read_bytes() if path.is_file() else None
+    rendered = grok_user_hooks_document(launch, managed_python)
+    try:
+        merged = hook_content(before, rendered, "Grok user")
+    except ValueError:
+        return {"status": "skipped", "detail": "invalid-existing-user-hook-file", "path": str(path)}
+    if merged == before:
+        return {"status": "healthy", "path": str(path), "changed": False}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{secrets.token_hex(8)}.tmp")
+    try:
+        temporary.write_bytes(merged)
+        os.replace(temporary, path)
+    finally:
+        with contextlib.suppress(FileNotFoundError):
+            temporary.unlink()
+    return {"status": "healthy", "path": str(path), "changed": True}
+
+
+def sync_grok_user_plugin(
+    project: Path,
+    *,
+    home: Path | None = None,
+    executable: str | None = None,
+    which=None,
+    runner=None,
+) -> dict[str, object]:
+    """Install the user plugin only when agent-plugins publishes plugin.json (#276)."""
+    # plugins/chaos-engine is absent. agent-plugins/chaos-engine has no plugin.json.
+    plugin = project / "agent-plugins" / GROK_USER_PLUGIN_NAME
+    manifest = plugin / "plugin.json"
+    if not manifest.is_file():
+        return {"status": "skipped", "detail": "plugin-missing", "path": str(plugin)}
+    find = shutil.which if which is None else which
+    command = executable or find("grok")
+    if not command:
+        return {"status": "skipped", "detail": "grok-missing"}
+    run = subprocess.run if runner is None else runner
+    env = dict(os.environ)
+    env["GROK_HOME"] = str(grok_user_home(home))
+    try:
+        completed = run(
+            [command, "plugin", "install", str(plugin), "--trust"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+            env=env,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        return {"status": "skipped", "detail": f"grok-plugin-install-failed: {error}"}
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout or "").strip()
+        return {
+            "status": "skipped",
+            "detail": f"grok-plugin-install-failed: {detail[:300]}",
+        }
+    return {"status": "healthy", "path": str(plugin), "home": env["GROK_HOME"]}
+
+
+def _grok_rules_omit_agents(payload: dict) -> bool:
+    rules = payload.get("rules")
+    if rules is None:
+        return True
+    try:
+        rendered = json.dumps(rules)
+    except (TypeError, ValueError):
+        rendered = str(rules)
+    return "AGENTS.md" not in rendered
+
+
+def _grok_chaos_event_loaded(payload: dict, event_name: str) -> bool:
+    hooks = payload.get("hooks")
+    if not isinstance(hooks, list):
+        return False
+    for item in hooks:
+        if not isinstance(item, dict):
+            continue
+        if _grok_event_name(str(item.get("event") or "")) != event_name:
+            continue
+        if chaos_hook_command(str(item.get("target") or "")):
+            return True
+    return False
 
 
 def _grok_event_name(value: str) -> str:
@@ -9050,15 +9225,26 @@ def grok_runtime_status(
             ),
         }
     if "projectRoot" in payload and payload.get("projectRoot") is None:
+        loaded = _grok_chaos_event_loaded(payload, "pre_tool_use")
+        if loaded:
+            detail = (
+                "Grok has no projectRoot for this directory (for example, a non-git or "
+                "OpenBot workspace), so project hooks cannot bind. "
+                "A ChaosEngine PreToolUse hook is loaded."
+            )
+        else:
+            detail = (
+                "Grok has no projectRoot for this directory (for example, a non-git or "
+                "OpenBot workspace), so Grok project hooks cannot bind and did not load."
+            )
+        if _grok_rules_omit_agents(payload):
+            detail += " rules were not loaded."
         return {
             "status": "failed",
             "code": "CE_GROK_PROJECT_UNBOUND",
             "projectRoot": None,
-            "hooksLoaded": False,
-            "detail": (
-                "Grok has no projectRoot for this directory (for example, a non-git or "
-                "OpenBot workspace), so Grok project hooks cannot bind and did not load."
-            ),
+            "hooksLoaded": loaded,
+            "detail": detail,
         }
     recovery = (
         "Run `grok inspect --json` from the project. If projectTrusted is false, "

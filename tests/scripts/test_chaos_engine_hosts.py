@@ -221,6 +221,203 @@ class ChaosEngineHostsTest(unittest.TestCase):
                 self.assertIn(dropped, incomplete["detail"])
                 self.assertNotIn("/hooks-trust", incomplete["detail"])
 
+    def test_grok_unbound_root_reports_pretool_hook_and_missing_rules(self):
+        module = load(HOSTS, "chaos_engine_grok_unbound_276")
+        command = "python3 .chaos-engine/hooks/launch.py grok"
+
+        def result(payload):
+            return subprocess.CompletedProcess([], 0, json.dumps(payload), "")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            loaded = {
+                "projectRoot": None,
+                "projectTrusted": False,
+                "hooks": [{"event": "PreToolUse", "target": command}],
+                "rules": [".grok/rules/other.md"],
+            }
+            state = module.grok_runtime_status(
+                project, executable="grok", runner=lambda *_a, **_k: result(loaded),
+            )
+            self.assertEqual("failed", state["status"])
+            self.assertEqual("CE_GROK_PROJECT_UNBOUND", state["code"])
+            self.assertIs(True, state["hooksLoaded"])
+            self.assertNotIn("/hooks-trust", state["detail"])
+            self.assertIn("rules were not loaded", state["detail"])
+            listed = module.grok_runtime_status(
+                project,
+                executable="grok",
+                runner=lambda *_a, **_k: result({**loaded, "rules": ["AGENTS.md"]}),
+            )
+            self.assertIs(True, listed["hooksLoaded"])
+            self.assertNotIn("rules were not loaded", listed["detail"])
+            self.assertNotIn("/hooks-trust", listed["detail"])
+
+    def test_grok_user_hook_merges_pretooluse_under_temp_home(self):
+        module = load(HOSTS, "chaos_engine_grok_user_hook_276")
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            project = home / "workspace"
+            launch_dir = project / ".chaos-engine" / "hooks"
+            launch_dir.mkdir(parents=True)
+            shutil.copy(ROOT / "hooks" / "launch.py", launch_dir / "launch.py")
+            bare = home / "bare"
+            bare.mkdir()
+            with mock.patch.dict(os.environ, {}, clear=False):
+                os.environ.pop("GROK_HOME", None)
+                missing = module.sync_grok_user_hooks(bare, home=home / "no-launch")
+                created = module.sync_grok_user_hooks(project, home=home)
+                again = module.sync_grok_user_hooks(project, home=home)
+            self.assertEqual("skipped", missing["status"])
+            self.assertEqual("launch-missing", missing["detail"])
+            self.assertFalse((home / "no-launch" / ".grok" / "hooks" / "chaos-engine.json").exists())
+            path = home / ".grok" / "hooks" / "chaos-engine.json"
+            self.assertEqual("healthy", created["status"])
+            self.assertEqual(str(path), created["path"])
+            self.assertTrue(created["changed"])
+            self.assertFalse(again["changed"])
+            document = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual({"PreToolUse"}, set(document["hooks"]))
+            command = document["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+            self.assertIn("--layer", command)
+            self.assertIn("user", command)
+            self.assertIn("PreToolUse", command)
+            self.assertNotIn("exit 2", command)
+            outside = home / "outside"
+            outside.mkdir()
+            env = os.environ.copy()
+            for key in (
+                "CHAOS_ENGINE_USER_PAYLOAD",
+                "GROK_HOOK_EVENT",
+                "CLAUDE_CODE_ENTRYPOINT",
+                "CURSOR_TRACE_ID",
+            ):
+                env.pop(key, None)
+            missed = subprocess.run(
+                ["bash", "-c", command],
+                cwd=outside,
+                input=b"{}",
+                capture_output=True,
+                env=env,
+                check=False,
+            )
+            self.assertEqual(0, missed.returncode, missed.stderr.decode(errors="replace"))
+            self.assertNotIn(b"block", missed.stdout)
+            bound = home / "bound"
+            guard_dir = bound / ".chaos-engine" / "hooks"
+            guard_dir.mkdir(parents=True)
+            shutil.copy(ROOT / "hooks" / "launch.py", guard_dir / "launch.py")
+            (bound / ".chaos-engine" / "install.py").write_text("print('project')\n", encoding="utf-8")
+            log = bound / "guard-log"
+            (guard_dir / "guard.py").write_text(
+                "import json, sys\n"
+                "from pathlib import Path\n"
+                "try:\n"
+                "    event = json.loads(sys.stdin.read() or '{}').get('hook_event_name') or ''\n"
+                "except ValueError:\n"
+                "    event = ''\n"
+                f"Path({str(log)!r}).open('a', encoding='utf-8').write(event + '\\n')\n"
+                "print('{\"decision\": \"allow\"}')\n",
+                encoding="utf-8",
+            )
+            ran = subprocess.run(
+                ["bash", "-c", command],
+                cwd=bound,
+                input=b"{}",
+                capture_output=True,
+                env=env,
+                check=False,
+            )
+            self.assertEqual(0, ran.returncode, ran.stderr.decode(errors="replace"))
+            self.assertTrue(log.is_file())
+            project_doc = json.loads(module.lifecycle_hooks_document("grok").decode())
+            start_command = project_doc["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+            pre_command = project_doc["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+            self.assertIn(" SessionStart", start_command)
+            self.assertNotIn(" SessionStart", pre_command)
+            payload = json.dumps({"session_id": "sess-276", "cwd": str(bound)}).encode()
+            log.unlink()
+            started = subprocess.run(
+                ["bash", "-c", start_command],
+                cwd=bound,
+                input=payload,
+                capture_output=True,
+                env=env,
+                check=False,
+            )
+            layer = bound / ".chaos-engine-state" / "sessions" / "sess-276.layer"
+            self.assertEqual(0, started.returncode, started.stderr.decode(errors="replace"))
+            self.assertTrue(layer.is_file())
+            self.assertEqual("project\n", layer.read_text(encoding="utf-8"))
+            log.write_text("", encoding="utf-8")
+            project_pre = subprocess.run(
+                ["bash", "-c", pre_command],
+                cwd=bound,
+                input=json.dumps(
+                    {"session_id": "sess-276", "hook_event_name": "PreToolUse", "cwd": str(bound)}
+                ).encode(),
+                capture_output=True,
+                env=env,
+                check=False,
+            )
+            self.assertEqual(0, project_pre.returncode, project_pre.stderr.decode(errors="replace"))
+            self.assertEqual(["PreToolUse"], log.read_text(encoding="utf-8").splitlines())
+            deferred = subprocess.run(
+                ["bash", "-c", command],
+                cwd=bound,
+                input=payload,
+                capture_output=True,
+                env=env,
+                check=False,
+            )
+            self.assertEqual(0, deferred.returncode, deferred.stderr.decode(errors="replace"))
+            self.assertEqual(["PreToolUse"], log.read_text(encoding="utf-8").splitlines())
+            foreign = {
+                "hooks": {
+                    "SessionStart": [{"hooks": [{"type": "command", "command": "user-hook"}]}],
+                    "PreToolUse": document["hooks"]["PreToolUse"],
+                }
+            }
+            path.write_text(json.dumps(foreign), encoding="utf-8")
+            with mock.patch.dict(os.environ, {}, clear=False):
+                os.environ.pop("GROK_HOME", None)
+                merged_state = module.sync_grok_user_hooks(project, home=home)
+            merged = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(
+                "user-hook", merged["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+            )
+            self.assertIn("PreToolUse", merged["hooks"])
+            self.assertEqual(1, len(merged["hooks"]["PreToolUse"]))
+            self.assertEqual("healthy", merged_state["status"])
+            grok_home = home / "grok-home"
+            with mock.patch.dict(os.environ, {"GROK_HOME": str(grok_home)}):
+                env_state = module.sync_grok_user_hooks(project, home=home / "ignored")
+            self.assertEqual(str(grok_home / "hooks" / "chaos-engine.json"), env_state["path"])
+            env_doc = json.loads((grok_home / "hooks" / "chaos-engine.json").read_text(encoding="utf-8"))
+            self.assertEqual({"PreToolUse"}, set(env_doc["hooks"]))
+
+    def test_grok_user_plugin_skips_when_manifest_missing(self):
+        module = load(HOSTS, "chaos_engine_grok_plugin_276")
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            decoy = project / "plugins" / "chaos-engine" / ".codex-plugin"
+            decoy.mkdir(parents=True)
+            (decoy / "plugin.json").write_text("{}\n", encoding="utf-8")
+            calls = []
+
+            def runner(command, **kwargs):
+                calls.append(command)
+                return subprocess.CompletedProcess(command, 0, "", "")
+
+            state = module.sync_grok_user_plugin(
+                project,
+                home=project / "home",
+                executable="/usr/bin/grok",
+                runner=runner,
+            )
+            self.assertEqual({"status": "skipped", "detail": "plugin-missing", "path": str(project / "agent-plugins" / "chaos-engine")}, state)
+            self.assertEqual([], calls)
+
     def test_codex_hook_file_is_configured_not_active(self):
         """#8103: a generated hooks.json is not evidence the hook ran."""
         module = load(HOSTS, "chaos_engine_codex_hook_status")
@@ -1313,7 +1510,11 @@ class ChaosEngineHostsTest(unittest.TestCase):
                 "PostModelRequest",
                 "Interrupt",
             }
-            grok_events = required_events | compact
+            grok_events = required_events | compact | {
+                "PermissionDenied",
+                "StopFailure",
+                "Notification",
+            }
             self.assertEqual(codex_events, set(lifecycle))
             self.assertEqual(grok_events, set(grok_lifecycle))
             for document, events in (

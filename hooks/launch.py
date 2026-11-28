@@ -565,6 +565,10 @@ def main(argv: list[str]) -> None:
         found, data = wait_for_guard(data)
     if found is None and layer == "user":
         found = _user_payload_guard()
+    if found is None and layer == "user":
+        # Loaded in every workspace. No project guard and no user payload
+        # means this directory is outside ChaosEngine, so do not deny.
+        _early_exit_ok(host, event)
     if found is None:
         start = usable_cwd()
         deny(

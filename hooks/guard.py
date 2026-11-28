@@ -43,6 +43,12 @@ _CODEX_OBSERVE_EVENTS = frozenset({
     "PreModelRequest",
     "PostModelRequest",
 })
+# Grok observe events. Not in the shared preventive set. A deny is exit 0 and no output.
+_GROK_OBSERVE_EVENTS = frozenset({
+    "PermissionDenied",
+    "StopFailure",
+    "Notification",
+})
 
 
 def _overlay_module(name: str) -> Path:
@@ -4161,7 +4167,7 @@ def _deny(event: dict, event_name: str, tool_name: str, reason: str) -> int:
 
 
 _QUALITY_TOOLS = frozenset({"Write", "Edit", "apply_patch"})
-_GAP_EXIT2_HOSTS = frozenset({"grok", "copilot", "cursor", "opencode"})
+_GAP_EXIT2_HOSTS = frozenset({"copilot", "cursor", "opencode"})
 
 
 def _test_quality_path() -> Path:
@@ -4990,6 +4996,9 @@ def _guarded_event(event: dict, host: str) -> int:
     if host == "codex" and event_name in _CODEX_OBSERVE_EVENTS:
         # Interrupt, PreModelRequest, and PostModelRequest record by returning.
         # Output would start another model turn or change model context.
+        return 0
+    if host == "grok" and event_name in _GROK_OBSERVE_EVENTS:
+        # Observe only. A deny would be exit 2 plus JSON. Grok gets neither.
         return 0
     codex_permission = host == "codex" and event_name == "PermissionRequest"
     if isinstance(event, dict) and (_preventive_event(event_name) or codex_permission):

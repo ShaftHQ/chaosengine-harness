@@ -118,7 +118,7 @@ gaps, including exit-2 fidelity, are in the
 | `claude` | Claude Code | Lifecycle hooks. Marketplace registration when `claude` is on `PATH` and the resolved host set includes it (or no host was resolved). |
 | `codex` | Codex | Lifecycle hooks. Marketplace registration when `codex` is on `PATH` and the resolved host set includes it (or no host was resolved). |
 | `gemini` | Gemini CLI | Lifecycle hooks. The hook launcher is Node.js ([hooks/launch.js](../hooks/launch.js)). |
-| `grok` | Grok | Lifecycle hooks. The hooks page says exit 2 denies; this tree still treats that process block as unproven until a live probe (GAP-EXIT2). |
+| `grok` | Grok | Lifecycle hooks. A live PreToolUse probe showed exit 2 denies and the tool did not run. Stop cannot block. |
 | `copilot` | GitHub Copilot | Lifecycle hooks for the CLI. Cloud and IDE surfaces are checked statically. This host can ignore an exit-2 deny (GAP-EXIT2). |
 | `opencode` | OpenCode | Guard bridge in `.opencode/plugins/chaos-engine-receipt.js`. A throw from the before-hook denies the tool. `session.idle` does not block. |
 | `cursor` | Cursor | `.cursor/hooks.json` calls `hooks/launch.py`. `preToolUse` can deny. Exit 2 is not yet a proven process block. |

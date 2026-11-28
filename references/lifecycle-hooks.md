@@ -93,7 +93,7 @@ exit code `2` with a host-adapted deny payload from `hooks/guard.py` via
 | Claude | `decision=block` on stderr when exit is 2 | yes |
 | Codex | `permissionDecision=deny` in hookSpecificOutput | yes |
 | Gemini | `decision=block` (+ `launch.js` exit 2) | yes |
-| Grok | `decision=block` | **no** — GAP-EXIT2 (`process_exit2_honored=False`); doctor warns |
+| Grok | `decision=block` | **yes** — live PreToolUse probe; Stop cannot block |
 | Copilot | `permissionDecision=deny` | **no** — GAP-EXIT2 (`process_exit2_honored=False`, cloud/ide); doctor warns |
 | Cursor | `permissionDecision=deny` (`failClosed` on PreToolUse) | **no** — GAP-EXIT2 (`process_exit2_honored=False`) |
 | OpenCode | plugin `throw` on `tool.execute.before` | **no** — GAP-EXIT2 (`process_exit2_honored=False`) |

@@ -18,7 +18,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[2]
 SKILL = ROOT / "skills" / "web-e2e-automation"
 FORBIDDEN = ("ShaftHQ", "SHAFT_ENGINE")
-GAP_HOSTS = frozenset({"grok", "copilot", "cursor", "opencode"})
+GAP_HOSTS = frozenset({"copilot", "cursor", "opencode"})
 
 
 def load(path: Path, name: str):

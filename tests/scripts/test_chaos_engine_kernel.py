@@ -240,6 +240,34 @@ class ChaosEngineKernelTest(TestCase):
         ended = self.kernel.adapt_hook_output({"additionalContext": "report"}, "SessionEnd", "grok")
         self.assertEqual("report", ended["systemMessage"])
 
+    def test_grok_observe_events_drop_a_deny(self):
+        specification = importlib.util.spec_from_file_location(
+            "chaos_engine_guard_276", ROOT / "hooks" / "guard.py"
+        )
+        self.assertIsNotNone(specification)
+        self.assertIsNotNone(specification.loader)
+        guard = importlib.util.module_from_spec(specification)
+        specification.loader.exec_module(guard)
+        for event_name in ("PermissionDenied", "StopFailure", "Notification"):
+            event = {
+                "hook_event_name": event_name,
+                "cancelled": True,
+                "session_id": "grok-observe",
+                "cwd": str(ROOT),
+                "tool_name": "Bash",
+                "tool_input": {"command": "true"},
+            }
+            with self.subTest(event=event_name):
+                stdout = io.StringIO()
+                with redirect_stdout(stdout):
+                    grok_code = guard._guarded_event(dict(event), "grok")
+                    claude_code = guard._guarded_event(dict(event), "claude")
+                rendered = stdout.getvalue().strip()
+                self.assertEqual(0, grok_code)
+                self.assertEqual(2, claude_code)
+                payload = json.loads(rendered)
+                self.assertEqual("block", payload["decision"])
+
     def test_stop_denials_use_each_host_native_output_contract(self):
         for event in ("Stop", "SubagentStop"):
             expected = {}
