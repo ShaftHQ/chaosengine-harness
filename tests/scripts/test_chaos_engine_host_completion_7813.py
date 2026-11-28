@@ -73,7 +73,7 @@ class MatrixContractTests(unittest.TestCase):
         for gap in ("GAP-OPENCODE-HOOKS", "GAP-CURSOR-HOOKS", "GAP-GROKBOT-HOOKS"):
             self.assertIn(gap, matrix)
         kernel = load("ce_kernel_7814", CE / "hooks/kernel.py")
-        self.assertFalse(kernel.HOST_CAPABILITIES["grok"].process_exit2_honored)
+        self.assertTrue(kernel.HOST_CAPABILITIES["grok"].process_exit2_honored)
         self.assertFalse(kernel.HOST_CAPABILITIES["copilot"].process_exit2_honored)
         self.assertNotIn("grok-bot", kernel.HOST_CAPABILITIES)
         for host in ("opencode", "cursor"):
