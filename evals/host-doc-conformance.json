@@ -725,7 +725,7 @@
     {
       "host": "antigravity",
       "url": "https://antigravity.google/docs/hooks.md",
-      "retrieved": "2026-11-27",
+      "retrieved": "2026-11-28",
       "casing": "PascalCase",
       "fail_default": "fail-open",
       "blocks": "PreToolUse deny is JSON decision deny on exit 0. Stop decision continue keeps working. Any non-zero exit fails open. PreToolUse and PostToolUse use matcher groups. SessionStart, PreInvocation, PostInvocation, and Stop use flat arrays.",
