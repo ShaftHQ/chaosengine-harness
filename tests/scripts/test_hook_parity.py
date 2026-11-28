@@ -199,6 +199,23 @@ class HookParityTests(unittest.TestCase):
             self.assertTrue(pid.isdigit())
 
     def test_opencode_plugin_denies_allows_and_does_not_hang(self):
+        matrix = (ROOT / "references" / "host-parity-matrix.md").read_text(encoding="utf-8")
+        gap = next(line for line in matrix.splitlines() if line.startswith("| GAP-OPENCODE-HOOKS |"))
+        self.assertNotIn("six V1 names", gap)
+        self.assertIn(
+            "tool.execute.before, tool.execute.after, session.created, and session.idle are not registered",
+            gap,
+        )
+        official = next(line for line in matrix.splitlines() if line.startswith("| OpenCode |"))
+        cells = [cell.strip() for cell in official.strip().strip("|").split("|")]
+        registered = [part.strip() for part in cells[2].split(",")]
+        omitted = [part.strip() for part in cells[3].split(",")]
+        self.assertIn("execute.before", registered)
+        self.assertIn("execute.after", registered)
+        self.assertEqual(
+            ["tool.execute.before", "tool.execute.after", "session.created", "session.idle"],
+            omitted,
+        )
         source = self.surfaces.opencode_plugin_source()
         for name in self.surfaces.OPENCODE_NATIVE_EVENTS:
             self.assertIn(name, source)
