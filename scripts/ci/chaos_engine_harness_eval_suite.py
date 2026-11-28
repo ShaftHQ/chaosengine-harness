@@ -122,14 +122,17 @@ def _module_path(module: str) -> str:
 
 
 def _run_command(argv: list[str], *, root: Path, timeout: int) -> tuple[bool, str]:
-    completed = subprocess.run(  # nosec B603 - argv list, no shell.
-        argv,
-        cwd=root,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        check=False,
-    )
+    try:
+        completed = subprocess.run(  # nosec B603 - argv list, no shell.
+            argv,
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return False, f"timeout after {timeout}s"
     output = (completed.stderr or "") + (completed.stdout or "")
     return completed.returncode == 0, output.strip()
 
